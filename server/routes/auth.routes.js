@@ -1,0 +1,119 @@
+// src/routes/auth.routes.js
+const express = require("express");
+
+const asyncHandler = require("../utils/asyncHandler.util");
+const { validateBody } = require("../middleware/validate.middleware");
+const { requireAuth } = require("../middleware/auth.middleware");
+const authController = require("../controllers/auth.controller");
+const {
+  loginLimiter,
+  apiLimiter,
+} = require("../middleware/rateLimit.middleware");
+
+const {
+  loginSchema,
+  refreshSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
+  enable2FASchema,
+  verify2FASchema,
+} = require("../validators/auth.validators");
+
+const router = express.Router();
+
+// USED TO CHECK IF AUTHENTICATED
+router.get("/authenticated", asyncHandler(authController.CheckAuth));
+
+// USED TO GET ACTIVE SESSIONS
+router.get(
+  "/sessions",
+  apiLimiter,
+  requireAuth,
+  asyncHandler(authController.GetSessions),
+);
+
+// USED TO GET CURRENT USER INFO
+router.get(
+  "/me",
+  apiLimiter,
+  requireAuth,
+  asyncHandler(authController.GetAuthenticatedUser),
+);
+
+// USED TO TO LOGIN
+router.post(
+  "/login",
+  loginLimiter,
+  validateBody(loginSchema),
+  asyncHandler(authController.Login),
+);
+
+// USED TO REFRESH TOKEN
+router.post(
+  "/refresh",
+  apiLimiter,
+  validateBody(refreshSchema),
+  asyncHandler(authController.RefreshToken),
+);
+
+// USED TO LOGOUT
+router.get("/logout", asyncHandler(authController.Logout));
+// USED TO REQUEST PASSWORD CHANGE SEND EMAIL
+router.post(
+  "/forgot-password",
+  apiLimiter,
+  validateBody(forgotPasswordSchema),
+  asyncHandler(authController.ForgotPassword),
+);
+
+// USED TO VERIFY RESET PASSWORD TOKEN
+router.get(
+  "/reset-password/verify",
+  asyncHandler(authController.VerifyResetPasswordToken),
+);
+
+// USED TO RESET PASSWORD
+router.post(
+  "/reset-password",
+  apiLimiter,
+  validateBody(resetPasswordSchema),
+  asyncHandler(authController.ResetPassword),
+);
+
+// USED TO CHANGE PASSWORD IN APP (Authenticated)
+router.post(
+  "/change-password",
+  apiLimiter,
+  requireAuth,
+  validateBody(changePasswordSchema),
+  asyncHandler(authController.ChangePassword),
+);
+
+// USED TO TOGGLE 2 FACTOR AUTHENTICATION (Authenticated)
+router.get(
+  "/2fa/toggle",
+  requireAuth,
+  validateBody(enable2FASchema),
+  asyncHandler(authController.Toggle2FA),
+);
+
+// ✅ IMPORTANT: no requireAuth here
+router.post(
+  "/2fa/verify",
+  validateBody(verify2FASchema),
+  asyncHandler(authController.Verify2FA),
+);
+
+router.post(
+  "/sessions/:sessionId/revoke",
+  requireAuth,
+  asyncHandler(authController.RevokeSession),
+);
+// router.post(
+//   "/sessions/revoke-others",
+//   requireAuth,
+//   asyncHandler(authController.RevokeOtherSessions)
+// );
+
+module.exports = router;
