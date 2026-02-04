@@ -3,6 +3,8 @@ const app = require("./app");
 const { connectDb } = require("./config/db");
 const { port, env } = require("./config/env");
 
+// eslint-disable-next-line no-console
+
 async function start() {
   await connectDb();
 
