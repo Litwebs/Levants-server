@@ -30,7 +30,8 @@ const CreateRole = async (req, res) => {
   });
 
   if (!result.success) {
-    return sendErr(res, { statusCode: 400, message: result.message });
+    const statusCode = result.message === "Role already exists" ? 409 : 400;
+    return sendErr(res, { statusCode, message: result.message });
   }
 
   return sendOk(res, result.data);
@@ -45,7 +46,8 @@ const UpdateRole = async (req, res) => {
   });
 
   if (!result.success) {
-    return sendErr(res, { statusCode: 400, message: result.message });
+    const statusCode = result.message === "Role not found" ? 404 : 400;
+    return sendErr(res, { statusCode, message: result.message });
   }
 
   return sendOk(res, result.data);
@@ -57,10 +59,11 @@ const DeleteRole = async (req, res) => {
   const result = await accessService.DeleteRole({ roleId });
 
   if (!result.success) {
-    return sendErr(res, { statusCode: 400, message: result.message });
+    const statusCode = result.message === "Role not found" ? 404 : 400;
+    return sendErr(res, { statusCode, message: result.message });
   }
 
-  return sendOk(res, { deleted: true });
+  return sendOk(res);
 };
 
 /**
@@ -81,7 +84,11 @@ const AssignRoleToUser = async (req, res) => {
   const result = await accessService.AssignRoleToUser({ userId, roleId });
 
   if (!result.success) {
-    return sendErr(res, { statusCode: 400, message: result.message });
+    const statusCode =
+      result.message === "User not found" || result.message === "Role not found"
+        ? 404
+        : 400;
+    return sendErr(res, { statusCode, message: result.message });
   }
 
   return sendOk(res, { assigned: true });

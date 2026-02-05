@@ -23,25 +23,36 @@ const {
 
 const router = express.Router();
 
-// 🔐 All access routes: authenticated + admin only
+/**
+ * ============================================================
+ * 🔐 GLOBAL ACCESS GUARDS
+ * ============================================================
+ * Order matters:
+ *   1. requireAuth    → ensures req.user exists (401)
+ *   2. requireRole    → enforces admin-only access (403)
+ * ============================================================
+ */
 router.use(requireAuth);
 router.use(requireRole("admin"));
-router.use(apiLimiter);
 
 /**
- * ===== ROLES =====
+ * ============================================================
+ * ROLES
+ * ============================================================
  */
 
-router.get("/roles", asyncHandler(accessController.GetRoles));
+router.get("/roles", apiLimiter, asyncHandler(accessController.GetRoles));
 
 router.post(
   "/roles",
+  apiLimiter,
   validateBody(createRoleSchema),
   asyncHandler(accessController.CreateRole),
 );
 
 router.put(
   "/roles/:roleId",
+  apiLimiter,
   validateParams(roleIdParamSchema),
   validateBody(updateRoleSchema),
   asyncHandler(accessController.UpdateRole),
@@ -49,25 +60,35 @@ router.put(
 
 router.delete(
   "/roles/:roleId",
+  apiLimiter,
   validateParams(roleIdParamSchema),
   asyncHandler(accessController.DeleteRole),
 );
 
 /**
- * ===== USERS =====
+ * ============================================================
+ * USERS
+ * ============================================================
  */
 
 router.put(
   "/users/:userId/role",
+  apiLimiter,
   validateParams(userIdParamSchema),
   validateBody(assignRoleSchema),
   asyncHandler(accessController.AssignRoleToUser),
 );
 
 /**
- * ===== PERMISSIONS =====
+ * ============================================================
+ * PERMISSIONS
+ * ============================================================
  */
 
-router.get("/permissions", asyncHandler(accessController.GetPermissions));
+router.get(
+  "/permissions",
+  apiLimiter,
+  asyncHandler(accessController.GetPermissions),
+);
 
 module.exports = router;
