@@ -1,5 +1,5 @@
 const rateLimit = require("express-rate-limit");
-const { sendError } = require("../utils/response.util");
+const { sendErr } = require("../utils/response.util");
 
 // Helper to safely read integer env vars
 function intFromEnv(name, defaultValue) {
@@ -49,14 +49,33 @@ function rateLimitHandler(req, res, _next, options) {
     res.setHeader("Retry-After", retrySecs.toString());
   }
 
-  const err = new Error(
-    options.message ||
-      "Too many requests, please slow down and try again shortly.",
-  );
-  err.statusCode = options.statusCode || 429;
-  err.code = "TOO_MANY_REQUESTS";
+  const DEFAULT_MSG =
+    "Too many requests, please slow down and try again shortly.";
+  const GENERIC_SHORT_MSG = "Too many requests, please slow down.";
 
-  return sendError(res, err);
+  const optionMessage =
+    typeof options?.message === "string" ? options.message.trim() : "";
+  const message =
+    !optionMessage || optionMessage === GENERIC_SHORT_MSG
+      ? DEFAULT_MSG
+      : optionMessage;
+
+  const status = Number(options?.statusCode) || 429;
+  const code = "TOO_MANY_REQUESTS";
+
+  if (res.headersSent) return;
+
+  return res.status(status).json({
+    success: false,
+    code,
+    message,
+    data: null,
+    error: {
+      code,
+      message,
+      data: null,
+    },
+  });
 }
 
 /**

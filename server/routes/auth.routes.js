@@ -23,7 +23,11 @@ const {
 const router = express.Router();
 
 // USED TO CHECK IF AUTHENTICATED
-router.get("/authenticated", asyncHandler(authController.CheckAuth));
+router.get(
+  "/authenticated",
+  apiLimiter,
+  asyncHandler(authController.CheckAuth),
+);
 
 // USED TO GET ACTIVE SESSIONS
 router.get(
@@ -70,6 +74,7 @@ router.post(
 // USED TO VERIFY RESET PASSWORD TOKEN
 router.get(
   "/reset-password/verify",
+  apiLimiter,
   asyncHandler(authController.VerifyResetPasswordToken),
 );
 
@@ -93,6 +98,7 @@ router.post(
 // USED TO TOGGLE 2 FACTOR AUTHENTICATION (Authenticated)
 router.get(
   "/2fa/toggle",
+  apiLimiter,
   requireAuth,
   validateBody(enable2FASchema),
   asyncHandler(authController.Toggle2FA),
@@ -101,19 +107,16 @@ router.get(
 // ✅ IMPORTANT: no requireAuth here
 router.post(
   "/2fa/verify",
+  apiLimiter,
   validateBody(verify2FASchema),
   asyncHandler(authController.Verify2FA),
 );
 
 router.post(
   "/sessions/:sessionId/revoke",
+  apiLimiter,
   requireAuth,
   asyncHandler(authController.RevokeSession),
 );
-// router.post(
-//   "/sessions/revoke-others",
-//   requireAuth,
-//   asyncHandler(authController.RevokeOtherSessions)
-// );
 
 module.exports = router;
