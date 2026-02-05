@@ -46,7 +46,49 @@ const OK = "OK";
 
 const EMAIL_REQUIRED = "Email is required.";
 
+// src/constants/auth.constants.js
+
+const PERMISSIONS = [
+  // Orders
+  "orders.create",
+  "orders.read",
+  "orders.update",
+  "orders.delete",
+
+  // Products
+  "products.create",
+  "products.read",
+  "products.update",
+  "products.delete",
+
+  // Customers
+  "customers.create",
+  "customers.read",
+  "customers.update",
+  "customers.delete",
+
+  // Delivery / Routes
+  "delivery.routes.create",
+  "delivery.routes.read",
+  "delivery.routes.update",
+  "delivery.routes.delete",
+
+  // Promotions
+  "promotions.create",
+  "promotions.read",
+  "promotions.update",
+  "promotions.delete",
+
+  // Business Info
+  "business.info.read",
+  "business.info.update",
+
+  // Audit
+  "audit.read",
+];
+
 module.exports = {
+  PERMISSIONS,
   INVALID_EMAIL_OR_PASSWORD,
   INVALID_OR_EXPIRED_SESSION,
   INVALID_RESET_PASSWORD_TOKEN,

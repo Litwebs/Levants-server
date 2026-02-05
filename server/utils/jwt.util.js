@@ -13,9 +13,15 @@ const REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN;
 
 function buildPayload(user) {
   const id = user._id || user.id;
+
+  const roleClaim =
+    user && user.role && typeof user.role === "object" && user.role.name
+      ? user.role.name
+      : user.role;
+
   return {
     sub: String(id),
-    role: user.role,
+    role: roleClaim,
   };
 }
 

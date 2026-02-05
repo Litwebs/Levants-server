@@ -21,8 +21,12 @@ const resolveUserFromToken = async (token) => {
   try {
     const payload = jwtUtil.verifyAccessToken(token);
 
-    const user = await User.findById(payload.sub);
-    if (!user) {
+    const userDoc = await User.findById(payload.sub).populate(
+      "role",
+      "name permissions",
+    );
+
+    if (!userDoc) {
       return {
         user: null,
         error: {
@@ -32,7 +36,7 @@ const resolveUserFromToken = async (token) => {
       };
     }
 
-    if (user.status === "disabled" || user.archived) {
+    if (userDoc.status === "disabled" || userDoc.archived) {
       return {
         user: null,
         error: {
@@ -44,12 +48,12 @@ const resolveUserFromToken = async (token) => {
 
     return {
       user: {
-        id: user._id.toString(),
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status,
+        id: userDoc._id.toString(),
+        _id: userDoc._id,
+        name: userDoc.name,
+        email: userDoc.email,
+        role: userDoc.role, // ✅ populated role
+        status: userDoc.status,
       },
       error: null,
     };

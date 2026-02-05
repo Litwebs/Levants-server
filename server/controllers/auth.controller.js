@@ -9,7 +9,7 @@ const {
   EMAIL_REQUIRED,
   TOKEN_REQUIRED,
   SESSION_ID_REQUIRED,
-} = require("../constants/Auth.constants");
+} = require("../constants/auth.constants");
 
 // USED TO CHECK IF AUTHENTICATED
 const CheckAuth = async (req, res, next) => {

@@ -52,9 +52,9 @@ const Login = async ({
     .trim()
     .toLowerCase();
 
-  const user = await User.findOne({ email: normalizedEmail }).select(
-    "+passwordHash",
-  );
+  const user = await User.findOne({ email: normalizedEmail })
+    .select("+passwordHash")
+    .populate("role", "name");
   if (!user) return Response(false, INVALID_EMAIL_OR_PASSWORD, null);
 
   if (user.status === "disabled" || user.archived) {
@@ -158,9 +158,9 @@ const Verify2FA = async ({ tempToken, code, ip, userAgent }) => {
   }
 
   // ✅ IMPORTANT: only add the excluded field; keep the rest of user + twoFactorLogin intact
-  const user = await User.findById(payload.sub).select(
-    "+twoFactorLogin +twoFactorLogin.codeHash +twoFactorLogin.attempts",
-  );
+  const user = await User.findById(payload.sub)
+    .select("+twoFactorLogin +twoFactorLogin.codeHash +twoFactorLogin.attempts")
+    .populate("role");
 
   if (!user) return Response(false, USER_NOT_FOUND, null);
 
@@ -233,7 +233,7 @@ const Verify2FA = async ({ tempToken, code, ip, userAgent }) => {
 };
 
 const Enable2FA = async ({ userId }) => {
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate("role");
   if (!user) return Response(false, USER_NOT_FOUND, null);
 
   user.twoFactorEnabled = !user.twoFactorEnabled;
@@ -285,7 +285,7 @@ const RefreshToken = async ({ refreshToken, ip, userAgent }) => {
     return Response(false, INVALID_OR_EXPIRED_TOKEN, null);
   }
 
-  const user = await User.findById(payload.sub);
+  const user = await User.findById(payload.sub).populate("role");
   if (!user || user.status === "disabled" || user.archived) {
     await session.revoke("USER_INACTIVE");
     return Response(false, USER_NOT_FOUND, null);
@@ -400,7 +400,9 @@ const ResetPassword = async ({ token, newPassword, ip, userAgent }) => {
     return Response(false, INVALID_OR_EXPIRED_TOKEN, null);
   }
 
-  const user = await User.findById(resetRecord.user).select("+passwordHash");
+  const user = await User.findById(resetRecord.user)
+    .select("+passwordHash")
+    .populate("role");
   if (!user) {
     return Response(false, USER_NOT_FOUND, { reason: "USER_NOT_FOUND" });
   }
@@ -442,7 +444,9 @@ const ChangePassword = async ({
   ip,
   userAgent,
 }) => {
-  const user = await User.findById(userId).select("+passwordHash");
+  const user = await User.findById(userId)
+    .select("+passwordHash")
+    .populate("role");
   if (!user) {
     return Response(false, USER_NOT_FOUND, { reason: "USER_NOT_FOUND" });
   }
@@ -467,7 +471,7 @@ const ChangePassword = async ({
 };
 
 const GetAuthenticatedUser = async ({ userId }) => {
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate("role");
   if (!user) {
     return Response(false, USER_NOT_FOUND, null);
   }
