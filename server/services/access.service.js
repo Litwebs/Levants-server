@@ -2,7 +2,7 @@
 
 const Role = require("../models/role.model");
 const User = require("../models/user.model");
-const { PERMISSIONS } = require("../constants/auth.constants");
+const { PERMISSIONS } = require("../constants/Auth.constants");
 
 /**
  * ===== ROLES =====

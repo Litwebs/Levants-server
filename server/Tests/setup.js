@@ -1,7 +1,8 @@
 const mongoose = require("mongoose");
 const { MongoMemoryServer } = require("mongodb-memory-server");
+const { seedDefaultRoles } = require("../scripts/seedDefaultRoles"); // ✅ ADD
 
-// Keep test output clean (app.js logs env on import)
+// Keep test output clean
 jest.spyOn(console, "log").mockImplementation(() => {});
 jest.spyOn(console, "error").mockImplementation(() => {});
 
@@ -21,6 +22,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await clearDatabase();
+  await seedDefaultRoles(); // ✅ THIS IS THE FIX
 });
 
 afterAll(async () => {
