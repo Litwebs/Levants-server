@@ -209,4 +209,175 @@ describe("PUT /api/auth/users/:userId (E2E)", () => {
     expect(user.twoFactorSecret).toBeUndefined();
     expect(user.twoFactorLogin).toBeUndefined();
   });
+
+  /**
+   * =========================
+   * PREFERENCES / NOTIFICATIONS
+   * =========================
+   */
+
+  test("200 admin can update a single notification preference", async () => {
+    const admin = await createUser({ role: "admin" });
+    const target = await createUser();
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/auth/users/${target._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({
+        preferences: {
+          notifications: {
+            deliveryUpdates: true,
+          },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.user.preferences.notifications.deliveryUpdates).toBe(
+      true,
+    );
+  });
+
+  test("200 admin can update multiple notification preferences", async () => {
+    const admin = await createUser({ role: "admin" });
+    const target = await createUser();
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/auth/users/${target._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({
+        preferences: {
+          notifications: {
+            newOrders: false,
+            lowStockAlerts: false,
+            paymentReceived: true,
+          },
+        },
+      });
+
+    expect(res.status).toBe(200);
+
+    const notifications = res.body.data.user.preferences.notifications;
+    expect(notifications.newOrders).toBe(false);
+    expect(notifications.lowStockAlerts).toBe(false);
+    expect(notifications.paymentReceived).toBe(true);
+  });
+
+  test("partial notification update does not overwrite other notification settings", async () => {
+    const admin = await createUser({ role: "admin" });
+    const target = await createUser();
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    // First update
+    await request(app)
+      .put(`/api/auth/users/${target._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({
+        preferences: {
+          notifications: {
+            newOrders: false,
+          },
+        },
+      });
+
+    // Second update (different field)
+    const res = await request(app)
+      .put(`/api/auth/users/${target._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({
+        preferences: {
+          notifications: {
+            deliveryUpdates: true,
+          },
+        },
+      });
+
+    const notifications = res.body.data.user.preferences.notifications;
+
+    expect(notifications.newOrders).toBe(false); // preserved
+    expect(notifications.deliveryUpdates).toBe(true);
+  });
+
+  test("400 when unknown notification key is provided", async () => {
+    const admin = await createUser({ role: "admin" });
+    const target = await createUser();
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/auth/users/${target._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({
+        preferences: {
+          notifications: {
+            hackerFlag: true,
+          },
+        },
+      });
+
+    expect(res.status).toBe(400);
+  });
+
+  test("400 when notification value is not boolean", async () => {
+    const admin = await createUser({ role: "admin" });
+    const target = await createUser();
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/auth/users/${target._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({
+        preferences: {
+          notifications: {
+            newOrders: "yes",
+          },
+        },
+      });
+
+    expect(res.status).toBe(400);
+  });
+
+  test("400 when preferences contains forbidden fields", async () => {
+    const admin = await createUser({ role: "admin" });
+    const target = await createUser();
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/auth/users/${target._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({
+        preferences: {
+          notifications: {
+            newOrders: true,
+          },
+          role: "admin",
+        },
+      });
+
+    expect(res.status).toBe(400);
+  });
 });

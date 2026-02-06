@@ -598,9 +598,8 @@ const UpdateUserStatus = async ({ targetUserId, status, actorUserId }) => {
 
   if (user.status === status) {
     return {
-      success: false,
-      statusCode: 400,
-      message: `User is already ${status}`,
+      success: true,
+      data: { user: sanitizeUser(user) },
     };
   }
 
@@ -705,11 +704,23 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
     };
   }
 
-  const { name, email, roleId, status, password } = updates;
+  const { name, email, roleId, status, password, preferences } = updates;
 
   if (name !== undefined) user.name = name;
   if (email !== undefined) user.email = email;
   if (status !== undefined) user.status = status;
+
+  // Preferences (notifications only)
+  if (preferences?.notifications) {
+    const existingNotifications = user.preferences?.notifications?.toObject
+      ? user.preferences.notifications.toObject()
+      : user.preferences?.notifications || {};
+
+    user.set("preferences.notifications", {
+      ...existingNotifications,
+      ...preferences.notifications,
+    });
+  }
 
   // Role change
   if (roleId) {
@@ -758,10 +769,24 @@ const UpdateSelf = async ({ userId, updates }) => {
   if (email !== undefined) user.email = email;
 
   if (preferences) {
-    user.preferences = {
-      ...user.preferences,
-      ...preferences,
-    };
+    if (preferences.theme !== undefined) {
+      user.set("preferences.theme", preferences.theme);
+    }
+
+    if (preferences.language !== undefined) {
+      user.set("preferences.language", preferences.language);
+    }
+
+    if (preferences.notifications) {
+      const existingNotifications = user.preferences?.notifications?.toObject
+        ? user.preferences.notifications.toObject()
+        : user.preferences?.notifications || {};
+
+      user.set("preferences.notifications", {
+        ...existingNotifications,
+        ...preferences.notifications,
+      });
+    }
   }
 
   await user.save();
@@ -772,7 +797,7 @@ const UpdateSelf = async ({ userId, updates }) => {
 
   return {
     success: true,
-    data: { user: updatedUser },
+    data: { user: sanitizeUser(updatedUser) },
   };
 };
 

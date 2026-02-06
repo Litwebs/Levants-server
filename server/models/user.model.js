@@ -87,6 +87,32 @@ const userSchema = new mongoose.Schema(
         type: String,
         default: "en-GB",
       },
+      notifications: {
+        newOrders: {
+          type: Boolean,
+          default: true,
+        },
+        orderUpdates: {
+          type: Boolean,
+          default: true,
+        },
+        lowStockAlerts: {
+          type: Boolean,
+          default: true,
+        },
+        deliveryUpdates: {
+          type: Boolean,
+          default: false,
+        },
+        customerMessages: {
+          type: Boolean,
+          default: true,
+        },
+        paymentReceived: {
+          type: Boolean,
+          default: true,
+        },
+      },
     },
 
     // ===== 2FA =====

@@ -88,6 +88,23 @@ const updateUserSchema = Joi.object({
   roleId: Joi.string().hex().length(24).optional(),
   status: Joi.string().valid("active", "disabled").optional(),
 
+  preferences: Joi.object({
+    notifications: Joi.object({
+      newOrders: Joi.boolean().optional(),
+      orderUpdates: Joi.boolean().optional(),
+      lowStockAlerts: Joi.boolean().optional(),
+      deliveryUpdates: Joi.boolean().optional(),
+      customerMessages: Joi.boolean().optional(),
+      paymentReceived: Joi.boolean().optional(),
+    })
+      .min(1)
+      .unknown(false)
+      .required(),
+  })
+    .min(1)
+    .unknown(false)
+    .optional(),
+
   // Password is optional but must be strong if provided
   password: Joi.string().min(8).optional(),
 })
@@ -96,15 +113,29 @@ const updateUserSchema = Joi.object({
 
 const updateSelfSchema = Joi.object({
   name: Joi.string().trim().min(2).max(100).optional(),
+
   email: Joi.string().email().optional(),
 
   preferences: Joi.object({
     theme: Joi.string().valid("light", "dark", "system").optional(),
     language: Joi.string().optional(),
-  }).optional(),
+
+    notifications: Joi.object({
+      newOrders: Joi.boolean().optional(),
+      orderUpdates: Joi.boolean().optional(),
+      lowStockAlerts: Joi.boolean().optional(),
+      deliveryUpdates: Joi.boolean().optional(),
+      customerMessages: Joi.boolean().optional(),
+      paymentReceived: Joi.boolean().optional(),
+    })
+      .min(1)
+      .optional(),
+  })
+    .min(1)
+    .optional(),
 })
   .min(1)
-  .unknown(false); // 🔥 THIS IS THE FIX
+  .unknown(false);
 
 module.exports = {
   loginSchema,
