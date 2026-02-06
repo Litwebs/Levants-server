@@ -595,6 +595,27 @@ const GetUserById = async (req, res, next) => {
   }
 };
 
+// USED TO UPDATE SELF INFO (Authenticated)
+const UpdateSelf = async (req, res, next) => {
+  try {
+    const result = await authService.UpdateSelf({
+      userId: req.user.id,
+      updates: req.body,
+    });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, { user: result.data.user });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ========================= UTILS =========================
 
 const getRefreshTokenCookieOptions = (rememberMe = false) => {
@@ -680,4 +701,5 @@ module.exports = {
   GetUserById,
   ListUsers,
   UpdateUser,
+  UpdateSelf,
 };

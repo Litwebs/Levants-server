@@ -742,6 +742,40 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
   };
 };
 
+const UpdateSelf = async ({ userId, updates }) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  const { name, email, preferences } = updates;
+
+  if (name !== undefined) user.name = name;
+  if (email !== undefined) user.email = email;
+
+  if (preferences) {
+    user.preferences = {
+      ...user.preferences,
+      ...preferences,
+    };
+  }
+
+  await user.save();
+
+  const updatedUser = await User.findById(user._id)
+    .populate("role", "name")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  return {
+    success: true,
+    data: { user: updatedUser },
+  };
+};
+
 const sanitizeUser = (user) => {
   if (!user) return null;
 
@@ -837,4 +871,5 @@ module.exports = {
   GetUserById,
   ListUsers,
   UpdateUser,
+  UpdateSelf,
 };

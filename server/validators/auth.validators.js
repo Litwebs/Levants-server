@@ -44,7 +44,7 @@ const resetPasswordSchema = Joi.object({
     "any.required": "Reset token is required",
   }),
   newPassword: passwordRule.label("New password"),
-});
+}).unknown(false);
 
 const changePasswordSchema = Joi.object({
   currentPassword: Joi.string().min(1).required().messages({
@@ -80,7 +80,7 @@ const verify2FASchema = Joi.object({
 
 const updateUserStatusSchema = Joi.object({
   status: Joi.string().valid("active", "disabled").required(),
-});
+}).unknown(false);
 
 const updateUserSchema = Joi.object({
   name: Joi.string().trim().min(2).max(100).optional(),
@@ -90,7 +90,21 @@ const updateUserSchema = Joi.object({
 
   // Password is optional but must be strong if provided
   password: Joi.string().min(8).optional(),
-});
+})
+  .min(1)
+  .unknown(false);
+
+const updateSelfSchema = Joi.object({
+  name: Joi.string().trim().min(2).max(100).optional(),
+  email: Joi.string().email().optional(),
+
+  preferences: Joi.object({
+    theme: Joi.string().valid("light", "dark", "system").optional(),
+    language: Joi.string().optional(),
+  }).optional(),
+})
+  .min(1)
+  .unknown(false); // 🔥 THIS IS THE FIX
 
 module.exports = {
   loginSchema,
@@ -103,4 +117,5 @@ module.exports = {
   verify2FASchema,
   updateUserStatusSchema,
   updateUserSchema,
+  updateSelfSchema,
 };

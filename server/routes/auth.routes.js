@@ -25,6 +25,7 @@ const {
   verify2FASchema,
   updateUserStatusSchema,
   updateUserSchema,
+  updateSelfSchema,
 } = require("../validators/auth.validators");
 
 const router = express.Router();
@@ -70,6 +71,7 @@ router.post(
 
 // USED TO LOGOUT
 router.get("/logout", asyncHandler(authController.Logout));
+
 // USED TO REQUEST PASSWORD CHANGE SEND EMAIL
 router.post(
   "/forgot-password",
@@ -119,6 +121,7 @@ router.post(
   asyncHandler(authController.Verify2FA),
 );
 
+// USED TO REVOKE A SESSION
 router.post(
   "/sessions/:sessionId/revoke",
   apiLimiter,
@@ -126,6 +129,7 @@ router.post(
   asyncHandler(authController.RevokeSession),
 );
 
+// USED TO REVOKE ALL SESSIONS
 router.put(
   "/users/:userId/status",
   apiLimiter,
@@ -136,6 +140,7 @@ router.put(
   asyncHandler(authController.UpdateUserStatus),
 );
 
+// USED TO GET USER BY ID (Admin or self)
 router.get(
   "/users/:userId",
   apiLimiter,
@@ -145,6 +150,7 @@ router.get(
   asyncHandler(authController.GetUserById),
 );
 
+// USED TO UPDATE USER (Admin or self)
 router.put(
   "/users/:userId",
   apiLimiter,
@@ -155,12 +161,22 @@ router.put(
   asyncHandler(authController.UpdateUser),
 );
 
+// USED TO GET ALL USERS (Admin only)
 router.get(
   "/users",
   apiLimiter,
   requireAuth,
   requirePermission("users.read"),
   asyncHandler(authController.ListUsers),
+);
+
+// USED TO UPDATE SELF INFO (Authenticated users)
+router.put(
+  "/me",
+  apiLimiter,
+  requireAuth,
+  validateBody(updateSelfSchema),
+  asyncHandler(authController.UpdateSelf),
 );
 
 module.exports = router;
