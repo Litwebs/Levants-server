@@ -13,8 +13,6 @@
 //   BUSINESS_PHONE="+1 (555) 123-4567"
 //   BUSINESS_ADDRESS="123 Farm Road, Countryside"
 
-require("dotenv").config();
-
 const mongoose = require("mongoose");
 const BusinessInfo = require("../models/businessInfo.model");
 
@@ -26,9 +24,11 @@ const must = (k) => {
 
 const getBusinessInfoToSeed = () => {
   const companyName = (process.env.BUSINESS_NAME || "My Business").trim();
-  const email = (process.env.BUSINESS_EMAIL || "").trim().toLowerCase();
-  const phone = (process.env.BUSINESS_PHONE || "").trim();
-  const address = (process.env.BUSINESS_ADDRESS || "").trim();
+  const email = (process.env.BUSINESS_EMAIL || "info@example.com")
+    .trim()
+    .toLowerCase();
+  const phone = (process.env.BUSINESS_PHONE || "12345678900").trim();
+  const address = (process.env.BUSINESS_ADDRESS || "ADDRESS_POINT").trim();
 
   if (!email || !email.includes("@")) {
     throw new Error(
@@ -48,11 +48,8 @@ const getBusinessInfoToSeed = () => {
   };
 };
 
-const main = async () => {
-  const uri = must("MONGO_URI");
+const seedBusinessInfo = async () => {
   const business = getBusinessInfoToSeed();
-
-  await mongoose.connect(uri);
 
   // ✅ Single-document upsert (business info is global)
   const doc = await BusinessInfo.findOneAndUpdate(
@@ -72,6 +69,15 @@ const main = async () => {
     },
   );
 
+  return doc;
+};
+
+const main = async () => {
+  const uri = must("MONGO_URI");
+  await mongoose.connect(uri);
+
+  const doc = await seedBusinessInfo();
+
   console.log("✅ Seeded business info:", {
     id: String(doc._id),
     companyName: doc.companyName,
@@ -81,7 +87,12 @@ const main = async () => {
   await mongoose.disconnect();
 };
 
-main().catch((err) => {
-  console.error("❌ seed-business-info failed:", err.message);
-  process.exitCode = 1;
-});
+// Run as CLI if executed directly
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("❌ seed-business-info failed:", err.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { seedBusinessInfo };

@@ -9,7 +9,9 @@
   "scripts": {
     "test": "jest --runInBand",
     "dev": "nodemon src/server.js",
-    "seed-admin": "node scripts/seedAdmin.js"
+    "seed-admin": "node scripts/seedAdmin.js",
+    "seed-business-info": "node scripts/seedBusinessInfo.js"
+    
   },
   "keywords": [],
   "author": "",

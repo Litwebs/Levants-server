@@ -11,10 +11,12 @@ const { sendOk } = require("./utils/response.util");
 const errorMiddleware = require("./middleware/error.middleware");
 const notFoundMiddleware = require("./middleware/notFound.middleware");
 const { seedDefaultRoles } = require("./scripts/seedDefaultRoles");
+const { seedBusinessInfo } = require("./scripts/seedBusinessInfo");
 
 // Routes
 const authRoutes = require("./routes/auth.routes");
 const accessRoutes = require("./routes/access.routes");
+const businessInfoRoutes = require("./routes/businessInfo.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -44,15 +46,18 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Seed default roles and business info on startup
 (async () => {
   try {
     await seedDefaultRoles();
+    await seedBusinessInfo();
   } catch (err) {
     console.error("❌ Failed to seed default roles", err);
     process.exit(1);
   }
 })();
 
+// Health check endpoint
 app.get("/health", (req, res) => {
   return sendOk(res, {
     message: "API is healthy",
@@ -64,6 +69,7 @@ app.get("/health", (req, res) => {
 // API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/access", accessRoutes);
+app.use("/api/business-info", businessInfoRoutes);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");
