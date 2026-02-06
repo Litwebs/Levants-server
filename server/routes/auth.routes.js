@@ -2,13 +2,18 @@
 const express = require("express");
 
 const asyncHandler = require("../utils/asyncHandler.util");
-const { validateBody } = require("../middleware/validate.middleware");
+const {
+  validateBody,
+  validateParams,
+} = require("../middleware/validate.middleware");
 const { requireAuth } = require("../middleware/auth.middleware");
+const { requirePermission } = require("../middleware/permission.middleware");
 const authController = require("../controllers/auth.controller");
 const {
   loginLimiter,
   apiLimiter,
 } = require("../middleware/rateLimit.middleware");
+const { userIdParamSchema } = require("../validators/common.validators");
 
 const {
   loginSchema,
@@ -18,6 +23,8 @@ const {
   changePasswordSchema,
   enable2FASchema,
   verify2FASchema,
+  updateUserStatusSchema,
+  updateUserSchema,
 } = require("../validators/auth.validators");
 
 const router = express.Router();
@@ -117,6 +124,43 @@ router.post(
   apiLimiter,
   requireAuth,
   asyncHandler(authController.RevokeSession),
+);
+
+router.put(
+  "/users/:userId/status",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.status.update"),
+  validateParams(userIdParamSchema),
+  validateBody(updateUserStatusSchema),
+  asyncHandler(authController.UpdateUserStatus),
+);
+
+router.get(
+  "/users/:userId",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.read"),
+  validateParams(userIdParamSchema),
+  asyncHandler(authController.GetUserById),
+);
+
+router.put(
+  "/users/:userId",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.update"),
+  validateParams(userIdParamSchema),
+  validateBody(updateUserSchema),
+  asyncHandler(authController.UpdateUser),
+);
+
+router.get(
+  "/users",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.read"),
+  asyncHandler(authController.ListUsers),
 );
 
 module.exports = router;

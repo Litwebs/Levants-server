@@ -78,6 +78,20 @@ const verify2FASchema = Joi.object({
   }),
 }).unknown(false);
 
+const updateUserStatusSchema = Joi.object({
+  status: Joi.string().valid("active", "disabled").required(),
+});
+
+const updateUserSchema = Joi.object({
+  name: Joi.string().trim().min(2).max(100).optional(),
+  email: Joi.string().email().optional(),
+  roleId: Joi.string().hex().length(24).optional(),
+  status: Joi.string().valid("active", "disabled").optional(),
+
+  // Password is optional but must be strong if provided
+  password: Joi.string().min(8).optional(),
+});
+
 module.exports = {
   loginSchema,
   refreshSchema,
@@ -87,4 +101,6 @@ module.exports = {
   changePasswordSchema,
   enable2FASchema,
   verify2FASchema,
+  updateUserStatusSchema,
+  updateUserSchema,
 };

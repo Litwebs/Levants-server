@@ -12,9 +12,9 @@ function errorHandler(err, req, res, next) {
   }
 
   // Basic logging – swap for winston/pino later
-  if (process.env.NODE_ENV !== "test") {
+  if (process.env.NODE_ENV !== "dev") {
     // eslint-disable-next-line no-console
-    console.error(err);
+    console.error(err.message);
   }
 
   const mapped = mapError(err);

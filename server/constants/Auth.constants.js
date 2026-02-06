@@ -49,42 +49,64 @@ const EMAIL_REQUIRED = "Email is required.";
 // src/constants/auth.constants.js
 
 const PERMISSIONS = [
+  // =========================
   // Orders
+  // =========================
   "orders.create",
   "orders.read",
   "orders.update",
   "orders.delete",
 
+  // =========================
   // Products
+  // =========================
   "products.create",
   "products.read",
   "products.update",
   "products.delete",
 
+  // =========================
   // Customers
+  // =========================
   "customers.create",
   "customers.read",
   "customers.update",
   "customers.delete",
 
+  // =========================
   // Delivery / Routes
+  // =========================
   "delivery.routes.create",
   "delivery.routes.read",
   "delivery.routes.update",
   "delivery.routes.delete",
 
+  // =========================
   // Promotions
+  // =========================
   "promotions.create",
   "promotions.read",
   "promotions.update",
   "promotions.delete",
 
+  // =========================
   // Business Info
+  // =========================
   "business.info.read",
   "business.info.update",
 
+  // =========================
   // Audit
+  // =========================
   "audit.read",
+
+  // =========================
+  // Users / Auth
+  // =========================
+  "users.read",
+  "users.update",
+  "users.status.update", // ✅ enable / disable users
+  "users.roles.update", // ✅ assign roles
 ];
 
 module.exports = {

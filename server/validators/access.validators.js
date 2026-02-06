@@ -1,7 +1,7 @@
 // src/validators/access.validators.js
 
 const Joi = require("joi");
-const { PERMISSIONS } = require("../constants/auth.constants");
+const { PERMISSIONS } = require("../constants/Auth.constants");
 
 /**
  * Allow:

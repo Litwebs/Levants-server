@@ -93,7 +93,6 @@ const AssignRoleToUser = async (req, res) => {
 
   return sendOk(res, { assigned: true });
 };
-
 /**
  * ===== PERMISSIONS =====
  */

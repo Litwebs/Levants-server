@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const mongoose = require("mongoose");
 const User = require("../models/user.model");
+const Role = require("../models/role.model");
 const PasswordResetToken = require("../models/passwordResetToken.model");
 const jwtUtil = require("../utils/jwt.util");
 const passwordUtil = require("../utils/password.util");
@@ -576,6 +577,171 @@ const RevokeSession = async ({ userId, sessionId }) => {
   return Response(true, SESSION_REVOKED, null);
 };
 
+const UpdateUserStatus = async ({ targetUserId, status, actorUserId }) => {
+  if (String(targetUserId) === String(actorUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "You cannot change your own account status",
+    };
+  }
+
+  const user = await User.findById(targetUserId);
+
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  if (user.status === status) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `User is already ${status}`,
+    };
+  }
+
+  user.status = status;
+  await user.save();
+
+  return {
+    success: true,
+    data: { user: sanitizeUser(user) },
+  };
+};
+
+const GetUserById = async ({ targetUserId, requesterUserId }) => {
+  // Optional rule: prevent self-lookup via admin route
+  // (encourage using /me instead)
+  if (String(targetUserId) === String(requesterUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Use /me endpoint to view your own profile",
+    };
+  }
+
+  const user = await User.findById(targetUserId)
+    .populate("role", "name permissions")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  return {
+    success: true,
+    data: { user: sanitizeUser(user) },
+  };
+};
+
+const ListUsers = async ({ page = 1, pageSize = 20, status, role, search }) => {
+  const query = {};
+
+  // Optional filters
+  if (status) {
+    query.status = status;
+  }
+
+  if (role) {
+    query.role = role; // expects role ObjectId
+  }
+
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const skip = (page - 1) * pageSize;
+
+  const [items, total] = await Promise.all([
+    User.find(query)
+      .populate("role", "name")
+      .select("-passwordHash -twoFactorSecret -twoFactorLogin")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(pageSize),
+    User.countDocuments(query),
+  ]);
+
+  return {
+    success: true,
+    data: {
+      users: items,
+    },
+    meta: {
+      page,
+      pageSize,
+      total,
+    },
+  };
+};
+
+const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
+  // ❌ Prevent admin editing themselves via admin route
+  if (String(targetUserId) === String(actorUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Use profile settings to update your own account",
+    };
+  }
+
+  const user = await User.findById(targetUserId);
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  const { name, email, roleId, status, password } = updates;
+
+  if (name !== undefined) user.name = name;
+  if (email !== undefined) user.email = email;
+  if (status !== undefined) user.status = status;
+
+  // Role change
+  if (roleId) {
+    const role = await Role.findById(roleId);
+    if (!role) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Invalid role",
+      };
+    }
+    user.role = role._id;
+  }
+
+  // Password change
+  if (password) {
+    const newHash = await passwordUtil.hashPassword(password);
+    user.passwordHash = newHash;
+  }
+
+  await user.save();
+
+  const updatedUser = await User.findById(user._id)
+    .populate("role", "name permissions")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  return {
+    success: true,
+    data: { user: sanitizeUser(updatedUser) },
+  };
+};
+
 const sanitizeUser = (user) => {
   if (!user) return null;
 
@@ -667,4 +833,8 @@ module.exports = {
   GetSessions,
   RevokeOtherSessions,
   RevokeSession,
+  UpdateUserStatus,
+  GetUserById,
+  ListUsers,
+  UpdateUser,
 };

@@ -9,7 +9,7 @@ const {
   EMAIL_REQUIRED,
   TOKEN_REQUIRED,
   SESSION_ID_REQUIRED,
-} = require("../constants/auth.constants");
+} = require("../constants/Auth.constants");
 
 // USED TO CHECK IF AUTHENTICATED
 const CheckAuth = async (req, res, next) => {
@@ -493,6 +493,108 @@ const RevokeOtherSessions = async (req, res, next) => {
   }
 };
 
+// USED TO UPDATE USER STATUS (Authenticated, requires users.update permission)
+const UpdateUserStatus = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const { status } = req.body;
+
+    const result = await authService.UpdateUserStatus({
+      targetUserId: userId,
+      status,
+      actorUserId: req.user.id,
+    });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode || 400,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, { user: result.data.user });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ========================= ACCESS CONTROL (ROLES & PERMISSIONS) =========================
+
+// USED TO LIST USERS WITH FILTERS (Authenticated, requires users.read permission)
+const ListUsers = async (req, res, next) => {
+  try {
+    const { page = 1, pageSize = 20, status, role, search } = req.query;
+
+    const result = await authService.ListUsers({
+      page: Number(page),
+      pageSize: Number(pageSize),
+      status,
+      role,
+      search,
+    });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, result.data, {
+      meta: result.meta,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// USED TO GET ALL ROLES (Authenticated, requires access.read permission)
+const UpdateUser = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    const result = await authService.UpdateUser({
+      targetUserId: userId,
+      updates: req.body,
+      actorUserId: req.user.id,
+    });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, { user: result.data.user });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// USED TO GET USER BY ID (Authenticated, requires users.read permission)
+const GetUserById = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    const result = await authService.GetUserById({
+      targetUserId: userId,
+      requesterUserId: req.user.id,
+    });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, { user: result.data.user });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ========================= UTILS =========================
 
 const getRefreshTokenCookieOptions = (rememberMe = false) => {
@@ -574,4 +676,8 @@ module.exports = {
   GetSessions,
   RevokeOtherSessions,
   RevokeSession,
+  UpdateUserStatus,
+  GetUserById,
+  ListUsers,
+  UpdateUser,
 };
