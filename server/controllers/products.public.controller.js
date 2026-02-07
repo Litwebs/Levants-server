@@ -27,7 +27,7 @@ const ListActiveProducts = async (req, res) => {
     sort,
   });
 
-  return sendOk(res, result.items, { meta: result.meta });
+  return sendOk(res, { items: result.items }, { meta: result.meta });
 };
 
 /**

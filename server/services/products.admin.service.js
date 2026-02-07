@@ -31,11 +31,10 @@ async function CreateProduct({ body, userId }) {
 }
 
 /**
- * Get product by ID
+ * Get product by ID (admin)
  */
 async function GetProductById({ productId }) {
   const product = await Product.findById(productId);
-
   if (!product) {
     return {
       success: false,
@@ -43,32 +42,53 @@ async function GetProductById({ productId }) {
     };
   }
 
-  const variants = await Variant.find({ product: productId });
+  const variants = await Variant.find({ product: productId }).sort({
+    createdAt: -1,
+  });
 
   return {
     success: true,
-    data: { product, variants },
+    data: {
+      product,
+      variants,
+    },
   };
 }
 
 /**
  * List products (admin)
  */
-async function ListProducts({ filters }) {
+async function ListProducts({ filters = {} }) {
   const query = {};
 
-  if (filters?.status) query.status = filters.status;
-  if (filters?.category) query.category = filters.category;
+  if (filters.status) query.status = filters.status;
+  if (filters.category) query.category = filters.category;
 
-  const products = await Product.find(query).sort({ createdAt: -1 });
+  const products = await Product.find(query).sort({ createdAt: -1 }).lean();
 
-  // Get variants for all products
-  const productsWithVariants = await Promise.all(
-    products.map(async (product) => ({
-      ...product.toObject(),
-      variants: await Variant.find({ product: product._id }),
-    })),
-  );
+  if (products.length === 0) {
+    return {
+      success: true,
+      data: { products: [] },
+    };
+  }
+
+  const productIds = products.map((p) => p._id);
+
+  const variants = await Variant.find({
+    product: { $in: productIds },
+  }).lean();
+
+  const variantsByProduct = variants.reduce((acc, v) => {
+    acc[v.product] ??= [];
+    acc[v.product].push(v);
+    return acc;
+  }, {});
+
+  const productsWithVariants = products.map((product) => ({
+    ...product,
+    variants: variantsByProduct[product._id] || [],
+  }));
 
   return {
     success: true,
@@ -81,7 +101,6 @@ async function ListProducts({ filters }) {
  */
 async function UpdateProduct({ productId, body }) {
   const product = await Product.findById(productId);
-
   if (!product) {
     return {
       success: false,
@@ -89,7 +108,31 @@ async function UpdateProduct({ productId, body }) {
     };
   }
 
-  Object.assign(product, body);
+  // If name changes → regenerate slug safely
+  if (body.name && body.name !== product.name) {
+    const newSlug = slugify(body.name, { lower: true, strict: true });
+
+    const slugExists = await Product.findOne({
+      slug: newSlug,
+      _id: { $ne: productId },
+    });
+
+    if (slugExists) {
+      return {
+        success: false,
+        statusCode: 409,
+        message: "Another product already uses this name",
+      };
+    }
+
+    product.slug = newSlug;
+    product.name = body.name;
+  }
+
+  // Prevent direct slug overwrite
+  const { slug, ...safeBody } = body;
+
+  Object.assign(product, safeBody);
   await product.save();
 
   return {
@@ -103,7 +146,6 @@ async function UpdateProduct({ productId, body }) {
  */
 async function DeleteProduct({ productId }) {
   const product = await Product.findById(productId);
-
   if (!product) {
     return {
       success: false,

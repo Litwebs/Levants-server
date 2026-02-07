@@ -7,6 +7,18 @@ const { seedBusinessInfo } = require("../scripts/seedBusinessInfo"); // ✅ ADD
 jest.spyOn(console, "log").mockImplementation(() => {});
 jest.spyOn(console, "error").mockImplementation(() => {});
 
+jest.mock("stripe", () => {
+  return jest.fn(() => ({
+    products: {
+      create: jest.fn(async () => ({ id: "prod_test" })),
+      update: jest.fn(async () => ({})),
+    },
+    prices: {
+      create: jest.fn(async () => ({ id: "price_test" })),
+    },
+  }));
+});
+
 let mongo;
 
 async function clearDatabase() {

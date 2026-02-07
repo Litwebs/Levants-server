@@ -82,6 +82,10 @@ app.use("/api/products", publicProductRoutes);
 app.use("/api/admin/products", adminProductRoutes);
 app.use("/api/admin/products", adminVariantRoutes);
 
+// Backward-compatible admin variants routes (older clients)
+app.use("/api/admin/variants", adminVariantRoutes);
+app.use("/api/admin/variants/products", adminVariantRoutes);
+
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");
 app.use(express.static(buildPath));

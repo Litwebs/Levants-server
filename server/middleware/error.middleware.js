@@ -5,9 +5,12 @@ const { mapError } = require("../utils/errorMapper.util");
 function errorHandler(err, req, res, next) {
   // Handle JSON parse errors from body-parser without crashing
   if (err && err.type === "entity.parse.failed") {
+    console.error("❌ JSON parse error:", err);
+    const isProduction = process.env.NODE_ENV === "production";
     return sendErr(res, {
       statusCode: 400,
       message: "Invalid JSON payload",
+      details: isProduction ? undefined : err.message,
     });
   }
 

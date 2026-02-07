@@ -1,6 +1,6 @@
 // src/controllers/products.admin.controller.js
 const productService = require("../services/products.admin.service");
-const { sendOk, sendErr } = require("../utils/response.util");
+const { sendCreated, sendOk, sendErr } = require("../utils/response.util");
 
 /**
  * CREATE
@@ -18,7 +18,7 @@ const CreateProduct = async (req, res) => {
     });
   }
 
-  return sendOk(res, result.data);
+  return sendCreated(res, result.data);
 };
 
 /**

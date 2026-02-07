@@ -27,7 +27,9 @@ async function listProducts({
   if (sort === "name_desc") productSort = { name: -1 };
 
   const products = await Product.find(productFilter)
-    .select("name category description thumbnailImage galleryImages createdAt")
+    .select(
+      "name slug category description thumbnailImage galleryImages createdAt",
+    )
     .sort(productSort)
     .lean();
 
@@ -54,12 +56,19 @@ async function listProducts({
   }
 
   const variants = await Variant.find(variantFilter)
-    .select("product name price stockQuantity")
+    .select("product name price stockQuantity lowStockAlert")
     .lean();
 
   const variantsByProduct = variants.reduce((acc, v) => {
     acc[v.product] ??= [];
-    acc[v.product].push(v);
+    acc[v.product].push({
+      id: v._id,
+      name: v.name,
+      price: v.price,
+      currency: "gbp",
+      stockQuantity: v.stockQuantity,
+      lowStock: v.stockQuantity <= v.lowStockAlert,
+    });
     return acc;
   }, {});
 
@@ -68,18 +77,29 @@ async function listProducts({
       const productVariants = variantsByProduct[product._id] || [];
       if (productVariants.length === 0) return null;
 
-      const minVariantPrice = Math.min(...productVariants.map((v) => v.price));
+      const prices = productVariants.map((v) => v.price);
 
       return {
-        ...product,
+        id: product._id,
+        name: product.name,
+        slug: product.slug,
+        category: product.category,
+        description: product.description,
+        thumbnailImage: product.thumbnailImage,
+        galleryImages: product.galleryImages,
         variants: productVariants,
-        minPrice: minVariantPrice,
+        pricing: {
+          min: Math.min(...prices),
+          max: Math.max(...prices),
+          currency: "gbp",
+        },
       };
     })
     .filter(Boolean);
 
-  if (sort === "price_asc") items.sort((a, b) => a.minPrice - b.minPrice);
-  if (sort === "price_desc") items.sort((a, b) => b.minPrice - a.minPrice);
+  if (sort === "price_asc") items.sort((a, b) => a.pricing.min - b.pricing.min);
+  if (sort === "price_desc")
+    items.sort((a, b) => b.pricing.min - a.pricing.min);
 
   const total = items.length;
   const start = (page - 1) * pageSize;
@@ -100,7 +120,7 @@ async function getProductById({ productId }) {
     _id: productId,
     status: "active",
   })
-    .select("name category description thumbnailImage galleryImages")
+    .select("name slug category description thumbnailImage galleryImages")
     .lean();
 
   if (!product) return null;
@@ -109,14 +129,27 @@ async function getProductById({ productId }) {
     product: productId,
     status: "active",
   })
-    .select("name price stockQuantity")
+    .select("name price stockQuantity lowStockAlert")
     .lean();
 
   if (variants.length === 0) return null;
 
   return {
-    ...product,
-    variants,
+    id: product._id,
+    name: product.name,
+    slug: product.slug,
+    category: product.category,
+    description: product.description,
+    thumbnailImage: product.thumbnailImage,
+    galleryImages: product.galleryImages,
+    variants: variants.map((v) => ({
+      id: v._id,
+      name: v.name,
+      price: v.price,
+      currency: "gbp",
+      stockQuantity: v.stockQuantity,
+      lowStock: v.stockQuantity <= v.lowStockAlert,
+    })),
   };
 }
 

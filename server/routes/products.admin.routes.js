@@ -6,12 +6,15 @@ const { requireAuth } = require("../middleware/auth.middleware");
 const { requirePermission } = require("../middleware/permission.middleware");
 const { validateBody } = require("../middleware/validate.middleware");
 const { authLimiter } = require("../middleware/rateLimit.middleware");
+const { validateParams } = require("../middleware/validate.middleware");
 
 const controller = require("../controllers/products.admin.controller");
 const {
   createProductSchema,
   updateProductSchema,
 } = require("../validators/product.validators");
+
+const { productIdParamSchema } = require("../validators/common.validators");
 
 const router = express.Router();
 
@@ -29,6 +32,7 @@ router.get(
 router.get(
   "/:productId",
   requirePermission("products.read"),
+  validateParams(productIdParamSchema),
   asyncHandler(controller.GetProduct),
 );
 
@@ -44,6 +48,7 @@ router.post(
 router.put(
   "/:productId",
   requirePermission("products.update"),
+  validateParams(productIdParamSchema),
   validateBody(updateProductSchema),
   asyncHandler(controller.UpdateProduct),
 );
@@ -52,6 +57,7 @@ router.put(
 router.delete(
   "/:productId",
   requirePermission("products.delete"),
+  validateParams(productIdParamSchema),
   asyncHandler(controller.DeleteProduct),
 );
 
