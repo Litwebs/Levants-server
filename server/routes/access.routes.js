@@ -8,7 +8,7 @@ const {
   validateBody,
   validateParams,
 } = require("../middleware/validate.middleware");
-const { apiLimiter } = require("../middleware/rateLimit.middleware");
+const { authLimiter } = require("../middleware/rateLimit.middleware");
 
 const accessController = require("../controllers/access.controller");
 const {
@@ -34,6 +34,7 @@ const router = express.Router();
  */
 router.use(requireAuth);
 router.use(requireRole("admin"));
+router.use(authLimiter);
 
 /**
  * ============================================================
@@ -41,18 +42,16 @@ router.use(requireRole("admin"));
  * ============================================================
  */
 
-router.get("/roles", apiLimiter, asyncHandler(accessController.GetRoles));
+router.get("/roles", asyncHandler(accessController.GetRoles));
 
 router.post(
   "/roles",
-  apiLimiter,
   validateBody(createRoleSchema),
   asyncHandler(accessController.CreateRole),
 );
 
 router.put(
   "/roles/:roleId",
-  apiLimiter,
   validateParams(roleIdParamSchema),
   validateBody(updateRoleSchema),
   asyncHandler(accessController.UpdateRole),
@@ -60,7 +59,6 @@ router.put(
 
 router.delete(
   "/roles/:roleId",
-  apiLimiter,
   validateParams(roleIdParamSchema),
   asyncHandler(accessController.DeleteRole),
 );
@@ -73,7 +71,6 @@ router.delete(
 
 router.put(
   "/users/:userId/role",
-  apiLimiter,
   validateParams(userIdParamSchema),
   validateBody(assignRoleSchema),
   asyncHandler(accessController.AssignRoleToUser),
@@ -85,10 +82,6 @@ router.put(
  * ============================================================
  */
 
-router.get(
-  "/permissions",
-  apiLimiter,
-  asyncHandler(accessController.GetPermissions),
-);
+router.get("/permissions", asyncHandler(accessController.GetPermissions));
 
 module.exports = router;

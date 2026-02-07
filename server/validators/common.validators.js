@@ -11,7 +11,16 @@ const userIdParamSchema = Joi.object({
   userId: objectId.required(),
 });
 
+const productIdParamSchema = Joi.object({
+  productId: objectId.required(),
+});
+const variantIdParamSchema = Joi.object({
+  variantId: objectId.required(),
+});
+
 module.exports = {
   roleIdParamSchema,
   userIdParamSchema,
+  productIdParamSchema,
+  variantIdParamSchema,
 };

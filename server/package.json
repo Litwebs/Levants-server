@@ -10,8 +10,8 @@
     "test": "jest --runInBand",
     "dev": "nodemon src/server.js",
     "seed-admin": "node scripts/seedAdmin.js",
-    "seed-business-info": "node scripts/seedBusinessInfo.js"
-    
+    "seed-business-info": "node scripts/seedBusinessInfo.js",
+    "seed-products": "node scripts/seedProducts.js"
   },
   "keywords": [],
   "author": "",
@@ -33,6 +33,7 @@
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "resend": "^6.9.1",
+    "slugify": "^1.6.6",
     "socket.io": "^4.8.3",
     "stripe": "^20.3.0",
     "swagger-jsdoc": "^6.2.8",

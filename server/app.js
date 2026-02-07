@@ -17,6 +17,9 @@ const { seedBusinessInfo } = require("./scripts/seedBusinessInfo");
 const authRoutes = require("./routes/auth.routes");
 const accessRoutes = require("./routes/access.routes");
 const businessInfoRoutes = require("./routes/businessInfo.routes");
+const publicProductRoutes = require("./routes/products.public.routes");
+const adminProductRoutes = require("./routes/products.admin.routes");
+const adminVariantRoutes = require("./routes/variants.admin.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -67,9 +70,17 @@ app.get("/health", (req, res) => {
 });
 
 // API routes
+// API routes
 app.use("/api/auth", authRoutes);
 app.use("/api/access", accessRoutes);
 app.use("/api/business-info", businessInfoRoutes);
+
+// 🟢 PUBLIC (frontend)
+app.use("/api/products", publicProductRoutes);
+
+// 🔐 ADMIN (dashboard)
+app.use("/api/admin/products", adminProductRoutes);
+app.use("/api/admin/products", adminVariantRoutes);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");

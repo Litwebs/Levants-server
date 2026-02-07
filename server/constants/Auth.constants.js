@@ -64,7 +64,13 @@ const PERMISSIONS = [
   "products.read",
   "products.update",
   "products.delete",
+  "products.publish",
 
+  "variants.create",
+  "variants.update",
+  "variants.delete",
+
+  "stock.update",
   // =========================
   // Customers
   // =========================

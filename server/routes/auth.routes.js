@@ -12,6 +12,7 @@ const authController = require("../controllers/auth.controller");
 const {
   loginLimiter,
   apiLimiter,
+  authLimiter,
 } = require("../middleware/rateLimit.middleware");
 const { userIdParamSchema } = require("../validators/common.validators");
 
@@ -40,7 +41,7 @@ router.get(
 // USED TO GET ACTIVE SESSIONS
 router.get(
   "/sessions",
-  apiLimiter,
+  authLimiter,
   requireAuth,
   asyncHandler(authController.GetSessions),
 );
@@ -48,7 +49,7 @@ router.get(
 // USED TO GET CURRENT USER INFO
 router.get(
   "/me",
-  apiLimiter,
+  authLimiter,
   requireAuth,
   asyncHandler(authController.GetAuthenticatedUser),
 );
@@ -98,7 +99,7 @@ router.post(
 // USED TO CHANGE PASSWORD IN APP (Authenticated)
 router.post(
   "/change-password",
-  apiLimiter,
+  authLimiter,
   requireAuth,
   validateBody(changePasswordSchema),
   asyncHandler(authController.ChangePassword),
@@ -107,7 +108,7 @@ router.post(
 // USED TO TOGGLE 2 FACTOR AUTHENTICATION (Authenticated)
 router.get(
   "/2fa/toggle",
-  apiLimiter,
+  authLimiter,
   requireAuth,
   validateBody(enable2FASchema),
   asyncHandler(authController.Toggle2FA),

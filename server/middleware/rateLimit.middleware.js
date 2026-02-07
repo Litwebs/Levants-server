@@ -18,12 +18,12 @@ const DEFAULT_LOGIN_MAX = intFromEnv("RATE_LIMIT_LOGIN_MAX", 7);
 
 const DEFAULT_AUTH_WINDOW_MS = intFromEnv(
   "RATE_LIMIT_AUTH_WINDOW_MS",
-  15 * 60 * 1000,
-); // 15 mins
-const DEFAULT_AUTH_MAX = intFromEnv("RATE_LIMIT_AUTH_MAX", 7);
+  60 * 1000,
+); // 1 min
+const DEFAULT_AUTH_MAX = intFromEnv("RATE_LIMIT_AUTH_MAX", 120);
 
 const DEFAULT_API_WINDOW_MS = intFromEnv("RATE_LIMIT_API_WINDOW_MS", 60 * 1000); // 1 min
-const DEFAULT_API_MAX = intFromEnv("RATE_LIMIT_API_MAX", 5);
+const DEFAULT_API_MAX = intFromEnv("RATE_LIMIT_API_MAX", 60);
 
 // Contact form submissions (public)
 const DEFAULT_SUBMISSIONS_WINDOW_MS = intFromEnv(
