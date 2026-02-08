@@ -20,6 +20,8 @@ const businessInfoRoutes = require("./routes/businessInfo.routes");
 const publicProductRoutes = require("./routes/products.public.routes");
 const adminProductRoutes = require("./routes/products.admin.routes");
 const adminVariantRoutes = require("./routes/variants.admin.routes");
+const publicCustomerRoutes = require("./routes/customers.public.routes");
+const adminCustomerRoutes = require("./routes/customers.admin.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -85,6 +87,10 @@ app.use("/api/admin/products", adminVariantRoutes);
 // Backward-compatible admin variants routes (older clients)
 app.use("/api/admin/variants", adminVariantRoutes);
 app.use("/api/admin/variants/products", adminVariantRoutes);
+
+// Customers
+app.use("/api/customers", publicCustomerRoutes);
+app.use("/api/admin/customers", adminCustomerRoutes);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");

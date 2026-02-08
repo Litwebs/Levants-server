@@ -18,9 +18,14 @@ const variantIdParamSchema = Joi.object({
   variantId: objectId.required(),
 });
 
+const customerIdParamSchema = Joi.object({
+  customerId: objectId.required(),
+});
+
 module.exports = {
   roleIdParamSchema,
   userIdParamSchema,
   productIdParamSchema,
   variantIdParamSchema,
+  customerIdParamSchema,
 };

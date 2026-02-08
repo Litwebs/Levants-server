@@ -81,12 +81,21 @@ function rateLimitHandler(req, res, _next, options) {
 /**
  * Generic factory if you ever want custom limiters in routes.
  */
-function createRateLimiter({ windowMs, max, message, keyGenerator, skip }) {
+function createRateLimiter({
+  windowMs,
+  max,
+  message,
+  keyGenerator,
+  skip,
+  legacyHeaders,
+  standardHeaders,
+}) {
   const options = {
     windowMs,
     max,
-    standardHeaders: true,
-    legacyHeaders: false,
+    standardHeaders:
+      typeof standardHeaders === "boolean" ? standardHeaders : true,
+    legacyHeaders: typeof legacyHeaders === "boolean" ? legacyHeaders : false,
     message,
     handler: rateLimitHandler,
   };

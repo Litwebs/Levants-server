@@ -58,26 +58,49 @@ async function GetProductById({ productId }) {
 /**
  * List products (admin)
  */
-async function ListProducts({ filters = {} }) {
+async function ListProducts({
+  page = 1,
+  pageSize = 20,
+  filters = {},
+  search,
+} = {}) {
   const query = {};
 
   if (filters.status) query.status = filters.status;
   if (filters.category) query.category = filters.category;
 
-  const products = await Product.find(query).sort({ createdAt: -1 }).lean();
+  if (search) {
+    const rx = new RegExp(search, "i");
+    query.$or = [{ name: rx }, { description: rx }, { slug: rx }];
+  }
+
+  const skip = (page - 1) * pageSize;
+
+  const [total, products] = await Promise.all([
+    Product.countDocuments(query),
+    Product.find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(pageSize)
+      .lean(),
+  ]);
 
   if (products.length === 0) {
     return {
       success: true,
       data: { products: [] },
+      meta: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
     };
   }
 
   const productIds = products.map((p) => p._id);
 
-  const variants = await Variant.find({
-    product: { $in: productIds },
-  }).lean();
+  const variants = await Variant.find({ product: { $in: productIds } }).lean();
 
   const variantsByProduct = variants.reduce((acc, v) => {
     acc[v.product] ??= [];
@@ -93,6 +116,12 @@ async function ListProducts({ filters = {} }) {
   return {
     success: true,
     data: { products: productsWithVariants },
+    meta: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
   };
 }
 

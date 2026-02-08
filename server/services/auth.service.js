@@ -364,7 +364,7 @@ const Logout = async ({ refreshToken, userId }) => {
   return Response(true, LOGGED_OUT, null);
 };
 
-const ForgotPassword = async ({ email, ip, userAgent }) => {
+const ForgotPassword = async ({ email, ip, userAgent } = {}) => {
   const normalizedEmail = email.trim().toLowerCase();
   const user = await User.findOne({ email: normalizedEmail });
 

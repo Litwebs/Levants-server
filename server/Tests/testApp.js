@@ -7,6 +7,8 @@ const businessInfoRoutes = require("../routes/businessInfo.routes");
 const publicProductRoutes = require("../routes/products.public.routes");
 const adminProductRoutes = require("../routes/products.admin.routes");
 const adminVariantRoutes = require("../routes/variants.admin.routes");
+const adminCustomerRoutes = require("../routes/customers.admin.routes");
+const publicCustomerRoutes = require("../routes/customers.public.routes");
 
 const notFoundMiddleware = require("../middleware/notFound.middleware");
 const errorMiddleware = require("../middleware/error.middleware");
@@ -32,6 +34,10 @@ app.use("/api/admin/products", adminVariantRoutes);
 // Backward-compatible admin variants routes (older tests/clients)
 app.use("/api/admin/variants", adminVariantRoutes);
 app.use("/api/admin/variants/products", adminVariantRoutes);
+
+// Customers
+app.use("/api/customers", publicCustomerRoutes);
+app.use("/api/admin/customers", adminCustomerRoutes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

@@ -44,13 +44,16 @@ const GetProduct = async (req, res) => {
  */
 const ListProducts = async (req, res) => {
   const result = await productService.ListProducts({
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 20,
+    search: req.query.search,
     filters: {
       status: req.query.status,
       category: req.query.category,
     },
   });
 
-  return sendOk(res, result.data);
+  return sendOk(res, result.data, { meta: result.meta });
 };
 
 /**
