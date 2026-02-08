@@ -1,7 +1,10 @@
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
+const { MongoMemoryReplSet } = require("mongodb-memory-server");
 const { seedDefaultRoles } = require("../scripts/seedDefaultRoles"); // ✅ ADD
 const { seedBusinessInfo } = require("../scripts/seedBusinessInfo"); // ✅ ADD
+
+process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_123";
+process.env.FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV || "localhost:3000";
 
 // Keep test output clean
 jest.spyOn(console, "log").mockImplementation(() => {});
@@ -16,6 +19,21 @@ jest.mock("stripe", () => {
     prices: {
       create: jest.fn(async () => ({ id: "price_test" })),
     },
+    checkout: {
+      sessions: {
+        create: jest.fn(async () => ({
+          id: "cs_test_123",
+          url: "https://checkout.stripe.com/test-session",
+        })),
+        retrieve: jest.fn(async () => ({
+          id: "cs_test_123",
+          payment_intent: "pi_test_456",
+        })),
+      },
+    },
+    refunds: {
+      create: jest.fn(async () => ({ id: "re_test_789", status: "succeeded" })),
+    },
   }));
 });
 
@@ -28,7 +46,9 @@ async function clearDatabase() {
 }
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryReplSet.create({
+    replSet: { count: 1 },
+  });
   const uri = mongo.getUri();
   await mongoose.connect(uri);
 });

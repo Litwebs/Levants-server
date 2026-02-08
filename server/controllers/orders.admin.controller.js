@@ -39,7 +39,7 @@ const UpdateOrderStatus = async (req, res) => {
 
 const RefundOrder = async (req, res) => {
   const { orderId } = req.params;
-  const { reason, restock } = req.body;
+  const { reason, restock } = req.body || {};
 
   const result = await refundService.RefundOrder({
     orderId,

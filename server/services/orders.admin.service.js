@@ -34,7 +34,7 @@ async function GetOrderById({ orderId }) {
     return { success: false, message: "Order not found" };
   }
 
-  return { success: true, data: { order } };
+  return { success: true, data: order };
 }
 
 async function UpdateOrderStatus({ orderId, status }) {
@@ -47,7 +47,7 @@ async function UpdateOrderStatus({ orderId, status }) {
   order.status = status;
   await order.save();
 
-  return { success: true, data: { order } };
+  return { success: true, data: order };
 }
 
 module.exports = {
