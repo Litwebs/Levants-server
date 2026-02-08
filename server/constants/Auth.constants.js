@@ -56,6 +56,7 @@ const PERMISSIONS = [
   "orders.read",
   "orders.update",
   "orders.delete",
+  "orders.refund",
 
   // =========================
   // Products

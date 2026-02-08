@@ -97,11 +97,13 @@ const orderSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        "pending", // created, awaiting payment
-        "paid", // payment confirmed via webhook
-        "failed", // payment failed
-        "cancelled", // manually cancelled
-        "refunded", // refunded later
+        "pending",
+        "paid",
+        "failed",
+        "cancelled",
+        "refund_pending",
+        "refunded",
+        "refund_failed",
       ],
       default: "pending",
       index: true,
@@ -128,6 +130,31 @@ const orderSchema = new mongoose.Schema(
 
     paidAt: {
       type: Date,
+    },
+    refund: {
+      refundedAt: {
+        type: Date,
+      },
+
+      refundedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+
+      reason: {
+        type: String,
+        maxlength: 500,
+      },
+
+      restock: {
+        type: Boolean,
+        default: false, // 👈 admin choice
+      },
+
+      stripeRefundId: {
+        type: String,
+        index: true,
+      },
     },
 
     metadata: {

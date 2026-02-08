@@ -29,10 +29,14 @@ async function CreateOrder({ customerId, items } = {}) {
 
   try {
     if (!customerId) {
-      throw new Error("CUSTOMER_REQUIRED");
+      await session.abortTransaction();
+      session.endSession();
+      return { success: false, message: "customerId is required" };
     }
     if (!Array.isArray(items) || items.length === 0) {
-      throw new Error("ITEMS_REQUIRED");
+      await session.abortTransaction();
+      session.endSession();
+      return { success: false, message: "items is required" };
     }
 
     // 1️⃣ Resolve variants + reserve stock
@@ -42,7 +46,9 @@ async function CreateOrder({ customerId, items } = {}) {
     for (const item of items) {
       const quantity = Number(item.quantity);
       if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error("INVALID_QUANTITY");
+        await session.abortTransaction();
+        session.endSession();
+        return { success: false, message: "Invalid quantity" };
       }
 
       const variant = await ProductVariant.findOneAndUpdate(
@@ -71,7 +77,9 @@ async function CreateOrder({ customerId, items } = {}) {
       );
 
       if (!variant) {
-        throw new Error("INSUFFICIENT_STOCK");
+        await session.abortTransaction();
+        session.endSession();
+        return { success: false, message: "Not enough stock available" };
       }
 
       const lineSubtotal = variant.price * quantity;
@@ -149,20 +157,10 @@ async function CreateOrder({ customerId, items } = {}) {
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
-    console.error("CreateOrder error:", err);
 
     return {
       success: false,
-      message:
-        err.message === "INSUFFICIENT_STOCK"
-          ? "Not enough stock available"
-          : err.message === "CUSTOMER_REQUIRED"
-            ? "customerId is required"
-            : err.message === "ITEMS_REQUIRED"
-              ? "items is required"
-              : err.message === "INVALID_QUANTITY"
-                ? "Invalid quantity"
-                : "Failed to create order",
+      message: "Failed to create order",
     };
   }
 }
