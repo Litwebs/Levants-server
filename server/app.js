@@ -12,6 +12,7 @@ const errorMiddleware = require("./middleware/error.middleware");
 const notFoundMiddleware = require("./middleware/notFound.middleware");
 const { seedDefaultRoles } = require("./scripts/seedDefaultRoles");
 const { seedBusinessInfo } = require("./scripts/seedBusinessInfo");
+const stripeWebhookRoutes = require("./routes/stripe.webhook.routes");
 
 // Routes
 const authRoutes = require("./routes/auth.routes");
@@ -22,6 +23,8 @@ const adminProductRoutes = require("./routes/products.admin.routes");
 const adminVariantRoutes = require("./routes/variants.admin.routes");
 const publicCustomerRoutes = require("./routes/customers.public.routes");
 const adminCustomerRoutes = require("./routes/customers.admin.routes");
+const adminOrderRoutes = require("./routes/orders.admin.routes");
+const publicOrderRoutes = require("./routes/orders.public.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -45,6 +48,7 @@ app.use(
 );
 
 // ✅ Stripe webhook routes MUST be before express.json()
+app.use("/api/webhooks/stripe", stripeWebhookRoutes);
 
 // Body parsing (after webhooks)
 app.use(express.json({ limit: "10mb" }));
@@ -91,6 +95,10 @@ app.use("/api/admin/variants/products", adminVariantRoutes);
 // Customers
 app.use("/api/customers", publicCustomerRoutes);
 app.use("/api/admin/customers", adminCustomerRoutes);
+
+// Orders
+app.use("/api/admin/orders", adminOrderRoutes);
+app.use("/api/orders", publicOrderRoutes);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");
