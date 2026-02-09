@@ -24,6 +24,7 @@ async function ExpirePendingOrders() {
       }
 
       order.status = "cancelled";
+      order.expiresAt = now;
       await order.save({ session });
     }
 

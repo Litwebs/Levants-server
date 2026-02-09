@@ -1,6 +1,10 @@
 const cron = require("node-cron");
 const { ExpirePendingOrders } = require("../services/orders.cron.service");
 
+async function runOrderExpirationJob() {
+  return ExpirePendingOrders();
+}
+
 function startOrderExpirationCron() {
   // Every minute (safe + common)
   cron.schedule("* * * * *", async () => {
@@ -15,5 +19,6 @@ function startOrderExpirationCron() {
 }
 
 module.exports = {
+  runOrderExpirationJob,
   startOrderExpirationCron,
 };

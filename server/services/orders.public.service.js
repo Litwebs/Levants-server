@@ -111,7 +111,7 @@ async function CreateOrder({ customerId, items } = {}) {
           total,
           status: "pending",
           reservationExpiresAt: new Date(
-            Date.now() + 15 * 60 * 1000, // 15 minutes
+            Date.now() + 1 * 60 * 1000, // 1 minute
           ),
         },
       ],

@@ -11,6 +11,7 @@ const adminCustomerRoutes = require("../routes/customers.admin.routes");
 const publicCustomerRoutes = require("../routes/customers.public.routes");
 const publicOrderRoutes = require("../routes/orders.public.routes");
 const adminOrderRoutes = require("../routes/orders.admin.routes");
+const stripeWebhookRoutes = require("../routes/stripe.webhook.routes");
 
 const notFoundMiddleware = require("../middleware/notFound.middleware");
 const errorMiddleware = require("../middleware/error.middleware");
@@ -18,6 +19,10 @@ const errorMiddleware = require("../middleware/error.middleware");
 const app = express();
 
 app.set("trust proxy", 1);
+
+// Stripe webhook must see RAW body, so mount before express.json
+app.use("/api/webhooks/stripe", stripeWebhookRoutes);
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());

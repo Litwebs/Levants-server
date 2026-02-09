@@ -12,6 +12,18 @@ jest.spyOn(console, "error").mockImplementation(() => {});
 
 jest.mock("stripe", () => {
   return jest.fn(() => ({
+    webhooks: {
+      constructEvent: jest.fn((payload) => {
+        // Payload can be Buffer (raw-body) or already-parsed object
+        if (Buffer.isBuffer(payload)) {
+          return JSON.parse(payload.toString("utf8"));
+        }
+        if (typeof payload === "string") {
+          return JSON.parse(payload);
+        }
+        return payload;
+      }),
+    },
     products: {
       create: jest.fn(async () => ({ id: "prod_test" })),
       update: jest.fn(async () => ({})),

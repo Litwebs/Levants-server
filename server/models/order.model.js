@@ -115,6 +115,12 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    // When a pending order is expired/cancelled by cron
+    expiresAt: {
+      type: Date,
+      index: true,
+    },
+
     /**
      * Stripe references
      */
