@@ -230,9 +230,24 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding-left: var(--space-3);
+  height: 40px;
+  padding: 0 var(--space-2) 0 var(--space-3);
   border-left: 1px solid var(--color-gray-200);
+  background: none;
+  border: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
 }
+
+.userMenu:hover {
+  background-color: var(--color-gray-100);
+}
+
 
 .avatar {
   width: 36px;
