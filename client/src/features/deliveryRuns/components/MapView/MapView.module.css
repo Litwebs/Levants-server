@@ -1,0 +1,215 @@
+.container {
+  display: grid;
+  grid-template-columns: 200px 1fr 280px;
+  gap: var(--space-4);
+  height: 500px;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.vanSelector {
+  padding: var(--space-4);
+  border-right: 1px solid var(--color-gray-200);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.vanSelectorTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-700);
+  margin-bottom: var(--space-2);
+}
+
+.vanButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.vanButton:hover {
+  background: var(--color-gray-50);
+}
+
+.vanButton.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+.vanDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.vanDot.van1 {
+  background: var(--color-primary);
+}
+
+.vanDot.van2 {
+  background: var(--color-secondary);
+}
+
+.vanDot.van3 {
+  background: var(--color-info);
+}
+
+.mapContainer {
+  position: relative;
+  height: 100%;
+}
+
+.map {
+  height: 100%;
+  width: 100%;
+}
+
+.stopsList {
+  border-left: 1px solid var(--color-gray-200);
+  display: flex;
+  flex-direction: column;
+}
+
+.stopsHeader {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-gray-200);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-700);
+}
+
+.stopsScroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.stopItem {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-gray-100);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.stopItem:hover,
+.stopItem.active {
+  background: var(--color-gray-50);
+}
+
+.stopSequence {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-gray-200);
+  font-size: var(--text-xs);
+  font-weight: var(--font-bold);
+  color: var(--color-gray-700);
+  margin-right: var(--space-2);
+}
+
+.stopSequence.van1 {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.stopSequence.van2 {
+  background: var(--color-secondary);
+  color: var(--color-white);
+}
+
+.stopSequence.van3 {
+  background: var(--color-info);
+  color: var(--color-white);
+}
+
+.stopName {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-900);
+}
+
+.stopPostcode {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+  margin-left: var(--space-8);
+}
+
+.emptyStops {
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--color-gray-500);
+  font-size: var(--text-sm);
+}
+
+/* Leaflet overrides */
+:global(.leaflet-container) {
+  font-family: var(--font-body);
+}
+
+:global(.leaflet-popup-content-wrapper) {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+:global(.leaflet-popup-content) {
+  margin: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.popupTitle {
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+  margin-bottom: var(--space-1);
+}
+
+.popupDetail {
+  color: var(--color-gray-600);
+  font-size: var(--text-xs);
+}
+
+.popupItems {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-gray-200);
+  font-size: var(--text-xs);
+  color: var(--color-gray-600);
+}
+
+@media (max-width: 1024px) {
+  .container {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 400px auto;
+    height: auto;
+  }
+  
+  .vanSelector {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--color-gray-200);
+  }
+  
+  .vanSelectorTitle {
+    width: 100%;
+  }
+  
+  .stopsList {
+    border-left: none;
+    border-top: 1px solid var(--color-gray-200);
+    max-height: 300px;
+  }
+}

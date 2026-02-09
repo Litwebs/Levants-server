@@ -1,0 +1,614 @@
+/* Deliveries Page Styles */
+
+.page {
+  padding: var(--space-6);
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+}
+
+/* Header */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-6);
+  gap: var(--space-4);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-gray-900);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  margin: var(--space-1) 0 0;
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--space-3);
+}
+
+/* Tab Navigation */
+.tabNav {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-gray-200);
+  padding-bottom: var(--space-2);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-500);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tab:hover {
+  color: var(--color-gray-700);
+  background: var(--color-gray-100);
+}
+
+.activeTab {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+.activeTab:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+/* Stats Grid */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.statCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.statIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+}
+
+.statContent {
+  display: flex;
+  flex-direction: column;
+}
+
+.statValue {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-gray-900);
+}
+
+.statLabel {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+/* Filters */
+.dateFilter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+}
+
+.dateFilter svg {
+  color: var(--color-gray-400);
+}
+
+.dateInput {
+  border: none;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+  outline: none;
+}
+
+.searchInput {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  min-width: 280px;
+}
+
+.searchInput svg {
+  color: var(--color-gray-400);
+}
+
+.search {
+  border: none;
+  background: transparent;
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+  outline: none;
+  width: 100%;
+}
+
+.search::placeholder {
+  color: var(--color-gray-400);
+}
+
+/* Routes List */
+.routesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.routeCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.routeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-bottom: 1px solid transparent;
+}
+
+.expandBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--color-gray-400);
+  transition: all var(--transition-fast);
+}
+
+.expandBtn:hover {
+  background: var(--color-gray-100);
+  color: var(--color-gray-600);
+}
+
+.routeInfo {
+  flex: 1;
+}
+
+.routeTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+}
+
+.routeTitle svg {
+  color: var(--color-gray-400);
+}
+
+.routeDate {
+  font-size: var(--text-sm);
+  font-weight: var(--font-normal);
+  color: var(--color-gray-500);
+  margin-left: var(--space-2);
+}
+
+.routeMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-1);
+}
+
+.stopCount,
+.completedCount {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+.completedCount {
+  color: var(--color-success);
+}
+
+.driverSection {
+  min-width: 160px;
+}
+
+.driverInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+}
+
+.driverInfo svg {
+  color: var(--color-gray-400);
+}
+
+.driverSelect {
+  min-width: 140px;
+}
+
+.routeStatus {
+  min-width: 100px;
+}
+
+.routeActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Stops Section */
+.stopsSection {
+  border-top: 1px solid var(--color-gray-200);
+  background: var(--color-gray-50);
+  padding: var(--space-4);
+}
+
+.stopsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.stopItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gray-200);
+}
+
+.stopOrder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--color-primary);
+  color: var(--color-white);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.stopDetails {
+  flex: 1;
+}
+
+.stopName {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-900);
+}
+
+.stopAddress,
+.stopPhone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  margin-top: var(--space-1);
+}
+
+.stopAddress svg,
+.stopPhone svg {
+  color: var(--color-gray-400);
+  flex-shrink: 0;
+}
+
+.stopStatus {
+  min-width: 80px;
+}
+
+.stopActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Slots Grid */
+.slotsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+
+.slotCard {
+  padding: var(--space-4);
+}
+
+.slotCard.inactive {
+  opacity: 0.6;
+}
+
+.slotHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-4);
+}
+
+.slotTime {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+}
+
+.slotTime svg {
+  color: var(--color-primary);
+}
+
+.slotCapacity {
+  margin-bottom: var(--space-4);
+}
+
+.capacityBar {
+  height: 8px;
+  background: var(--color-gray-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--space-2);
+}
+
+.capacityFill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--transition-base);
+}
+
+.capacityText {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.available {
+  color: var(--color-success);
+}
+
+.slotMeta {
+  margin-bottom: var(--space-4);
+}
+
+.cutoff {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+.cutoff svg {
+  color: var(--color-warning);
+}
+
+.slotActions {
+  display: flex;
+  gap: var(--space-2);
+  border-top: 1px solid var(--color-gray-200);
+  padding-top: var(--space-3);
+}
+
+/* Empty State */
+.emptyState {
+  padding: var(--space-12);
+}
+
+.emptyContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-4);
+}
+
+.emptyIcon {
+  color: var(--color-gray-300);
+}
+
+.emptyContent h3 {
+  font-size: var(--text-lg);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-700);
+  margin: 0;
+}
+
+.emptyContent p {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  margin: 0;
+}
+
+/* Pending Orders Preview */
+.pendingOrdersPreview {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-gray-50);
+  border-radius: var(--radius-md);
+}
+
+.pendingOrdersPreview h4 {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-700);
+  margin: 0 0 var(--space-3);
+}
+
+.previewList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.previewItem {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-white);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+}
+
+.noOrders {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Detail Stops List */
+.detailStopsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.detailStopItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  background: var(--color-gray-50);
+  border-radius: var(--radius-md);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .page {
+    padding: var(--space-4);
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .headerActions {
+    justify-content: flex-end;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .routeHeader {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+  }
+
+  .routeInfo {
+    flex: 0 0 100%;
+    order: 1;
+    margin-left: 40px;
+  }
+
+  .expandBtn {
+    order: 0;
+  }
+
+  .driverSection {
+    order: 2;
+  }
+
+  .routeStatus {
+    order: 3;
+  }
+
+  .routeActions {
+    order: 4;
+    flex: 0 0 100%;
+    margin-left: 40px;
+    justify-content: flex-start;
+  }
+
+  .stopItem {
+    flex-wrap: wrap;
+  }
+
+  .stopDetails {
+    flex: 0 0 calc(100% - 44px);
+  }
+
+  .stopStatus,
+  .stopActions {
+    margin-left: 44px;
+    margin-top: var(--space-2);
+  }
+
+  .searchInput {
+    min-width: 100%;
+  }
+
+  .slotsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tabNav {
+    flex-direction: column;
+  }
+
+  .tab {
+    justify-content: center;
+  }
+}
