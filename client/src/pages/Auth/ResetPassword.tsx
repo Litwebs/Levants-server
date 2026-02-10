@@ -13,21 +13,15 @@ import {
   Input,
 } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
+import { useAuth } from "@/context/Auth/AuthContext";
 
 import styles from "./ResetPassword.module.css";
-
-type VerifyTokenResponse =
-  | { success: true; message?: string; data: null }
-  | { success: false; message?: string; data?: { valid?: boolean } | null };
-
-type ResetPasswordResponse =
-  | { success: true; message?: string; data: null }
-  | { success: false; message?: string; data?: unknown };
 
 const ResetPassword: React.FC = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();
+  const { resetPassword, resetPasswordVerifyToken } = useAuth();
 
   const token = useMemo(() => searchParams.get("token") || "", [searchParams]);
 
@@ -38,6 +32,7 @@ const ResetPassword: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Check if the token in the URL is valid on component mount
   useEffect(() => {
     const verify = async () => {
       if (!token) {
@@ -48,17 +43,14 @@ const ResetPassword: React.FC = () => {
 
       setIsVerifying(true);
       try {
-        const res = await fetch(
-          `/api/auth/reset-password/verify?token=${encodeURIComponent(token)}`,
-          { method: "GET" },
-        );
+        const res = await resetPasswordVerifyToken(token);
 
-        const body = (await res
-          .json()
-          .catch(() => null)) as VerifyTokenResponse | null;
-
-        if (!res.ok || !body || ("success" in body && body.success === false)) {
+        if (!res) {
           setIsTokenValid(false);
+          showToast({
+            type: "error",
+            title: "This reset link is invalid or expired.",
+          });
           return;
         }
 
@@ -71,7 +63,7 @@ const ResetPassword: React.FC = () => {
     };
 
     void verify();
-  }, [token]);
+  }, [token, resetPasswordVerifyToken, showToast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,23 +85,12 @@ const ResetPassword: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, newPassword }),
+      const res = await resetPassword({ token, newPassword });
+      showToast({
+        type: res.success ? "success" : "error",
+        title:
+          res.message ?? (res.success ? "Password updated" : "Request failed"),
       });
-
-      const body = (await res
-        .json()
-        .catch(() => null)) as ResetPasswordResponse | null;
-
-      if (!res.ok || !body || ("success" in body && body.success === false)) {
-        const msg = body?.message || "Password reset failed";
-        showToast({ type: "error", title: msg });
-        return;
-      }
-
-      showToast({ type: "success", title: body.message || "Password updated" });
       navigate("/login");
     } catch {
       showToast({ type: "error", title: "Network error. Please try again." });

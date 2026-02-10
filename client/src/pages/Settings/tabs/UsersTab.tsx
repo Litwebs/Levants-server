@@ -152,14 +152,6 @@ const UsersTab = ({
                         <Eye size={16} />
                       )}
                     </button>
-
-                    {/* <button
-                      className={`${styles.actionBtn} ${styles.deleteBtn}`}
-                      onClick={() => handleDeleteUser(getUserId(user))}
-                      title="Delete user"
-                    >
-                      <Trash2 size={16} />
-                    </button> */}
                   </div>
                 </TableCell>
               </TableRow>

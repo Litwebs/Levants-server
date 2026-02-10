@@ -13,47 +13,31 @@ import {
   Input,
 } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
-
+import { useAuth } from "@/context/Auth/AuthContext";
 import styles from "./ForgotPassword.module.css";
-
-type ForgotPasswordResponse =
-  | { success: true; message?: string; data: null }
-  | { success: false; message?: string; data?: unknown };
 
 const ForgotPassword: React.FC = () => {
   const { showToast } = useToast();
+  const { forgotPassword } = useAuth();
 
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!email.trim()) {
       showToast({ type: "error", title: "Email is required" });
       return;
     }
-
     setIsLoading(true);
+
     try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+      const res = await forgotPassword(email);
+
+      showToast({
+        type: res.success ? "success" : "error",
+        title: res.message ?? (res.success ? "Email sent" : "Request failed"),
       });
-
-      const body = (await res
-        .json()
-        .catch(() => null)) as ForgotPasswordResponse | null;
-
-      if (!res.ok || !body || ("success" in body && body.success === false)) {
-        const msg = body?.message || "Request failed";
-        showToast({ type: "error", title: msg });
-        return;
-      }
-
-      // API intentionally does not reveal whether the account exists.
-      showToast({ type: "success", title: body.message || "Check your email" });
       setEmail("");
     } catch {
       showToast({ type: "error", title: "Network error. Please try again." });

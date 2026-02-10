@@ -16,7 +16,13 @@ import AuthReducer, {
   AUTH_2FA_REQUIRED,
   CLEAR_2FA,
 } from "./AuthReducer";
-import { AuthState, initialAuthState, User, Session } from "./constants";
+import {
+  ApiResponse,
+  AuthState,
+  initialAuthState,
+  User,
+  Session,
+} from "./constants";
 import api from "../api";
 
 type ApiEnvelope<T> = {
@@ -66,8 +72,13 @@ type AuthContextType = AuthState & {
     userId: string,
     status: "active" | "disabled",
   ) => Promise<void>;
-
   updateSelf: (data: Partial<User>) => Promise<User>;
+  forgotPassword: (email: string) => Promise<ApiResponse<null>>;
+  resetPassword: (data: {
+    token: string;
+    newPassword: string;
+  }) => Promise<ApiResponse<null>>;
+  resetPasswordVerifyToken: (token: string) => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -416,6 +427,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return data.user;
   };
 
+  const forgotPassword = async (email: string): Promise<ApiResponse<null>> => {
+    const res = await api.post("/auth/forgot-password", { email });
+    return res.data as ApiResponse<null>;
+  };
+
+  const resetPassword = async (data: {
+    token: string;
+    newPassword: string;
+  }): Promise<ApiResponse<null>> => {
+    const res = await api.post("/auth/reset-password", {
+      token: data.token,
+      newPassword: data.newPassword,
+    });
+    return res.data as ApiResponse<null>;
+  };
+
+  const resetPasswordVerifyToken = async (token: string) => {
+    try {
+      const res = await api.get(`/auth/reset-password/verify?token=${token}`);
+      return res.data.success ?? false;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     checkAuthentication();
   }, [checkAuthentication]);
@@ -439,6 +475,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         updateUser,
         updateUserStatus,
         updateSelf,
+        forgotPassword,
+        resetPassword,
+        resetPasswordVerifyToken,
       }}
     >
       {children}

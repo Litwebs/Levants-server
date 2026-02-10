@@ -1,5 +1,11 @@
 // src/context/Auth/constants.ts
 
+export type ApiResponse<TData = null> = {
+  success: boolean;
+  message?: string;
+  data: TData;
+};
+
 /* =======================
    USER PREFERENCES
 ======================= */
