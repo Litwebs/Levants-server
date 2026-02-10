@@ -94,10 +94,31 @@ const UpdateCustomer = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+/**
+ * List orders by customer (admin)
+ */
+const ListOrdersByCustomer = async (req, res) => {
+  const result = await service.ListOrdersByCustomer({
+    customerId: req.params.customerId,
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 20,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data, { meta: result.meta });
+};
+
 module.exports = {
   CreateCustomer,
   CreateGuestCustomer,
   GetCustomerById,
   ListCustomers,
   UpdateCustomer,
+  ListOrdersByCustomer,
 };

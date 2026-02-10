@@ -1,5 +1,6 @@
 const Customer = require("../models/customer.model");
 const mongoose = require("mongoose");
+const Order = require("../models/order.model");
 
 /**
  * Find or create guest customer by email
@@ -188,6 +189,89 @@ async function UpdateCustomer({ customerId, body } = {}) {
   return { success: true, data: { customer } };
 }
 
+/**
+ * List orders by customer (admin)
+ */
+async function ListOrdersByCustomer({
+  customerId,
+  page = 1,
+  pageSize = 20,
+} = {}) {
+  if (!customerId) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "customerId is required",
+    };
+  }
+
+  if (!mongoose.isValidObjectId(customerId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid customerId",
+    };
+  }
+
+  const customerObjectId = new mongoose.Types.ObjectId(customerId);
+  const skip = (page - 1) * pageSize;
+
+  const listFilter = {
+    customer: customerId, // OK for find()
+    status: { $ne: "cancelled" },
+  };
+
+  const [total, orders, paidStats] = await Promise.all([
+    Order.countDocuments(listFilter),
+
+    Order.find(listFilter).sort({ createdAt: -1 }).skip(skip).limit(pageSize),
+
+    Order.aggregate([
+      {
+        $match: {
+          customer: customerObjectId, // 👈 REQUIRED
+          status: "paid",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalSpent: { $sum: "$total" },
+          paidOrderCount: { $sum: 1 },
+          averageOrderValue: { $avg: "$total" },
+        },
+      },
+    ]),
+  ]);
+
+  const stats = paidStats[0] || {
+    totalSpent: 0,
+    paidOrderCount: 0,
+    averageOrderValue: 0,
+  };
+
+  return {
+    success: true,
+    data: {
+      orders,
+      items: orders,
+      stats: {
+        totalSpent: Number(stats.totalSpent.toFixed(2)),
+        paidOrderCount: stats.paidOrderCount,
+        averageOrderValue: stats.paidOrderCount
+          ? Number(stats.averageOrderValue.toFixed(2))
+          : 0,
+      },
+    },
+    meta: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  };
+}
+
 // === Utils ===
 
 function stripHtml(value) {
@@ -214,4 +298,5 @@ module.exports = {
   GetCustomerById,
   ListCustomers,
   UpdateCustomer,
+  ListOrdersByCustomer,
 };

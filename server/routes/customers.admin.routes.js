@@ -46,4 +46,13 @@ router.put(
   asyncHandler(controller.UpdateCustomer),
 );
 
+// Get orders by customer (admin)
+router.get(
+  "/:customerId/orders",
+  requirePermission("customers.*"),
+  validateParams(customerIdParamSchema),
+  validateQuery(listCustomersQuerySchema), // reuse page/pageSize/search pattern
+  asyncHandler(controller.ListOrdersByCustomer),
+);
+
 module.exports = router;
