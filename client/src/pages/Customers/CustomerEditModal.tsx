@@ -23,27 +23,27 @@ const CustomerEditModal = ({
       size="md"
     >
       <FormGrid>
-        <FormRow label="Full Name">
+        <FormRow label="First Name">
           <input
             type="text"
-            value={editForm.name || ""}
+            value={editForm.firstName || ""}
             onChange={(e) =>
               setEditForm((prev: any) => ({
                 ...prev,
-                name: e.target.value,
+                firstName: e.target.value,
               }))
             }
           />
         </FormRow>
 
-        <FormRow label="Email Address">
+        <FormRow label="Last Name">
           <input
-            type="email"
-            value={editForm.email || ""}
+            type="text"
+            value={editForm.lastName || ""}
             onChange={(e) =>
               setEditForm((prev: any) => ({
                 ...prev,
-                email: e.target.value,
+                lastName: e.target.value,
               }))
             }
           />
@@ -62,34 +62,83 @@ const CustomerEditModal = ({
           />
         </FormRow>
 
-        <FormRow label="Marketing">
-          <label className={styles.checkboxLabel}>
-            <input
-              type="checkbox"
-              checked={editForm.marketingOptIn || false}
-              onChange={(e) =>
-                setEditForm((prev: any) => ({
-                  ...prev,
-                  marketingOptIn: e.target.checked,
-                }))
-              }
-            />
-            Opted in to marketing emails
-          </label>
-        </FormRow>
-
-        <FormRow label="Notes">
-          <textarea
-            className={styles.notesTextarea}
-            rows={3}
-            value={editForm.notes || ""}
+        <FormRow label="New Address Line 1">
+          <input
+            type="text"
+            value={editForm.address?.line1 || ""}
             onChange={(e) =>
               setEditForm((prev: any) => ({
                 ...prev,
-                notes: e.target.value,
+                address: {
+                  ...(prev.address || {}),
+                  line1: e.target.value,
+                },
               }))
             }
-            placeholder="Add notes about this customer..."
+          />
+        </FormRow>
+
+        <FormRow label="New Address Line 2">
+          <input
+            type="text"
+            value={editForm.address?.line2 || ""}
+            onChange={(e) =>
+              setEditForm((prev: any) => ({
+                ...prev,
+                address: {
+                  ...(prev.address || {}),
+                  line2: e.target.value,
+                },
+              }))
+            }
+          />
+        </FormRow>
+
+        <FormRow label="City">
+          <input
+            type="text"
+            value={editForm.address?.city || ""}
+            onChange={(e) =>
+              setEditForm((prev: any) => ({
+                ...prev,
+                address: {
+                  ...(prev.address || {}),
+                  city: e.target.value,
+                },
+              }))
+            }
+          />
+        </FormRow>
+
+        <FormRow label="Postcode">
+          <input
+            type="text"
+            value={editForm.address?.postcode || ""}
+            onChange={(e) =>
+              setEditForm((prev: any) => ({
+                ...prev,
+                address: {
+                  ...(prev.address || {}),
+                  postcode: e.target.value,
+                },
+              }))
+            }
+          />
+        </FormRow>
+
+        <FormRow label="Country">
+          <input
+            type="text"
+            value={editForm.address?.country || ""}
+            onChange={(e) =>
+              setEditForm((prev: any) => ({
+                ...prev,
+                address: {
+                  ...(prev.address || {}),
+                  country: e.target.value,
+                },
+              }))
+            }
           />
         </FormRow>
       </FormGrid>

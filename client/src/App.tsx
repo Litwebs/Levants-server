@@ -23,6 +23,7 @@ import TwoFactor from "./pages/Auth/TwoFactor";
 import VerifyEmailChange from "./pages/Auth/VerifyEmailChange";
 import { AuthProvider, useAuth } from "./context/Auth/AuthContext";
 import { UsersProvider } from "./context/Users";
+import { CustomersProvider } from "./context/Customers";
 import {
   DeliveryRunsPage,
   DeliveryRunDetailsPage,
@@ -55,57 +56,59 @@ const App = () => (
   <ToastProvider>
     <AuthProvider>
       <UsersProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route
-              path="/login"
-              element={
-                <PublicOnly>
-                  <Login />
-                </PublicOnly>
-              }
-            />
-
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route
-              path="/verify-email-change"
-              element={<VerifyEmailChange />}
-            />
-            <Route path="/2fa" element={<TwoFactor />} />
-
-            <Route
-              element={
-                <RequireAuth>
-                  <AdminShell />
-                </RequireAuth>
-              }
-            >
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/orders" element={<Orders />} />
-              <Route path="/deliveries" element={<Deliveries />} />
-              <Route path="/delivery-runs" element={<DeliveryRunsPage />} />
+        <CustomersProvider>
+          <BrowserRouter>
+            <Routes>
               <Route
-                path="/delivery-runs/:id"
-                element={<DeliveryRunDetailsPage />}
-              />
-              <Route path="/products" element={<Products />} />
-              <Route path="/customers" element={<Customers />} />
-              <Route path="/promotions" element={<Promotions />} />
-              <Route
-                path="/content"
+                path="/login"
                 element={
-                  <ComingSoon
-                    title="Content Management"
-                    description="Manage website content, banners, and marketing materials."
-                  />
+                  <PublicOnly>
+                    <Login />
+                  </PublicOnly>
                 }
               />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/settings" element={<Settings />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
+
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route
+                path="/verify-email-change"
+                element={<VerifyEmailChange />}
+              />
+              <Route path="/2fa" element={<TwoFactor />} />
+
+              <Route
+                element={
+                  <RequireAuth>
+                    <AdminShell />
+                  </RequireAuth>
+                }
+              >
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/orders" element={<Orders />} />
+                <Route path="/deliveries" element={<Deliveries />} />
+                <Route path="/delivery-runs" element={<DeliveryRunsPage />} />
+                <Route
+                  path="/delivery-runs/:id"
+                  element={<DeliveryRunDetailsPage />}
+                />
+                <Route path="/products" element={<Products />} />
+                <Route path="/customers" element={<Customers />} />
+                <Route path="/promotions" element={<Promotions />} />
+                <Route
+                  path="/content"
+                  element={
+                    <ComingSoon
+                      title="Content Management"
+                      description="Manage website content, banners, and marketing materials."
+                    />
+                  }
+                />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/settings" element={<Settings />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </CustomersProvider>
       </UsersProvider>
     </AuthProvider>
   </ToastProvider>

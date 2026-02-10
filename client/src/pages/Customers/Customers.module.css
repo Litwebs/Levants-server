@@ -4,6 +4,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  /* Fit within AdminLayout content area (viewport minus topbar and content padding) */
+  height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
+  min-height: 0;
+  overflow: hidden;
   box-sizing: border-box;
 }
 
@@ -259,6 +263,127 @@
   padding-top: var(--space-4);
 }
 
+/* Customers Table: scroll inside table + pagination */
+.tableCard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tableScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tableArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tableLoadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.tableLoadingOverlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-white);
+  opacity: 0.55;
+}
+
+.tableLoadingInner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-3);
+  box-shadow: var(--shadow-xs);
+}
+
+.spinnerIcon {
+  animation: spin 1s linear infinite;
+}
+
+.tableScroll thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.contactLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.emptyTableCell {
+  color: var(--color-gray-500);
+}
+
+.paginationFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.paginationInfo {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: var(--space-3);
+}
+
+.pageSizeSelect {
+  min-width: 140px;
+}
+
+.pageButtons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.pageButtons button {
+  min-width: 88px;
+  justify-content: center;
+}
+
+
+.pageLabel {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+}
+
 .detailSection h3 {
   font-size: var(--text-sm);
   font-weight: 600;
@@ -396,6 +521,38 @@
   margin: 0;
 }
 
+.orderPagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.orderPaginationInfo {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.orderPaginationControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.orderPageSizeSelect {
+  min-width: 140px;
+}
+
+.orderPageLabel {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+}
+
 .customerNotes {
   margin: 0;
   padding: var(--space-2);
@@ -527,3 +684,5 @@
 .notesTextarea::placeholder {
   color: var(--color-gray-400);
 }
+
+

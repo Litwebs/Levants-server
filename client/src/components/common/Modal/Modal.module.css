@@ -14,7 +14,7 @@
   background-color: var(--color-white);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-xl);
-  max-height: calc(100vh - 2rem);
+  max-height: calc(100vh - 10rem);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -64,9 +64,10 @@
 }
 
 .content {
-  padding: var(--space-6);
-  overflow-y: auto;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
 }
 
 .footer {
@@ -76,13 +77,10 @@
   gap: var(--space-3);
   padding: var(--space-5) var(--space-6);
   border-top: 1px solid var(--color-gray-200);
-  background-color: var(--color-gray-50);
-
-  /* ModalFooter is rendered inside .content (which has padding).
-     These negative margins allow the footer to “full-bleed” to the modal edges
-     and sit flush with the bottom, matching expected dialog layouts. */
-  margin: var(--space-6) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  background-color: var(--color-white);
+  flex-shrink: 0;
 }
+
 
 @keyframes fadeIn {
   from { opacity: 0; }
