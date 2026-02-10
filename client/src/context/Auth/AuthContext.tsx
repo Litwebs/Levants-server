@@ -43,6 +43,11 @@ type AuthContextType = AuthState & {
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 
+  confirmEmailChange: (data: {
+    userId: string;
+    token: string;
+  }) => Promise<void>;
+
   getSessions: () => Promise<Session[]>;
   revokeSession: (sessionId: string) => Promise<void>;
 
@@ -67,8 +72,33 @@ type AuthContextType = AuthState & {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const TEMP_TOKEN_STORAGE_KEY = "levants.tempToken";
+const TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY = "levants.tempTokenExpiresAt";
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [state, dispatch] = useReducer(AuthReducer, initialAuthState);
+  const [state, dispatch] = useReducer(
+    AuthReducer,
+    initialAuthState,
+    (base) => {
+      if (typeof window === "undefined") return base;
+
+      const tempToken = window.sessionStorage.getItem(TEMP_TOKEN_STORAGE_KEY);
+      const expiresAt = window.sessionStorage.getItem(
+        TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY,
+      );
+
+      if (!tempToken) return base;
+
+      return {
+        ...base,
+        loading: false,
+        twoFactorPending: {
+          tempToken,
+          expiresAt: expiresAt || null,
+        },
+      };
+    },
+  );
 
   const isHydratedUser = (candidate: unknown): candidate is User => {
     if (!candidate || typeof candidate !== "object") return false;
@@ -93,7 +123,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const checkAuthentication = useCallback(async (): Promise<boolean> => {
-    const pending2FA = !!state.twoFactorPending?.tempToken;
+    const storedTempToken =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem(TEMP_TOKEN_STORAGE_KEY)
+        : null;
+    const storedExpiresAt =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY)
+        : null;
+
+    const pendingPayload =
+      state.twoFactorPending ||
+      (storedTempToken
+        ? { tempToken: storedTempToken, expiresAt: storedExpiresAt || null }
+        : null);
+
+    const pending2FA = !!pendingPayload?.tempToken;
 
     dispatch({ type: AUTH_REQUEST });
 
@@ -108,10 +153,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const authUser = authData?.user ?? null;
 
       if (!authenticated) {
-        if (pending2FA && state.twoFactorPending) {
+        if (pending2FA && pendingPayload) {
           dispatch({
             type: AUTH_2FA_REQUIRED,
-            payload: state.twoFactorPending,
+            payload: pendingPayload,
           });
           return false;
         }
@@ -133,8 +178,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       return true;
     } catch {
-      if (pending2FA && state.twoFactorPending) {
-        dispatch({ type: AUTH_2FA_REQUIRED, payload: state.twoFactorPending });
+      if (pending2FA && pendingPayload) {
+        dispatch({ type: AUTH_2FA_REQUIRED, payload: pendingPayload });
         return false;
       }
 
@@ -165,6 +210,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       >(res.data);
 
       if (loginData && "requires2FA" in loginData && loginData.requires2FA) {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(
+            TEMP_TOKEN_STORAGE_KEY,
+            loginData.tempToken,
+          );
+          if (loginData.expiresAt) {
+            window.sessionStorage.setItem(
+              TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY,
+              String(loginData.expiresAt),
+            );
+          }
+        }
         dispatch({
           type: AUTH_2FA_REQUIRED,
           payload: {
@@ -180,9 +237,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         dispatch({ type: AUTH_FAILURE, payload: "Login failed" });
         return;
       }
+
+      // Login response may not include full role permissions; hydrate via /auth/me.
+      const hydrated = await fetchMe();
+      const nextUser = hydrated || user;
       dispatch({
         type: AUTH_SUCCESS,
-        payload: { user, isAuthenticated: true },
+        payload: { user: nextUser, isAuthenticated: true },
       });
     } catch (err: any) {
       dispatch({
@@ -194,7 +255,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   /* ---------- VERIFY 2FA ---------- */
   const verify2FA = async (code: string) => {
-    if (!state.twoFactorPending?.tempToken) {
+    const tempToken =
+      state.twoFactorPending?.tempToken ||
+      (typeof window !== "undefined"
+        ? window.sessionStorage.getItem(TEMP_TOKEN_STORAGE_KEY)
+        : null);
+
+    if (!tempToken) {
       dispatch({
         type: AUTH_FAILURE,
         payload: "2FA session expired. Please login again.",
@@ -207,7 +274,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       const res = await api.post("/auth/2fa/verify", {
         code,
-        tempToken: state.twoFactorPending.tempToken,
+        tempToken,
       });
 
       const verifyData = unwrapData<{ user: User }>(res.data);
@@ -217,10 +284,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      // Ensure permissions are present for role-based UI.
+      const hydrated = await fetchMe();
+      const nextUser = hydrated || user;
+
       dispatch({ type: CLEAR_2FA });
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
+        window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+      }
       dispatch({
         type: AUTH_SUCCESS,
-        payload: { user, isAuthenticated: true },
+        payload: { user: nextUser, isAuthenticated: true },
       });
     } catch (err: any) {
       dispatch({
@@ -233,6 +308,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   /* ---------- LOGOUT ---------- */
   const logout = async () => {
     await api.get("/auth/logout");
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
+      window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+    }
     dispatch({ type: AUTH_LOGOUT });
   };
 
@@ -268,12 +347,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   /* ---------- 2FA ---------- */
   const toggle2FA = async () => {
-    const normalizedMethod = "email";
-    await api.get("auth/2fa/toggle", {
-      method: normalizedMethod,
-    });
+    // Backend defaults to email-based 2FA if method is omitted.
+    await api.get("/auth/2fa/toggle");
     await checkAuth();
   };
+
+  /* ---------- CONFIRM EMAIL CHANGE ---------- */
+  const confirmEmailChange = useCallback(
+    async (data: { userId: string; token: string }) => {
+      dispatch({ type: AUTH_REQUEST });
+      try {
+        await api.post("/auth/confirm-email-change", {
+          userId: data.userId,
+          token: data.token,
+        });
+
+        // Server revokes sessions & clears cookies; force a clean auth state.
+        dispatch({ type: AUTH_LOGOUT });
+      } catch (err: any) {
+        dispatch({
+          type: AUTH_FAILURE,
+          payload:
+            err.response?.data?.message || "Failed to confirm email change",
+        });
+        throw err;
+      }
+    },
+    [],
+  );
 
   /* ---------- USERS ---------- */
   const listUsers = async () => {
@@ -332,6 +433,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         revokeSession,
         changePassword,
         toggle2FA,
+        confirmEmailChange,
         listUsers,
         getUserById,
         updateUser,

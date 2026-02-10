@@ -518,6 +518,27 @@ const UpdateUserStatus = async (req, res, next) => {
   }
 };
 
+// CREATE USER (Admin)
+const CreateUser = async (req, res, next) => {
+  try {
+    const result = await authService.CreateUser({
+      body: req.body,
+      actorUserId: req.user.id,
+    });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode || 400,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, { user: result.data.user });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ========================= ACCESS CONTROL (ROLES & PERMISSIONS) =========================
 
 // USED TO LIST USERS WITH FILTERS (Authenticated, requires users.read permission)
@@ -616,6 +637,31 @@ const UpdateSelf = async (req, res, next) => {
   }
 };
 
+async function confirmEmailChange(req, res, next) {
+  try {
+    const { userId, token } = req.body || {};
+
+    const result = await authService.confirmEmailChange({ userId, token });
+
+    if (!result?.success) {
+      return sendErr(res, {
+        statusCode: result?.statusCode || 400,
+        message: result?.message || "Email change verification failed",
+      });
+    }
+
+    // clear cookies if you use cookie auth (adjust names to match yours)
+    res.clearCookie("accessToken", { path: "/" });
+    res.clearCookie("refreshToken", { path: "/" });
+
+    return sendOk(res, result?.data || null, {
+      message: "Email updated. Please log in again.",
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ========================= UTILS =========================
 
 const getRefreshTokenCookieOptions = (rememberMe = false) => {
@@ -702,4 +748,6 @@ module.exports = {
   ListUsers,
   UpdateUser,
   UpdateSelf,
+  confirmEmailChange,
+  CreateUser,
 };

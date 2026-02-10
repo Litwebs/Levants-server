@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck } from "lucide-react";
 
 import {
@@ -13,38 +13,95 @@ import {
   Input,
 } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
+import { useAuth } from "@/context/Auth/AuthContext";
 
 import styles from "./TwoFactor.module.css";
 
-type Verify2FAResponse =
-  | { success: true; data?: { user?: unknown }; message?: string }
-  | { success: false; message?: string; data?: null };
-
-type LocationState = {
-  tempToken?: string;
-};
-
 const TEMP_TOKEN_STORAGE_KEY = "levants.tempToken";
+const TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY = "levants.tempTokenExpiresAt";
+const TEMP_2FA_CODE_STORAGE_KEY = "levants.2fa.code";
 
 const TwoFactor: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const { showToast } = useToast();
 
-  const state = (location.state || {}) as LocationState;
+  const { verify2FA, loading, error, twoFactorPending, isAuthenticated } =
+    useAuth();
 
   const tempToken = useMemo(() => {
-    const fromState = state.tempToken;
     const fromStorage = sessionStorage.getItem(TEMP_TOKEN_STORAGE_KEY) || "";
-    return fromState || fromStorage;
-  }, [state.tempToken]);
+    return twoFactorPending?.tempToken || fromStorage;
+  }, [twoFactorPending?.tempToken]);
 
-  const [code, setCode] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const expiresAt = useMemo(() => {
+    const fromStorage =
+      sessionStorage.getItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY) || "";
+    return twoFactorPending?.expiresAt || fromStorage;
+  }, [twoFactorPending?.expiresAt]);
+
+  const [code, setCode] = useState(() => {
+    try {
+      return sessionStorage.getItem(TEMP_2FA_CODE_STORAGE_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
+  const [timeLeft, setTimeLeft] = useState<string | null>(null);
+
+  const lastErrorRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
+      sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+      sessionStorage.removeItem(TEMP_2FA_CODE_STORAGE_KEY);
+      navigate("/", { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
+
+  useEffect(() => {
+    if (!error) return;
+    if (lastErrorRef.current === error) return;
+    lastErrorRef.current = error;
+    showToast({ type: "error", title: error });
+  }, [error, showToast]);
+
+  const formatTimeLeft = (ms: number) => {
+    if (ms <= 0) return "expired";
+    const totalSec = Math.floor(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    if (min < 60) return `${min}m ${sec}s`;
+    const hr = Math.floor(min / 60);
+    const remMin = min % 60;
+    return `${hr}h ${remMin}m`;
+  };
+
+  useEffect(() => {
+    if (!tempToken || !expiresAt) {
+      setTimeLeft(null);
+      return;
+    }
+
+    const tick = () => {
+      const exp = new Date(expiresAt).getTime();
+      const now = Date.now();
+      setTimeLeft(formatTimeLeft(exp - now));
+    };
+
+    tick();
+    const t = window.setInterval(tick, 1000);
+    return () => window.clearInterval(t);
+  }, [expiresAt, tempToken]);
 
   const handleChangeCode = (value: string) => {
     const digitsOnly = value.replace(/\D/g, "").slice(0, 6);
     setCode(digitsOnly);
+    try {
+      sessionStorage.setItem(TEMP_2FA_CODE_STORAGE_KEY, digitsOnly);
+    } catch {
+      // ignore
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,37 +120,19 @@ const TwoFactor: React.FC = () => {
       return;
     }
 
-    setIsSubmitting(true);
     try {
-      const res = await fetch("/api/auth/2fa/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ tempToken, code }),
-      });
-
-      const body = (await res
-        .json()
-        .catch(() => null)) as Verify2FAResponse | null;
-
-      if (!res.ok || !body || ("success" in body && body.success === false)) {
-        const msg = body?.message || "Invalid code";
-        showToast({ type: "error", title: msg });
-        return;
-      }
-
-      sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
-      showToast({ type: "success", title: "Verified" });
-      navigate("/");
+      await verify2FA(code);
+      // success redirect is handled by isAuthenticated effect
     } catch {
-      showToast({ type: "error", title: "Network error. Please try again." });
+      // verify2FA sets context error; toast handled via effect
     } finally {
-      setIsSubmitting(false);
     }
   };
 
   const handleBackToLogin = () => {
     sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+    sessionStorage.removeItem(TEMP_2FA_CODE_STORAGE_KEY);
   };
 
   return (
@@ -145,9 +184,18 @@ const TwoFactor: React.FC = () => {
                   leftIcon={<ShieldCheck size={16} />}
                   autoComplete="one-time-code"
                   fullWidth
+                  disabled={loading}
                 />
 
-                <Button type="submit" fullWidth isLoading={isSubmitting}>
+                {timeLeft && (
+                  <p className={styles.noteCenter}>
+                    {timeLeft === "expired"
+                      ? "Code expired. Please sign in again to receive a new code."
+                      : `Code expires in ${timeLeft}.`}
+                  </p>
+                )}
+
+                <Button type="submit" fullWidth isLoading={loading}>
                   Verify
                 </Button>
 

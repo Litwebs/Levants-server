@@ -27,6 +27,8 @@ const {
   updateUserStatusSchema,
   updateUserSchema,
   updateSelfSchema,
+  confirmEmailChangeSchema,
+  createUserSchema,
 } = require("../validators/auth.validators");
 
 const router = express.Router();
@@ -171,6 +173,16 @@ router.get(
   asyncHandler(authController.ListUsers),
 );
 
+// CREATE USER (Admin only)
+router.post(
+  "/users",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.create"),
+  validateBody(createUserSchema),
+  asyncHandler(authController.CreateUser),
+);
+
 // USED TO UPDATE SELF INFO (Authenticated users)
 router.put(
   "/me",
@@ -178,6 +190,12 @@ router.put(
   requireAuth,
   validateBody(updateSelfSchema),
   asyncHandler(authController.UpdateSelf),
+);
+
+router.post(
+  "/confirm-email-change",
+  validateBody(confirmEmailChangeSchema),
+  asyncHandler(authController.confirmEmailChange),
 );
 
 module.exports = router;

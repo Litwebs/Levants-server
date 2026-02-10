@@ -19,46 +19,69 @@ import UserModal from "./UserModel";
 const Settings = () => {
   const state = useSettings();
 
+  const canShow = (tab: string) => state.allowedTabs?.includes(tab);
+
   return (
     <div className={styles.settings}>
       <SettingsHeader />
 
-      <Tabs defaultValue={state.activeTab} onChange={state.setActiveTab}>
+      <Tabs
+        key={state.activeTab}
+        defaultValue={state.activeTab}
+        onChange={state.setActiveTab}
+      >
         <TabsList className={styles.tabsList}>
-          <TabsTrigger value="general" className={styles.tabTrigger}>
-            <Building2 size={18} /> General
-          </TabsTrigger>
-          <TabsTrigger value="users" className={styles.tabTrigger}>
-            <Users size={18} /> Users
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className={styles.tabTrigger}>
-            <Bell size={18} /> Notifications
-          </TabsTrigger>
-          <TabsTrigger value="security" className={styles.tabTrigger}>
-            <Shield size={18} /> Security
-          </TabsTrigger>
+          {canShow("general") && (
+            <TabsTrigger value="general" className={styles.tabTrigger}>
+              <Building2 size={18} /> General
+            </TabsTrigger>
+          )}
+          {canShow("users") && (
+            <TabsTrigger value="users" className={styles.tabTrigger}>
+              <Users size={18} /> Users
+            </TabsTrigger>
+          )}
+          {canShow("notifications") && (
+            <TabsTrigger value="notifications" className={styles.tabTrigger}>
+              <Bell size={18} /> Notifications
+            </TabsTrigger>
+          )}
+          {canShow("security") && (
+            <TabsTrigger value="security" className={styles.tabTrigger}>
+              <Shield size={18} /> Security
+            </TabsTrigger>
+          )}
         </TabsList>
 
-        <TabsContent value="general">
-          <GeneralTab {...state} />
-        </TabsContent>
+        {canShow("general") && (
+          <TabsContent value="general">
+            <GeneralTab {...state} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="users">
-          <UsersTab {...state} />
-        </TabsContent>
+        {canShow("users") && (
+          <TabsContent value="users">
+            <UsersTab {...state} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="notifications">
-          <NotificationsTab {...state} />
-        </TabsContent>
+        {canShow("notifications") && (
+          <TabsContent value="notifications">
+            <NotificationsTab {...state} />
+          </TabsContent>
+        )}
 
-        <TabsContent value="security">
-          <SecurityTab {...state} />
-        </TabsContent>
+        {canShow("security") && (
+          <TabsContent value="security">
+            <SecurityTab {...state} />
+          </TabsContent>
+        )}
       </Tabs>
       <UserModal
         isOpen={state.isUserModalOpen}
         onClose={() => state.setIsUserModalOpen(false)}
         mode={state.userModalMode}
+        roles={state.roles}
         userForm={state.userForm}
         setUserForm={state.setUserForm}
         saveUser={state.saveUser}

@@ -52,6 +52,12 @@ const Login: React.FC = () => {
 
     if (twoFactorPending) {
       sessionStorage.setItem("levants.tempToken", twoFactorPending.tempToken);
+      if (twoFactorPending.expiresAt) {
+        sessionStorage.setItem(
+          "levants.tempTokenExpiresAt",
+          String(twoFactorPending.expiresAt),
+        );
+      }
       navigate("/2fa", { replace: true });
       return;
     }

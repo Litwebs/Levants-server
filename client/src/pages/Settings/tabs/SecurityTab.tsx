@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Card } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Badge } from "@/components/common/Badge";
@@ -37,6 +38,8 @@ type SecurityTabProps = {
   setAccountInfo: React.Dispatch<React.SetStateAction<AccountInfo>>;
   emailSettings: EmailSettings;
   setEmailSettings: React.Dispatch<React.SetStateAction<EmailSettings>>;
+  pendingEmail?: string | null;
+  pendingEmailExpiresAt?: string | null;
   passwordSettings: PasswordSettings;
   setPasswordSettings: React.Dispatch<React.SetStateAction<PasswordSettings>>;
   showCurrentPassword: boolean;
@@ -64,6 +67,8 @@ const SecurityTab = ({
   setAccountInfo,
   emailSettings,
   setEmailSettings,
+  pendingEmail,
+  pendingEmailExpiresAt,
   passwordSettings,
   setPasswordSettings,
   showCurrentPassword,
@@ -80,6 +85,39 @@ const SecurityTab = ({
   securityLoading,
 }: SecurityTabProps) => {
   if (!accountInfo || !emailSettings || !passwordSettings) return null;
+
+  const [pendingTimeLeft, setPendingTimeLeft] = useState<string | null>(null);
+
+  const formatTimeLeft = (ms: number) => {
+    if (ms <= 0) return "expired";
+
+    const totalSec = Math.floor(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+
+    if (min < 60) return `${min}m ${sec}s`;
+
+    const hr = Math.floor(min / 60);
+    const remMin = min % 60;
+    return `${hr}h ${remMin}m`;
+  };
+
+  useEffect(() => {
+    if (!pendingEmail || !pendingEmailExpiresAt) {
+      setPendingTimeLeft(null);
+      return;
+    }
+
+    const tick = () => {
+      const expires = new Date(pendingEmailExpiresAt).getTime();
+      const now = Date.now();
+      setPendingTimeLeft(formatTimeLeft(expires - now));
+    };
+
+    tick();
+    const t = window.setInterval(tick, 1000);
+    return () => window.clearInterval(t);
+  }, [pendingEmail, pendingEmailExpiresAt]);
 
   const savingAccountInfo = !!securityLoading?.savingAccountInfo;
   const updatingEmail = !!securityLoading?.updatingEmail;
@@ -223,6 +261,15 @@ const SecurityTab = ({
               }
               placeholder="Enter new email address"
             />
+
+            {pendingEmail && pendingTimeLeft && (
+              <span className={styles.fieldHint}>
+                Pending confirmation for {pendingEmail} —{" "}
+                {pendingTimeLeft === "expired"
+                  ? "link expired. Please re-save your email to resend."
+                  : `expires in ${pendingTimeLeft}.`}
+              </span>
+            )}
           </div>
         </div>
 

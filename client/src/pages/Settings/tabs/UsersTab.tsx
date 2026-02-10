@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import styles from "../Settings.module.css";
 
-const getRoleBadge = (role: string) => {
+const getRoleBadge = (role?: string) => {
   const variants: Record<
     string,
     "default" | "success" | "warning" | "error" | "info"
@@ -31,11 +31,30 @@ const getRoleBadge = (role: string) => {
     driver: "success",
   };
 
+  const safeRole = (role || "unknown").toLowerCase();
+
   return (
-    <Badge variant={variants[role]}>
-      {role.charAt(0).toUpperCase() + role.slice(1)}
+    <Badge variant={variants[safeRole] || "default"}>
+      {safeRole.charAt(0).toUpperCase() + safeRole.slice(1)}
     </Badge>
   );
+};
+
+const getUserId = (user: any) => String(user?._id || user?.id || "");
+
+const getRoleName = (user: any) => {
+  const role = user?.role;
+  if (!role) return undefined;
+  if (typeof role === "string") return role;
+  if (typeof role === "object" && role?.name) return String(role.name);
+  return undefined;
+};
+
+const formatDateTime = (value: any) => {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString();
 };
 
 const UsersTab = ({
@@ -74,12 +93,14 @@ const UsersTab = ({
 
           <TableBody>
             {users.map((user: any) => (
-              <TableRow key={user.id}>
+              <TableRow key={getUserId(user)}>
                 <TableCell>
                   <div className={styles.userCell}>
                     <div className={styles.userAvatar}>
-                      {user.name
+                      {String(user.name || "U")
                         .split(" ")
+                        .filter(Boolean)
+                        .slice(0, 2)
                         .map((n: string) => n[0])
                         .join("")}
                     </div>
@@ -90,7 +111,7 @@ const UsersTab = ({
                   </div>
                 </TableCell>
 
-                <TableCell>{getRoleBadge(user.role)}</TableCell>
+                <TableCell>{getRoleBadge(getRoleName(user))}</TableCell>
 
                 <TableCell>
                   <Badge
@@ -105,8 +126,8 @@ const UsersTab = ({
                   </Badge>
                 </TableCell>
 
-                <TableCell>{user.lastLogin}</TableCell>
-                <TableCell>{user.createdAt}</TableCell>
+                <TableCell>{formatDateTime(user.lastLoginAt)}</TableCell>
+                <TableCell>{formatDateTime(user.createdAt)}</TableCell>
 
                 <TableCell>
                   <div className={styles.actions}>
@@ -120,7 +141,7 @@ const UsersTab = ({
 
                     <button
                       className={styles.actionBtn}
-                      onClick={() => handleToggleUserStatus(user.id)}
+                      onClick={() => handleToggleUserStatus(getUserId(user))}
                       title={
                         user.status === "active" ? "Deactivate" : "Activate"
                       }
@@ -132,13 +153,13 @@ const UsersTab = ({
                       )}
                     </button>
 
-                    <button
+                    {/* <button
                       className={`${styles.actionBtn} ${styles.deleteBtn}`}
-                      onClick={() => handleDeleteUser(user.id)}
+                      onClick={() => handleDeleteUser(getUserId(user))}
                       title="Delete user"
                     >
                       <Trash2 size={16} />
-                    </button>
+                    </button> */}
                   </div>
                 </TableCell>
               </TableRow>

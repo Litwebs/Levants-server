@@ -1,34 +1,93 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/common/Toast";
-import { mockUsers, defaultNotificationSettings } from "./mockData";
 import { useAuth } from "@/context/Auth/AuthContext";
-
-type UserStatus = string;
-
-export type User = {
-  id: string;
-  name: string;
-  email: string;
-  role?: object | string;
-  status: UserStatus;
-  lastLogin: string;
-  createdAt: string;
-};
+import { useUsers } from "@/context/Users";
+import api from "@/context/api";
 
 type UserForm = {
   name: string;
   email: string;
-  role?: string;
-  status: UserStatus;
+  roleId: string;
+  status: "active" | "disabled";
   password: string;
   confirmPassword: string;
 };
 
 type NotificationChannel = string;
 
+type NotificationKey =
+  | "newOrders"
+  | "orderUpdates"
+  | "lowStockAlerts"
+  | "deliveryUpdates"
+  | "customerMessages"
+  | "paymentReceived";
+
+type NotificationPrefs = Partial<Record<NotificationKey, boolean>>;
+
+const NOTIFICATION_DEFINITIONS: Array<{
+  key: NotificationKey;
+  name: string;
+  description: string;
+}> = [
+  {
+    key: "newOrders",
+    name: "New Orders",
+    description: "Get notified when a new order is placed",
+  },
+  {
+    key: "orderUpdates",
+    name: "Order Updates",
+    description: "Get notified when an order status changes",
+  },
+  {
+    key: "lowStockAlerts",
+    name: "Low Stock Alerts",
+    description: "Get notified when inventory is running low",
+  },
+  {
+    key: "deliveryUpdates",
+    name: "Delivery Updates",
+    description: "Get notified about delivery status updates",
+  },
+  {
+    key: "customerMessages",
+    name: "Customer Messages",
+    description: "Get notified when customers send messages",
+  },
+  {
+    key: "paymentReceived",
+    name: "Payment Received",
+    description: "Get notified when payments are received",
+  },
+];
+
 export const useSettings = () => {
   const { showToast } = useToast();
   const { user, updateSelf, changePassword, toggle2FA } = useAuth();
+  const {
+    users: managedUsers,
+    roles,
+    fetchRoles,
+    fetchUsers,
+    getUserById,
+    createUser,
+    updateUser,
+    updateUserStatus,
+  } = useUsers();
+
+  const currentUserId = user?.id ?? (user as any)?._id ?? null;
+
+  const permissions: string[] = useMemo(() => {
+    const role: any = (user as any)?.role;
+    if (!role || typeof role !== "object") return [];
+    const perms = role?.permissions;
+    return Array.isArray(perms) ? perms : [];
+  }, [user]);
+
+  const hasPermission = useMemo(() => {
+    return (perm: string) => permissions.includes("*") || permissions.includes(perm);
+  }, [permissions]);
 
   /* -------------------- TABS -------------------- */
   const SETTINGS_TAB_KEY = "levants.settings.activeTab";
@@ -44,32 +103,152 @@ export const useSettings = () => {
     }
   };
 
+  const allowedTabs = useMemo(() => {
+    // Tabs that are always available to authenticated users
+    const base: Array<"notifications" | "security"> = ["notifications", "security"];
+
+    // Business info requires permissions
+    const canViewGeneral =
+      hasPermission("business.info.read") || hasPermission("business.info.update");
+
+    // User management requires permissions
+    const canViewUsers =
+      hasPermission("users.read") ||
+      hasPermission("users.update") ||
+      hasPermission("users.create") ||
+      hasPermission("users.status.update");
+
+    const tabs: string[] = [];
+    if (canViewGeneral) tabs.push("general");
+    if (canViewUsers) tabs.push("users");
+    tabs.push(...base);
+    return tabs;
+  }, [hasPermission]);
+
+  useEffect(() => {
+    // If the persisted tab isn't allowed for the current user, fall back.
+    if (!user) return;
+    if (allowedTabs.length === 0) return;
+    if (allowedTabs.includes(activeTab)) return;
+    setActiveTab(allowedTabs[0]);
+  }, [activeTab, allowedTabs, user]);
+
   /* -------------------- GENERAL -------------------- */
-  const [companySettings, setCompanySettings] = useState({
-    name: "Levants Dairy Farm",
-    email: "info@levantsdairy.com",
-    phone: "+1 (555) 123-4567",
-    address: "123 Farm Road, Countryside, State 12345",
-    website: "www.levantsdairy.com",
-    timezone: "America/New_York",
-    currency: "USD",
-    dateFormat: "MM/DD/YYYY",
-    businessHours: "6:00 AM - 8:00 PM",
+  type BusinessInfo = {
+    companyName: string;
+    email: string;
+    phone: string;
+    address: string;
+  };
+
+  const emptyBusinessInfo: BusinessInfo = {
+    companyName: "",
+    email: "",
+    phone: "",
+    address: "",
+  };
+
+  const [companySettings, setCompanySettings] = useState<BusinessInfo>(
+    emptyBusinessInfo,
+  );
+  const [originalCompanySettings, setOriginalCompanySettings] =
+    useState<BusinessInfo>(emptyBusinessInfo);
+  const [generalLoading, setGeneralLoading] = useState({
+    loading: false,
+    saving: false,
   });
 
-  const handleSaveGeneral = () =>
-    showToast({ type: "success", title: "General settings saved successfully" });
+  const canReadBusinessInfo = useMemo(() => {
+    return (
+      hasPermission("business.info.read") || hasPermission("business.info.update")
+    );
+  }, [hasPermission]);
+
+  const canUpdateBusinessInfo = useMemo(() => {
+    return hasPermission("business.info.update");
+  }, [hasPermission]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (!canReadBusinessInfo) return;
+
+    setGeneralLoading((prev) => ({ ...prev, loading: true }));
+    void api
+      .get("/business-info")
+      .then((res) => {
+        const business = (res.data as any)?.data?.business;
+        if (!business) return;
+        const next: BusinessInfo = {
+          companyName: business.companyName || "",
+          email: business.email || "",
+          phone: business.phone || "",
+          address: business.address || "",
+        };
+        setCompanySettings(next);
+        setOriginalCompanySettings(next);
+      })
+      .catch((err: any) => {
+        showToast({
+          type: "error",
+          title:
+            err?.response?.data?.message || "Failed to load business info",
+        });
+      })
+      .finally(() => {
+        setGeneralLoading((prev) => ({ ...prev, loading: false }));
+      });
+  }, [canReadBusinessInfo, showToast, user]);
+
+  const handleSaveGeneral = async () => {
+    if (!canUpdateBusinessInfo) {
+      showToast({ type: "error", title: "You do not have access to update this" });
+      return;
+    }
+
+    if (generalLoading.saving) return;
+
+    const next: BusinessInfo = {
+      companyName: companySettings.companyName,
+      email: companySettings.email,
+      phone: companySettings.phone,
+      address: companySettings.address,
+    };
+
+    const unchanged =
+      next.companyName === originalCompanySettings.companyName &&
+      next.email === originalCompanySettings.email &&
+      next.phone === originalCompanySettings.phone &&
+      next.address === originalCompanySettings.address;
+
+    if (unchanged) {
+      showToast({ type: "success", title: "No changes to save" });
+      return;
+    }
+
+    setGeneralLoading((prev) => ({ ...prev, saving: true }));
+    try {
+      await api.put("/business-info", next);
+      setOriginalCompanySettings(next);
+      showToast({ type: "success", title: "Business info updated" });
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title: err?.response?.data?.message || "Failed to update business info",
+      });
+    } finally {
+      setGeneralLoading((prev) => ({ ...prev, saving: false }));
+    }
+  };
 
   /* -------------------- USERS -------------------- */
-  const [users, setUsers] = useState<User[]>(mockUsers);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [userModalMode, setUserModalMode] = useState<"add" | "edit">("add");
 
   const emptyUserForm: UserForm = {
     name: "",
     email: "",
-    role: "staff",
+    roleId: "",
     status: "active",
     password: "",
     confirmPassword: "",
@@ -77,113 +256,221 @@ export const useSettings = () => {
 
   const [userForm, setUserForm] = useState<UserForm>(emptyUserForm);
 
-  const openUserModal = (mode: "add" | "edit", user?: User) => {
+  useEffect(() => {
+    if (!user) return;
+
+    const canViewUsers =
+      hasPermission("users.read") ||
+      hasPermission("users.update") ||
+      hasPermission("users.create") ||
+      hasPermission("users.status.update");
+
+    if (canViewUsers) {
+      void fetchUsers().catch(() => {
+        // errors are handled by consumers via toasts
+      });
+    }
+
+    const roleName =
+      typeof (user as any)?.role === "object" ? (user as any)?.role?.name : null;
+    const isAdmin = roleName === "admin";
+    if (canViewUsers && isAdmin) {
+      void fetchRoles().catch(() => {
+        // errors are handled by consumers via toasts
+      });
+    }
+  }, [fetchRoles, fetchUsers, hasPermission, user]);
+
+  const openUserModal = async (mode: "add" | "edit", u?: any) => {
     setUserModalMode(mode);
 
-    if (mode === "edit" && user) {
-      setSelectedUser(user);
+    if (mode === "add") {
+      setSelectedUserId(null);
+      setUserForm(emptyUserForm);
+      setIsUserModalOpen(true);
+      return;
+    }
+
+    if (mode === "edit" && u) {
+      const id = String(u?._id || u?.id || "");
+      if (!id) return;
+
+      setSelectedUserId(id);
+
+      let userToEdit = u;
+      try {
+        userToEdit = await getUserById(id);
+      } catch {
+        // fall back to row data
+      }
+
       setUserForm({
-        name: user.name,
-        email: user.email,
-        role:
-          typeof user.role === "string"
-            ? user.role
-            : ((user.role as any)?.name as string | undefined),
-        status: user.status,
+        name: userToEdit.name,
+        email: userToEdit.email,
+        roleId:
+          typeof userToEdit.role === "object" && (userToEdit.role as any)?._id
+            ? String((userToEdit.role as any)._id)
+            : typeof userToEdit.role === "string" && userToEdit.role.length === 24
+              ? userToEdit.role
+            : "",
+        status: userToEdit.status as "active" | "disabled",
         password: "",
         confirmPassword: "",
       });
     } else {
-      setSelectedUser(null);
+      setSelectedUserId(null);
       setUserForm(emptyUserForm);
     }
 
     setIsUserModalOpen(true);
   };
 
-  const saveUser = () => {
+  const saveUser = async () => {
     if (!userForm.name.trim() || !userForm.email.trim()) {
       showToast({ type: "error", title: "Name and email are required" });
       return;
     }
 
     if (userModalMode === "add") {
-      if (!userForm.password || userForm.password !== userForm.confirmPassword) {
+      if (!userForm.roleId || userForm.roleId.length !== 24) {
+        showToast({ type: "error", title: "Role is required" });
+        return;
+      }
+
+      if (!userForm.password || userForm.password.length < 8) {
+        showToast({ type: "error", title: "Password must be at least 8 characters" });
+        return;
+      }
+
+      if (userForm.password !== userForm.confirmPassword) {
         showToast({ type: "error", title: "Passwords do not match" });
         return;
       }
 
-      const newUser: User = {
-        id: `USR${String(users.length + 1).padStart(3, "0")}`,
-        name: userForm.name,
-        email: userForm.email,
-        role: userForm.role,
-        status: userForm.status,
-        lastLogin: "Never",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
+      try {
+        await createUser({
+          name: userForm.name.trim(),
+          email: userForm.email.trim(),
+          password: userForm.password,
+          roleId: userForm.roleId,
+          status: userForm.status,
+        });
 
-      setUsers((prev) => [...prev, newUser]);
-      showToast({ type: "success", title: "User created successfully" });
+        showToast({ type: "success", title: "User created successfully" });
+      } catch (err: any) {
+        showToast({
+          type: "error",
+          title: err?.response?.data?.message || "Failed to create user",
+        });
+        return;
+      }
     }
 
-    if (userModalMode === "edit" && selectedUser) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === selectedUser.id
-            ? {
-                ...u,
-                name: userForm.name,
-                email: userForm.email,
-                role: userForm.role,
-                status: userForm.status,
-              }
-            : u
-        )
-      );
+    if (userModalMode === "edit" && selectedUserId) {
+      try {
+        const maybeRoleId = userForm.roleId && userForm.roleId.length === 24
+          ? { roleId: userForm.roleId }
+          : {};
 
-      showToast({ type: "success", title: "User updated successfully" });
+        await updateUser(selectedUserId, {
+          name: userForm.name.trim(),
+          email: userForm.email.trim(),
+          status: userForm.status,
+          ...maybeRoleId,
+        });
+
+        showToast({ type: "success", title: "User updated successfully" });
+      } catch (err: any) {
+        showToast({
+          type: "error",
+          title: err?.response?.data?.message || "Failed to update user",
+        });
+        return;
+      }
     }
 
     setIsUserModalOpen(false);
-    setSelectedUser(null);
+    setSelectedUserId(null);
     setUserForm(emptyUserForm);
   };
 
-  const deleteUser = (id: string) => {
-    setUsers((prev) => prev.filter((u) => u.id !== id));
-    showToast({ type: "success", title: "User deleted successfully" });
+  const deleteUser = (_id: string) => {
+    showToast({ type: "error", title: "Deleting users is not supported yet" });
   };
 
   const toggleUserStatus = (id: string) => {
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === id
-          ? { ...u, status: u.status === "active" ? "inactive" : "active" }
-          : u
-      )
-    );
-    showToast({ type: "success", title: "User status updated" });
+    const target = managedUsers.find((u: any) => String(u?._id || u?.id) === id);
+    if (!target) return;
+
+    const nextStatus = target.status === "active" ? "disabled" : "active";
+    void updateUserStatus(id, nextStatus)
+      .then(() => {
+        showToast({ type: "success", title: "User status updated" });
+      })
+      .catch((err: any) => {
+        showToast({
+          type: "error",
+          title: err?.response?.data?.message || "Failed to update status",
+        });
+      });
   };
 
   /* -------------------- NOTIFICATIONS -------------------- */
-  const [notificationSettings, setNotificationSettings] = useState(
-    defaultNotificationSettings
+  const [notificationPrefs, setNotificationPrefs] = useState<NotificationPrefs>(
+    () => (user?.preferences?.notifications as NotificationPrefs) || {}
   );
 
-  const toggleNotification = (id: string, channel: NotificationChannel) => {
-    setNotificationSettings((prev) =>
-      prev.map((n) =>
-        n.id === id ? { ...n, [channel]: !n[channel] } : n
-      )
+  useEffect(() => {
+    if (!currentUserId) return;
+    setNotificationPrefs(
+      (user?.preferences?.notifications as NotificationPrefs) || {}
     );
+  }, [currentUserId, user?.preferences?.notifications]);
+
+  const notificationSettings = useMemo(() => {
+    return NOTIFICATION_DEFINITIONS.map((d) => ({
+      id: d.key,
+      name: d.name,
+      description: d.description,
+      email: !!notificationPrefs[d.key],
+    }));
+  }, [notificationPrefs]);
+
+  const toggleNotification = (id: string, channel: NotificationChannel) => {
+    if (channel !== "email") return;
+    const key = id as NotificationKey;
+    setNotificationPrefs((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
   };
 
-  const saveNotifications = () =>
-    showToast({ type: "success", title: "Notification preferences saved" });
+  const saveNotifications = async () => {
+    try {
+      await updateSelf({
+        preferences: {
+          notifications: notificationPrefs,
+        },
+      } as any);
+
+      showToast({
+        type: "success",
+        title: "Notification preferences saved",
+      });
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title:
+          err?.response?.data?.message ||
+          "Failed to save notification preferences",
+      });
+    }
+  };
 
   /* -------------------- SECURITY -------------------- */
-  const currentUserId = user?.id ?? user?._id ?? null;
+  const pendingEmail = user?.emailChange?.pendingEmail ?? null;
+  const pendingEmailExpiresAt = user?.emailChange?.expiresAt ?? null;
+
   const [lastInitializedUserId, setLastInitializedUserId] = useState<
     string | null
   >(null);
@@ -296,11 +583,18 @@ export const useSettings = () => {
 
     try {
       await updateSelf({ email: emailSettings.newEmail.trim() });
-      setEmailSettings({
-        currentEmail: emailSettings.newEmail.trim(),
+
+      // Email does NOT change immediately (requires confirmation).
+      // Keep current email as-is and clear the newEmail field.
+      setEmailSettings((prev) => ({
+        currentEmail: user?.email ?? prev.currentEmail,
         newEmail: "",
+      }));
+
+      showToast({
+        type: "success",
+        title: "Confirmation email sent. Please check your new inbox.",
       });
-      showToast({ type: "success", title: "Email updated successfully" });
     } catch (err: any) {
       showToast({
         type: "error",
@@ -358,15 +652,19 @@ export const useSettings = () => {
 
   /* -------------------- EXPORT -------------------- */
   return {
+    permissions,
+    hasPermission,
+    allowedTabs,
     activeTab,
     setActiveTab,
 
     companySettings,
     setCompanySettings,
     handleSaveGeneral,
+    generalLoading,
 
-    users,
-    selectedUser,
+    users: managedUsers,
+    roles,
     userForm,
     setUserForm,
     userModalMode,
@@ -394,6 +692,8 @@ export const useSettings = () => {
     setShowNewPassword,
 
     twoFactorEnabled,
+    pendingEmail,
+    pendingEmailExpiresAt,
     twoFactorMethod,
     setTwoFactorMethod,
     handleToggle2FA,

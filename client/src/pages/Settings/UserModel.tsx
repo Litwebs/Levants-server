@@ -1,19 +1,17 @@
 import { Modal } from "@/components/common/Modal";
 import { Button } from "@/components/common/Button";
 import { FormGrid, FormRow } from "@/components/common/FormGrid";
-import { Eye, EyeOff } from "lucide-react";
 import styles from "./Settings.module.css";
 
 const UserModal = ({
   isOpen,
   onClose,
   mode,
+  roles,
   userForm,
   setUserForm,
   saveUser,
 }: any) => {
-  const showPassword = mode === "add";
-
   return (
     <Modal
       isOpen={isOpen}
@@ -42,13 +40,20 @@ const UserModal = ({
 
         <FormRow label="Role">
           <select
-            value={userForm.role}
-            onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+            value={userForm.roleId}
+            onChange={(e) =>
+              setUserForm({ ...userForm, roleId: e.target.value })
+            }
           >
-            <option value="admin">Admin</option>
-            <option value="manager">Manager</option>
-            <option value="staff">Staff</option>
-            <option value="driver">Driver</option>
+            <option value="">Select role</option>
+            {(roles || []).map((r: any) => (
+              <option
+                key={String(r?._id || r?.id)}
+                value={String(r?._id || r?.id)}
+              >
+                {r?.name}
+              </option>
+            ))}
           </select>
         </FormRow>
 
@@ -60,7 +65,7 @@ const UserModal = ({
             }
           >
             <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
+            <option value="disabled">Disabled</option>
           </select>
         </FormRow>
 

@@ -22,8 +22,6 @@ const NotificationsTab = ({
           <span className={styles.notificationName}>Notification Type</span>
           <div className={styles.notificationChannels}>
             <span>Email</span>
-            <span>Push</span>
-            <span>SMS</span>
           </div>
         </div>
 
@@ -37,7 +35,7 @@ const NotificationsTab = ({
             </div>
 
             <div className={styles.notificationToggles}>
-              {(["email", "push", "sms"] as const).map((channel) => (
+              {(["email"] as const).map((channel) => (
                 <label key={channel} className={styles.toggle}>
                   <input
                     type="checkbox"

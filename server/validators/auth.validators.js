@@ -137,6 +137,19 @@ const updateSelfSchema = Joi.object({
   .min(1)
   .unknown(false);
 
+const confirmEmailChangeSchema = Joi.object({
+  userId: Joi.string().hex().length(24).required(),
+  token: Joi.string().min(10).required(),
+});
+
+const createUserSchema = Joi.object({
+  name: Joi.string().min(2).max(100).required(),
+  email: Joi.string().email().max(254).required(),
+  password: Joi.string().min(8).required(),
+  roleId: Joi.string().hex().length(24).required(),
+  status: Joi.string().valid("active", "disabled").default("active"),
+});
+
 module.exports = {
   loginSchema,
   refreshSchema,
@@ -149,4 +162,6 @@ module.exports = {
   updateUserStatusSchema,
   updateUserSchema,
   updateSelfSchema,
+  confirmEmailChangeSchema,
+  createUserSchema,
 };

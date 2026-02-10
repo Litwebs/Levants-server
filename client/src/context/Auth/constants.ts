@@ -36,6 +36,12 @@ export type User = {
 
   pendingEmail?: string;
 
+  emailChange?: {
+    pending?: boolean;
+    pendingEmail?: string;
+    expiresAt?: string | null;
+  };
+
   role: string | RoleRef;
   status: "active" | "disabled";
 

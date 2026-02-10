@@ -6,27 +6,41 @@ const GeneralTab = ({
   companySettings,
   setCompanySettings,
   handleSaveGeneral,
+  hasPermission,
+  generalLoading,
 }: any) => {
+  const canUpdate = !!hasPermission?.("business.info.update");
+  const isLoading = !!generalLoading?.loading;
+  const isSaving = !!generalLoading?.saving;
+  const disabled = !canUpdate || isLoading || isSaving;
+
   return (
     <div className={styles.sectionsContainer}>
       <Card className={styles.settingsCard}>
         <div className={styles.cardHeader}>
-          <h2 className={styles.cardTitle}>Business Details</h2>
+          <div>
+            <h2 className={styles.cardTitle}>Business Details</h2>
+            <p className={styles.cardDescription}>
+              {isLoading
+                ? "Loading business info…"
+                : "Update your business information"}
+            </p>
+          </div>
         </div>
 
         <div className={styles.formFields}>
           {[
-            ["Company Name", "name"],
+            ["Company Name", "companyName"],
             ["Email Address", "email"],
             ["Phone Number", "phone"],
             ["Address", "address"],
-            ["Website", "website"],
           ].map(([label, key]) => (
             <div key={key} className={styles.formField}>
               <label className={styles.fieldLabel}>{label}</label>
               <input
                 className={styles.fieldInput}
-                value={companySettings[key]}
+                value={companySettings[key] || ""}
+                disabled={disabled}
                 onChange={(e) =>
                   setCompanySettings({
                     ...companySettings,
@@ -40,9 +54,14 @@ const GeneralTab = ({
       </Card>
 
       <div className={styles.saveButtonRow}>
-        <Button variant="primary" onClick={handleSaveGeneral}>
+        <Button
+          variant="primary"
+          onClick={handleSaveGeneral}
+          disabled={disabled}
+          isLoading={isLoading || isSaving}
+        >
           <Save size={18} />
-          Save Changes
+          {isSaving ? "Saving…" : "Save Changes"}
         </Button>
       </div>
     </div>
