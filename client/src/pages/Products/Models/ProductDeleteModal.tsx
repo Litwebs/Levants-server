@@ -1,4 +1,4 @@
-import { AlertTriangle, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import { Button, Modal, ModalFooter } from "../../../components/common";
 import styles from "../Products.module.css";
 
@@ -6,16 +6,13 @@ const ProductDeleteModal = ({
   isDeleteModalOpen,
   setIsDeleteModalOpen,
   selectedProduct,
-  setProducts,
+  handleArchiveProduct,
+  isSaving,
 }: any) => {
   if (!selectedProduct) return null;
 
-  const confirm = () => {
-    setProducts((prev: any[]) =>
-      prev.map((p) =>
-        p.id === selectedProduct.id ? { ...p, status: "archived" } : p,
-      ),
-    );
+  const confirm = async () => {
+    await handleArchiveProduct(selectedProduct);
     setIsDeleteModalOpen(false);
   };
 
@@ -33,11 +30,20 @@ const ProductDeleteModal = ({
         </p>
       </div>
       <ModalFooter>
-        <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>
+        <Button
+          variant="outline"
+          onClick={() => setIsDeleteModalOpen(false)}
+          disabled={isSaving}
+        >
           Cancel
         </Button>
-        <Button variant="danger" onClick={confirm}>
-          <Trash2 size={16} /> Archive
+        <Button variant="danger" onClick={confirm} disabled={isSaving}>
+          {isSaving ? (
+            <Loader2 size={16} className={styles.spinnerIcon} />
+          ) : (
+            <Trash2 size={16} />
+          )}
+          Archive
         </Button>
       </ModalFooter>
     </Modal>

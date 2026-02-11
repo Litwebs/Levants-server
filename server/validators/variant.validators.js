@@ -23,7 +23,15 @@ const updateVariantSchema = Joi.object({
   .min(1)
   .unknown(false);
 
+const listVariantsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  pageSize: Joi.number().integer().min(1).max(100).default(20),
+  status: Joi.string().valid("active", "inactive", "all").default("active"),
+  search: Joi.string().allow("").max(100).optional(),
+}).unknown(false);
+
 module.exports = {
   createVariantSchema,
   updateVariantSchema,
+  listVariantsQuerySchema,
 };

@@ -53,9 +53,11 @@ const productVariantSchema = new mongoose.Schema(
       index: true,
     },
 
+    // ✅ CDN-backed
     thumbnailImage: {
-      type: String,
-      required: true,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "File",
+      default: null,
     },
 
     // Stripe (future)

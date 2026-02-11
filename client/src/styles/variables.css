@@ -138,8 +138,10 @@
 
 /* Dark Mode Variables */
 [data-theme="dark"] {
-  --color-cream: #1a1a1a;
+  /* --color-cream: #1a1a1a; */
+  --color-cream: #070707;
   --color-cream-dark: #262626;
+
   --color-gray-50: #1f1f1f;
   --color-gray-100: #2a2a2a;
   --color-gray-200: #3a3a3a;

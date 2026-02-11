@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import Orders from "./pages/Orders/Orders";
 import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";
+import ProductVariantsPage from "./pages/Products/ProductVariantsPage";
 import Customers from "./pages/Customers/Customers";
 import Promotions from "./pages/Promotions";
 import Reports from "./pages/Reports";
@@ -92,6 +93,10 @@ const App = () => (
                   element={<DeliveryRunDetailsPage />}
                 />
                 <Route path="/products" element={<Products />} />
+                <Route
+                  path="/products/:productId"
+                  element={<ProductVariantsPage />}
+                />
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/promotions" element={<Promotions />} />
                 <Route

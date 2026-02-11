@@ -3,24 +3,23 @@ import { Card, Input } from "../../components/common";
 import { Select } from "../../components/common/Select/Select";
 import styles from "./Products.module.css";
 
-const categories = [
-  "All",
-  "Milk",
-  "Milkshakes",
-  "Cream",
-  "Honey",
-  "Butter",
-  "Cheese",
-];
 const statuses = ["All", "active", "draft", "archived"];
+const stockFilters = [
+  { value: "All", label: "All stock" },
+  { value: "low", label: "Low stock" },
+  { value: "out", label: "Out of stock" },
+];
 
 const ProductsFilters = ({
   searchQuery,
   setSearchQuery,
   selectedCategory,
   setSelectedCategory,
+  categoryOptions,
   selectedStatus,
   setSelectedStatus,
+  variantStockFilter,
+  setVariantStockFilter,
 }: any) => {
   return (
     <Card className={styles.filtersCard}>
@@ -33,7 +32,10 @@ const ProductsFilters = ({
           className={styles.searchInput}
         />
         <Select
-          options={categories.map((c) => ({ value: c, label: c }))}
+          options={(categoryOptions || ["All"]).map((c: string) => ({
+            value: c,
+            label: c,
+          }))}
           value={selectedCategory}
           onChange={setSelectedCategory}
           className={styles.filterSelect}
@@ -45,6 +47,13 @@ const ProductsFilters = ({
           }))}
           value={selectedStatus}
           onChange={setSelectedStatus}
+          className={styles.filterSelect}
+        />
+
+        <Select
+          options={stockFilters}
+          value={variantStockFilter}
+          onChange={setVariantStockFilter}
           className={styles.filterSelect}
         />
       </div>

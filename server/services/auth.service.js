@@ -70,7 +70,7 @@ const Login = async ({
 
   if (user.twoFactorEnabled) {
     const code = generate6DigitCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes
 
     user.twoFactorLogin = {
       codeHash: cryptoUtil.hashToken(code),

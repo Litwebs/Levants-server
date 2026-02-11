@@ -2,7 +2,7 @@ import { Package, Plus } from "lucide-react";
 import { Button } from "../../components/common";
 import styles from "./Products.module.css";
 
-const ProductsHeader = ({ setIsCreateModalOpen }: any) => {
+const ProductsHeader = ({ handleCreateProduct }: any) => {
   return (
     <div className={styles.header}>
       <div className={styles.titleSection}>
@@ -14,7 +14,7 @@ const ProductsHeader = ({ setIsCreateModalOpen }: any) => {
           </p>
         </div>
       </div>
-      <Button onClick={() => setIsCreateModalOpen(true)}>
+      <Button onClick={handleCreateProduct}>
         <Plus size={18} />
         Add Product
       </Button>

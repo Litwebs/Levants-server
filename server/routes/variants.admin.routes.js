@@ -4,13 +4,17 @@ const express = require("express");
 const asyncHandler = require("../utils/asyncHandler.util");
 const { requireAuth } = require("../middleware/auth.middleware");
 const { requirePermission } = require("../middleware/permission.middleware");
-const { validateBody } = require("../middleware/validate.middleware");
+const {
+  validateBody,
+  validateQuery,
+} = require("../middleware/validate.middleware");
 const { apiLimiter } = require("../middleware/rateLimit.middleware");
 
 const controller = require("../controllers/variants.admin.controller");
 const {
   createVariantSchema,
   updateVariantSchema,
+  listVariantsQuerySchema,
 } = require("../validators/variant.validators");
 
 const { validateParams } = require("../middleware/validate.middleware");
@@ -29,6 +33,7 @@ router.get(
   "/:productId/variants",
   requirePermission("products.read"),
   validateParams(productIdParamSchema),
+  validateQuery(listVariantsQuerySchema),
   asyncHandler(controller.ListVariants),
 );
 

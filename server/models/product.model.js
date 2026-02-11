@@ -46,13 +46,21 @@ const productSchema = new mongoose.Schema(
       default: null,
     },
 
+    // ✅ CDN-backed
     thumbnailImage: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "File",
       required: true,
     },
 
+    // ✅ CDN-backed
     galleryImages: {
-      type: [String],
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "File",
+        },
+      ],
       validate: {
         validator: (arr) => arr.length <= 10,
         message: "Maximum of 10 gallery images allowed",

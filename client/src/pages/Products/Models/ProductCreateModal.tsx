@@ -1,4 +1,4 @@
-import { Plus, Upload, X, Image } from "lucide-react";
+import { Loader2, Plus, Upload, X, Image } from "lucide-react";
 import {
   Button,
   Modal,
@@ -9,7 +9,6 @@ import {
 } from "../../../components/common";
 import styles from "../Products.module.css";
 
-const categories = ["Milk", "Milkshakes", "Cream", "Honey", "Butter", "Cheese"];
 const statuses = ["active", "draft", "archived"];
 
 const ProductCreateModal = ({
@@ -18,48 +17,15 @@ const ProductCreateModal = ({
   editForm,
   setEditForm,
   productImages,
-  setProductImages,
   thumbnailInputRef,
   galleryInputRef,
-  setProducts,
-  showToast,
+  handleThumbnailUpload,
+  handleGalleryUpload,
+  handleRemoveThumbnail,
+  handleRemoveGalleryImage,
+  handleCreate,
+  isSaving,
 }: any) => {
-  const handleCreate = () => {
-    const images = [
-      productImages.thumbnail || "/placeholder.svg",
-      ...productImages.gallery,
-    ];
-
-    setProducts((prev: any[]) => [
-      ...prev,
-      {
-        id: `prod_${Date.now()}`,
-        name: editForm.name || "",
-        category: editForm.category || "Milk",
-        description: editForm.description || "",
-        longDescription: editForm.longDescription || "",
-        price: editForm.price || 0,
-        images,
-        stock: editForm.stock || {
-          inStock: true,
-          quantity: 0,
-          lowStockThreshold: 10,
-        },
-        status: editForm.status || "draft",
-        badges: [],
-        allergens: editForm.allergens || [],
-        ingredients: editForm.ingredients || [],
-        storageNotes: editForm.storageNotes || "",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ]);
-
-    showToast({ type: "success", title: "Product created successfully" });
-    setIsCreateModalOpen(false);
-    setProductImages({ thumbnail: "", gallery: [] });
-  };
-
   return (
     <Modal
       isOpen={isCreateModalOpen}
@@ -78,49 +44,21 @@ const ProductCreateModal = ({
         </FormRow>
 
         <FormRow label="Category">
-          <select
-            value={editForm.category || "Milk"}
+          <input
+            type="text"
+            value={editForm.category || ""}
             onChange={(e) =>
               setEditForm((p: any) => ({ ...p, category: e.target.value }))
             }
-          >
-            {categories.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
+          />
         </FormRow>
 
-        <FormRow label="Short Description">
+        <FormRow label="Description">
           <textarea
             rows={2}
             value={editForm.description || ""}
             onChange={(e) =>
               setEditForm((p: any) => ({ ...p, description: e.target.value }))
-            }
-          />
-        </FormRow>
-
-        <FormRow label="Long Description">
-          <textarea
-            rows={3}
-            value={editForm.longDescription || ""}
-            onChange={(e) =>
-              setEditForm((p: any) => ({
-                ...p,
-                longDescription: e.target.value,
-              }))
-            }
-          />
-        </FormRow>
-
-        <FormRow label="Price (£)">
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            value={editForm.price || 0}
-            onChange={(e) =>
-              setEditForm((p: any) => ({ ...p, price: +e.target.value }))
             }
           />
         </FormRow>
@@ -136,42 +74,6 @@ const ProductCreateModal = ({
               <option key={s}>{s}</option>
             ))}
           </select>
-        </FormRow>
-
-        <FormRow label="Initial Stock">
-          <input
-            type="number"
-            min="0"
-            value={editForm.stock?.quantity || 0}
-            onChange={(e) =>
-              setEditForm((p: any) => ({
-                ...p,
-                stock: {
-                  ...p.stock,
-                  quantity: +e.target.value,
-                  inStock: +e.target.value > 0,
-                  lowStockThreshold: p.stock?.lowStockThreshold || 10,
-                },
-              }))
-            }
-          />
-        </FormRow>
-
-        <FormRow label="Low Stock Alert">
-          <input
-            type="number"
-            min="0"
-            value={editForm.stock?.lowStockThreshold || 10}
-            onChange={(e) =>
-              setEditForm((p: any) => ({
-                ...p,
-                stock: {
-                  ...p.stock,
-                  lowStockThreshold: +e.target.value,
-                },
-              }))
-            }
-          />
         </FormRow>
 
         <FormRow label="Allergens">
@@ -213,9 +115,7 @@ const ProductCreateModal = ({
                 <button
                   type="button"
                   className={styles.removeImageBtn}
-                  onClick={() =>
-                    setProductImages((p: any) => ({ ...p, thumbnail: "" }))
-                  }
+                  onClick={handleRemoveThumbnail}
                 >
                   <X size={14} />
                 </button>
@@ -235,17 +135,7 @@ const ProductCreateModal = ({
               type="file"
               accept="image/*"
               className={styles.hiddenInput}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onloadend = () =>
-                  setProductImages((p: any) => ({
-                    ...p,
-                    thumbnail: reader.result,
-                  }));
-                reader.readAsDataURL(file);
-              }}
+              onChange={handleThumbnailUpload}
             />
           </div>
 
@@ -261,14 +151,7 @@ const ProductCreateModal = ({
                   <button
                     type="button"
                     className={styles.removeImageBtn}
-                    onClick={() =>
-                      setProductImages((p: any) => ({
-                        ...p,
-                        gallery: p.gallery.filter(
-                          (_: any, idx: number) => idx !== i,
-                        ),
-                      }))
-                    }
+                    onClick={() => handleRemoveGalleryImage(i)}
                   >
                     <X size={14} />
                   </button>
@@ -291,17 +174,7 @@ const ProductCreateModal = ({
                 accept="image/*"
                 multiple
                 className={styles.hiddenInput}
-                onChange={(e) => {
-                  Array.from(e.target.files || []).forEach((file) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () =>
-                      setProductImages((p: any) => ({
-                        ...p,
-                        gallery: [...p.gallery, reader.result],
-                      }));
-                    reader.readAsDataURL(file);
-                  });
-                }}
+                onChange={handleGalleryUpload}
               />
             </div>
           </div>
@@ -309,11 +182,29 @@ const ProductCreateModal = ({
       </FormGrid>
 
       <ModalFooter>
-        <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+        <Button
+          variant="outline"
+          onClick={() => setIsCreateModalOpen(false)}
+          disabled={isSaving}
+        >
           Cancel
         </Button>
-        <Button onClick={handleCreate} disabled={!editForm.name}>
-          <Plus size={16} /> Create Product
+        <Button
+          onClick={handleCreate}
+          disabled={
+            isSaving ||
+            !editForm.name ||
+            !editForm.category ||
+            !editForm.description ||
+            !productImages.thumbnail
+          }
+        >
+          {isSaving ? (
+            <Loader2 size={16} className={styles.spinnerIcon} />
+          ) : (
+            <Plus size={16} />
+          )}
+          Create Product
         </Button>
       </ModalFooter>
     </Modal>

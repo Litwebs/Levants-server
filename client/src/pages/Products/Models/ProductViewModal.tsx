@@ -9,7 +9,7 @@ import {
   FormSection,
 } from "../../../components/common";
 import styles from "../Products.module.css";
-import { getStatusBadge } from "../product.utils";
+import { getImageUrl, getStatusBadge } from "../product.utils";
 
 const ProductViewModal = ({
   isViewModalOpen,
@@ -18,6 +18,8 @@ const ProductViewModal = ({
   handleEditProduct,
 }: any) => {
   if (!selectedProduct) return null;
+
+  const variants = selectedProduct.variants || [];
 
   return (
     <Modal
@@ -29,7 +31,7 @@ const ProductViewModal = ({
       <div className={styles.productDetail}>
         <div className={styles.detailHeader}>
           <img
-            src={selectedProduct.images[0]}
+            src={getImageUrl(selectedProduct.thumbnailImage)}
             alt={selectedProduct.name}
             className={styles.detailImage}
           />
@@ -38,65 +40,56 @@ const ProductViewModal = ({
             <div className={styles.detailMeta}>
               {getStatusBadge(selectedProduct.status)}
               <Badge variant="default">{selectedProduct.category}</Badge>
-              {selectedProduct.badges.map((badge: string, i: number) => (
-                <Badge key={i} variant="info">
-                  {badge}
-                </Badge>
-              ))}
             </div>
-            <p className={styles.detailPrice}>
-              £{selectedProduct.price.toFixed(2)}
-            </p>
           </div>
         </div>
 
         <FormSection title="Description">
           <p className={styles.detailDescription}>
-            {selectedProduct.longDescription || selectedProduct.description}
+            {selectedProduct.description}
           </p>
         </FormSection>
 
-        {selectedProduct.variants && selectedProduct.variants.length > 0 && (
+        {variants.length > 0 && (
           <FormSection title="Variants">
             <div className={styles.variantsList}>
-              {selectedProduct.variants.map((v: any) => (
-                <div key={v.id} className={styles.variantItem}>
-                  <span>{v.name}</span>
-                  <span>£{v.price.toFixed(2)}</span>
-                </div>
-              ))}
+              {variants.map((v: any) => {
+                const available =
+                  (v.stockQuantity || 0) - (v.reservedQuantity || 0);
+
+                return (
+                  <div key={v._id} className={styles.variantItem}>
+                    <span>
+                      {v.name}{" "}
+                      {v.sku ? (
+                        <span className={styles.productSku}>({v.sku})</span>
+                      ) : null}
+                    </span>
+                    <span>
+                      £{Number(v.price || 0).toFixed(2)} · {available} avail
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </FormSection>
         )}
 
-        <FormSection title="Stock & Product Info">
+        <FormSection title="Product Info">
           <FormGrid>
             <FormValue
-              label="Stock Quantity"
-              value={selectedProduct.stock.quantity}
-            />
-            <FormValue
-              label="Low Stock Threshold"
-              value={selectedProduct.stock.lowStockThreshold}
-            />
-            <FormValue
-              label="Stock Status"
-              value={
-                selectedProduct.stock.inStock ? "In Stock" : "Out of Stock"
-              }
-            />
-            <FormValue
-              label="SKU"
-              value={selectedProduct.sku}
-              muted={!selectedProduct.sku}
+              label="Slug"
+              value={selectedProduct.slug}
+              muted={!selectedProduct.slug}
             />
             <FormValue
               label="Allergens"
-              value={selectedProduct.allergens.join(", ") || "None"}
+              value={(selectedProduct.allergens || []).join(", ") || "None"}
             />
             <FormValue
               label="Storage Notes"
               value={selectedProduct.storageNotes}
+              muted={!selectedProduct.storageNotes}
             />
           </FormGrid>
         </FormSection>

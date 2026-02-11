@@ -1,4 +1,4 @@
-import { Save, Upload, X, Image } from "lucide-react";
+import { Loader2, Save, Upload, X, Image } from "lucide-react";
 import {
   Button,
   Modal,
@@ -9,7 +9,6 @@ import {
 } from "../../../components/common";
 import styles from "../Products.module.css";
 
-const categories = ["Milk", "Milkshakes", "Cream", "Honey", "Butter", "Cheese"];
 const statuses = ["active", "draft", "archived"];
 
 const ProductEditModal = ({
@@ -29,6 +28,7 @@ const ProductEditModal = ({
   handleRemoveGalleryImage,
 
   handleSaveEdit,
+  isSaving,
 }: any) => {
   return (
     <Modal
@@ -50,22 +50,17 @@ const ProductEditModal = ({
         </FormRow>
 
         <FormRow label="Category" htmlFor="edit-category">
-          <select
+          <input
             id="edit-category"
-            value={editForm.category || "Milk"}
+            type="text"
+            value={editForm.category || ""}
             onChange={(e) =>
               setEditForm((p: any) => ({
                 ...p,
                 category: e.target.value,
               }))
             }
-          >
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+          />
         </FormRow>
 
         <FormRow label="Description" htmlFor="edit-description">
@@ -77,36 +72,6 @@ const ProductEditModal = ({
               setEditForm((p: any) => ({
                 ...p,
                 description: e.target.value,
-              }))
-            }
-          />
-        </FormRow>
-
-        <FormRow label="Long Description" htmlFor="edit-long-description">
-          <textarea
-            id="edit-long-description"
-            rows={3}
-            value={editForm.longDescription || ""}
-            onChange={(e) =>
-              setEditForm((p: any) => ({
-                ...p,
-                longDescription: e.target.value,
-              }))
-            }
-          />
-        </FormRow>
-
-        <FormRow label="Price (£)" htmlFor="edit-price">
-          <input
-            id="edit-price"
-            type="number"
-            step="0.01"
-            min="0"
-            value={editForm.price ?? 0}
-            onChange={(e) =>
-              setEditForm((p: any) => ({
-                ...p,
-                price: parseFloat(e.target.value) || 0,
               }))
             }
           />
@@ -129,43 +94,6 @@ const ProductEditModal = ({
               </option>
             ))}
           </select>
-        </FormRow>
-
-        <FormRow label="Stock Quantity" htmlFor="edit-stock">
-          <input
-            id="edit-stock"
-            type="number"
-            min="0"
-            value={editForm.stock?.quantity ?? 0}
-            onChange={(e) =>
-              setEditForm((p: any) => ({
-                ...p,
-                stock: {
-                  ...p.stock,
-                  quantity: parseInt(e.target.value) || 0,
-                  inStock: parseInt(e.target.value) > 0,
-                },
-              }))
-            }
-          />
-        </FormRow>
-
-        <FormRow label="Low Stock Alert" htmlFor="edit-threshold">
-          <input
-            id="edit-threshold"
-            type="number"
-            min="0"
-            value={editForm.stock?.lowStockThreshold ?? 10}
-            onChange={(e) =>
-              setEditForm((p: any) => ({
-                ...p,
-                stock: {
-                  ...p.stock,
-                  lowStockThreshold: parseInt(e.target.value) || 10,
-                },
-              }))
-            }
-          />
         </FormRow>
 
         <FormRow label="Allergens" htmlFor="edit-allergens">
@@ -278,11 +206,20 @@ const ProductEditModal = ({
       </FormGrid>
 
       <ModalFooter>
-        <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+        <Button
+          variant="outline"
+          onClick={() => setIsEditModalOpen(false)}
+          disabled={isSaving}
+        >
           Cancel
         </Button>
-        <Button onClick={handleSaveEdit}>
-          <Save size={16} /> Save Changes
+        <Button onClick={handleSaveEdit} disabled={isSaving}>
+          {isSaving ? (
+            <Loader2 size={16} className={styles.spinnerIcon} />
+          ) : (
+            <Save size={16} />
+          )}
+          Save Changes
         </Button>
       </ModalFooter>
     </Modal>

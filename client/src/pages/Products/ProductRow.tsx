@@ -1,31 +1,41 @@
-import { Eye, Edit2, Trash2, AlertTriangle } from "lucide-react";
+import { Eye, Edit2, Trash2 } from "lucide-react";
 import { Badge, Button, TableCell, TableRow } from "../../components/common";
-import { getStatusBadge } from "./product.utils";
+import { useNavigate } from "react-router-dom";
+import { getImageUrl, getStatusBadge } from "./product.utils";
 import styles from "./Products.module.css";
 
 const ProductRow = ({
   product,
+  counts,
   setSelectedProduct,
   setIsViewModalOpen,
-  setIsEditModalOpen,
   setIsDeleteModalOpen,
-  setProducts,
+  handleEditProduct,
 }: any) => {
-  const isLow = product.stock.quantity <= product.stock.lowStockThreshold;
-  const isOut = product.stock.quantity === 0;
+  const variantCount = counts?.total ?? product.variants?.length ?? 0;
+  const lowCount = counts?.low ?? 0;
+  const outCount = counts?.out ?? 0;
+  const navigate = useNavigate();
 
+  const thumbnailUrl = getImageUrl(product?.thumbnailImage);
   return (
-    <TableRow>
+    <TableRow
+      onClick={() => {
+        setSelectedProduct(product);
+        navigate(`/products/${product._id}`);
+      }}
+      className={styles.clickableRow}
+    >
       <TableCell>
         <div className={styles.productCell}>
           <img
-            src={product.images[0]}
+            src={thumbnailUrl}
             alt={product.name}
             className={styles.productImage}
           />
           <div className={styles.productInfo}>
             <span className={styles.productName}>{product.name}</span>
-            <span className={styles.productSku}>{product.sku}</span>
+            <span className={styles.productSku}>{product.slug}</span>
           </div>
         </div>
       </TableCell>
@@ -34,69 +44,21 @@ const ProductRow = ({
         <Badge variant="default">{product.category}</Badge>
       </TableCell>
 
-      <TableCell>£{product.price.toFixed(2)}</TableCell>
-
-      <TableCell>
-        <div className={styles.stockCell}>
-          <input
-            type="number"
-            min="0"
-            value={product.stock.quantity}
-            onChange={(e) =>
-              setProducts((prev: any[]) =>
-                prev.map((p) =>
-                  p.id === product.id
-                    ? {
-                        ...p,
-                        stock: {
-                          ...p.stock,
-                          quantity: +e.target.value,
-                          inStock: +e.target.value > 0,
-                        },
-                        updatedAt: new Date().toISOString(),
-                      }
-                    : p,
-                ),
-              )
-            }
-            className={`${styles.stockInput} ${
-              isLow ? styles.lowStock : ""
-            } ${isOut ? styles.outOfStock : ""}`}
-          />
-          {isLow && !isOut && (
-            <AlertTriangle size={14} className={styles.stockWarning} />
-          )}
-        </div>
-      </TableCell>
-
-      <TableCell>
-        <button
-          className={styles.statusToggle}
-          onClick={() => {
-            setProducts((prev: any[]) =>
-              prev.map((p) =>
-                p.id === product.id
-                  ? {
-                      ...p,
-                      status: p.status === "active" ? "draft" : "active",
-                      updatedAt: new Date().toISOString(),
-                    }
-                  : p,
-              ),
-            );
-          }}
-        >
-          {getStatusBadge(product.status)}
-        </button>
-      </TableCell>
+      <TableCell>{getStatusBadge(product.status)}</TableCell>
 
       <TableCell>
         <div className={styles.badgesCell}>
-          {product.badges.map((b: string, i: number) => (
-            <Badge key={i} size="sm">
-              {b}
+          <Badge size="sm">{variantCount}</Badge>
+          {lowCount > 0 ? (
+            <Badge variant="warning" size="sm">
+              Low {lowCount}
             </Badge>
-          ))}
+          ) : null}
+          {outCount > 0 ? (
+            <Badge variant="error" size="sm">
+              OOS {outCount}
+            </Badge>
+          ) : null}
         </div>
       </TableCell>
 
@@ -105,9 +67,10 @@ const ProductRow = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               setSelectedProduct(product);
-              setIsViewModalOpen(true);
+              navigate(`/products/${product._id}`);
             }}
           >
             <Eye size={16} />
@@ -116,9 +79,9 @@ const ProductRow = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              setSelectedProduct(product);
-              setIsEditModalOpen(true);
+            onClick={(e) => {
+              e.stopPropagation();
+              handleEditProduct(product);
             }}
           >
             <Edit2 size={16} />
@@ -127,7 +90,8 @@ const ProductRow = ({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               setSelectedProduct(product);
               setIsDeleteModalOpen(true);
             }}

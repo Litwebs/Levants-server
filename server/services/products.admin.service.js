@@ -3,6 +3,10 @@ const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
 const slugify = require("slugify");
 
+const base64ToTempFile = require("../utils/base64ToTempFile.util");
+
+const { uploadAndCreateFile } = require("./files.service");
+
 /**
  * Create product
  */
@@ -18,9 +22,57 @@ async function CreateProduct({ body, userId }) {
     };
   }
 
+  if (!body.thumbnailImage?.startsWith("data:")) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Thumbnail image is required",
+    };
+  }
+
+  // === Upload thumbnail ===
+  const thumbTmp = await base64ToTempFile(body.thumbnailImage);
+
+  const thumbUpload = await uploadAndCreateFile({
+    ...thumbTmp,
+    uploadedBy: userId,
+    folder: "litwebs/products/thumbnails",
+  });
+
+  if (!thumbUpload.success) {
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Failed to upload thumbnail image",
+    };
+  }
+
+  // === Upload gallery ===
+  const galleryImageIds = [];
+
+  if (Array.isArray(body.galleryImages)) {
+    for (const img of body.galleryImages) {
+      if (!img?.startsWith("data:")) continue;
+
+      const tmp = await base64ToTempFile(img);
+
+      const uploaded = await uploadAndCreateFile({
+        ...tmp,
+        uploadedBy: userId,
+        folder: "litwebs/products/gallery",
+      });
+
+      if (uploaded.success) {
+        galleryImageIds.push(uploaded.data._id);
+      }
+    }
+  }
+
   const product = await Product.create({
     ...body,
     slug,
+    thumbnailImage: thumbUpload.data._id,
+    galleryImages: galleryImageIds,
     createdBy: userId,
   });
 
@@ -34,7 +86,10 @@ async function CreateProduct({ body, userId }) {
  * Get product by ID (admin)
  */
 async function GetProductById({ productId }) {
-  const product = await Product.findById(productId);
+  const product = await Product.findById(productId)
+    .populate("thumbnailImage")
+    .populate("galleryImages");
+
   if (!product) {
     return {
       success: false,
@@ -42,15 +97,10 @@ async function GetProductById({ productId }) {
     };
   }
 
-  const variants = await Variant.find({ product: productId }).sort({
-    createdAt: -1,
-  });
-
   return {
     success: true,
     data: {
       product,
-      variants,
     },
   };
 }
@@ -82,10 +132,12 @@ async function ListProducts({
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(pageSize)
+      .populate("thumbnailImage")
+      .populate("galleryImages")
       .lean(),
   ]);
 
-  if (products.length === 0) {
+  if (!products.length) {
     return {
       success: true,
       data: { products: [] },
@@ -128,7 +180,7 @@ async function ListProducts({
 /**
  * Update product
  */
-async function UpdateProduct({ productId, body }) {
+async function UpdateProduct({ productId, body, userId }) {
   const product = await Product.findById(productId);
   if (!product) {
     return {
@@ -137,16 +189,16 @@ async function UpdateProduct({ productId, body }) {
     };
   }
 
-  // If name changes → regenerate slug safely
+  // Handle name / slug change
   if (body.name && body.name !== product.name) {
     const newSlug = slugify(body.name, { lower: true, strict: true });
 
-    const slugExists = await Product.findOne({
+    const exists = await Product.findOne({
       slug: newSlug,
       _id: { $ne: productId },
     });
 
-    if (slugExists) {
+    if (exists) {
       return {
         success: false,
         statusCode: 409,
@@ -154,14 +206,48 @@ async function UpdateProduct({ productId, body }) {
       };
     }
 
-    product.slug = newSlug;
     product.name = body.name;
+    product.slug = newSlug;
   }
 
-  // Prevent direct slug overwrite
-  const { slug, ...safeBody } = body;
+  // Replace thumbnail if new base64 provided
+  if (body.thumbnailImage?.startsWith("data:")) {
+    const tmp = await base64ToTempFile(body.thumbnailImage);
 
+    const uploaded = await uploadAndCreateFile({
+      ...tmp,
+      uploadedBy: userId,
+      folder: "litwebs/products/thumbnails",
+    });
+
+    if (uploaded.success) {
+      product.thumbnailImage = uploaded.data._id;
+    }
+  }
+
+  // Append new gallery images
+  if (Array.isArray(body.galleryImages)) {
+    for (const img of body.galleryImages) {
+      if (!img?.startsWith("data:")) continue;
+
+      const tmp = await base64ToTempFile(img);
+
+      const uploaded = await uploadAndCreateFile({
+        ...tmp,
+        uploadedBy: userId,
+        folder: "litwebs/products/gallery",
+      });
+
+      if (uploaded.success) {
+        product.galleryImages.push(uploaded.data._id);
+      }
+    }
+  }
+
+  // Prevent slug override
+  const { slug, thumbnailImage, galleryImages, ...safeBody } = body;
   Object.assign(product, safeBody);
+
   await product.save();
 
   return {

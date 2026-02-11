@@ -54,6 +54,17 @@ const orderItemSchema = new mongoose.Schema(
  */
 const orderSchema = new mongoose.Schema(
   {
+    /**
+     * Public / human-friendly order reference
+     * e.g. ORD-20260210-A9F4Q2
+     */
+    orderId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+
     // Guest or registered customer
     customer: {
       type: mongoose.Schema.Types.ObjectId,
@@ -137,6 +148,7 @@ const orderSchema = new mongoose.Schema(
     paidAt: {
       type: Date,
     },
+
     refund: {
       refundedAt: {
         type: Date,
@@ -154,7 +166,7 @@ const orderSchema = new mongoose.Schema(
 
       restock: {
         type: Boolean,
-        default: false, // 👈 admin choice
+        default: false,
       },
 
       stripeRefundId: {
@@ -172,6 +184,20 @@ const orderSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
+/**
+ * Auto-generate unique orderId
+ */
+orderSchema.pre("validate", function (next) {
+  if (!this.orderId) {
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+    const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    this.orderId = `ORD-${date}-${random}`;
+  }
+  // next();
+});
 
 /**
  * Clean API output

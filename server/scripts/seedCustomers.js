@@ -18,10 +18,10 @@ const must = (k) => {
 // ----------------------------
 // CONFIG
 // ----------------------------
-const CUSTOMER_COUNT = 25;
-const ORDERS_PER_CUSTOMER = 15; // 👈 MINIMUM 15 (as requested)
+const CUSTOMER_COUNT = 2500;
+const ORDERS_PER_CUSTOMER = 12; // 👈 MINIMUM 15 (as requested)
 
-const PRODUCT_ID = new mongoose.Types.ObjectId("6987405ac39be58259823437");
+const PRODUCT_ID = new mongoose.Types.ObjectId("698b6a310235da5b6921dc70");
 
 // ----------------------------
 // HELPERS

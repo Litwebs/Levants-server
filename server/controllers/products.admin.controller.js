@@ -8,7 +8,7 @@ const { sendCreated, sendOk, sendErr } = require("../utils/response.util");
 const CreateProduct = async (req, res) => {
   const result = await productService.CreateProduct({
     body: req.body,
-    userId: req.user.id,
+    userId: req.user?._id || req.user?.id,
   });
 
   if (!result.success) {
@@ -63,6 +63,7 @@ const UpdateProduct = async (req, res) => {
   const result = await productService.UpdateProduct({
     productId: req.params.productId,
     body: req.body,
+    userId: req.user?._id || req.user?.id,
   });
 
   if (!result.success) {
