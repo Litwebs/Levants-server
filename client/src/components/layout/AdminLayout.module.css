@@ -127,13 +127,16 @@
 .main {
   flex: 1;
   margin-left: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  transition: margin-left var(--transition-smooth);
+  transition: margin-left var(--transition-smooth), width var(--transition-smooth);
 }
 
 .sidebar.collapsed ~ .main {
   margin-left: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
 }
 
 /* Topbar */
@@ -282,7 +285,8 @@
 .content {
   flex: 1;
   padding: var(--space-6);
-  max-width: var(--content-max-width);
+  width: 100%;
+  max-width: none;
 }
 
 /* Responsive */

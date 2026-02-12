@@ -1,16 +1,9 @@
-import { Clock, CheckCircle, Package, Truck, X } from "lucide-react";
+import { Clock, CheckCircle, X } from "lucide-react";
 import { Modal } from "../../components/common";
 import styles from "./Orders.module.css";
 import { getStatusBadge } from "./order.utils";
 
-const STATUSES = [
-  "new",
-  "confirmed",
-  "preparing",
-  "out_for_delivery",
-  "delivered",
-  "cancelled",
-] as const;
+const STATUSES = ["pending", "paid", "cancelled", "refunded"] as const;
 
 const OrderStatusModal = ({
   selectedOrder,
@@ -46,12 +39,10 @@ const OrderStatusModal = ({
               onClick={() => updateOrderStatus(selectedOrder.id, status)}
               disabled={selectedOrder.fulfillmentStatus === status}
             >
-              {status === "new" && <Clock size={18} />}
-              {status === "confirmed" && <CheckCircle size={18} />}
-              {status === "preparing" && <Package size={18} />}
-              {status === "out_for_delivery" && <Truck size={18} />}
-              {status === "delivered" && <CheckCircle size={18} />}
+              {status === "pending" && <Clock size={18} />}
+              {status === "paid" && <CheckCircle size={18} />}
               {status === "cancelled" && <X size={18} />}
+              {status === "refunded" && <CheckCircle size={18} />}
               <span>{status.replace(/_/g, " ")}</span>
             </button>
           ))}

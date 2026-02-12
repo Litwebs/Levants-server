@@ -120,6 +120,13 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    deliveryStatus: {
+      type: String,
+      enum: ["ordered", "dispatched", "in_transit", "delivered", "returned"],
+      default: "ordered",
+      index: true,
+    },
+
     reservationExpiresAt: {
       type: Date,
       required: true,

@@ -2,12 +2,7 @@ import { Download, RefreshCw } from "lucide-react";
 import { Button } from "../../components/common";
 import styles from "./Orders.module.css";
 
-const OrdersHeader = ({
-  filteredOrders,
-  exportToCSV,
-  setOrders,
-  orders,
-}: any) => {
+const OrdersHeader = ({ filteredOrders, exportToCSV, refresh }: any) => {
   return (
     <div className={styles.header}>
       <div>
@@ -26,7 +21,7 @@ const OrdersHeader = ({
         <Button
           variant="outline"
           leftIcon={<RefreshCw size={16} />}
-          onClick={() => setOrders(orders)}
+          onClick={refresh}
         >
           Refresh
         </Button>

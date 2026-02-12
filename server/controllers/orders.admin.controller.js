@@ -3,10 +3,48 @@ const refundService = require("../services/orders.refund.service");
 const { sendOk, sendErr } = require("../utils/response.util");
 
 const ListOrders = async (req, res) => {
+  const page = Number(req.query.page || 1);
+  const pageSize = Number(req.query.pageSize || 20);
+
+  const rawSortBy =
+    typeof req.query.sortBy === "string" ? req.query.sortBy : undefined;
+  const rawSortOrder =
+    typeof req.query.sortOrder === "string" ? req.query.sortOrder : undefined;
+
+  // Avoid allowing arbitrary sort field injection.
+  const allowedSortBy = new Set([
+    "createdAt",
+    "updatedAt",
+    "total",
+    "subtotal",
+    "paidAt",
+    "expiresAt",
+    "orderId",
+    "status",
+  ]);
+
+  const sortBy =
+    rawSortBy && allowedSortBy.has(rawSortBy) ? rawSortBy : undefined;
+  const sortOrder =
+    rawSortOrder === "asc"
+      ? "asc"
+      : rawSortOrder === "desc"
+        ? "desc"
+        : undefined;
+
+  // Keep filters separate from paging/sorting params.
+  const filters = { ...req.query };
+  delete filters.page;
+  delete filters.pageSize;
+  delete filters.sortBy;
+  delete filters.sortOrder;
+
   const result = await service.ListOrders({
-    filters: req.query,
-    page: Number(req.query.page || 1),
-    pageSize: Number(req.query.pageSize || 20),
+    filters,
+    page,
+    pageSize,
+    sortBy: sortBy || "createdAt",
+    sortOrder: sortOrder || "desc",
   });
 
   return sendOk(res, result.data);

@@ -14,7 +14,6 @@ import Products from "./pages/Products/Products";
 import ProductVariantsPage from "./pages/Products/ProductVariantsPage";
 import Customers from "./pages/Customers/Customers";
 import Promotions from "./pages/Promotions";
-import Reports from "./pages/Reports";
 import Settings from "./pages/Settings/Settings";
 import ComingSoon from "./pages/ComingSoon";
 import Login from "./pages/Auth/Login";
@@ -25,6 +24,8 @@ import VerifyEmailChange from "./pages/Auth/VerifyEmailChange";
 import { AuthProvider, useAuth } from "./context/Auth/AuthContext";
 import { UsersProvider } from "./context/Users";
 import { CustomersProvider } from "./context/Customers";
+import { OrdersProvider } from "./context/Orders";
+import { AnalyticsProvider } from "./context/Analytics";
 import {
   DeliveryRunsPage,
   DeliveryRunDetailsPage,
@@ -58,61 +59,71 @@ const App = () => (
     <AuthProvider>
       <UsersProvider>
         <CustomersProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route
-                path="/login"
-                element={
-                  <PublicOnly>
-                    <Login />
-                  </PublicOnly>
-                }
-              />
+          <OrdersProvider>
+            <AnalyticsProvider>
+              <BrowserRouter>
+                <Routes>
+                  <Route
+                    path="/login"
+                    element={
+                      <PublicOnly>
+                        <Login />
+                      </PublicOnly>
+                    }
+                  />
 
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route
-                path="/verify-email-change"
-                element={<VerifyEmailChange />}
-              />
-              <Route path="/2fa" element={<TwoFactor />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route
+                    path="/verify-email-change"
+                    element={<VerifyEmailChange />}
+                  />
+                  <Route path="/2fa" element={<TwoFactor />} />
 
-              <Route
-                element={
-                  <RequireAuth>
-                    <AdminShell />
-                  </RequireAuth>
-                }
-              >
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/orders" element={<Orders />} />
-                <Route path="/deliveries" element={<Deliveries />} />
-                <Route path="/delivery-runs" element={<DeliveryRunsPage />} />
-                <Route
-                  path="/delivery-runs/:id"
-                  element={<DeliveryRunDetailsPage />}
-                />
-                <Route path="/products" element={<Products />} />
-                <Route
-                  path="/products/:productId"
-                  element={<ProductVariantsPage />}
-                />
-                <Route path="/customers" element={<Customers />} />
-                <Route path="/promotions" element={<Promotions />} />
-                <Route
-                  path="/content"
-                  element={
-                    <ComingSoon
-                      title="Content Management"
-                      description="Manage website content, banners, and marketing materials."
+                  <Route
+                    element={
+                      <RequireAuth>
+                        <AdminShell />
+                      </RequireAuth>
+                    }
+                  >
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/orders" element={<Orders />} />
+                    <Route path="/deliveries" element={<Deliveries />} />
+                    <Route
+                      path="/delivery-runs"
+                      element={<DeliveryRunsPage />}
                     />
-                  }
-                />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/settings" element={<Settings />} />
-              </Route>
-            </Routes>
-          </BrowserRouter>
+                    <Route
+                      path="/delivery-runs/:id"
+                      element={<DeliveryRunDetailsPage />}
+                    />
+                    <Route path="/products" element={<Products />} />
+                    <Route
+                      path="/products/:productId"
+                      element={<ProductVariantsPage />}
+                    />
+                    <Route path="/customers" element={<Customers />} />
+                    <Route path="/promotions" element={<Promotions />} />
+                    <Route
+                      path="/content"
+                      element={
+                        <ComingSoon
+                          title="Content Management"
+                          description="Manage website content, banners, and marketing materials."
+                        />
+                      }
+                    />
+                    <Route
+                      path="/reports"
+                      element={<Navigate to="/" replace />}
+                    />
+                    <Route path="/settings" element={<Settings />} />
+                  </Route>
+                </Routes>
+              </BrowserRouter>
+            </AnalyticsProvider>
+          </OrdersProvider>
         </CustomersProvider>
       </UsersProvider>
     </AuthProvider>

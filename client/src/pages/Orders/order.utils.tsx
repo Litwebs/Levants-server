@@ -1,35 +1,47 @@
 import { Badge } from "../../components/common";
-import { Order } from "./mockData";
 
-type FulfillmentStatus = Order["fulfillmentStatus"];
-type PaymentStatus = Order["paymentStatus"];
+type FulfillmentStatus =
+  | "pending"
+  | "paid"
+  | "failed"
+  | "cancelled"
+  | "refund_pending"
+  | "refunded"
+  | "refund_failed"
+  | (string & {});
+
+type PaymentStatus = FulfillmentStatus;
 
 export const getStatusBadge = (status: FulfillmentStatus) => {
-  const map: Record<FulfillmentStatus, { variant: any; label: string }> = {
-    new: { variant: "info", label: "New" },
-    confirmed: { variant: "info", label: "Confirmed" },
-    preparing: { variant: "warning", label: "Preparing" },
-    out_for_delivery: { variant: "info", label: "Out for Delivery" },
-    delivered: { variant: "success", label: "Delivered" },
+  const map: Record<string, { variant: any; label: string }> = {
+    pending: { variant: "warning", label: "Pending" },
+    paid: { variant: "success", label: "Paid" },
+    failed: { variant: "error", label: "Failed" },
     cancelled: { variant: "error", label: "Cancelled" },
+    refund_pending: { variant: "warning", label: "Refund Pending" },
+    refunded: { variant: "info", label: "Refunded" },
+    refund_failed: { variant: "error", label: "Refund Failed" },
   };
 
-  const { variant, label } = map[status];
-  return <Badge variant={variant}>{label}</Badge>;
+  const cfg = map[status] ?? { variant: "info", label: String(status) };
+  return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
 };
 
 export const getPaymentBadge = (status: PaymentStatus) => {
-  const map: Record<PaymentStatus, { variant: any; label: string }> = {
+  const map: Record<string, { variant: any; label: string }> = {
+    pending: { variant: "warning", label: "Pending" },
     paid: { variant: "success", label: "Paid" },
-    unpaid: { variant: "warning", label: "Unpaid" },
-    refunded: { variant: "error", label: "Refunded" },
-    partially_refunded: { variant: "warning", label: "Partial Refund" },
+    failed: { variant: "error", label: "Failed" },
+    cancelled: { variant: "error", label: "Cancelled" },
+    refund_pending: { variant: "warning", label: "Refund Pending" },
+    refunded: { variant: "info", label: "Refunded" },
+    refund_failed: { variant: "error", label: "Refund Failed" },
   };
 
-  const { variant, label } = map[status];
+  const cfg = map[status] ?? { variant: "info", label: String(status) };
   return (
-    <Badge variant={variant} size="sm">
-      {label}
+    <Badge variant={cfg.variant} size="sm">
+      {cfg.label}
     </Badge>
   );
 };

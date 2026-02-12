@@ -7,18 +7,33 @@ const OrdersFilters = ({
   setSearchQuery,
   showFilters,
   setShowFilters,
-  paymentFilter,
-  setPaymentFilter,
+  statusFilter,
+  setStatusFilter,
   dateFilter,
   setDateFilter,
   sortBy,
   setSortBy,
+
+  customerFilter,
+  setCustomerFilter,
+  minTotal,
+  setMinTotal,
+  maxTotal,
+  setMaxTotal,
+  dateFrom,
+  setDateFrom,
+  dateTo,
+  setDateTo,
+  refundedOnly,
+  setRefundedOnly,
+  expiredOnly,
+  setExpiredOnly,
 }: any) => {
   return (
     <Card className={styles.filtersCard}>
       <div className={styles.searchRow}>
         <div className={styles.searchInput}>
-          <Search size={18} />
+          <Search size={18} className={styles.searchIcon} />
           <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -26,7 +41,11 @@ const OrdersFilters = ({
             className={styles.search}
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery("")}>
+            <button
+              type="button"
+              className={styles.clearSearch}
+              onClick={() => setSearchQuery("")}
+            >
               <X size={16} />
             </button>
           )}
@@ -55,34 +74,117 @@ const OrdersFilters = ({
 
       {showFilters && (
         <div className={styles.filtersRow}>
-          <Select
-            value={paymentFilter}
-            onChange={setPaymentFilter}
-            options={[
-              { value: "all", label: "All Payments" },
-              { value: "paid", label: "Paid" },
-              { value: "unpaid", label: "Unpaid" },
-              { value: "refunded", label: "Refunded" },
-            ]}
-          />
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Status</label>
+            <Select
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "all", label: "All Statuses" },
+                { value: "pending", label: "Pending" },
+                { value: "paid", label: "Paid" },
+                { value: "failed", label: "Failed" },
+                { value: "cancelled", label: "Cancelled" },
+                { value: "refund_pending", label: "Refund Pending" },
+                { value: "refunded", label: "Refunded" },
+                { value: "refund_failed", label: "Refund Failed" },
+              ]}
+            />
+          </div>
 
-          <Select
-            value={dateFilter}
-            onChange={setDateFilter}
-            options={[
-              { value: "all", label: "All Time" },
-              { value: "today", label: "Today" },
-              { value: "week", label: "Last 7 Days" },
-              { value: "month", label: "Last 30 Days" },
-            ]}
-          />
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Created</label>
+            <Select
+              value={dateFilter}
+              onChange={setDateFilter}
+              options={[
+                { value: "all", label: "All Time" },
+                { value: "today", label: "Today" },
+                { value: "week", label: "Last 7 Days" },
+                { value: "month", label: "Last 30 Days" },
+                { value: "custom", label: "Custom Range" },
+              ]}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Date From</label>
+            <input
+              type="date"
+              className={styles.filterInput}
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setDateFilter("custom");
+              }}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Date To</label>
+            <input
+              type="date"
+              className={styles.filterInput}
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setDateFilter("custom");
+              }}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Min Total</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={minTotal}
+              onChange={(e) => setMinTotal(e.target.value)}
+              className={styles.filterInput}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Max Total</label>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={maxTotal}
+              onChange={(e) => setMaxTotal(e.target.value)}
+              className={styles.filterInput}
+            />
+          </div>
+
+          <label className={styles.checkboxFilter}>
+            <input
+              type="checkbox"
+              checked={refundedOnly}
+              onChange={(e) => setRefundedOnly(e.target.checked)}
+            />
+            Refunded only
+          </label>
+
+          <label className={styles.checkboxFilter}>
+            <input
+              type="checkbox"
+              checked={expiredOnly}
+              onChange={(e) => setExpiredOnly(e.target.checked)}
+            />
+            Expired only
+          </label>
 
           <Button
             variant="ghost"
             onClick={() => {
-              setPaymentFilter("all");
+              setStatusFilter("all");
               setDateFilter("all");
               setSearchQuery("");
+              setMinTotal("");
+              setMaxTotal("");
+              setDateFrom("");
+              setDateTo("");
+              setRefundedOnly(false);
+              setExpiredOnly(false);
             }}
           >
             Clear Filters

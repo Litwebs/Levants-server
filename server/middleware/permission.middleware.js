@@ -52,6 +52,17 @@ const requirePermission = (requiredPermission) => {
       return next();
     }
 
+    // ✅ Wildcard namespace match (e.g. "orders.*" matches "orders.read")
+    for (const perm of permissions) {
+      if (typeof perm !== "string") continue;
+      if (!perm.endsWith(".*")) continue;
+
+      const prefix = perm.slice(0, -1); // keep trailing dot
+      if (requiredPermission.startsWith(prefix)) {
+        return next();
+      }
+    }
+
     // ❌ Permission denied
     return next({
       statusCode: 403,

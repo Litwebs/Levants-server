@@ -38,6 +38,15 @@
   transition: height var(--transition-normal);
 }
 
+.highlight {
+  box-shadow: 0 0 0 2px var(--color-gray-900);
+}
+
+.highlightLabel {
+  color: var(--color-gray-900);
+  font-weight: var(--font-semibold);
+}
+
 .bar.primary {
   background: linear-gradient(180deg, var(--color-primary), var(--color-primary-dark));
 }

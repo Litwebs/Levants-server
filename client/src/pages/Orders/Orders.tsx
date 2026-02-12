@@ -15,7 +15,7 @@ const Orders = () => {
   return (
     <div className={styles.page}>
       <OrdersHeader {...ordersState} />
-      <OrdersStatusTabs {...ordersState} />
+      {/* <OrdersStatusTabs {...ordersState} /> */}
       <OrdersFilters {...ordersState} />
       <OrdersBulkActions {...ordersState} />
       <OrdersTable {...ordersState} />
