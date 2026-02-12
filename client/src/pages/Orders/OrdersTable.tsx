@@ -18,6 +18,7 @@ const OrdersTable = ({
   setPageSize,
   meta,
 }: any) => {
+  console.log("OrdersTable render", filteredOrders);
   const total = meta?.total ?? filteredOrders?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -52,9 +53,9 @@ const OrdersTable = ({
                 <th>Customer</th>
                 <th>Items</th>
                 <th>Total</th>
-                <th>Status</th>
+                <th>Delivery Status</th>
                 <th>Payment</th>
-                <th>Delivery</th>
+                <th>Delivery Date</th>
               </tr>
             </thead>
 
@@ -141,7 +142,9 @@ const OrdersTable = ({
                       </span>
                     </td>
 
-                    <td>{getStatusBadge(order.fulfillmentStatus)}</td>
+                    <td>
+                      {getStatusBadge(order.deliveryStatus?.replace(/_/g, " "))}
+                    </td>
                     <td>{getPaymentBadge(order.paymentStatus)}</td>
 
                     <td>

@@ -7,7 +7,7 @@ import {
 } from "react-router-dom";
 import { AdminLayout } from "./components/layout/AdminLayout";
 import { ToastProvider } from "./components/common/Toast";
-import Dashboard from "./pages/Dashboard";
+import Dashboard from "./pages/Dashboard/Dashboard";
 import Orders from "./pages/Orders/Orders";
 import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";

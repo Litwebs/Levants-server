@@ -14,6 +14,7 @@ import OrdersReducer, {
   ORDERS_REQUEST,
   ORDERS_SET_CURRENT,
   ORDERS_UPDATE_SUCCESS,
+  ORDERS_BULK_UPDATE_SUCCESS,
 } from "./OrdersReducer";
 
 import type {
@@ -51,7 +52,7 @@ type OrdersContextType = {
     pageSize?: number;
 
     // filters
-    status?: string | string[];
+    deliveryStatus?: string | string[];
     search?: string;
     minTotal?: number | string;
     maxTotal?: number | string;
@@ -69,13 +70,23 @@ type OrdersContextType = {
 
   updateOrderStatus: (
     orderId: string,
-    status: "pending" | "paid" | "cancelled" | "refunded",
+    status: "ordered" | "dispatched" | "in_transit" | "delivered" | "returned",
   ) => Promise<AdminOrder>;
 
   refundOrder: (
     orderId: string,
     body?: { reason?: string; restock?: boolean },
   ) => Promise<RefundOrderResult>;
+
+  bulkUpdateDeliveryStatus: (
+    orderIds: string[],
+    deliveryStatus:
+      | "ordered"
+      | "dispatched"
+      | "in_transit"
+      | "delivered"
+      | "returned",
+  ) => Promise<{ matched: number; modified: number }>;
 };
 
 const OrdersContext = createContext<OrdersContextType | null>(null);
@@ -88,7 +99,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       page?: number;
       pageSize?: number;
 
-      status?: string | string[];
+      deliveryStatus?: string | string[];
       search?: string;
       minTotal?: number | string;
       maxTotal?: number | string;
@@ -107,7 +118,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
             page: params?.page,
             pageSize: params?.pageSize,
 
-            status: params?.status,
+            deliveryStatus: params?.deliveryStatus,
             search: params?.search,
             minTotal: params?.minTotal,
             maxTotal: params?.maxTotal,
@@ -125,7 +136,6 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
           orders?: AdminOrder[];
           meta?: OrdersListMeta;
         }>(res.data);
-
         const orders = data?.orders ?? [];
         const meta = data?.meta ?? null;
 
@@ -159,12 +169,23 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
   const updateOrderStatus = useCallback(
     async (
       orderId: string,
-      status: "pending" | "paid" | "cancelled" | "refunded",
+      deliveryStatus:
+        | "ordered"
+        | "dispatched"
+        | "in_transit"
+        | "delivered"
+        | "returned",
     ) => {
       dispatch({ type: ORDERS_REQUEST });
       try {
+        console.log(
+          "Updating order",
+          orderId,
+          "to deliveryStatus",
+          deliveryStatus,
+        );
         const res = await api.put(`/admin/orders/${orderId}/status`, {
-          status,
+          deliveryStatus,
         });
         const order = unwrapData<AdminOrder>(res.data);
         if (!order?._id) throw new Error("Failed to update order status");
@@ -174,6 +195,48 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       } catch (err: any) {
         const msg =
           err?.response?.data?.message || "Failed to update order status";
+        dispatch({ type: ORDERS_FAILURE, payload: msg });
+        throw err;
+      }
+    },
+    [],
+  );
+
+  const bulkUpdateDeliveryStatus = useCallback(
+    async (
+      orderIds: string[],
+      deliveryStatus:
+        | "ordered"
+        | "dispatched"
+        | "in_transit"
+        | "delivered"
+        | "returned",
+    ) => {
+      dispatch({ type: ORDERS_REQUEST });
+
+      try {
+        const res = await api.put("/admin/orders/bulk/delivery-status", {
+          orderIds,
+          deliveryStatus,
+        });
+
+        const data = unwrapData<{ matched: number; modified: number }>(
+          res.data,
+        );
+        if (!data) throw new Error("Bulk update failed");
+
+        // ✅ optimistic patch: update local list + current order
+        dispatch({
+          type: ORDERS_BULK_UPDATE_SUCCESS,
+          payload: {
+            orderIds,
+            patch: { deliveryStatus },
+          },
+        });
+
+        return data;
+      } catch (err: any) {
+        const msg = err?.response?.data?.message || "Bulk update failed";
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -227,8 +290,16 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       getOrderById,
       updateOrderStatus,
       refundOrder,
+      bulkUpdateDeliveryStatus,
     }),
-    [state, listOrders, getOrderById, updateOrderStatus, refundOrder],
+    [
+      state,
+      listOrders,
+      getOrderById,
+      updateOrderStatus,
+      refundOrder,
+      bulkUpdateDeliveryStatus,
+    ],
   );
 
   return (

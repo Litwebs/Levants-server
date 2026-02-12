@@ -6,6 +6,8 @@ export const ORDERS_FAILURE = "ORDERS_FAILURE";
 export const ORDERS_LIST_SUCCESS = "ORDERS_LIST_SUCCESS";
 export const ORDERS_SET_CURRENT = "ORDERS_SET_CURRENT";
 export const ORDERS_UPDATE_SUCCESS = "ORDERS_UPDATE_SUCCESS";
+export const ORDERS_BULK_UPDATE_SUCCESS = "ORDERS_BULK_UPDATE_SUCCESS";
+
 
 export type OrdersAction =
   | { type: typeof ORDERS_REQUEST }
@@ -15,7 +17,19 @@ export type OrdersAction =
       payload: { orders: AdminOrder[]; meta: OrdersListMeta | null };
     }
   | { type: typeof ORDERS_SET_CURRENT; payload: { order: AdminOrder | null } }
-  | { type: typeof ORDERS_UPDATE_SUCCESS; payload: { order: AdminOrder } };
+  | { type: typeof ORDERS_UPDATE_SUCCESS; payload: { order: AdminOrder } }   
+  | {
+      type: typeof ORDERS_BULK_UPDATE_SUCCESS;
+      payload: {
+        orderIds: string[];
+        patch: Partial<AdminOrder>;
+      };
+    }
+    
+const applyPatch = (previous: AdminOrder, patch: Partial<AdminOrder>): AdminOrder => {
+  const incoming = { ...previous, ...patch } as AdminOrder;
+  return mergeCustomerIfNeeded(previous, incoming);
+};
 
 const mergeCustomerIfNeeded = (
   previous: AdminOrder | undefined,
@@ -89,6 +103,29 @@ export default function OrdersReducer(
         currentOrder: nextCurrent,
       };
     }
+        case ORDERS_BULK_UPDATE_SUCCESS: {
+      const { orderIds, patch } = action.payload;
+
+      const idSet = new Set(orderIds);
+
+      const nextOrders = state.orders.map((o) =>
+        idSet.has(o._id) ? applyPatch(o, patch) : o,
+      );
+
+      const nextCurrent =
+        state.currentOrder && idSet.has(state.currentOrder._id)
+          ? applyPatch(state.currentOrder, patch)
+          : state.currentOrder;
+
+      return {
+        ...state,
+        loading: false,
+        error: null,
+        orders: nextOrders,
+        currentOrder: nextCurrent,
+      };
+    }
+
 
     default:
       return state || initialOrdersState;

@@ -1,13 +1,12 @@
 // scripts/seedCustomers.js
-// HARD RESET + seed customers, addresses, and orders (STRICT SAFE)
+// HARD RESET + seed customers ONLY (STRICT SAFE)
 
 require("dotenv").config();
 const mongoose = require("mongoose");
 
 const Customer = require("../models/customer.model");
-const Order = require("../models/order.model");
-const Product = require("../models/product.model");
-const Variant = require("../models/variant.model");
+// Optional (OFF by default). Only enable if you want to avoid orphan orders.
+// const Order = require("../models/order.model");
 
 const must = (k) => {
   const v = process.env[k];
@@ -18,16 +17,15 @@ const must = (k) => {
 // ----------------------------
 // CONFIG
 // ----------------------------
-const CUSTOMER_COUNT = 2500;
-const ORDERS_PER_CUSTOMER = 12; // 👈 MINIMUM 15 (as requested)
+const CUSTOMER_COUNT = 12;
 
-const PRODUCT_ID = new mongoose.Types.ObjectId("698b6a310235da5b6921dc70");
+// If you have orders referencing customers, deleting customers will leave orphan orders.
+// Set true ONLY if you want to clear orders as well.
+// const ALSO_CLEAR_ORDERS = false;
 
 // ----------------------------
 // HELPERS
 // ----------------------------
-const randomFrom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-
 const generateAddress = (i) => ({
   line1: `${i + 10} Seed Street`,
   line2: null,
@@ -43,101 +41,36 @@ const generateAddress = (i) => ({
 const main = async () => {
   await mongoose.connect(must("MONGO_URI"));
 
-  console.log("🧨 Clearing existing customers & orders...");
-  await Order.deleteMany({});
+  console.log("🧨 Clearing existing customers...");
+  // If you want to be extra safe and only remove seeded ones, swap to:
+  // await Customer.deleteMany({ "metadata.seeded": true });
   await Customer.deleteMany({});
 
-  // ----------------------------
-  // LOAD PRODUCT + VARIANTS
-  // ----------------------------
-  const product = await Product.findById(PRODUCT_ID);
-  if (!product) {
-    throw new Error("Product not found. Seed products first.");
-  }
+  // Optional:
+  // if (ALSO_CLEAR_ORDERS) {
+  //   console.log("🧨 Clearing existing orders (optional)...");
+  //   await Order.deleteMany({});
+  // }
 
-  const variants = await Variant.find({ product: PRODUCT_ID });
-  if (!variants.length) {
-    throw new Error("No variants found for product.");
-  }
+  console.log(`👤 Seeding ${CUSTOMER_COUNT} customers...`);
 
-  // ----------------------------
-  // CREATE CUSTOMERS
-  // ----------------------------
-  for (let i = 0; i < CUSTOMER_COUNT; i++) {
-    const customer = await Customer.create({
-      email: `seed.customer${i + 1}@test.com`,
-      firstName: `Customer${i + 1}`,
-      lastName: "Seeded",
-      phone: `07123456${100 + i}`,
-      isGuest: true,
-      addresses: [generateAddress(i)],
-    });
+  const customers = Array.from({ length: CUSTOMER_COUNT }, (_, i) => ({
+    email: `seed.customer${i + 1}@test.com`,
+    firstName: `Customer${i + 1}`,
+    lastName: "Seeded",
+    phone: `07123456${String(100 + i)}`, // keeps it as a string
+    isGuest: true,
+    addresses: [generateAddress(i)],
+    // If your schema supports metadata, keeping this is handy:
+    metadata: { seeded: true },
+    // lastOrderAt intentionally omitted (no orders are being created now)
+  }));
 
-    let lastOrderAt = null;
+  // insertMany is much faster than Customer.create in a loop
+  await Customer.insertMany(customers);
 
-    // ----------------------------
-    // CREATE ORDERS
-    // ----------------------------
-    for (let j = 0; j < ORDERS_PER_CUSTOMER; j++) {
-      const variant = randomFrom(variants);
-      const quantity = 1 + (j % 3);
-
-      const itemSubtotal = Number((variant.price * quantity).toFixed(2));
-
-      const deliveryFee = 2.99;
-      const total = Number((itemSubtotal + deliveryFee).toFixed(2));
-
-      const createdAt = new Date(
-        Date.now() - Math.random() * 1000 * 60 * 60 * 24 * 60,
-      );
-
-      await Order.create({
-        customer: customer._id,
-
-        items: [
-          {
-            product: product._id,
-            variant: variant._id,
-            name: `${product.name} – ${variant.name}`,
-            sku: variant.sku,
-            price: variant.price,
-            quantity,
-            subtotal: itemSubtotal,
-          },
-        ],
-
-        currency: "GBP",
-        subtotal: itemSubtotal,
-        deliveryFee,
-        total,
-
-        status: "paid",
-        paidAt: createdAt,
-
-        reservationExpiresAt: new Date(createdAt.getTime() + 15 * 60 * 1000),
-
-        metadata: {
-          seeded: true,
-        },
-
-        createdAt,
-        updatedAt: createdAt,
-      });
-
-      if (!lastOrderAt || createdAt > lastOrderAt) {
-        lastOrderAt = createdAt;
-      }
-    }
-
-    // ----------------------------
-    // UPDATE CUSTOMER LAST ORDER
-    // ----------------------------
-    await Customer.updateOne({ _id: customer._id }, { $set: { lastOrderAt } });
-  }
-
-  console.log("✅ Customers + orders seeded successfully");
+  console.log("✅ Customers seeded successfully");
   console.log(`👤 Customers: ${CUSTOMER_COUNT}`);
-  console.log(`📦 Orders per customer: ${ORDERS_PER_CUSTOMER}`);
 
   await mongoose.disconnect();
 };

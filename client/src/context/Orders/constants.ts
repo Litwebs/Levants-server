@@ -69,6 +69,7 @@ export type AdminOrder = {
   deliveryFee: number;
   total: number;
   status: OrderStatus;
+  deliveryStatus: string;
 
   reservationExpiresAt?: string;
   paidAt?: string;

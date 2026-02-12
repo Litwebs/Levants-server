@@ -7,15 +7,16 @@ const OrdersFilters = ({
   setSearchQuery,
   showFilters,
   setShowFilters,
-  statusFilter,
-  setStatusFilter,
+
+  // rename these in parent if you can:
+  deliveryStatusFilter,
+  setDeliveryStatusFilter,
+
   dateFilter,
   setDateFilter,
   sortBy,
   setSortBy,
 
-  customerFilter,
-  setCustomerFilter,
   minTotal,
   setMinTotal,
   maxTotal,
@@ -75,19 +76,17 @@ const OrdersFilters = ({
       {showFilters && (
         <div className={styles.filtersRow}>
           <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Status</label>
+            <label className={styles.filterLabel}>Delivery Status</label>
             <Select
-              value={statusFilter}
-              onChange={setStatusFilter}
+              value={deliveryStatusFilter}
+              onChange={setDeliveryStatusFilter}
               options={[
-                { value: "all", label: "All Statuses" },
-                { value: "pending", label: "Pending" },
-                { value: "paid", label: "Paid" },
-                { value: "failed", label: "Failed" },
-                { value: "cancelled", label: "Cancelled" },
-                { value: "refund_pending", label: "Refund Pending" },
-                { value: "refunded", label: "Refunded" },
-                { value: "refund_failed", label: "Refund Failed" },
+                { value: "all", label: "All Delivery Statuses" },
+                { value: "ordered", label: "Ordered" },
+                { value: "dispatched", label: "Dispatched" },
+                { value: "in_transit", label: "In Transit" },
+                { value: "delivered", label: "Delivered" },
+                { value: "returned", label: "Returned" },
               ]}
             />
           </div>
@@ -176,7 +175,7 @@ const OrdersFilters = ({
           <Button
             variant="ghost"
             onClick={() => {
-              setStatusFilter("all");
+              setDeliveryStatusFilter("all");
               setDateFilter("all");
               setSearchQuery("");
               setMinTotal("");

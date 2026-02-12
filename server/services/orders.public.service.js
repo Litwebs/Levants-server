@@ -3,6 +3,23 @@ const Order = require("../models/order.model");
 const ProductVariant = require("../models/variant.model");
 const stripe = require("../utils/stripe.util");
 
+function getReservationTtlMinutes() {
+  const raw = process.env.ORDER_RESERVATION_TTL_MINUTES;
+  const parsed = Number(raw);
+
+  // Stripe Checkout sessions can't expire sooner than ~30 minutes.
+  // Keeping the reservation window >= 30 minutes ensures an expired order
+  // cannot still be paid for on the Checkout page.
+  const fallback = 30;
+  const minMinutes = 30;
+  const maxMinutes = 24 * 60;
+
+  let minutes = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  minutes = Math.min(Math.max(minutes, minMinutes), maxMinutes);
+
+  return minutes;
+}
+
 function normalizeBaseUrl(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -100,6 +117,11 @@ async function CreateOrder({ customerId, items } = {}) {
     const deliveryFee = 0;
     const total = subtotal + deliveryFee;
 
+    const reservationTtlMinutes = getReservationTtlMinutes();
+    const reservationExpiresAt = new Date(
+      Date.now() + reservationTtlMinutes * 60 * 1000,
+    );
+
     // 2️⃣ Create Order (pending payment)
     const [order] = await Order.create(
       [
@@ -110,9 +132,7 @@ async function CreateOrder({ customerId, items } = {}) {
           deliveryFee,
           total,
           status: "pending",
-          reservationExpiresAt: new Date(
-            Date.now() + 1 * 60 * 1000, // 1 minute
-          ),
+          reservationExpiresAt,
         },
       ],
       { session },
@@ -122,6 +142,8 @@ async function CreateOrder({ customerId, items } = {}) {
     const stripeSession = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
+      // Ensures the customer cannot complete Checkout after the reservation expires.
+      expires_at: Math.floor(reservationExpiresAt.getTime() / 1000),
       line_items: resolvedItems.map((item) => ({
         price_data: {
           currency: "gbp",
@@ -155,6 +177,7 @@ async function CreateOrder({ customerId, items } = {}) {
       },
     };
   } catch (err) {
+    console.error("Error creating order:", err);
     await session.abortTransaction();
     session.endSession();
 

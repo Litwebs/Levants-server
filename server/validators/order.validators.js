@@ -17,12 +17,24 @@ const createOrderSchema = Joi.object({
 }).unknown(false);
 
 const updateOrderStatusSchema = Joi.object({
-  status: Joi.string()
-    .valid("pending", "paid", "cancelled", "refunded")
+  deliveryStatus: Joi.string()
+    .valid("ordered", "dispatched", "in_transit", "delivered", "returned")
     .required(),
 }).unknown(false);
+
+const bulkUpdateDeliveryStatusSchema = Joi.object({
+  orderIds: Joi.array()
+    .items(Joi.string().trim().length(24).hex().required())
+    .min(1)
+    .required(),
+
+  deliveryStatus: Joi.string()
+    .valid("ordered", "dispatched", "in_transit", "delivered", "returned")
+    .required(),
+});
 
 module.exports = {
   createOrderSchema,
   updateOrderStatusSchema,
+  bulkUpdateDeliveryStatusSchema,
 };

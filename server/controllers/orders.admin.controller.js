@@ -65,7 +65,7 @@ const GetOrderById = async (req, res) => {
 const UpdateOrderStatus = async (req, res) => {
   const result = await service.UpdateOrderStatus({
     orderId: req.params.orderId,
-    status: req.body.status,
+    deliveryStatus: req.body.deliveryStatus,
   });
 
   if (!result.success) {
@@ -98,9 +98,30 @@ const RefundOrder = async (req, res) => {
   });
 };
 
+const BulkUpdateDeliveryStatus = async (req, res) => {
+  const { orderIds, deliveryStatus } = req.body || {};
+
+  const result = await service.BulkUpdateDeliveryStatus({
+    orderIds,
+    deliveryStatus,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Bulk update failed",
+    });
+  }
+
+  return sendOk(res, result.data, {
+    message: "Delivery statuses updated successfully",
+  });
+};
+
 module.exports = {
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,
   RefundOrder,
+  BulkUpdateDeliveryStatus,
 };

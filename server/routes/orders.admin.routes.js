@@ -9,7 +9,10 @@ const {
 } = require("../middleware/validate.middleware");
 
 const controller = require("../controllers/orders.admin.controller");
-const { updateOrderStatusSchema } = require("../validators/order.validators");
+const {
+  updateOrderStatusSchema,
+  bulkUpdateDeliveryStatusSchema,
+} = require("../validators/order.validators");
 
 const { refundOrderSchema } = require("../validators/orderRefund.validator");
 const { orderIdParamSchema } = require("../validators/common.validators");
@@ -25,6 +28,13 @@ router.get(
   "/:orderId",
   validateParams(orderIdParamSchema),
   asyncHandler(controller.GetOrderById),
+);
+
+router.put(
+  "/bulk/delivery-status",
+  requirePermission("orders.update"),
+  validateBody(bulkUpdateDeliveryStatusSchema),
+  asyncHandler(controller.BulkUpdateDeliveryStatus),
 );
 
 router.put(

@@ -25,25 +25,41 @@ const OrdersBulkActions = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => bulkUpdateStatus("paid")}
+            onClick={() => bulkUpdateStatus("ordered")}
           >
-            Mark Paid
+            Mark Ordered
           </Button>
 
           <Button
             variant="outline"
             size="sm"
-            onClick={() => bulkUpdateStatus("pending")}
+            onClick={() => bulkUpdateStatus("dispatched")}
           >
-            Mark Pending
+            Mark Dispatched
           </Button>
 
           <Button
             variant="outline"
             size="sm"
-            onClick={() => bulkUpdateStatus("cancelled")}
+            onClick={() => bulkUpdateStatus("in_transit")}
           >
-            Mark Cancelled
+            Mark In Transit
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => bulkUpdateStatus("delivered")}
+          >
+            Mark Delivered
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => bulkUpdateStatus("returned")}
+          >
+            Mark Returned
           </Button>
 
           <Button

@@ -12,18 +12,52 @@ async function ListOrders({
   const search =
     typeof filters.search === "string" ? filters.search.trim() : "";
 
-  /* ==============================
-     BASIC FILTERS
-  ============================== */
+  // 🔒 Payment status is restricted (always)
+  const ALLOWED_PAYMENT = new Set([
+    "pending",
+    "paid",
+    "refunded",
+    "refund_pending",
+  ]);
+  const DEFAULT_PAYMENT = ["pending", "paid", "refunded", "refund_pending"];
 
-  if (filters.status) {
-    // Accept single or array
-    if (Array.isArray(filters.status)) {
-      query.status = { $in: filters.status };
-    } else {
-      query.status = filters.status;
+  // ✅ Delivery status is filterable
+  const ALLOWED_DELIVERY = new Set([
+    "ordered",
+    "dispatched",
+    "in_transit",
+    "delivered",
+    "returned",
+  ]);
+
+  /* ==============================
+     PAYMENT STATUS (LOCKED)
+     Always constrain results to pending/paid/refunded/refund_pending
+     Ignore whatever the client sends in filters.status
+  ============================== */
+  query.status = { $in: DEFAULT_PAYMENT };
+
+  /* ==============================
+     DELIVERY STATUS (FILTERABLE)
+  ============================== */
+  if (filters.deliveryStatus) {
+    const incoming = Array.isArray(filters.deliveryStatus)
+      ? filters.deliveryStatus
+      : [filters.deliveryStatus];
+
+    const cleaned = incoming
+      .map((s) => String(s).trim().toLowerCase())
+      .filter((s) => ALLOWED_DELIVERY.has(s));
+
+    if (cleaned.length) {
+      query.deliveryStatus = { $in: cleaned };
     }
+    // If cleaned is empty, we simply do NOT apply a deliveryStatus filter.
   }
+
+  /* ==============================
+     OTHER FILTERS
+  ============================== */
 
   if (filters.customer) {
     if (mongoose.Types.ObjectId.isValid(filters.customer)) {
@@ -36,11 +70,7 @@ async function ListOrders({
   }
 
   if (filters.orderId) {
-    // Partial match (case insensitive)
-    query.orderId = {
-      $regex: filters.orderId,
-      $options: "i",
-    };
+    query.orderId = { $regex: filters.orderId, $options: "i" };
   }
 
   if (filters.stripeCheckoutSessionId) {
@@ -51,19 +81,11 @@ async function ListOrders({
     query.stripePaymentIntentId = filters.stripePaymentIntentId;
   }
 
-  /* ==============================
-     TOTAL RANGE
-  ============================== */
-
   if (filters.minTotal || filters.maxTotal) {
     query.total = {};
     if (filters.minTotal) query.total.$gte = Number(filters.minTotal);
     if (filters.maxTotal) query.total.$lte = Number(filters.maxTotal);
   }
-
-  /* ==============================
-     CREATED DATE RANGE
-  ============================== */
 
   if (filters.dateFrom || filters.dateTo) {
     query.createdAt = {};
@@ -71,31 +93,21 @@ async function ListOrders({
     if (filters.dateTo) query.createdAt.$lte = new Date(filters.dateTo);
   }
 
-  /* ==============================
-     PAID DATE RANGE
-  ============================== */
-
   if (filters.paidFrom || filters.paidTo) {
     query.paidAt = {};
     if (filters.paidFrom) query.paidAt.$gte = new Date(filters.paidFrom);
     if (filters.paidTo) query.paidAt.$lte = new Date(filters.paidTo);
   }
 
-  /* ==============================
-     REFUND FILTERS
-  ============================== */
-
   if (filters.refundedOnly) {
     query["refund.refundedAt"] = { $ne: null };
+    // Optional: enforce status = refunded when refundedOnly is true:
+    // query.status = "refunded";
   }
 
   if (filters.restock !== undefined) {
     query["refund.restock"] = filters.restock === true;
   }
-
-  /* ==============================
-     EXPIRED ORDERS
-  ============================== */
 
   if (filters.expiredOnly) {
     query.expiresAt = { $ne: null };
@@ -104,27 +116,32 @@ async function ListOrders({
   /* ==============================
      SORTING
   ============================== */
-
-  const sort = {
-    [sortBy]: sortOrder === "asc" ? 1 : -1,
-  };
+  const sort = { [sortBy]: sortOrder === "asc" ? 1 : -1 };
 
   /* ==============================
      EXECUTION
   ============================== */
 
-  // If a free-text search is provided, use an aggregation pipeline so we can
-  // search customer fields as well.
   if (search) {
-    const sortStage = {
-      [sortBy]: sortOrder === "asc" ? 1 : -1,
-    };
+    const sortStage = { [sortBy]: sortOrder === "asc" ? 1 : -1 };
+    const lower = search.toLowerCase();
+
+    // Only allow status-search matches for allowed payment statuses
+    const paymentMatch = ALLOWED_PAYMENT.has(lower) ? [{ status: lower }] : [];
+
+    // Allow delivery status matches too (if user types "delivered" etc.)
+    const deliveryMatch = ALLOWED_DELIVERY.has(lower)
+      ? [{ deliveryStatus: lower }]
+      : [];
 
     const or = [
       { orderId: { $regex: search, $options: "i" } },
       { stripePaymentIntentId: { $regex: search, $options: "i" } },
       { stripeCheckoutSessionId: { $regex: search, $options: "i" } },
-      { status: search.toLowerCase() },
+
+      ...paymentMatch,
+      ...deliveryMatch,
+
       { "customer.firstName": { $regex: search, $options: "i" } },
       { "customer.lastName": { $regex: search, $options: "i" } },
       { "customer.email": { $regex: search, $options: "i" } },
@@ -163,7 +180,6 @@ async function ListOrders({
     ];
 
     const result = await Order.aggregate(pipeline);
-
     const orders = result[0]?.data || [];
     const total = result[0]?.meta[0]?.total || 0;
 
@@ -216,21 +232,53 @@ async function GetOrderById({ orderId }) {
   return { success: true, data: order };
 }
 
-async function UpdateOrderStatus({ orderId, status }) {
+async function UpdateOrderStatus({ orderId, deliveryStatus }) {
   const order = await Order.findById(orderId);
 
   if (!order) {
     return { success: false, message: "Order not found" };
   }
 
-  order.status = status;
+  order.deliveryStatus = deliveryStatus;
   await order.save();
 
   return { success: true, data: order };
 }
 
+async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
+  const ids = orderIds
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  if (!ids.length) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "No valid orderIds provided",
+    };
+  }
+
+  const result = await Order.updateMany(
+    { _id: { $in: ids } },
+    {
+      $set: {
+        deliveryStatus,
+        updatedAt: new Date(),
+      },
+    },
+  );
+
+  return {
+    success: true,
+    data: {
+      matched: result.matchedCount ?? result.n ?? 0,
+      modified: result.modifiedCount ?? result.nModified ?? 0,
+    },
+  };
+}
 module.exports = {
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,
+  BulkUpdateDeliveryStatus,
 };

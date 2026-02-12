@@ -28,15 +28,17 @@ export type Order = {
   items: OrderItem[];
   subtotal: number;
   deliveryFee: number;
+  deliveryStatus:string
   discount: number;
   total: number;
-  fulfillmentStatus: FulfillmentStatus;
+  // fulfillmentStatus: FulfillmentStatus;
   paymentStatus: FulfillmentStatus;
   customerNotes?: string;
   internalNotes?: string;
   history: { status: string; timestamp: string; user: string }[];
   createdAt: string;
   updatedAt: string;
+  
 };
 
 const getDefaultAddress = (customer: any) => {
@@ -98,7 +100,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     discount: 0,
     total: order.total,
 
-    fulfillmentStatus: order.status,
+    deliveryStatus: order.deliveryStatus,
     paymentStatus: order.status,
 
     history: [],
@@ -119,11 +121,12 @@ export const useOrders = () => {
     getOrderById,
     updateOrderStatus: updateOrderStatusApi,
     refundOrder: refundOrderApi,
+    bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
   } = useOrdersApi();
 
   // Backend filters
   const [searchQuery, setSearchQuery] = useState(""); // free-text server-side search
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [minTotal, setMinTotal] = useState("");
@@ -193,46 +196,52 @@ export const useOrders = () => {
     }
   }, [dateFilter]);
 
-  const refresh = useCallback(
-    async (opts?: { page?: number; pageSize?: number }) => {
-      const targetPage = opts?.page ?? page;
-      const targetPageSize = opts?.pageSize ?? pageSize;
+const refresh = useCallback(
+  async (opts?: { page?: number; pageSize?: number }) => {
+    const targetPage = opts?.page ?? page;
+    const targetPageSize = opts?.pageSize ?? pageSize;
 
-      const sort = mapSortToApi(sortBy);
-      const effectiveStatus = statusFilter !== "all" ? statusFilter : undefined;
+    const sort = mapSortToApi(sortBy);
 
-      await listOrders({
-        page: targetPage,
-        pageSize: targetPageSize,
+    const effectiveDeliveryStatus =
+      deliveryStatusFilter !== "all" ? deliveryStatusFilter : undefined;
 
-        status: effectiveStatus,
-        search: searchQuery || undefined,
-        minTotal: minTotal || undefined,
-        maxTotal: maxTotal || undefined,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        refundedOnly: refundedOnly ? true : undefined,
-        expiredOnly: expiredOnly ? true : undefined,
+    await listOrders({
+      page: targetPage,
+      pageSize: targetPageSize,
 
-        sortBy: sort.sortBy,
-        sortOrder: sort.sortOrder,
-      });
-    },
-    [
-      listOrders,
-      page,
-      pageSize,
-      sortBy,
-      statusFilter,
-      minTotal,
-      maxTotal,
-      dateFrom,
-      dateTo,
-      refundedOnly,
-      expiredOnly,
-      searchQuery,
-    ],
-  );
+      // ✅ delivery status filter (optional)
+      deliveryStatus: effectiveDeliveryStatus,
+
+      // ✅ payment status is not sent; backend locks it to pending/paid/refunded
+      search: searchQuery || undefined,
+      minTotal: minTotal || undefined,
+      maxTotal: maxTotal || undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+      refundedOnly: refundedOnly ? true : undefined,
+      expiredOnly: expiredOnly ? true : undefined,
+
+      sortBy: sort.sortBy,
+      sortOrder: sort.sortOrder,
+    });
+  },
+  [
+    listOrders,
+    page,
+    pageSize,
+    sortBy,
+    deliveryStatusFilter,
+    minTotal,
+    maxTotal,
+    dateFrom,
+    dateTo,
+    refundedOnly,
+    expiredOnly,
+    searchQuery,
+  ],
+);
+
 
   // Fetch orders (server-side pagination + filters)
   useEffect(() => {
@@ -250,7 +259,7 @@ export const useOrders = () => {
     setPage(1);
   }, [
     searchQuery,
-    statusFilter,
+    deliveryStatusFilter,
     dateFilter,
     minTotal,
     maxTotal,
@@ -266,19 +275,18 @@ export const useOrders = () => {
   // Backend already applies filters/sort; UI should render the server result.
   const filteredOrders = orders;
 
-  const statusCounts = useMemo<Record<string, number>>(
-    () => ({
-      all: orders.length,
-      pending: orders.filter((o) => o.fulfillmentStatus === "pending").length,
-      paid: orders.filter((o) => o.fulfillmentStatus === "paid").length,
-      cancelled: orders.filter((o) => o.fulfillmentStatus === "cancelled").length,
-      refunded: orders.filter((o) => o.fulfillmentStatus === "refunded").length,
-      failed: orders.filter((o) => o.fulfillmentStatus === "failed").length,
-      refund_pending: orders.filter((o) => o.fulfillmentStatus === "refund_pending").length,
-      refund_failed: orders.filter((o) => o.fulfillmentStatus === "refund_failed").length,
-    }),
-    [orders],
-  );
+ const statusCounts = useMemo<Record<string, number>>(
+  () => ({
+    all: orders.length,
+    ordered: orders.filter((o) => o.deliveryStatus === "ordered").length,
+    dispatched: orders.filter((o) => o.deliveryStatus === "dispatched").length,
+    in_transit: orders.filter((o) => o.deliveryStatus === "in_transit").length,
+    delivered: orders.filter((o) => o.deliveryStatus === "delivered").length,
+    returned: orders.filter((o) => o.deliveryStatus === "returned").length,
+  }),
+  [orders],
+);
+
 
   const toggleOrderSelection = (id: string) => {
     setSelectedOrders((prev) =>
@@ -292,20 +300,21 @@ export const useOrders = () => {
     );
   };
 
-  const updateOrderStatus = async (id: string, status: FulfillmentStatus) => {
-    // Backend currently supports: pending | paid | cancelled | refunded
+  const updateOrderStatus = async (id: string, deliveryStatus: string) => {
+    // Backend currently supports: ordered | dispatched | in_transit | delivered | returned
     if (
-      status !== "pending" &&
-      status !== "paid" &&
-      status !== "cancelled" &&
-      status !== "refunded"
+      deliveryStatus !== "ordered" &&
+      deliveryStatus !== "dispatched" &&
+      deliveryStatus !== "in_transit" &&
+      deliveryStatus !== "delivered" &&
+      deliveryStatus !== "returned"
     ) {
       showToast({ title: "Unsupported status", type: "error" });
       return;
     }
 
     try {
-      await updateOrderStatusApi(id, status);
+      await updateOrderStatusApi(id, deliveryStatus);
       showToast({ title: "Order status updated", type: "success" });
       setIsStatusModalOpen(false);
     } catch {
@@ -324,30 +333,38 @@ export const useOrders = () => {
     }
   };
 
-  const bulkUpdateStatus = async (status: FulfillmentStatus) => {
-    if (!selectedOrders.length) return;
+const bulkUpdateStatus = async (deliveryStatus: string) => {
+  if (!selectedOrders.length) return;
 
-    if (
-      status !== "pending" &&
-      status !== "paid" &&
-      status !== "cancelled" &&
-      status !== "refunded"
-    ) {
-      showToast({ title: "Unsupported status", type: "error" });
-      return;
-    }
+  if (
+    deliveryStatus !== "ordered" &&
+    deliveryStatus !== "dispatched" &&
+    deliveryStatus !== "in_transit" &&
+    deliveryStatus !== "delivered" &&
+    deliveryStatus !== "returned"
+  ) {
+    showToast({ title: "Unsupported delivery status", type: "error" });
+    return;
+  }
 
-    try {
-      await Promise.all(selectedOrders.map((id) => updateOrderStatusApi(id, status)));
-      showToast({
-        title: `${selectedOrders.length} orders updated`,
-        type: "success",
-      });
-      setSelectedOrders([]);
-    } catch {
-      showToast({ title: "Bulk update failed", type: "error" });
-    }
-  };
+  try {
+    const result = await bulkUpdateDeliveryStatusApi(
+      selectedOrders,
+      deliveryStatus,
+    );
+
+    showToast({
+      title: `${result.modified} orders updated`,
+      type: "success",
+    });
+
+    setSelectedOrders([]);
+    await refresh(); // keeps current filters/paging
+  } catch {
+    showToast({ title: "Bulk update failed", type: "error" });
+  }
+};
+
 
   const exportToCSV = () => {
     const rows = filteredOrders.map(
@@ -391,8 +408,8 @@ export const useOrders = () => {
 
     searchQuery,
     setSearchQuery,
-    statusFilter,
-    setStatusFilter,
+    deliveryStatusFilter,
+    setDeliveryStatusFilter,
     dateFilter,
     setDateFilter,
     sortBy,

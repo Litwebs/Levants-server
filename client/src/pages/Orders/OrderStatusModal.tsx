@@ -3,7 +3,13 @@ import { Modal } from "../../components/common";
 import styles from "./Orders.module.css";
 import { getStatusBadge } from "./order.utils";
 
-const STATUSES = ["pending", "paid", "cancelled", "refunded"] as const;
+const STATUSES = [
+  "ordered",
+  "dispatched",
+  "in_transit",
+  "delivered",
+  "returned",
+] as const;
 
 const OrderStatusModal = ({
   selectedOrder,
@@ -26,7 +32,7 @@ const OrderStatusModal = ({
         </p>
 
         <p className={styles.statusModalCurrent}>
-          Current status: {getStatusBadge(selectedOrder.fulfillmentStatus)}
+          Current status: {getStatusBadge(selectedOrder.deliveryStatus)}
         </p>
 
         <div className={styles.statusOptions}>
@@ -34,15 +40,16 @@ const OrderStatusModal = ({
             <button
               key={status}
               className={`${styles.statusOption} ${
-                selectedOrder.fulfillmentStatus === status ? styles.current : ""
+                selectedOrder.deliveryStatus === status ? styles.current : ""
               }`}
               onClick={() => updateOrderStatus(selectedOrder.id, status)}
-              disabled={selectedOrder.fulfillmentStatus === status}
+              disabled={selectedOrder.deliveryStatus === status}
             >
-              {status === "pending" && <Clock size={18} />}
-              {status === "paid" && <CheckCircle size={18} />}
-              {status === "cancelled" && <X size={18} />}
-              {status === "refunded" && <CheckCircle size={18} />}
+              {status === "ordered" && <Clock size={18} />}
+              {status === "dispatched" && <CheckCircle size={18} />}
+              {status === "in_transit" && <CheckCircle size={18} />}
+              {status === "delivered" && <CheckCircle size={18} />}
+              {status === "returned" && <X size={18} />}
               <span>{status.replace(/_/g, " ")}</span>
             </button>
           ))}

@@ -13,7 +13,7 @@ const OrderDetailModal = ({
   const [isRefundConfirmOpen, setIsRefundConfirmOpen] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
 
-  const isAlreadyRefunded = selectedOrder?.fulfillmentStatus === "refunded";
+  const isAlreadyRefunded = selectedOrder?.paymentStatus === "refunded";
   const canRefund = Boolean(selectedOrder?.id) && !isAlreadyRefunded;
 
   return (
@@ -28,7 +28,9 @@ const OrderDetailModal = ({
           <div className={styles.orderDetail}>
             <div className={styles.detailHeader}>
               <div className={styles.detailStatus}>
-                {getStatusBadge(selectedOrder.fulfillmentStatus)}
+                {getStatusBadge(
+                  selectedOrder.deliveryStatus?.replace(/_/g, " "),
+                )}
                 {getPaymentBadge(selectedOrder.paymentStatus)}
               </div>
               <span className={styles.detailDate}>
