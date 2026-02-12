@@ -536,6 +536,12 @@ const ProductVariantsPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [product, setProduct] = useState<AdminProduct | null>(null);
   const [variants, setVariants] = useState<AdminProductVariant[]>([]);
+  const [variantStats, setVariantStats] = useState({
+    active: 0,
+    inactive: 0,
+    lowStock: 0,
+    outOfStock: 0,
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "active" | "inactive" | "all"
@@ -622,6 +628,15 @@ const ProductVariantsPage = () => {
         const nextVariants = (variantsRes.data?.data?.variants ||
           []) as AdminProductVariant[];
 
+        const nextStats = variantsRes.data?.data?.stats as
+          | {
+              active?: number;
+              inactive?: number;
+              lowStock?: number;
+              outOfStock?: number;
+            }
+          | undefined;
+
         const nextMeta = (variantsRes.data?.meta || {}) as Partial<
           typeof paginationMeta
         >;
@@ -631,6 +646,14 @@ const ProductVariantsPage = () => {
 
         setProduct(nextProduct);
         setVariants(nextVariants);
+        if (nextStats) {
+          setVariantStats({
+            active: Number(nextStats.active || 0),
+            inactive: Number(nextStats.inactive || 0),
+            lowStock: Number(nextStats.lowStock || 0),
+            outOfStock: Number(nextStats.outOfStock || 0),
+          });
+        }
         setPage(nextPage);
         setPageSize(nextPageSize);
         setPaginationMeta((p) => ({
@@ -802,6 +825,34 @@ const ProductVariantsPage = () => {
           )}
           Add Variant
         </Button>
+      </div>
+
+      <div className={styles.statsGrid}>
+        <Card className={styles.statCard}>
+          <span className={styles.statLabel}>Active</span>
+          <span className={`${styles.statValue} ${styles.success}`}>
+            {variantStats.active}
+          </span>
+        </Card>
+
+        <Card className={styles.statCard}>
+          <span className={styles.statLabel}>Inactive</span>
+          <span className={styles.statValue}>{variantStats.inactive}</span>
+        </Card>
+
+        <Card className={styles.statCard}>
+          <span className={styles.statLabel}>Low Stock</span>
+          <span className={`${styles.statValue} ${styles.warning}`}>
+            {variantStats.lowStock}
+          </span>
+        </Card>
+
+        <Card className={styles.statCard}>
+          <span className={styles.statLabel}>Out of Stock</span>
+          <span className={`${styles.statValue} ${styles.danger}`}>
+            {variantStats.outOfStock}
+          </span>
+        </Card>
       </div>
 
       {product && (

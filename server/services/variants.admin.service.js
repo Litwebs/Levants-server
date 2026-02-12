@@ -90,20 +90,90 @@ async function ListVariants({
 
   const skip = (page - 1) * pageSize;
 
-  const [total, variants] = await Promise.all([
+  const [total, variants, statsAgg] = await Promise.all([
     Variant.countDocuments(query),
     Variant.find(query)
       .populate("thumbnailImage")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(pageSize),
+
+    // Stats for the whole product (not affected by paging/search/status filter)
+    Variant.aggregate([
+      { $match: { product: product._id } },
+      {
+        $project: {
+          status: 1,
+          lowStockAlert: { $ifNull: ["$lowStockAlert", 0] },
+          available: {
+            $subtract: [
+              { $ifNull: ["$stockQuantity", 0] },
+              { $ifNull: ["$reservedQuantity", 0] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          active: {
+            $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
+          },
+          inactive: {
+            $sum: { $cond: [{ $eq: ["$status", "inactive"] }, 1, 0] },
+          },
+          lowStock: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$status", "active"] },
+                    { $gt: ["$lowStockAlert", 0] },
+                    { $gt: ["$available", 0] },
+                    { $lte: ["$available", "$lowStockAlert"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          outOfStock: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$status", "active"] },
+                    { $lte: ["$available", 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]),
   ]);
+
+  const stats =
+    statsAgg && statsAgg[0]
+      ? {
+          total: Number(statsAgg[0].total || 0),
+          active: Number(statsAgg[0].active || 0),
+          inactive: Number(statsAgg[0].inactive || 0),
+          lowStock: Number(statsAgg[0].lowStock || 0),
+          outOfStock: Number(statsAgg[0].outOfStock || 0),
+        }
+      : { total: 0, active: 0, inactive: 0, lowStock: 0, outOfStock: 0 };
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return {
     success: true,
-    data: { variants },
+    data: { variants, stats },
     meta: {
       total,
       page,

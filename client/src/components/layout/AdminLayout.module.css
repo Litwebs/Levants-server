@@ -279,6 +279,7 @@
 .userRole {
   font-size: 11px;
   color: var(--color-gray-500);
+  text-align: start;
 }
 
 /* Content */

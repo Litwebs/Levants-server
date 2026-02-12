@@ -13,13 +13,8 @@ async function ListOrders({
     typeof filters.search === "string" ? filters.search.trim() : "";
 
   // 🔒 Payment status is restricted (always)
-  const ALLOWED_PAYMENT = new Set([
-    "pending",
-    "paid",
-    "refunded",
-    "refund_pending",
-  ]);
-  const DEFAULT_PAYMENT = ["pending", "paid", "refunded", "refund_pending"];
+  const ALLOWED_PAYMENT = new Set(["paid", "refunded", "refund_pending"]);
+  const DEFAULT_PAYMENT = ["paid", "refunded", "refund_pending"];
 
   // ✅ Delivery status is filterable
   const ALLOWED_DELIVERY = new Set([

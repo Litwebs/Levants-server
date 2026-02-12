@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Order = require("../models/order.model");
 const ProductVariant = require("../models/variant.model");
 const stripe = require("../utils/stripe.util");
+const Customer = require("../models/customer.model");
 
 function getReservationTtlMinutes() {
   const raw = process.env.ORDER_RESERVATION_TTL_MINUTES;
@@ -137,13 +138,14 @@ async function CreateOrder({ customerId, items } = {}) {
       ],
       { session },
     );
-
+    const customer = await Customer.findById(customerId).select("email").lean();
     // 3️⃣ Create Stripe Checkout Session
     const stripeSession = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
       // Ensures the customer cannot complete Checkout after the reservation expires.
       expires_at: Math.floor(reservationExpiresAt.getTime() / 1000),
+      customer_email: customer.email ?? undefined,
       line_items: resolvedItems.map((item) => ({
         price_data: {
           currency: "gbp",

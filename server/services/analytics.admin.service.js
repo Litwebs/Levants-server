@@ -4,6 +4,8 @@ const Order = require("../models/order.model");
 const Product = require("../models/product.model");
 const ProductVariant = require("../models/variant.model");
 
+const COUNTABLE_ORDER_STATUSES = ["paid", "refund_pending", "refunded"];
+
 const clampToStartOfDay = (d) => {
   const date = new Date(d);
   date.setHours(0, 0, 0, 0);
@@ -114,16 +116,24 @@ async function GetSummary({ range, from, to } = {}) {
     lowStockCountAgg,
     outOfStockCountAgg,
   ] = await Promise.all([
-    Order.countDocuments({ ...createdAtMatch }),
+    Order.countDocuments({
+      ...createdAtMatch,
+      status: { $in: COUNTABLE_ORDER_STATUSES },
+    }),
 
     Order.aggregate([
       { $match: { ...createdAtMatch, status: "paid" } },
       { $group: { _id: null, revenue: { $sum: "$total" } } },
     ]),
 
-    // Real order status distribution (matches Order.status enum)
+    // Real order status distribution (restricted to countable statuses)
     Order.aggregate([
-      { $match: { ...createdAtMatch } },
+      {
+        $match: {
+          ...createdAtMatch,
+          status: { $in: COUNTABLE_ORDER_STATUSES },
+        },
+      },
       { $group: { _id: "$status", count: { $sum: 1 } } },
     ]),
 
@@ -458,7 +468,12 @@ async function GetOrderStatusCounts({ range, from, to } = {}) {
   const createdAtMatch = buildCreatedAtMatch({ range, from, to });
 
   const statusCounts = await Order.aggregate([
-    { $match: { ...createdAtMatch } },
+    {
+      $match: {
+        ...createdAtMatch,
+        status: { $in: COUNTABLE_ORDER_STATUSES },
+      },
+    },
     { $group: { _id: "$status", count: { $sum: 1 } } },
   ]);
 
