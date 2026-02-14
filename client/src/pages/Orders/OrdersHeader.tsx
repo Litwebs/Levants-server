@@ -11,13 +11,13 @@ const OrdersHeader = ({ filteredOrders, exportToCSV, refresh }: any) => {
       </div>
 
       <div className={styles.headerActions}>
-        <Button
+        {/* <Button
           variant="outline"
           leftIcon={<Download size={16} />}
           onClick={exportToCSV}
         >
           Export CSV
-        </Button>
+        </Button> */}
         <Button
           variant="outline"
           leftIcon={<RefreshCw size={16} />}

@@ -1,11 +1,12 @@
 import { useMemo } from "react";
 import {
   AlertTriangle,
-  Calendar,
   DollarSign,
+  Calendar,
   Package,
   ShoppingCart,
   Truck,
+  RotateCcw,
 } from "lucide-react";
 
 import { formatCompactNumber, formatCurrencyGBP } from "../../lib/numberFormat";
@@ -44,9 +45,9 @@ export function useDashboardViewModel({
         color: "success",
       },
       {
-        label: "Pending",
-        value: formatCompactNumber(summary?.pendingOrders ?? 0),
-        icon: Calendar,
+        label: "Refunds",
+        value: formatCompactNumber(summary?.totalRefunds ?? 0),
+        icon: RotateCcw,
         color: "warning",
       },
       {

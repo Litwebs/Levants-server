@@ -17,7 +17,9 @@ const updateVariantSchema = Joi.object({
   price: Joi.number().min(0).optional(),
   stockQuantity: Joi.number().min(0).optional(),
   lowStockAlert: Joi.number().min(0).optional(),
-  thumbnailImage: Joi.string().min(1).optional(),
+  thumbnailImage: Joi.alternatives()
+    .try(Joi.string().min(1), Joi.valid(null), Joi.valid(""))
+    .optional(),
   status: Joi.string().valid("active", "inactive").optional(),
 })
   .min(1)
@@ -30,8 +32,14 @@ const listVariantsQuerySchema = Joi.object({
   search: Joi.string().allow("").max(100).optional(),
 }).unknown(false);
 
+const searchVariantsQuerySchema = Joi.object({
+  q: Joi.string().trim().min(1).required(),
+  limit: Joi.number().integer().min(1).max(25).default(10),
+}).unknown(false);
+
 module.exports = {
   createVariantSchema,
   updateVariantSchema,
   listVariantsQuerySchema,
+  searchVariantsQuerySchema,
 };

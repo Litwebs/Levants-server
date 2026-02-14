@@ -5,6 +5,8 @@ const objectId = Joi.string().hex().length(24);
 const createOrderSchema = Joi.object({
   customerId: objectId.required(),
 
+  discountCode: Joi.string().trim().uppercase().min(3).max(32).optional(),
+
   items: Joi.array()
     .items(
       Joi.object({

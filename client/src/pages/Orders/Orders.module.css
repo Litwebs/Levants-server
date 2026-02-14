@@ -446,9 +446,21 @@
   color: var(--color-gray-600);
 }
 
+.totalCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  white-space: nowrap;
+}
+
 .total {
   font-weight: var(--font-semibold);
   color: var(--color-gray-900);
+}
+
+.discountNote {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
 }
 
 .deliveryCell {

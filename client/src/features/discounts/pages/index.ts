@@ -1,0 +1,1 @@
+export { DiscountsPage } from "./DiscountsPage";

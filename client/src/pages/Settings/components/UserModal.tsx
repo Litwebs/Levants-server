@@ -30,7 +30,7 @@ const UserModal = ({
     </FormGrid>
 
     <div className={styles.modalFooter}>
-      <Button variant="secondary" onClick={() => setIsUserModalOpen(false)}>
+      <Button variant="outline" onClick={() => setIsUserModalOpen(false)}>
         Cancel
       </Button>
       <Button onClick={saveUser}>

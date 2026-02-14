@@ -1,6 +1,9 @@
-import { Calendar, DollarSign, Package } from "lucide-react";
+import { Calendar, DollarSign, Package, RotateCcw, Users } from "lucide-react";
 import { Card } from "../../../components/common";
-import { formatCompactNumber, formatCurrencyGBP } from "../../../lib/numberFormat";
+import {
+  formatCompactNumber,
+  formatCurrencyGBP,
+} from "../../../lib/numberFormat";
 import styles from "../Dashboard.module.css";
 
 type StatCard = {
@@ -46,20 +49,31 @@ const DashboardStats: React.FC<Props> = ({ summary, statCards }) => {
         })}
       </div>
 
-      {/* Summary Cards */}
       <div className={styles.summaryGrid}>
         <Card className={styles.summaryCard}>
           <div className={styles.summaryContent}>
             <div className={`${styles.summaryIcon} ${styles.info}`}>
-              <Calendar size={24} />
+              <Package size={24} />
             </div>
             <div>
               <p className={styles.summaryValue}>
-                {formatCompactNumber(totalOrders)}
+                {formatCompactNumber(summary?.unitsSold ?? 0)}
               </p>
-              <p className={styles.summaryLabel}>
-                Total Orders (selected period)
+              <p className={styles.summaryLabel}>Total Units Sold</p>
+            </div>
+          </div>
+        </Card>
+
+        <Card className={styles.summaryCard}>
+          <div className={styles.summaryContent}>
+            <div className={`${styles.summaryIcon} ${styles.primary}`}>
+              <Users size={24} />
+            </div>
+            <div>
+              <p className={styles.summaryValue}>
+                {formatCompactNumber(summary?.newCustomers ?? 0)}
               </p>
+              <p className={styles.summaryLabel}>New Customers</p>
             </div>
           </div>
         </Card>
@@ -67,27 +81,13 @@ const DashboardStats: React.FC<Props> = ({ summary, statCards }) => {
         <Card className={styles.summaryCard}>
           <div className={styles.summaryContent}>
             <div className={`${styles.summaryIcon} ${styles.success}`}>
-              <DollarSign size={24} />
+              <Users size={24} />
             </div>
             <div>
               <p className={styles.summaryValue}>
-                {formatCurrencyGBP(summary?.revenue ?? 0)}
+                {formatCompactNumber(summary?.repeatCustomers ?? 0)}
               </p>
-              <p className={styles.summaryLabel}>Revenue (selected period)</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className={styles.summaryCard}>
-          <div className={styles.summaryContent}>
-            <div className={`${styles.summaryIcon} ${styles.warning}`}>
-              <Package size={24} />
-            </div>
-            <div>
-              <p className={styles.summaryValue}>
-                {formatCompactNumber(summary?.lowStockItems ?? 0)}
-              </p>
-              <p className={styles.summaryLabel}>Low Stock Items</p>
+              <p className={styles.summaryLabel}>Repeat Customers</p>
             </div>
           </div>
         </Card>

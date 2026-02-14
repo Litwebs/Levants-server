@@ -68,6 +68,10 @@ export type AdminOrder = {
   subtotal: number;
   deliveryFee: number;
   total: number;
+
+  isDiscounted?: boolean;
+  totalBeforeDiscount?: number;
+  discountAmount?: number;
   status: OrderStatus;
   deliveryStatus: string;
 

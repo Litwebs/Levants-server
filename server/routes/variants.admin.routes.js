@@ -15,6 +15,7 @@ const {
   createVariantSchema,
   updateVariantSchema,
   listVariantsQuerySchema,
+  searchVariantsQuerySchema,
 } = require("../validators/variant.validators");
 
 const { validateParams } = require("../middleware/validate.middleware");
@@ -27,6 +28,13 @@ const router = express.Router();
 
 router.use(requireAuth);
 router.use(apiLimiter);
+
+router.get(
+  "/search",
+  requirePermission("products.read"),
+  validateQuery(searchVariantsQuerySchema),
+  asyncHandler(controller.SearchVariants),
+);
 
 // variants.admin.routes.js
 router.get(

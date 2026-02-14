@@ -2,6 +2,7 @@ import { Eye, Edit2, Trash2 } from "lucide-react";
 import { Badge, Button, TableCell, TableRow } from "../../components/common";
 import { useNavigate } from "react-router-dom";
 import { getImageUrl, getStatusBadge } from "./product.utils";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Products.module.css";
 
 const ProductRow = ({
@@ -16,6 +17,9 @@ const ProductRow = ({
   const lowCount = counts?.low ?? 0;
   const outCount = counts?.out ?? 0;
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canUpdateProduct = hasPermission("products.update");
+  const canDeleteProduct = hasPermission("products.delete");
 
   const thumbnailUrl = getImageUrl(product?.thumbnailImage);
   return (
@@ -76,28 +80,32 @@ const ProductRow = ({
             <Eye size={16} />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleEditProduct(product);
-            }}
-          >
-            <Edit2 size={16} />
-          </Button>
+          {canUpdateProduct ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditProduct(product);
+              }}
+            >
+              <Edit2 size={16} />
+            </Button>
+          ) : null}
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedProduct(product);
-              setIsDeleteModalOpen(true);
-            }}
-          >
-            <Trash2 size={16} />
-          </Button>
+          {canDeleteProduct ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedProduct(product);
+                setIsDeleteModalOpen(true);
+              }}
+            >
+              <Trash2 size={16} />
+            </Button>
+          ) : null}
         </div>
       </TableCell>
     </TableRow>

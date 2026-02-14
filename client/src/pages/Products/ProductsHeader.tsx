@@ -1,8 +1,12 @@
 import { Package, Plus } from "lucide-react";
 import { Button } from "../../components/common";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Products.module.css";
 
 const ProductsHeader = ({ handleCreateProduct }: any) => {
+  const { hasPermission } = usePermissions();
+  const canCreateProduct = hasPermission("products.create");
+
   return (
     <div className={styles.header}>
       <div className={styles.titleSection}>
@@ -14,10 +18,12 @@ const ProductsHeader = ({ handleCreateProduct }: any) => {
           </p>
         </div>
       </div>
-      <Button onClick={handleCreateProduct}>
-        <Plus size={18} />
-        Add Product
-      </Button>
+      {canCreateProduct ? (
+        <Button onClick={handleCreateProduct}>
+          <Plus size={18} />
+          Add Product
+        </Button>
+      ) : null}
     </div>
   );
 };

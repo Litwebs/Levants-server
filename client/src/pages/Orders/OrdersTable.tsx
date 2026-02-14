@@ -137,9 +137,16 @@ const OrdersTable = ({
                     </td>
 
                     <td>
-                      <span className={styles.total}>
-                        £{order.total.toFixed(2)}
-                      </span>
+                      <div className={styles.totalCell}>
+                        <span className={styles.total}>
+                          £{order.total.toFixed(2)}
+                        </span>
+                        {order.discount > 0 ? (
+                          <span className={styles.discountNote}>
+                            Discount −£{order.discount.toFixed(2)}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
 
                     <td>

@@ -2,10 +2,20 @@
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
 const slugify = require("slugify");
+const mongoose = require("mongoose");
 
 const base64ToTempFile = require("../utils/base64ToTempFile.util");
 
-const { uploadAndCreateFile } = require("./files.service");
+const {
+  uploadAndCreateFile,
+  deleteFileIfOrphaned,
+} = require("./files.service");
+
+const isObjectIdLike = (value) => {
+  if (!value) return false;
+  if (typeof value !== "string") return false;
+  return mongoose.Types.ObjectId.isValid(value) && value.length === 24;
+};
 
 /**
  * Create product
@@ -189,6 +199,13 @@ async function UpdateProduct({ productId, body, userId }) {
     };
   }
 
+  const previousThumbnailId = product.thumbnailImage
+    ? String(product.thumbnailImage)
+    : null;
+  const previousGalleryIds = Array.isArray(product.galleryImages)
+    ? product.galleryImages.map((id) => String(id))
+    : [];
+
   // Handle name / slug change
   if (body.name && body.name !== product.name) {
     const newSlug = slugify(body.name, { lower: true, strict: true });
@@ -225,23 +242,58 @@ async function UpdateProduct({ productId, body, userId }) {
     }
   }
 
-  // Append new gallery images
+  // Replace gallery with the provided list (supports existing URLs/ObjectIds + new base64 uploads)
   if (Array.isArray(body.galleryImages)) {
+    await product.populate("galleryImages");
+
+    const existingGallery = Array.isArray(product.galleryImages)
+      ? product.galleryImages
+      : [];
+
+    const urlToId = new Map(
+      existingGallery
+        .filter((f) => f && typeof f === "object")
+        .map((f) => [String(f.url), String(f._id)]),
+    );
+
+    const nextIds = [];
+
     for (const img of body.galleryImages) {
-      if (!img?.startsWith("data:")) continue;
+      if (typeof img !== "string" || img.trim().length === 0) continue;
 
-      const tmp = await base64ToTempFile(img);
-
-      const uploaded = await uploadAndCreateFile({
-        ...tmp,
-        uploadedBy: userId,
-        folder: "litwebs/products/gallery",
-      });
-
-      if (uploaded.success) {
-        product.galleryImages.push(uploaded.data._id);
+      if (img.startsWith("data:")) {
+        const tmp = await base64ToTempFile(img);
+        const uploaded = await uploadAndCreateFile({
+          ...tmp,
+          uploadedBy: userId,
+          folder: "litwebs/products/gallery",
+        });
+        if (uploaded.success) nextIds.push(String(uploaded.data._id));
+        continue;
       }
+
+      // Allow passing File ids directly
+      if (isObjectIdLike(img)) {
+        nextIds.push(img);
+        continue;
+      }
+
+      // Otherwise treat as URL and map back to existing file
+      const matchedId = urlToId.get(img);
+      if (matchedId) nextIds.push(matchedId);
     }
+
+    // De-dupe while preserving order and cap at 10
+    const deduped = [];
+    const seen = new Set();
+    for (const id of nextIds) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      deduped.push(id);
+      if (deduped.length >= 10) break;
+    }
+
+    product.galleryImages = deduped;
   }
 
   // Prevent slug override
@@ -249,6 +301,25 @@ async function UpdateProduct({ productId, body, userId }) {
   Object.assign(product, safeBody);
 
   await product.save();
+
+  // Cleanup: delete removed gallery files (if orphaned)
+  const nextGalleryIds = Array.isArray(product.galleryImages)
+    ? product.galleryImages.map((id) => String(id))
+    : [];
+
+  const removedGalleryIds = previousGalleryIds.filter(
+    (id) => !nextGalleryIds.includes(id),
+  );
+
+  await Promise.all(removedGalleryIds.map((id) => deleteFileIfOrphaned(id)));
+
+  // Cleanup: if thumbnail changed, delete old thumbnail file (if orphaned)
+  const nextThumbnailId = product.thumbnailImage
+    ? String(product.thumbnailImage)
+    : null;
+  if (previousThumbnailId && previousThumbnailId !== nextThumbnailId) {
+    await deleteFileIfOrphaned(previousThumbnailId);
+  }
 
   return {
     success: true,

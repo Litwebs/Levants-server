@@ -358,6 +358,7 @@
   justify-content: center;
 }
 
+
 .actionBtn:hover {
   background: var(--color-gray-100);
   color: var(--color-gray-700);
@@ -368,6 +369,92 @@
   background: var(--color-error-bg);
   color: var(--color-error);
   border-color: var(--color-error);
+}
+
+/* Roles */
+.roleNameCell {
+  font-weight: var(--font-medium);
+  color: var(--color-gray-900);
+}
+
+.permissionsTable {
+  max-height: 360px;
+  overflow: auto;
+  border-radius: var(--radius-lg);
+}
+
+.permissionName {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.permissionCheckbox {
+  width: 16px !important;
+  height: 16px !important;
+  border-radius: 50% !important;
+  accent-color: var(--color-primary);
+}
+
+.permissionsList {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2) var(--space-6);
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+}
+
+.permissionsList > .permissionItem:first-child {
+  grid-column: 1 / -1;
+}
+
+.permissionItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+  min-width: 0;
+}
+
+.permissionItem input {
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
+.permissionText {
+  user-select: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.permissionDivider {
+  grid-column: 1 / -1;
+  height: 1px;
+  background: var(--color-gray-200);
+  margin: var(--space-2) 0;
+}
+
+@media (max-width: 820px) {
+  .permissionsList {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .permissionText {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
 }
 
 /* Notification Grid */

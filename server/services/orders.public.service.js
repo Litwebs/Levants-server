@@ -3,6 +3,7 @@ const Order = require("../models/order.model");
 const ProductVariant = require("../models/variant.model");
 const stripe = require("../utils/stripe.util");
 const Customer = require("../models/customer.model");
+const { validateDiscountForOrder } = require("./discounts.public.service");
 
 function getReservationTtlMinutes() {
   const raw = process.env.ORDER_RESERVATION_TTL_MINUTES;
@@ -41,7 +42,7 @@ function buildFrontendUrl(pathname) {
   return new URL(pathname, `${base}/`).toString();
 }
 
-async function CreateOrder({ customerId, items } = {}) {
+async function CreateOrder({ customerId, items, discountCode } = {}) {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -108,6 +109,7 @@ async function CreateOrder({ customerId, items } = {}) {
         name: variant.name,
         sku: variant.sku,
         price: variant.price,
+        stripeProductId: variant.stripeProductId,
         quantity,
         subtotal: lineSubtotal,
       });
@@ -116,7 +118,30 @@ async function CreateOrder({ customerId, items } = {}) {
     }
 
     const deliveryFee = 0;
-    const total = subtotal + deliveryFee;
+    const totalBeforeDiscount = subtotal + deliveryFee;
+
+    let appliedDiscount = null;
+    let discountAmount = 0;
+    if (discountCode) {
+      const validation = await validateDiscountForOrder({
+        code: discountCode,
+        customerId,
+        resolvedItems,
+      });
+
+      if (!validation.success) {
+        await session.abortTransaction();
+        session.endSession();
+        return { success: false, message: validation.message };
+      }
+
+      appliedDiscount = validation.data.discount;
+
+      const amount = Number(validation.data.discountAmount || 0);
+      discountAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
+    }
+
+    const total = Math.max(0, totalBeforeDiscount - discountAmount);
 
     const reservationTtlMinutes = getReservationTtlMinutes();
     const reservationExpiresAt = new Date(
@@ -132,6 +157,9 @@ async function CreateOrder({ customerId, items } = {}) {
           subtotal,
           deliveryFee,
           total,
+          totalBeforeDiscount,
+          discountAmount,
+          isDiscounted: discountAmount > 0,
           status: "pending",
           reservationExpiresAt,
         },
@@ -149,15 +177,32 @@ async function CreateOrder({ customerId, items } = {}) {
       line_items: resolvedItems.map((item) => ({
         price_data: {
           currency: "gbp",
-          product_data: {
-            name: item.name,
-          },
+          ...(item.stripeProductId
+            ? { product: item.stripeProductId }
+            : {
+                product_data: {
+                  name: item.name,
+                },
+              }),
           unit_amount: Math.round(item.price * 100),
         },
         quantity: item.quantity,
       })),
+      ...(appliedDiscount?.stripePromotionCodeId
+        ? {
+            discounts: [
+              { promotion_code: appliedDiscount.stripePromotionCodeId },
+            ],
+          }
+        : {}),
       metadata: {
         orderId: order._id.toString(), // 🔑 webhook anchor
+        ...(appliedDiscount
+          ? {
+              discountId: appliedDiscount._id.toString(),
+              discountCode: appliedDiscount.code,
+            }
+          : {}),
       },
       success_url: buildFrontendUrl("/checkout/success"),
       cancel_url: buildFrontendUrl("/checkout/cancel"),
@@ -165,6 +210,15 @@ async function CreateOrder({ customerId, items } = {}) {
 
     // 4️⃣ Attach Stripe session to order
     order.stripeCheckoutSessionId = stripeSession.id;
+
+    if (appliedDiscount) {
+      order.metadata = {
+        ...(order.metadata || {}),
+        discountId: appliedDiscount._id.toString(),
+        discountCode: appliedDiscount.code,
+        stripePromotionCodeId: appliedDiscount.stripePromotionCodeId,
+      };
+    }
     await order.save({ session });
 
     // 5️⃣ Commit everything

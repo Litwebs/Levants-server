@@ -26,6 +26,11 @@ const orderIdParamSchema = Joi.object({
   orderId: objectId.required(),
 });
 
+const objectIdParamSchema = (paramName) =>
+  Joi.object({
+    [paramName]: objectId.required(),
+  });
+
 module.exports = {
   roleIdParamSchema,
   userIdParamSchema,
@@ -33,4 +38,5 @@ module.exports = {
   variantIdParamSchema,
   customerIdParamSchema,
   orderIdParamSchema,
+  objectIdParamSchema,
 };

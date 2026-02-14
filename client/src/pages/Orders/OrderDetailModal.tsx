@@ -2,6 +2,7 @@ import { Button, Modal, ModalFooter } from "../../components/common";
 import { getStatusBadge, getPaymentBadge } from "./order.utils";
 import styles from "./Orders.module.css";
 import { useState } from "react";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const OrderDetailModal = ({
   selectedOrder,
@@ -10,11 +11,16 @@ const OrderDetailModal = ({
   setIsStatusModalOpen,
   refundOrder,
 }: any) => {
+  const { hasPermission } = usePermissions();
+  const canRefundPermission = hasPermission("orders.refund");
+  const canUpdatePermission = hasPermission("orders.update");
+
   const [isRefundConfirmOpen, setIsRefundConfirmOpen] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
 
   const isAlreadyRefunded = selectedOrder?.paymentStatus === "refunded";
-  const canRefund = Boolean(selectedOrder?.id) && !isAlreadyRefunded;
+  const canRefund =
+    canRefundPermission && Boolean(selectedOrder?.id) && !isAlreadyRefunded;
 
   return (
     <>
@@ -170,69 +176,74 @@ const OrderDetailModal = ({
           <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>
             Close
           </Button>
-          <Button
-            variant="danger"
-            disabled={!canRefund}
-            onClick={() => {
-              if (!canRefund) return;
-              setIsRefundConfirmOpen(true);
-            }}
-          >
-            Refund
-          </Button>
-          {typeof setIsStatusModalOpen === "function" && (
+          {canRefundPermission ? (
             <Button
+              variant="danger"
+              disabled={!canRefund}
               onClick={() => {
-                setIsDetailModalOpen(false);
-                setIsStatusModalOpen(true);
+                if (!canRefund) return;
+                setIsRefundConfirmOpen(true);
               }}
             >
-              Update Status
+              Refund
             </Button>
-          )}
+          ) : null}
+          {canUpdatePermission &&
+            typeof setIsStatusModalOpen === "function" && (
+              <Button
+                onClick={() => {
+                  setIsDetailModalOpen(false);
+                  setIsStatusModalOpen(true);
+                }}
+              >
+                Update Status
+              </Button>
+            )}
         </ModalFooter>
       </Modal>
 
-      <Modal
-        isOpen={isRefundConfirmOpen}
-        onClose={() => {
-          if (!isRefunding) setIsRefundConfirmOpen(false);
-        }}
-        title="Confirm refund"
-        size="sm"
-      >
-        <p>
-          Refund order {selectedOrder?.orderNumber || ""}? This action cannot be
-          undone.
-        </p>
+      {canRefundPermission ? (
+        <Modal
+          isOpen={isRefundConfirmOpen}
+          onClose={() => {
+            if (!isRefunding) setIsRefundConfirmOpen(false);
+          }}
+          title="Confirm refund"
+          size="sm"
+        >
+          <p>
+            Refund order {selectedOrder?.orderNumber || ""}? This action cannot
+            be undone.
+          </p>
 
-        <ModalFooter>
-          <Button
-            variant="outline"
-            disabled={isRefunding}
-            onClick={() => setIsRefundConfirmOpen(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="danger"
-            isLoading={isRefunding}
-            onClick={async () => {
-              if (!selectedOrder?.id) return;
-              setIsRefunding(true);
-              try {
-                await refundOrder?.(selectedOrder.id);
-                setIsRefundConfirmOpen(false);
-                setIsDetailModalOpen(false);
-              } finally {
-                setIsRefunding(false);
-              }
-            }}
-          >
-            Refund
-          </Button>
-        </ModalFooter>
-      </Modal>
+          <ModalFooter>
+            <Button
+              variant="outline"
+              disabled={isRefunding}
+              onClick={() => setIsRefundConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              isLoading={isRefunding}
+              onClick={async () => {
+                if (!selectedOrder?.id) return;
+                setIsRefunding(true);
+                try {
+                  await refundOrder?.(selectedOrder.id);
+                  setIsRefundConfirmOpen(false);
+                  setIsDetailModalOpen(false);
+                } finally {
+                  setIsRefunding(false);
+                }
+              }}
+            >
+              Refund
+            </Button>
+          </ModalFooter>
+        </Modal>
+      ) : null}
     </>
   );
 };

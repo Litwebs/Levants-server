@@ -41,6 +41,7 @@ import {
   Select,
 } from "../../components/common";
 import { useToast } from "../../components/common/Toast";
+import { usePermissions } from "@/hooks/usePermissions";
 
 import styles from "./Products.module.css";
 import {
@@ -315,6 +316,8 @@ const VariantCreateModal = ({
             try {
               await onCreate(form);
               onClose();
+            } catch {
+              // Error toast is handled by onCreate; keep modal open.
             } finally {
               setIsSaving(false);
             }
@@ -338,11 +341,15 @@ const VariantEditModal = ({
   onClose,
   variant,
   onSave,
+  canUpdateVariant,
+  canUpdateStock,
 }: {
   isOpen: boolean;
   onClose: () => void;
   variant: AdminProductVariant | null;
   onSave: (variantId: string, patch: Partial<VariantForm>) => Promise<void>;
+  canUpdateVariant: boolean;
+  canUpdateStock: boolean;
 }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [patch, setPatch] = useState<Partial<VariantForm>>({});
@@ -375,8 +382,18 @@ const VariantEditModal = ({
     reader.readAsDataURL(file);
   };
 
-  const thumbnailToShow =
-    getImageUrl(patch.thumbnailImage) || getImageUrl(variant.thumbnailImage);
+  const patchedThumbUrl =
+    patch.thumbnailImage !== undefined
+      ? getImageUrl(patch.thumbnailImage)
+      : null;
+  const isThumbnailExplicitlyCleared =
+    patch.thumbnailImage !== undefined && patchedThumbUrl === "";
+
+  const thumbnailToShow = isThumbnailExplicitlyCleared
+    ? ""
+    : patchedThumbUrl || getImageUrl(variant.thumbnailImage);
+
+  const canSave = canUpdateVariant || canUpdateStock;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Edit Variant" size="lg">
@@ -385,6 +402,7 @@ const VariantEditModal = ({
           <input
             id="edit-variant-name"
             value={patch.name ?? ""}
+            disabled={!canUpdateVariant}
             onChange={(e) => setPatch((p) => ({ ...p, name: e.target.value }))}
           />
         </FormRow>
@@ -393,6 +411,7 @@ const VariantEditModal = ({
           <input
             id="edit-variant-sku"
             value={patch.sku ?? ""}
+            disabled={!canUpdateVariant}
             onChange={(e) => setPatch((p) => ({ ...p, sku: e.target.value }))}
           />
         </FormRow>
@@ -404,6 +423,7 @@ const VariantEditModal = ({
             step="0.01"
             min="0"
             value={patch.price ?? ""}
+            disabled={!canUpdateVariant}
             onChange={(e) => {
               const raw = e.target.value;
               setPatch((p) => ({
@@ -420,6 +440,7 @@ const VariantEditModal = ({
             type="number"
             min="0"
             value={patch.stockQuantity ?? ""}
+            disabled={!canUpdateStock}
             onChange={(e) => {
               const raw = e.target.value;
               setPatch((p) => ({
@@ -436,6 +457,7 @@ const VariantEditModal = ({
             type="number"
             min="0"
             value={patch.lowStockAlert ?? ""}
+            disabled={!canUpdateStock}
             onChange={(e) => {
               const raw = e.target.value;
               setPatch((p) => ({
@@ -450,6 +472,7 @@ const VariantEditModal = ({
           <select
             id="edit-variant-status"
             value={(patch.status as VariantStatus) ?? variant.status}
+            disabled={!canUpdateVariant}
             onChange={(e) =>
               setPatch((p) => ({
                 ...p,
@@ -466,24 +489,50 @@ const VariantEditModal = ({
           <div className={styles.thumbnailUpload}>
             <div className={styles.thumbnailPreviewArea}>
               <div className={styles.thumbnailPreview}>
-                <img src={thumbnailToShow} alt="Variant thumbnail" />
-                {patch.thumbnailImage ? (
-                  <button
-                    type="button"
-                    className={styles.removeImageBtn}
-                    onClick={() =>
-                      setPatch((p) => ({ ...p, thumbnailImage: undefined }))
-                    }
-                    title="Revert"
-                  >
-                    <X size={14} />
-                  </button>
+                {thumbnailToShow ? (
+                  <img src={thumbnailToShow} alt="Variant thumbnail" />
+                ) : (
+                  <div className={styles.uploadPlaceholder}>
+                    <span>No thumbnail</span>
+                  </div>
+                )}
+
+                {canUpdateVariant ? (
+                  patch.thumbnailImage !== undefined ? (
+                    <button
+                      type="button"
+                      className={styles.removeImageBtn}
+                      onClick={() =>
+                        setPatch((p) => ({ ...p, thumbnailImage: undefined }))
+                      }
+                      title="Revert"
+                    >
+                      <X size={14} />
+                    </button>
+                  ) : getImageUrl(variant.thumbnailImage) ? (
+                    <button
+                      type="button"
+                      className={styles.removeImageBtn}
+                      onClick={() =>
+                        setPatch((p) => ({
+                          ...p,
+                          thumbnailImage: { _id: "", url: "" } as MediaImage,
+                        }))
+                      }
+                      title="Remove"
+                    >
+                      <X size={14} />
+                    </button>
+                  ) : null
                 ) : null}
               </div>
 
               <div
                 className={styles.uploadPlaceholder}
-                onClick={() => thumbnailInputRef.current?.click()}
+                onClick={() => {
+                  if (!canUpdateVariant) return;
+                  thumbnailInputRef.current?.click();
+                }}
               >
                 <span>Click to upload new thumbnail</span>
               </div>
@@ -504,25 +553,27 @@ const VariantEditModal = ({
         <Button variant="outline" onClick={onClose} disabled={isSaving}>
           Cancel
         </Button>
-        <Button
-          onClick={async () => {
-            setIsSaving(true);
-            try {
-              await onSave(variant._id, patch);
-              onClose();
-            } finally {
-              setIsSaving(false);
-            }
-          }}
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <Loader2 size={16} className={styles.spinnerIcon} />
-          ) : (
-            <Save size={16} />
-          )}
-          Save
-        </Button>
+        {canSave ? (
+          <Button
+            onClick={async () => {
+              setIsSaving(true);
+              try {
+                await onSave(variant._id, patch);
+                onClose();
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <Loader2 size={16} className={styles.spinnerIcon} />
+            ) : (
+              <Save size={16} />
+            )}
+            Save
+          </Button>
+        ) : null}
       </ModalFooter>
     </Modal>
   );
@@ -532,6 +583,12 @@ const ProductVariantsPage = () => {
   const { productId } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { hasPermission } = usePermissions();
+
+  const canCreateVariant = hasPermission("variants.create");
+  const canUpdateVariant = hasPermission("variants.update");
+  const canUpdateStock = hasPermission("stock.update");
+  const canEditVariant = canUpdateVariant || canUpdateStock;
 
   const [isLoading, setIsLoading] = useState(false);
   const [product, setProduct] = useState<AdminProduct | null>(null);
@@ -722,13 +779,33 @@ const ProductVariantsPage = () => {
       thumbnailImage: payload.thumbnailImage?.url,
     };
 
-    const res = await api.post(`/admin/products/${productId}/variants`, body);
-    showToast({ type: "success", title: "Variant created" });
+    try {
+      const res = await api.post(`/admin/products/${productId}/variants`, body);
+      showToast({ type: "success", title: "Variant created" });
 
-    // Refresh to ensure latest server state (and any computed fields)
-    if (res?.data?.success) {
-      setPage(1);
-      await refreshProduct({ page: 1 });
+      // Refresh to ensure latest server state (and any computed fields)
+      if (res?.data?.success) {
+        setPage(1);
+        await refreshProduct({ page: 1 });
+      }
+    } catch (e: any) {
+      const status = e?.response?.status;
+      const apiMessage = e?.response?.data?.message;
+      const code = e?.response?.data?.error?.code;
+
+      showToast({
+        type: "error",
+        title:
+          status === 409 ? "SKU already exists" : "Failed to create variant",
+        message:
+          apiMessage ||
+          (code === "DUPLICATE_KEY_ERROR"
+            ? "SKU already exists"
+            : e?.message || "Request failed"),
+      });
+
+      // Signal failure to the caller so it doesn't close the modal.
+      throw e;
     }
   };
 
@@ -736,14 +813,24 @@ const ProductVariantsPage = () => {
     variantId: string,
     patch: Partial<VariantForm>,
   ) => {
+    if (!canEditVariant) return;
+
     const body: Record<string, any> = {
-      name: patch.name,
-      sku: patch.sku,
-      price: patch.price,
-      stockQuantity: patch.stockQuantity,
-      lowStockAlert: patch.lowStockAlert,
-      thumbnailImage: patch.thumbnailImage?.url,
-      status: patch.status,
+      ...(canUpdateVariant
+        ? {
+            name: patch.name,
+            sku: patch.sku,
+            price: patch.price,
+            thumbnailImage: patch.thumbnailImage?.url,
+            status: patch.status,
+          }
+        : {}),
+      ...(canUpdateStock
+        ? {
+            stockQuantity: patch.stockQuantity,
+            lowStockAlert: patch.lowStockAlert,
+          }
+        : {}),
     };
 
     Object.keys(body).forEach((k) => {
@@ -817,14 +904,16 @@ const ProductVariantsPage = () => {
           </div>
         </div>
 
-        <Button onClick={() => setIsCreateOpen(true)} disabled={isLoading}>
-          {isLoading ? (
-            <Loader2 size={18} className={styles.spinnerIcon} />
-          ) : (
-            <Plus size={18} />
-          )}
-          Add Variant
-        </Button>
+        {canCreateVariant ? (
+          <Button onClick={() => setIsCreateOpen(true)} disabled={isLoading}>
+            {isLoading ? (
+              <Loader2 size={18} className={styles.spinnerIcon} />
+            ) : (
+              <Plus size={18} />
+            )}
+            Add Variant
+          </Button>
+        ) : null}
       </div>
 
       <div className={styles.statsGrid}>
@@ -914,7 +1003,11 @@ const ProductVariantsPage = () => {
                     ? undefined
                     : () => {
                         setSelectedVariant(v);
-                        setIsEditOpen(true);
+                        if (canEditVariant) {
+                          setIsEditOpen(true);
+                        } else {
+                          setIsViewOpen(true);
+                        }
                       }
                 }
               >
@@ -1068,16 +1161,18 @@ const ProductVariantsPage = () => {
       />
 
       <VariantCreateModal
-        isOpen={isCreateOpen}
+        isOpen={canCreateVariant ? isCreateOpen : false}
         onClose={() => setIsCreateOpen(false)}
         onCreate={createVariant}
       />
 
       <VariantEditModal
-        isOpen={isEditOpen}
+        isOpen={canEditVariant ? isEditOpen : false}
         onClose={() => setIsEditOpen(false)}
         variant={selectedVariant}
         onSave={updateVariant}
+        canUpdateVariant={canUpdateVariant}
+        canUpdateStock={canUpdateStock}
       />
     </div>
   );

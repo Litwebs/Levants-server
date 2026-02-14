@@ -4,6 +4,7 @@ const {
 } = require("./orders.stock.service");
 
 const Order = require("../models/order.model");
+const { recordRedemption } = require("./discounts.public.service");
 
 let _stripe;
 function getStripe() {
@@ -100,6 +101,21 @@ async function HandlePaymentSuccess(session) {
     stripeCheckoutSessionId,
     stripePaymentIntentId: paymentIntentId,
   });
+
+  // Record discount redemption (best-effort, idempotent)
+  try {
+    const discountId = session.metadata?.discountId;
+    if (discountId) {
+      await recordRedemption({
+        discountId,
+        customerId: order.customer,
+        orderId: order._id,
+        stripeCheckoutSessionId,
+      });
+    }
+  } catch (e) {
+    // Don't fail webhook processing due to redemption bookkeeping
+  }
 }
 
 async function HandlePaymentExpired(session) {

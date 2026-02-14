@@ -42,22 +42,6 @@ const DashboardHeader: React.FC<Props> = ({
             options={dateRangeOptions}
           />
         </div>
-
-        <Button
-          variant="outline"
-          leftIcon={<Eye size={16} />}
-          onClick={onViewOrders}
-        >
-          View New Orders
-        </Button>
-
-        <Button
-          variant="primary"
-          leftIcon={<Plus size={16} />}
-          onClick={onCreateProduct}
-        >
-          Create Product
-        </Button>
       </div>
     </div>
   );

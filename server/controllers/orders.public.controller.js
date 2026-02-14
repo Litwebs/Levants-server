@@ -5,6 +5,7 @@ const CreateOrder = async (req, res) => {
   const result = await service.CreateOrder({
     customerId: req.body.customerId,
     items: req.body.items,
+    discountCode: req.body.discountCode,
   });
 
   if (!result.success) {

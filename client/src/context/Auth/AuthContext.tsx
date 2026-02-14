@@ -6,6 +6,7 @@ import {
   useReducer,
   useEffect,
   useCallback,
+  useState,
   ReactNode,
 } from "react";
 import AuthReducer, {
@@ -24,6 +25,8 @@ import {
   Session,
 } from "./constants";
 import api from "../api";
+import { setUnauthorizedHandler } from "../api";
+import { useToast } from "@/components/common/Toast";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -39,6 +42,7 @@ const unwrapData = <T,>(payload: unknown): T | null => {
 };
 
 type AuthContextType = AuthState & {
+  authTransition: "login" | "logout" | null;
   checkAuth: () => Promise<void>;
   login: (
     email: string,
@@ -87,6 +91,7 @@ const TEMP_TOKEN_STORAGE_KEY = "levants.tempToken";
 const TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY = "levants.tempTokenExpiresAt";
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const { showToast } = useToast();
   const [state, dispatch] = useReducer(
     AuthReducer,
     initialAuthState,
@@ -110,6 +115,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       };
     },
   );
+
+  const [authTransition, setAuthTransition] = useState<
+    "login" | "logout" | null
+  >(null);
+
+  const handleUnauthorized = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
+      window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+    }
+    dispatch({ type: AUTH_LOGOUT });
+    showToast({
+      type: "info",
+      title: "Session expired",
+      message: "Please sign in again.",
+    });
+  }, [showToast]);
 
   const isHydratedUser = (candidate: unknown): candidate is User => {
     if (!candidate || typeof candidate !== "object") return false;
@@ -206,6 +228,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   /* ---------- LOGIN ---------- */
   const login = async (email: string, password: string, rememberMe = false) => {
+    setAuthTransition("login");
     try {
       dispatch({ type: AUTH_REQUEST });
 
@@ -261,6 +284,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         type: AUTH_FAILURE,
         payload: err.response?.data?.message || "Login failed",
       });
+    } finally {
+      setAuthTransition(null);
     }
   };
 
@@ -318,12 +343,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   /* ---------- LOGOUT ---------- */
   const logout = async () => {
-    await api.get("/auth/logout");
-    if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
-      window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+    setAuthTransition("logout");
+    dispatch({ type: AUTH_REQUEST });
+    try {
+      await api.get("/auth/logout");
+    } catch {
+      // Best-effort: still clear local auth state.
+    } finally {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
+        window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+      }
+      dispatch({ type: AUTH_LOGOUT });
+      setAuthTransition(null);
     }
-    dispatch({ type: AUTH_LOGOUT });
   };
 
   /* ---------- REFRESH ---------- */
@@ -420,11 +453,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const res = await api.put("/auth/me", updates);
     const data = unwrapData<{ user: User }>(res.data);
     if (!data?.user) throw new Error("Failed to update profile");
+
+    // The update response may not include populated role/permissions.
+    // Re-hydrate so the app state (permissions + preferences) is consistent.
+    const hydrated = await fetchMe();
+    const nextUser = hydrated || data.user;
+
     dispatch({
       type: AUTH_SUCCESS,
-      payload: { user: data.user, isAuthenticated: true },
+      payload: { user: nextUser, isAuthenticated: true },
     });
-    return data.user;
+    return nextUser;
   };
 
   const forgotPassword = async (email: string): Promise<ApiResponse<null>> => {
@@ -456,10 +495,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     checkAuthentication();
   }, [checkAuthentication]);
 
+  useEffect(() => {
+    setUnauthorizedHandler(handleUnauthorized);
+    return () => setUnauthorizedHandler(null);
+  }, [handleUnauthorized]);
+
   return (
     <AuthContext.Provider
       value={{
         ...state,
+        authTransition,
         checkAuth,
         login,
         verify2FA,

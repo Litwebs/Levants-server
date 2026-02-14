@@ -4,7 +4,10 @@ const Variant = require("../models/variant.model");
 const stripeService = require("./stripe.service");
 
 const base64ToTempFile = require("../utils/base64ToTempFile.util");
-const { uploadAndCreateFile } = require("./files.service");
+const {
+  uploadAndCreateFile,
+  deleteFileIfOrphaned,
+} = require("./files.service");
 
 /**
  * Create variant (Stripe-integrated + CDN images)
@@ -194,6 +197,10 @@ async function UpdateVariant({ variantId, body, userId }) {
     return { success: false, message: "Variant not found" };
   }
 
+  const previousThumbnailId = variant.thumbnailImage
+    ? String(variant.thumbnailImage)
+    : null;
+
   // 🔁 Price change → new Stripe price
   if (body.price !== undefined && body.price !== variant.price) {
     const { stripePriceId } = await stripeService.createStripePrice({
@@ -206,7 +213,9 @@ async function UpdateVariant({ variantId, body, userId }) {
   }
 
   // Thumbnail replace
-  if (body.thumbnailImage?.startsWith("data:")) {
+  if (body.thumbnailImage === null || body.thumbnailImage === "") {
+    variant.thumbnailImage = null;
+  } else if (body.thumbnailImage?.startsWith("data:")) {
     const tmp = await base64ToTempFile(body.thumbnailImage);
 
     const uploaded = await uploadAndCreateFile({
@@ -229,6 +238,15 @@ async function UpdateVariant({ variantId, body, userId }) {
   if (body.status !== undefined) variant.status = body.status;
 
   await variant.save();
+
+  // If thumbnail changed (or was removed), remove old file record if now orphaned.
+  const nextThumbnailId = variant.thumbnailImage
+    ? String(variant.thumbnailImage)
+    : null;
+
+  if (previousThumbnailId && previousThumbnailId !== nextThumbnailId) {
+    await deleteFileIfOrphaned(previousThumbnailId);
+  }
 
   const populatedVariant = await Variant.findById(variant._id).populate(
     "thumbnailImage",
@@ -255,9 +273,58 @@ async function DeleteVariant({ variantId }) {
   return { success: true };
 }
 
+/**
+ * Search variants globally (admin autocomplete)
+ */
+async function SearchVariants({ q, limit = 10 } = {}) {
+  const queryText = String(q || "").trim();
+  if (!queryText) {
+    return { success: true, data: { variants: [] } };
+  }
+
+  const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 25);
+  const rx = new RegExp(queryText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+
+  // Match by variant name/sku OR product name/slug/category
+  const products = await Product.find({
+    $or: [{ name: rx }, { slug: rx }, { category: rx }],
+  })
+    .select("_id")
+    .limit(200)
+    .lean();
+  const productIds = products.map((p) => p._id);
+
+  const variants = await Variant.find({
+    $or: [
+      { name: rx },
+      { sku: rx },
+      ...(productIds.length > 0 ? [{ product: { $in: productIds } }] : []),
+    ],
+  })
+    .select("name sku product status")
+    .populate({ path: "product", select: "name" })
+    .sort({ createdAt: -1 })
+    .limit(safeLimit)
+    .lean();
+
+  const shaped = variants.map((v) => ({
+    _id: String(v._id),
+    name: v.name,
+    sku: v.sku,
+    status: v.status,
+    product:
+      v.product && typeof v.product === "object"
+        ? { name: v.product.name }
+        : null,
+  }));
+
+  return { success: true, data: { variants: shaped } };
+}
+
 module.exports = {
   CreateVariant,
   ListVariants,
   UpdateVariant,
   DeleteVariant,
+  SearchVariants,
 };

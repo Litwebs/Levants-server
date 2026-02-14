@@ -11,9 +11,9 @@ const CustomersHeader = ({ exportCustomers }: any) => (
         <p className={styles.subtitle}>Manage your customer database</p>
       </div>
     </div>
-    <Button variant="outline" onClick={exportCustomers}>
+    {/* <Button variant="outline" onClick={exportCustomers}>
       <Download size={18} /> Export CSV
-    </Button>
+    </Button> */}
   </div>
 );
 

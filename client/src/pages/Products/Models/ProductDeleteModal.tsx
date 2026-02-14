@@ -1,5 +1,6 @@
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import { Button, Modal, ModalFooter } from "../../../components/common";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "../Products.module.css";
 
 const ProductDeleteModal = ({
@@ -9,6 +10,9 @@ const ProductDeleteModal = ({
   handleArchiveProduct,
   isSaving,
 }: any) => {
+  const { hasPermission } = usePermissions();
+  if (!hasPermission("products.delete")) return null;
+
   if (!selectedProduct) return null;
 
   const confirm = async () => {

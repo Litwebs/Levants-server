@@ -28,16 +28,57 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/context/Auth/AuthContext";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./AdminLayout.module.css";
 
 const navItems = [
-  { path: "/", label: "Overview", icon: LayoutDashboard },
-  { path: "/deliveries", label: "Deliveries", icon: Truck },
-  { path: "/delivery-runs", label: "Delivery Runs", icon: Truck },
-  { path: "/orders", label: "Orders", icon: ShoppingCart }, // COMPLETED
-  { path: "/products", label: "Products", icon: Package }, // COMPLETED
-  { path: "/customers", label: "Customers", icon: Users }, // COMPLETED
-  { path: "/settings", label: "Settings", icon: Settings }, // COMPLETED
+  {
+    path: "/",
+    label: "Overview",
+    icon: LayoutDashboard,
+    requiredAny: ["analytics.read"],
+  },
+  {
+    path: "/deliveries",
+    label: "Deliveries",
+    icon: Truck,
+    requiredAny: ["delivery.routes.read"],
+  },
+  {
+    path: "/delivery-runs",
+    label: "Delivery Runs",
+    icon: Truck,
+    requiredAny: ["delivery.routes.read"],
+  },
+  {
+    path: "/orders",
+    label: "Orders",
+    icon: ShoppingCart,
+    requiredAny: ["orders.read"],
+  },
+  {
+    path: "/products",
+    label: "Products",
+    icon: Package,
+    requiredAny: ["products.read"],
+  },
+  {
+    path: "/customers",
+    label: "Customers",
+    icon: Users,
+    requiredAny: ["customers.read"],
+  },
+  {
+    path: "/discounts",
+    label: "Discounts",
+    icon: Tag,
+    requiredAny: ["promotions.read"],
+  },
+  {
+    path: "/settings",
+    label: "Settings",
+    icon: Settings,
+  },
   // { path: '/promotions', label: 'Promotions', icon: Tag },
   // { path: '/content', label: 'Content', icon: FileText },
   // { path: '/reports', label: 'Reports', icon: BarChart3 },
@@ -49,17 +90,59 @@ interface AdminLayoutProps {
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, updateSelf } = useAuth();
+  const { hasAnyPermission } = usePermissions();
+
+  const themePreference =
+    (user as any)?.preferences?.theme === "light" ||
+    (user as any)?.preferences?.theme === "dark" ||
+    (user as any)?.preferences?.theme === "system"
+      ? ((user as any).preferences.theme as "light" | "dark" | "system")
+      : "system";
 
   useEffect(() => {
-    const theme = darkMode ? "dark" : "light";
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => setSystemPrefersDark(!!media.matches);
+    apply();
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", apply);
+      return () => media.removeEventListener("change", apply);
+    }
+
+    // Safari fallback
+    media.addListener(apply);
+    return () => media.removeListener(apply);
+  }, []);
+
+  const resolvedTheme =
+    themePreference === "system"
+      ? systemPrefersDark
+        ? "dark"
+        : "light"
+      : themePreference;
+
+  const isDark = resolvedTheme === "dark";
+
+  const roleLabel =
+    typeof user?.role === "string" ? user.role : user?.role?.name;
+
+  const visibleNavItems = navItems.filter((item) => {
+    const requiredAny = (item as any).requiredAny as string[] | undefined;
+    if (!Array.isArray(requiredAny) || requiredAny.length === 0) return true;
+    return hasAnyPermission(requiredAny);
+  });
+
+  useEffect(() => {
+    const theme = isDark ? "dark" : "light";
     document.documentElement.dataset.theme = theme;
     document.body.dataset.theme = theme;
-    document.documentElement.classList.toggle("dark", darkMode);
-  }, [darkMode]);
+    document.documentElement.classList.toggle("dark", isDark);
+  }, [isDark]);
 
   const initials = (user?.name || "")
     .split(" ")
@@ -69,16 +152,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     .join("")
     .toUpperCase();
 
-  const roleLabel =
-    typeof user?.role === "string" ? user.role : user?.role?.name;
-
   const handleLogout = async () => {
     await logout();
     navigate("/login", { replace: true });
   };
 
   return (
-    <div className={styles.layout} data-theme={darkMode ? "dark" : "light"}>
+    <div className={styles.layout} data-theme={isDark ? "dark" : "light"}>
       <aside
         className={`${styles.sidebar} ${collapsed ? styles.collapsed : ""}`}
       >
@@ -88,7 +168,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </div>
 
         <nav className={styles.nav}>
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
             return (
@@ -130,9 +210,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           <div className={styles.topbarActions}>
             <button
               className={styles.iconBtn}
-              onClick={() => setDarkMode(!darkMode)}
+              onClick={() => {
+                const next = isDark ? "light" : "dark";
+                void (async () => {
+                  try {
+                    await updateSelf({ preferences: { theme: next } } as any);
+                  } catch {
+                    // ignore
+                  }
+                })();
+              }}
             >
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+              {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             <button className={styles.iconBtn}>
               <Bell size={20} />
@@ -156,6 +245,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 <DropdownMenuLabel>
                   {user?.email || "Signed in"}
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                  <Settings size={16} style={{ marginRight: 8 }} />
+                  Settings
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut size={16} style={{ marginRight: 8 }} />

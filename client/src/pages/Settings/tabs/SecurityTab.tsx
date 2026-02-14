@@ -422,7 +422,7 @@ const SecurityTab = ({
             </div>
 
             <Button
-              variant={twoFactorEnabled ? "secondary" : "primary"}
+              variant={twoFactorEnabled ? "danger" : "primary"}
               onClick={() => handleToggle2FA()}
               isLoading={toggling2FA}
             >

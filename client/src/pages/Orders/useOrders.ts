@@ -97,7 +97,12 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
 
     subtotal: order.subtotal,
     deliveryFee: order.deliveryFee,
-    discount: 0,
+    discount:
+      typeof (order as any).discountAmount === "number"
+        ? (order as any).discountAmount
+        : typeof (order as any).totalBeforeDiscount === "number"
+          ? Math.max(0, (order as any).totalBeforeDiscount - order.total)
+          : 0,
     total: order.total,
 
     deliveryStatus: order.deliveryStatus,
@@ -147,6 +152,45 @@ export const useOrders = () => {
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
+  const toDateInputValue = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  const parseDateInput = (value: string) => {
+    // Accept either YYYY-MM-DD (from <input type="date">) or an ISO string.
+    if (!value) return null;
+    if (value.includes("T")) {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    const parts = value.split("-").map((p) => Number(p));
+    if (parts.length !== 3) return null;
+    const [year, month, day] = parts;
+    if (!year || !month || !day) return null;
+
+    // Construct as local time to match the user's expectations.
+    const dt = new Date(year, month - 1, day);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  };
+
+  const toStartOfDayIso = (value: string) => {
+    const dt = parseDateInput(value);
+    if (!dt) return undefined;
+    const start = new Date(dt);
+    start.setHours(0, 0, 0, 0);
+    return start.toISOString();
+  };
+
+  const toEndOfDayIso = (value: string) => {
+    const dt = parseDateInput(value);
+    if (!dt) return undefined;
+    const end = new Date(dt);
+    end.setHours(23, 59, 59, 999);
+    return end.toISOString();
+  };
+
   const mapSortToApi = (value: string): { sortBy?: string; sortOrder?: "asc" | "desc" } => {
     if (value === "newest") return { sortBy: "createdAt", sortOrder: "desc" };
     if (value === "oldest") return { sortBy: "createdAt", sortOrder: "asc" };
@@ -173,25 +217,23 @@ export const useOrders = () => {
     const endOfToday = new Date(now);
     endOfToday.setHours(23, 59, 59, 999);
 
-    const toIsoDate = (d: Date) => d.toISOString().slice(0, 10);
-
     if (dateFilter === "today") {
-      setDateFrom(toIsoDate(startOfToday));
-      setDateTo(toIsoDate(endOfToday));
+      setDateFrom(toDateInputValue(startOfToday));
+      setDateTo(toDateInputValue(endOfToday));
       return;
     }
 
     if (dateFilter === "week") {
       const from = new Date(startOfToday.getTime() - 7 * 86400000);
-      setDateFrom(toIsoDate(from));
-      setDateTo(toIsoDate(endOfToday));
+      setDateFrom(toDateInputValue(from));
+      setDateTo(toDateInputValue(endOfToday));
       return;
     }
 
     if (dateFilter === "month") {
       const from = new Date(startOfToday.getTime() - 30 * 86400000);
-      setDateFrom(toIsoDate(from));
-      setDateTo(toIsoDate(endOfToday));
+      setDateFrom(toDateInputValue(from));
+      setDateTo(toDateInputValue(endOfToday));
       return;
     }
   }, [dateFilter]);
@@ -206,6 +248,9 @@ const refresh = useCallback(
     const effectiveDeliveryStatus =
       deliveryStatusFilter !== "all" ? deliveryStatusFilter : undefined;
 
+    const apiDateFrom = dateFrom ? toStartOfDayIso(dateFrom) : undefined;
+    const apiDateTo = dateTo ? toEndOfDayIso(dateTo) : undefined;
+
     await listOrders({
       page: targetPage,
       pageSize: targetPageSize,
@@ -217,8 +262,8 @@ const refresh = useCallback(
       search: searchQuery || undefined,
       minTotal: minTotal || undefined,
       maxTotal: maxTotal || undefined,
-      dateFrom: dateFrom || undefined,
-      dateTo: dateTo || undefined,
+      dateFrom: apiDateFrom,
+      dateTo: apiDateTo,
       refundedOnly: refundedOnly ? true : undefined,
       expiredOnly: expiredOnly ? true : undefined,
 

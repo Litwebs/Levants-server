@@ -15,6 +15,10 @@ export type RevenueInterval = "week" | "month" | "year";
 export type AnalyticsSummary = {
   totalOrders: number;
   revenue: number;
+  unitsSold: number;
+  totalRefunds: number;
+  newCustomers: number;
+  repeatCustomers: number;
   pendingOrders: number;
   paidOrders: number;
   failedOrders: number;

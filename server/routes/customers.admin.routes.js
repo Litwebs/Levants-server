@@ -24,7 +24,7 @@ router.use(requireAuth);
 // List customers
 router.get(
   "/",
-  requirePermission("customers.*"),
+  requirePermission("customers.read"),
   validateQuery(listCustomersQuerySchema),
   asyncHandler(controller.ListCustomers),
 );
@@ -32,7 +32,7 @@ router.get(
 // Get customer
 router.get(
   "/:customerId",
-  requirePermission("customers.*"),
+  requirePermission("customers.read"),
   validateParams(customerIdParamSchema),
   asyncHandler(controller.GetCustomerById),
 );
@@ -49,7 +49,7 @@ router.put(
 // Get orders by customer (admin)
 router.get(
   "/:customerId/orders",
-  requirePermission("customers.*"),
+  requirePermission(["customers.read", "orders.read"]),
   validateParams(customerIdParamSchema),
   validateQuery(listCustomersQuerySchema), // reuse page/pageSize/search pattern
   asyncHandler(controller.ListOrdersByCustomer),

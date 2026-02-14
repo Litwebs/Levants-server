@@ -48,8 +48,25 @@ function mapError(err) {
   if (err.code === 11000) {
     statusCode = 409;
     code = "DUPLICATE_KEY_ERROR";
-    message = "Duplicate value for a unique field";
-    details = { keyValue: err.keyValue };
+    const keyValue = err.keyValue || null;
+    const keyPattern = err.keyPattern || null;
+    const field =
+      (keyValue && Object.keys(keyValue)[0]) ||
+      (keyPattern && Object.keys(keyPattern)[0]) ||
+      null;
+
+    if (field === "sku") {
+      message = "SKU already exists";
+    } else if (field) {
+      message = `Duplicate value for ${field}`;
+    } else {
+      message = "Duplicate value for a unique field";
+    }
+
+    details = {
+      ...(field ? { field } : {}),
+      ...(keyValue ? { keyValue } : {}),
+    };
   }
 
   // Auth fallbacks (ONLY if message is missing)

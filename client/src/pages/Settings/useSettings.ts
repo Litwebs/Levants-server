@@ -85,6 +85,17 @@ export const useSettings = () => {
     return Array.isArray(perms) ? perms : [];
   }, [user]);
 
+  const roleName = useMemo(() => {
+    const role: any = (user as any)?.role;
+    if (!role) return null;
+    if (typeof role === "string") return role.toLowerCase();
+    if (typeof role === "object" && role?.name)
+      return String(role.name).toLowerCase();
+    return null;
+  }, [user]);
+
+  const isAdmin = roleName === "admin";
+
   const hasPermission = useMemo(() => {
     return (perm: string) => permissions.includes("*") || permissions.includes(perm);
   }, [permissions]);
@@ -105,7 +116,11 @@ export const useSettings = () => {
 
   const allowedTabs = useMemo(() => {
     // Tabs that are always available to authenticated users
-    const base: Array<"notifications" | "security"> = ["notifications", "security"];
+    const base: Array<"preferences" | "notifications" | "security"> = [
+      "preferences",
+      "notifications",
+      "security",
+    ];
 
     // Business info requires permissions
     const canViewGeneral =
@@ -121,9 +136,54 @@ export const useSettings = () => {
     const tabs: string[] = [];
     if (canViewGeneral) tabs.push("general");
     if (canViewUsers) tabs.push("users");
+    if (isAdmin) tabs.push("roles");
     tabs.push(...base);
     return tabs;
-  }, [hasPermission]);
+  }, [hasPermission, isAdmin]);
+
+  /* -------------------- PREFERENCES -------------------- */
+  type ThemePreference = "light" | "dark" | "system";
+
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
+    const t = (user as any)?.preferences?.theme;
+    if (t === "light" || t === "dark" || t === "system") return t;
+    return "system";
+  });
+
+  const [preferencesLoading, setPreferencesLoading] = useState({
+    savingTheme: false,
+  });
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const t = (user as any)?.preferences?.theme;
+    if (t === "light" || t === "dark" || t === "system") {
+      setThemePreference(t);
+    } else {
+      setThemePreference("system");
+    }
+  }, [currentUserId, user?.preferences?.theme]);
+
+  const saveThemePreference = async () => {
+    if (preferencesLoading.savingTheme) return;
+    setPreferencesLoading((p) => ({ ...p, savingTheme: true }));
+    try {
+      await updateSelf({
+        preferences: {
+          theme: themePreference,
+        },
+      } as any);
+
+      showToast({ type: "success", title: "Preferences saved" });
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title: err?.response?.data?.message || "Failed to save preferences",
+      });
+    } finally {
+      setPreferencesLoading((p) => ({ ...p, savingTheme: false }));
+    }
+  };
 
   useEffect(() => {
     // If the persisted tab isn't allowed for the current user, fall back.
@@ -271,15 +331,12 @@ export const useSettings = () => {
       });
     }
 
-    const roleName =
-      typeof (user as any)?.role === "object" ? (user as any)?.role?.name : null;
-    const isAdmin = roleName === "admin";
     if (canViewUsers && isAdmin) {
       void fetchRoles().catch(() => {
         // errors are handled by consumers via toasts
       });
     }
-  }, [fetchRoles, fetchUsers, hasPermission, user]);
+  }, [fetchRoles, fetchUsers, hasPermission, isAdmin, user]);
 
   const openUserModal = async (mode: "add" | "edit", u?: any) => {
     setUserModalMode(mode);
@@ -679,6 +736,11 @@ export const useSettings = () => {
     notificationSettings,
     handleToggleNotification: toggleNotification,
     handleSaveNotifications: saveNotifications,
+
+    themePreference,
+    setThemePreference,
+    handleSaveThemePreference: saveThemePreference,
+    preferencesLoading,
 
     accountInfo,
     setAccountInfo,

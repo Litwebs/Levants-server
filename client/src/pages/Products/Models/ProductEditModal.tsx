@@ -7,6 +7,7 @@ import {
   FormRow,
   FormSection,
 } from "../../../components/common";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "../Products.module.css";
 
 const statuses = ["active", "draft", "archived"];
@@ -30,6 +31,9 @@ const ProductEditModal = ({
   handleSaveEdit,
   isSaving,
 }: any) => {
+  const { hasPermission } = usePermissions();
+  if (!hasPermission("products.update")) return null;
+
   return (
     <Modal
       isOpen={isEditModalOpen}

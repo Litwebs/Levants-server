@@ -7,6 +7,7 @@ import {
   FormRow,
   FormSection,
 } from "../../../components/common";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "../Products.module.css";
 
 const statuses = ["active", "draft", "archived"];
@@ -26,6 +27,9 @@ const ProductCreateModal = ({
   handleCreate,
   isSaving,
 }: any) => {
+  const { hasPermission } = usePermissions();
+  if (!hasPermission("products.create")) return null;
+
   return (
     <Modal
       isOpen={isCreateModalOpen}

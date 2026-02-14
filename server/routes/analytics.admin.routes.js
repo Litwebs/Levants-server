@@ -10,8 +10,7 @@ const router = express.Router();
 
 router.use(requireAuth);
 // Dashboard analytics needs both orders and products.
-router.use(requirePermission("orders.read"));
-router.use(requirePermission("products.read"));
+router.use(requirePermission("analytics.read"));
 
 // Single call for the whole analytics page
 router.get("/dashboard", asyncHandler(controller.GetDashboard));

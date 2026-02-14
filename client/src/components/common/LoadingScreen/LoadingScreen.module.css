@@ -1,0 +1,30 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  background-color: var(--color-white);
+  color: var(--color-gray-700);
+  z-index: 9999;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+.label {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

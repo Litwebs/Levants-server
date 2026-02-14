@@ -1,4 +1,5 @@
 import { Button, Card } from "../../components/common";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
 
 interface Props {
@@ -12,6 +13,10 @@ const OrdersBulkActions = ({
   bulkUpdateStatus,
   setSelectedOrders,
 }: Props) => {
+  const { hasPermission } = usePermissions();
+  const canUpdateOrders = hasPermission("orders.update");
+
+  if (!canUpdateOrders) return null;
   if (!selectedOrders.length) return null;
 
   return (

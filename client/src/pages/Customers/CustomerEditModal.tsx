@@ -6,6 +6,7 @@ import {
   FormRow,
 } from "../../components/common";
 import { Save } from "lucide-react";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Customers.module.css";
 
 const CustomerEditModal = ({
@@ -15,6 +16,9 @@ const CustomerEditModal = ({
   setEditForm,
   handleSaveEdit,
 }: any) => {
+  const { hasPermission } = usePermissions();
+  if (!hasPermission("customers.update")) return null;
+
   return (
     <Modal
       isOpen={isEditModalOpen}

@@ -2,6 +2,7 @@ import { Clock, CheckCircle, X } from "lucide-react";
 import { Modal } from "../../components/common";
 import styles from "./Orders.module.css";
 import { getStatusBadge } from "./order.utils";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const STATUSES = [
   "ordered",
@@ -17,6 +18,8 @@ const OrderStatusModal = ({
   setIsStatusModalOpen,
   updateOrderStatus,
 }: any) => {
+  const { hasPermission } = usePermissions();
+  if (!hasPermission("orders.update")) return null;
   if (!selectedOrder) return null;
 
   return (

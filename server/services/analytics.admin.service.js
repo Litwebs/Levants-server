@@ -108,6 +108,66 @@ const normalizeDeliveryStatus = (value) => {
 
 async function GetSummary({ range, from, to } = {}) {
   const createdAtMatch = buildCreatedAtMatch({ range, from, to });
+  const { start } = parseDateRange({ range, from, to });
+
+  const paidCreatedAtMatch = {
+    ...createdAtMatch,
+    status: "paid",
+    customer: { $ne: null },
+  };
+
+  const customerAggPipeline = start
+    ? [
+        { $match: paidCreatedAtMatch },
+        { $group: { _id: "$customer" } },
+        {
+          $lookup: {
+            from: "orders",
+            let: { customerId: "$_id" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ["$customer", "$$customerId"] },
+                      { $eq: ["$status", "paid"] },
+                      { $lt: ["$createdAt", start] },
+                    ],
+                  },
+                },
+              },
+              { $limit: 1 },
+              { $project: { _id: 1 } },
+            ],
+            as: "previousPaid",
+          },
+        },
+        {
+          $project: {
+            isNew: { $eq: [{ $size: "$previousPaid" }, 0] },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            newCustomers: { $sum: { $cond: ["$isNew", 1, 0] } },
+            repeatCustomers: { $sum: { $cond: ["$isNew", 0, 1] } },
+          },
+        },
+      ]
+    : [
+        { $match: paidCreatedAtMatch },
+        { $group: { _id: "$customer", orders: { $sum: 1 } } },
+        {
+          $group: {
+            _id: null,
+            newCustomers: { $sum: 1 },
+            repeatCustomers: {
+              $sum: { $cond: [{ $gt: ["$orders", 1] }, 1, 0] },
+            },
+          },
+        },
+      ];
 
   const [
     totalOrders,
@@ -115,6 +175,8 @@ async function GetSummary({ range, from, to } = {}) {
     statusCounts,
     lowStockCountAgg,
     outOfStockCountAgg,
+    unitsSoldAgg,
+    customersAgg,
   ] = await Promise.all([
     Order.countDocuments({
       ...createdAtMatch,
@@ -223,9 +285,24 @@ async function GetSummary({ range, from, to } = {}) {
       },
       { $count: "count" },
     ]),
+
+    // Total units sold (paid orders only)
+    Order.aggregate([
+      { $match: { ...createdAtMatch, status: "paid" } },
+      { $unwind: "$items" },
+      { $group: { _id: null, unitsSold: { $sum: "$items.quantity" } } },
+    ]),
+
+    // New vs repeat customers (paid orders only)
+    Order.aggregate(customerAggPipeline),
   ]);
 
   const revenue = revenueAgg?.[0]?.revenue ?? 0;
+  const unitsSold = unitsSoldAgg?.[0]?.unitsSold ?? 0;
+
+  const customerStats = customersAgg?.[0] || {};
+  const newCustomers = customerStats.newCustomers ?? 0;
+  const repeatCustomers = customerStats.repeatCustomers ?? 0;
 
   const counts = {
     pending: 0,
@@ -250,11 +327,17 @@ async function GetSummary({ range, from, to } = {}) {
   const lowStockItemsCount = lowStockCountAgg?.[0]?.count ?? 0;
   const outOfStockItemsCount = outOfStockCountAgg?.[0]?.count ?? 0;
 
+  const totalRefunds = (counts.refund_pending || 0) + (counts.refunded || 0);
+
   return {
     success: true,
     data: {
       totalOrders,
       revenue,
+      unitsSold,
+      totalRefunds,
+      newCustomers,
+      repeatCustomers,
       pendingOrders: counts.pending,
       paidOrders: counts.paid,
       failedOrders: counts.failed,

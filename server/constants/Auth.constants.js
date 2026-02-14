@@ -106,6 +106,7 @@ const PERMISSIONS = [
   // Audit
   // =========================
   "audit.read",
+  "analytics.read",
 
   // =========================
   // Users / Auth

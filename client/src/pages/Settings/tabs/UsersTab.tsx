@@ -9,15 +9,7 @@ import {
 import { Card } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
 import { Badge } from "@/components/common/Badge";
-import {
-  Pencil,
-  Trash2,
-  Eye,
-  EyeOff,
-  UserPlus,
-  CheckCircle2,
-  XCircle,
-} from "lucide-react";
+import { UserPlus, CheckCircle2, XCircle } from "lucide-react";
 import styles from "../Settings.module.css";
 
 const getRoleBadge = (role?: string) => {
@@ -87,13 +79,15 @@ const UsersTab = ({
               <TableHead>Status</TableHead>
               <TableHead>Last Login</TableHead>
               <TableHead>Created</TableHead>
-              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {users.map((user: any) => (
-              <TableRow key={getUserId(user)}>
+              <TableRow
+                key={getUserId(user)}
+                onClick={() => handleOpenUserModal("edit", user)}
+              >
                 <TableCell>
                   <div className={styles.userCell}>
                     <div className={styles.userAvatar}>
@@ -128,32 +122,6 @@ const UsersTab = ({
 
                 <TableCell>{formatDateTime(user.lastLoginAt)}</TableCell>
                 <TableCell>{formatDateTime(user.createdAt)}</TableCell>
-
-                <TableCell>
-                  <div className={styles.actions}>
-                    <button
-                      className={styles.actionBtn}
-                      onClick={() => handleOpenUserModal("edit", user)}
-                      title="Edit user"
-                    >
-                      <Pencil size={16} />
-                    </button>
-
-                    <button
-                      className={styles.actionBtn}
-                      onClick={() => handleToggleUserStatus(getUserId(user))}
-                      title={
-                        user.status === "active" ? "Deactivate" : "Activate"
-                      }
-                    >
-                      {user.status === "active" ? (
-                        <EyeOff size={16} />
-                      ) : (
-                        <Eye size={16} />
-                      )}
-                    </button>
-                  </div>
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -46,6 +46,15 @@ jest.mock("stripe", () => {
     refunds: {
       create: jest.fn(async () => ({ id: "re_test_789", status: "succeeded" })),
     },
+
+    coupons: {
+      create: jest.fn(async () => ({ id: "coupon_test_123" })),
+    },
+
+    promotionCodes: {
+      create: jest.fn(async () => ({ id: "promo_test_123" })),
+      update: jest.fn(async () => ({})),
+    },
   }));
 });
 

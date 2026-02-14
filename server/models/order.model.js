@@ -105,6 +105,24 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Discount snapshot (so DB reflects what customer paid)
+    isDiscounted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    totalBeforeDiscount: {
+      type: Number,
+      min: 0,
+    },
+
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     status: {
       type: String,
       enum: [

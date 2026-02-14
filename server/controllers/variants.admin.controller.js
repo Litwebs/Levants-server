@@ -61,9 +61,23 @@ const DeleteVariant = async (req, res) => {
   return sendOk(res, { deleted: true });
 };
 
+const SearchVariants = async (req, res) => {
+  const result = await service.SearchVariants({
+    q: req.query.q,
+    limit: Number(req.query.limit) || 10,
+  });
+
+  if (!result.success) {
+    return sendErr(res, { statusCode: 400, message: result.message });
+  }
+
+  return sendOk(res, result.data);
+};
+
 module.exports = {
   CreateVariant,
   ListVariants,
   UpdateVariant,
   DeleteVariant,
+  SearchVariants,
 };
