@@ -250,7 +250,9 @@ describe("POST /api/customers (PUBLIC E2E)", () => {
       },
     };
 
-    const second = await request(app).post("/api/customers").send(secondPayload);
+    const second = await request(app)
+      .post("/api/customers")
+      .send(secondPayload);
     expect(second.status).toBe(200);
     expect(second.body.data.customer.addresses.length).toBe(2);
     expect(second.body.data.customer.address.line1).toBe("18 Seed Street");

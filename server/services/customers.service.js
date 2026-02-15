@@ -316,7 +316,9 @@ function canonicalizeAddress(address) {
   if (!normalized) return null;
 
   const line1 =
-    typeof normalized.line1 === "string" ? normalized.line1.toLowerCase() : null;
+    typeof normalized.line1 === "string"
+      ? normalized.line1.toLowerCase()
+      : null;
   const line2Raw = normalized.line2;
   const line2 =
     typeof line2Raw === "string" && line2Raw.trim() !== ""
@@ -372,7 +374,8 @@ function upsertDefaultAddress(customer, address) {
     changed = true;
   }
 
-  const defaultIndex = matchIndex === -1 ? customer.addresses.length - 1 : matchIndex;
+  const defaultIndex =
+    matchIndex === -1 ? customer.addresses.length - 1 : matchIndex;
   customer.addresses.forEach((a, i) => {
     const nextDefault = i === defaultIndex;
     if (a.isDefault !== nextDefault) {
