@@ -46,6 +46,23 @@ const productVariantSchema = new mongoose.Schema(
       default: 5,
     },
 
+    inventoryAlerts: {
+      state: {
+        type: String,
+        enum: ["ok", "low", "out"],
+        default: "ok",
+        index: true,
+      },
+      lowStockNotifiedAt: {
+        type: Date,
+        default: null,
+      },
+      outOfStockNotifiedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+
     status: {
       type: String,
       enum: ["active", "inactive"],

@@ -2,6 +2,9 @@
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
 const stripeService = require("./stripe.service");
+const {
+  processInventoryAlertsForVariants,
+} = require("./inventory.notifications.service");
 
 const base64ToTempFile = require("../utils/base64ToTempFile.util");
 const {
@@ -197,6 +200,9 @@ async function UpdateVariant({ variantId, body, userId }) {
     return { success: false, message: "Variant not found" };
   }
 
+  const prevAvailable =
+    Number(variant.stockQuantity || 0) - Number(variant.reservedQuantity || 0);
+
   const previousThumbnailId = variant.thumbnailImage
     ? String(variant.thumbnailImage)
     : null;
@@ -238,6 +244,16 @@ async function UpdateVariant({ variantId, body, userId }) {
   if (body.status !== undefined) variant.status = body.status;
 
   await variant.save();
+
+  // Inventory alerts (best-effort)
+  try {
+    await processInventoryAlertsForVariants({
+      variantIds: [variant._id],
+      lastKnownStockByVariantId: { [String(variant._id)]: prevAvailable },
+    });
+  } catch {
+    // ignore
+  }
 
   // If thumbnail changed (or was removed), remove old file record if now orphaned.
   const nextThumbnailId = variant.thumbnailImage

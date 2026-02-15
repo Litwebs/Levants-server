@@ -40,7 +40,9 @@ async function FindOrCreateGuestCustomer({
     };
   }
 
-  let customer = await Customer.findOne({ email: normalizedEmail });
+  let customer = await Customer.findOne({ email: normalizedEmail }).sort({
+    createdAt: -1,
+  });
   const created = !customer;
 
   if (!customer) {
@@ -63,14 +65,10 @@ async function FindOrCreateGuestCustomer({
       isGuest: true,
     });
   } else if (normalizedAddress) {
-    // Add new address if not already present
-    customer.addresses.push({ ...normalizedAddress, isDefault: true });
-    customer.addresses.forEach((a, i) => {
-      if (i !== customer.addresses.length - 1) {
-        a.isDefault = false;
-      }
-    });
-    await customer.save();
+    const changed = upsertDefaultAddress(customer, normalizedAddress);
+    if (changed) {
+      await customer.save();
+    }
   }
 
   const json = customer?.toJSON ? customer.toJSON() : customer;
@@ -172,12 +170,8 @@ async function UpdateCustomer({ customerId, body } = {}) {
   }
 
   if (body.address) {
-    customer.addresses.push({ ...body.address, isDefault: true });
-    customer.addresses.forEach((a, i) => {
-      if (i !== customer.addresses.length - 1) {
-        a.isDefault = false;
-      }
-    });
+    const normalizedAddress = sanitizeAddress(body.address);
+    upsertDefaultAddress(customer, normalizedAddress);
   }
 
   if (body.firstName) customer.firstName = body.firstName;
@@ -284,13 +278,110 @@ function stripHtml(value) {
 function sanitizeAddress(address) {
   if (!address || typeof address !== "object") return address;
 
-  const out = { ...address };
+  const out =
+    typeof address?.toObject === "function"
+      ? address.toObject({ virtuals: false, getters: false })
+      : { ...address };
+
   for (const key of ["line1", "line2", "city", "postcode", "country"]) {
     if (out[key] !== undefined && out[key] !== null) {
-      out[key] = stripHtml(out[key]);
+      out[key] = normalizeText(stripHtml(out[key]));
     }
   }
+
+  if (typeof out.line2 === "string" && out.line2.trim() === "") {
+    out.line2 = null;
+  }
+
+  if (typeof out.postcode === "string") {
+    out.postcode = out.postcode.toUpperCase();
+  }
+  if (typeof out.country === "string") {
+    out.country = out.country.toUpperCase();
+  }
+
   return out;
+}
+
+function normalizeText(value) {
+  if (value === null || value === undefined) return value;
+  const str = String(value);
+  return str.replace(/\s+/g, " ").trim();
+}
+
+function canonicalizeAddress(address) {
+  if (!address || typeof address !== "object") return null;
+
+  const normalized = sanitizeAddress(address);
+  if (!normalized) return null;
+
+  const line1 =
+    typeof normalized.line1 === "string" ? normalized.line1.toLowerCase() : null;
+  const line2Raw = normalized.line2;
+  const line2 =
+    typeof line2Raw === "string" && line2Raw.trim() !== ""
+      ? line2Raw.toLowerCase()
+      : null;
+  const city =
+    typeof normalized.city === "string" ? normalized.city.toLowerCase() : null;
+
+  // Compare postcodes case-insensitively and space-insensitively.
+  const postcode =
+    typeof normalized.postcode === "string"
+      ? normalized.postcode.replace(/\s+/g, "").toUpperCase()
+      : null;
+
+  const country =
+    typeof normalized.country === "string"
+      ? normalized.country.replace(/\s+/g, "").toUpperCase()
+      : null;
+
+  return { line1, line2, city, postcode, country };
+}
+
+function addressesEqual(a, b) {
+  const ca = canonicalizeAddress(a);
+  const cb = canonicalizeAddress(b);
+  if (!ca || !cb) return false;
+
+  return (
+    ca.line1 === cb.line1 &&
+    ca.line2 === cb.line2 &&
+    ca.city === cb.city &&
+    ca.postcode === cb.postcode &&
+    ca.country === cb.country
+  );
+}
+
+/**
+ * Ensures an address exists on the customer and is marked as default.
+ * - If matching address exists, reuses it (no new address inserted).
+ * - If it does not exist, adds it.
+ * Returns true if any mutation happened that requires saving.
+ */
+function upsertDefaultAddress(customer, address) {
+  if (!customer || !address) return false;
+
+  const addresses = Array.isArray(customer.addresses) ? customer.addresses : [];
+  const matchIndex = addresses.findIndex((a) => addressesEqual(a, address));
+
+  let changed = false;
+
+  if (matchIndex === -1) {
+    customer.addresses.push({ ...address, isDefault: true });
+    changed = true;
+  }
+
+  const defaultIndex = matchIndex === -1 ? customer.addresses.length - 1 : matchIndex;
+  customer.addresses.forEach((a, i) => {
+    const nextDefault = i === defaultIndex;
+    if (a.isDefault !== nextDefault) {
+      a.isDefault = nextDefault;
+      changed = true;
+    }
+  });
+
+  return changed;
 }
 
 module.exports = {

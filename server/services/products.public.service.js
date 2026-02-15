@@ -27,6 +27,8 @@ async function listProducts({
   if (sort === "name_desc") productSort = { name: -1 };
 
   const products = await Product.find(productFilter)
+    .populate("thumbnailImage")
+    .populate("galleryImages")
     .select(
       "name slug category description thumbnailImage galleryImages createdAt",
     )
@@ -120,6 +122,8 @@ async function getProductById({ productId }) {
     _id: productId,
     status: "active",
   })
+    .populate("thumbnailImage")
+    .populate("galleryImages")
     .select("name slug category description thumbnailImage galleryImages")
     .lean();
 
@@ -129,6 +133,7 @@ async function getProductById({ productId }) {
     product: productId,
     status: "active",
   })
+    .populate("thumbnailImage")
     .select("name price stockQuantity lowStockAlert")
     .lean();
 
@@ -149,6 +154,7 @@ async function getProductById({ productId }) {
       currency: "gbp",
       stockQuantity: v.stockQuantity,
       lowStock: v.stockQuantity <= v.lowStockAlert,
+      thumbnailImage: v.thumbnailImage,
     })),
   };
 }

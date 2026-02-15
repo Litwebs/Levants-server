@@ -60,7 +60,7 @@ module.exports = {
           process.env.FRONTEND_URL_DEV,
           process.env.CLIENT_FRONT_URL_DEV,
           // local fallbacks
-          "http://localhost:8080",
+          "http://localhost:8081",
           "http://localhost:3000",
         ].filter(Boolean),
 };

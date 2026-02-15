@@ -1,6 +1,7 @@
 const Discount = require("../models/discount.model");
 const DiscountRedemption = require("../models/discountRedemption.model");
 const Product = require("../models/product.model");
+const Variant = require("../models/variant.model");
 
 function normalizeCode(code) {
   return String(code || "")
@@ -173,6 +174,118 @@ async function validateDiscountForOrder({ code, customerId, resolvedItems }) {
   };
 }
 
+async function validateDiscountForCart({
+  customerId,
+  discountCode,
+  items,
+} = {}) {
+  if (!customerId) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "customerId is required",
+    };
+  }
+
+  if (!discountCode) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "discountCode is required",
+    };
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return { success: false, statusCode: 400, message: "items is required" };
+  }
+
+  // Resolve variants without reserving stock.
+  const variantIds = Array.from(
+    new Set(items.map((i) => String(i.variantId || "")).filter(Boolean)),
+  );
+
+  const variants = await Variant.find({
+    _id: { $in: variantIds },
+    status: "active",
+  })
+    .select(
+      "product name sku price stockQuantity reservedQuantity stripeProductId",
+    )
+    .lean();
+
+  const variantById = new Map(variants.map((v) => [String(v._id), v]));
+
+  const resolvedItems = [];
+
+  for (const item of items) {
+    const quantity = Number(item.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return { success: false, statusCode: 400, message: "Invalid quantity" };
+    }
+
+    const v = variantById.get(String(item.variantId));
+    if (!v) {
+      return { success: false, statusCode: 400, message: "Invalid variant" };
+    }
+
+    const available =
+      Number(v.stockQuantity || 0) - Number(v.reservedQuantity || 0);
+    if (available < quantity) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Not enough stock available",
+      };
+    }
+
+    const price = Number(v.price || 0);
+    const lineSubtotal = price * quantity;
+
+    resolvedItems.push({
+      product: v.product,
+      variant: v._id,
+      name: v.name,
+      sku: v.sku,
+      price,
+      stripeProductId: v.stripeProductId,
+      quantity,
+      subtotal: lineSubtotal,
+    });
+  }
+
+  const result = await validateDiscountForOrder({
+    code: discountCode,
+    customerId,
+    resolvedItems,
+  });
+
+  if (!result.success) return result;
+
+  const discount = result.data.discount;
+
+  // Public response: do not leak Stripe IDs.
+  return {
+    success: true,
+    data: {
+      isValid: true,
+      discount: {
+        _id: discount._id,
+        name: discount.name,
+        code: discount.code,
+        kind: discount.kind,
+        percentOff: discount.percentOff,
+        amountOff: discount.amountOff,
+        currency: discount.currency,
+        scope: discount.scope,
+        category: discount.category,
+        variantIds: discount.variantIds,
+      },
+      eligibleSubtotal: result.data.eligibleSubtotal,
+      discountAmount: result.data.discountAmount,
+    },
+  };
+}
+
 async function recordRedemption({
   discountId,
   customerId,
@@ -195,7 +308,96 @@ async function recordRedemption({
   });
 }
 
+async function listActiveDiscounts({ page = 1, pageSize = 50 } = {}) {
+  const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  const safePageSize =
+    Number.isFinite(pageSize) && pageSize > 0
+      ? Math.min(100, Math.floor(pageSize))
+      : 50;
+
+  // Keep DB state consistent: expired discounts should not remain active.
+  const nowDate = new Date();
+  await Discount.updateMany(
+    { isActive: true, endsAt: { $lt: nowDate } },
+    { $set: { isActive: false } },
+  );
+
+  const now = new Date();
+  const filter = {
+    isActive: true,
+    $and: [
+      { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
+      { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },
+      {
+        $or: [
+          { stripePromotionCodeId: { $exists: true, $ne: null, $ne: "" } },
+          { stripeCouponId: { $exists: true, $ne: null, $ne: "" } },
+        ],
+      },
+    ],
+  };
+
+  const skip = (safePage - 1) * safePageSize;
+
+  const [total, discounts] = await Promise.all([
+    Discount.countDocuments(filter),
+    Discount.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(safePageSize)
+      .select(
+        "code scope variantIds kind percentOff amountOff currency category",
+      )
+      .lean(),
+  ]);
+
+  const variantIdSet = new Set();
+  for (const d of discounts) {
+    if (d.scope === "variant" && Array.isArray(d.variantIds)) {
+      for (const id of d.variantIds) variantIdSet.add(String(id));
+    }
+  }
+
+  const variantIds = Array.from(variantIdSet);
+  const variants =
+    variantIds.length > 0
+      ? await Variant.find({ _id: { $in: variantIds } })
+          .select("name")
+          .lean()
+      : [];
+
+  const variantNameById = new Map(
+    variants.map((v) => [String(v._id), String(v.name || "")]),
+  );
+
+  const items = discounts.map((d) => ({
+    code: d.code,
+    kind: d.kind,
+    percentOff: d.kind === "percent" ? d.percentOff : undefined,
+    amountOff: d.kind === "amount" ? d.amountOff : undefined,
+    variants:
+      d.scope === "variant" && Array.isArray(d.variantIds)
+        ? d.variantIds
+            .map((id) => variantNameById.get(String(id)))
+            .filter(Boolean)
+        : [],
+  }));
+
+  return {
+    success: true,
+    data: { items },
+    meta: {
+      total,
+      page: safePage,
+      pageSize: safePageSize,
+      totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+    },
+  };
+}
+
 module.exports = {
   validateDiscountForOrder,
+  validateDiscountForCart,
+  listActiveDiscounts,
   recordRedemption,
 };

@@ -25,8 +25,7 @@ const ProductRow = ({
   return (
     <TableRow
       onClick={() => {
-        setSelectedProduct(product);
-        navigate(`/products/${product._id}`);
+        handleEditProduct(product);
       }}
       className={styles.clickableRow}
     >

@@ -196,6 +196,66 @@ describe("POST /api/customers (PUBLIC E2E)", () => {
     expect([200, 201, 409]).toContain(second.status);
   });
 
+  test("does not create duplicate address when same email + same address", async () => {
+    const payload = {
+      firstName: "Address",
+      lastName: "Reuse",
+      email: "address.reuse@test.com",
+      phone: "07123456789",
+      address: {
+        line1: "17 Seed Street",
+        line2: null,
+        city: "Bradford",
+        postcode: "BD1 1AA",
+        country: "UK",
+      },
+    };
+
+    const first = await request(app).post("/api/customers").send(payload);
+    expect(first.status).toBe(201);
+    expect(first.body.success).toBe(true);
+    expect(first.body.data.customer.addresses.length).toBe(1);
+
+    const second = await request(app).post("/api/customers").send(payload);
+    expect(second.status).toBe(200);
+    expect(second.body.success).toBe(true);
+    expect(second.body.data.customer.addresses.length).toBe(1);
+    expect(second.body.data.customer.address.line1).toBe("17 Seed Street");
+  });
+
+  test("adds a new address when same email but address fields differ", async () => {
+    const base = {
+      firstName: "Address",
+      lastName: "Add",
+      email: "address.add@test.com",
+      phone: "07123456789",
+      address: {
+        line1: "17 Seed Street",
+        line2: null,
+        city: "Bradford",
+        postcode: "BD1 1AA",
+        country: "UK",
+      },
+    };
+
+    const first = await request(app).post("/api/customers").send(base);
+    expect(first.status).toBe(201);
+    expect(first.body.data.customer.addresses.length).toBe(1);
+
+    const secondPayload = {
+      ...base,
+      address: {
+        ...base.address,
+        line1: "18 Seed Street",
+      },
+    };
+
+    const second = await request(app).post("/api/customers").send(secondPayload);
+    expect(second.status).toBe(200);
+    expect(second.body.data.customer.addresses.length).toBe(2);
+    expect(second.body.data.customer.address.line1).toBe("18 Seed Street");
+  });
+
   /**
    * =========================
    * INJECTION / XSS SAFETY

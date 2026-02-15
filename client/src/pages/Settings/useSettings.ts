@@ -19,6 +19,7 @@ type NotificationKey =
   | "newOrders"
   | "orderUpdates"
   | "lowStockAlerts"
+  | "outOfStock"
   | "deliveryUpdates"
   | "customerMessages"
   | "paymentReceived";
@@ -44,6 +45,11 @@ const NOTIFICATION_DEFINITIONS: Array<{
     key: "lowStockAlerts",
     name: "Low Stock Alerts",
     description: "Get notified when inventory is running low",
+  },
+  {
+    key: "outOfStock",
+    name: "Out of Stock Alerts",
+    description: "Get notified when a product variant is out of stock",
   },
   {
     key: "deliveryUpdates",

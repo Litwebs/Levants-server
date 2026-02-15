@@ -13,6 +13,7 @@ export type NotificationPreferences = {
   newOrders: boolean;
   orderUpdates: boolean;
   lowStockAlerts: boolean;
+  outOfStock: boolean;
   deliveryUpdates: boolean;
   customerMessages: boolean;
   paymentReceived: boolean;

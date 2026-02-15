@@ -31,6 +31,7 @@ const adminOrderRoutes = require("./routes/orders.admin.routes");
 const publicOrderRoutes = require("./routes/orders.public.routes");
 const adminAnalyticsRoutes = require("./routes/analytics.admin.routes");
 const adminDiscountRoutes = require("./routes/discounts.admin.routes");
+const publicDiscountRoutes = require("./routes/discounts.public.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -63,6 +64,13 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Static assets for email templates (logo, etc.)
+// Note: path is intentionally `/assests` (legacy spelling used by clients/templates).
+app.use(
+  "/assests",
+  express.static(path.join(__dirname, "Templates", "assets")),
+);
+
 // Seed + start background jobs on startup
 (async () => {
   try {
@@ -94,6 +102,7 @@ app.use("/api/business-info", businessInfoRoutes);
 
 // 🟢 PUBLIC (frontend)
 app.use("/api/products", publicProductRoutes);
+app.use("/api/discounts", publicDiscountRoutes);
 
 // 🔐 ADMIN (dashboard)
 app.use("/api/admin/products", adminProductRoutes);

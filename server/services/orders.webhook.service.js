@@ -5,6 +5,11 @@ const {
 
 const Order = require("../models/order.model");
 const { recordRedemption } = require("./discounts.public.service");
+const {
+  sendNewOrderAlertEmailToUsers,
+  sendOrderConfirmationEmailToCustomer,
+  sendRefundConfirmationEmailToCustomer,
+} = require("./orders.notifications.service");
 
 let _stripe;
 function getStripe() {
@@ -116,6 +121,20 @@ async function HandlePaymentSuccess(session) {
   } catch (e) {
     // Don't fail webhook processing due to redemption bookkeeping
   }
+
+  // Notify staff/admin users about new paid order (best-effort)
+  try {
+    await sendNewOrderAlertEmailToUsers({ orderId: order._id });
+  } catch (e) {
+    // Don't fail webhook processing due to notification failures
+  }
+
+  // Notify customer about successful order/payment (best-effort, idempotent)
+  try {
+    await sendOrderConfirmationEmailToCustomer({ orderId: order._id });
+  } catch (e) {
+    // Don't fail webhook processing due to notification failures
+  }
 }
 
 async function HandlePaymentExpired(session) {
@@ -134,7 +153,17 @@ async function HandlePaymentFailed(paymentIntent) {
 
 async function HandleRefundSucceeded(refund) {
   if (!refund.payment_intent) return;
-  await finalizeRefundForOrderByPaymentIntent(refund.payment_intent);
+  const refundedOrderId = await finalizeRefundForOrderByPaymentIntent(
+    refund.payment_intent,
+  );
+
+  if (!refundedOrderId) return;
+
+  try {
+    await sendRefundConfirmationEmailToCustomer({ orderId: refundedOrderId });
+  } catch {
+    // Don't fail webhook processing due to notification failures
+  }
 }
 
 async function HandleRefundFailed(refund) {

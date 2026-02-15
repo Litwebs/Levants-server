@@ -2,6 +2,27 @@ const Joi = require("joi");
 
 const objectId = Joi.string().hex().length(24);
 
+const validateDiscountSchema = Joi.object({
+  customerId: objectId.required(),
+
+  discountCode: Joi.string().trim().uppercase().min(3).max(32).required(),
+
+  items: Joi.array()
+    .items(
+      Joi.object({
+        variantId: objectId.required(),
+        quantity: Joi.number().integer().min(1).required(),
+      }),
+    )
+    .min(1)
+    .required(),
+}).unknown(false);
+
+const listActiveDiscountsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).optional(),
+  pageSize: Joi.number().integer().min(1).max(100).optional(),
+}).unknown(false);
+
 const createDiscountSchema = Joi.object({
   name: Joi.string().trim().min(2).max(120).required(),
 
@@ -47,4 +68,6 @@ const createDiscountSchema = Joi.object({
 
 module.exports = {
   createDiscountSchema,
+  validateDiscountSchema,
+  listActiveDiscountsQuerySchema,
 };

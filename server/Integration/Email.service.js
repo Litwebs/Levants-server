@@ -5,9 +5,13 @@ const {
   LOGO_CONTENT_ID,
   getInlineLogoAttachment,
   getLogoCidSrc,
+  getLogoDataUri,
 } = require("../Templates/logoAttachment");
 
 const resend = new Resend(RESEND_EMAIL_KEY);
+
+const FALLBACK_LOGO_URL =
+  "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png";
 
 const DEFAULT_FROM = "no-reply@litwebs.co.uk";
 const DEFAULT_FALLBACK_FROM = "contact@litwebs.co.uk";
@@ -21,7 +25,8 @@ function canUseFromEmail(email) {
 }
 
 const ensureArray = (v) => (Array.isArray(v) ? v : []);
-const hasLogo = (atts) =>
+
+const hasLogoAttachment = (atts) =>
   ensureArray(atts).some((a) => a && a.contentId === LOGO_CONTENT_ID);
 
 const sendEmail = async (
@@ -35,13 +40,10 @@ const sendEmail = async (
   if (!templateFunction)
     throw new Error(`Email template "${TempName}" not found.`);
 
-  // ✅ inject logo src into every template call
-  const paramsWithLogo = {
-    ...templateParams,
-    logoSrc: templateParams.logoSrc || getLogoCidSrc(),
-  };
-
-  const htmlContent = templateFunction(paramsWithLogo);
+  // Compute template + payload inside the try block so logo failures never
+  // prevent email sending.
+  let htmlContent = "";
+  let resolvedLogoSrc = "";
 
   let from = DEFAULT_FROM;
 
@@ -60,16 +62,42 @@ const sendEmail = async (
   }
 
   try {
+    resolvedLogoSrc = String(templateParams.logoSrc || "").trim();
+
+    if (!resolvedLogoSrc) {
+      const envLogoUrl = String(process.env.EMAIL_LOGO_URL || "").trim();
+      if (envLogoUrl) {
+        resolvedLogoSrc = envLogoUrl;
+      } else if (
+        String(process.env.EMAIL_LOGO_MODE || "").toLowerCase() === "data-uri"
+      ) {
+        resolvedLogoSrc = getLogoDataUri();
+      }
+    }
+
+    if (!resolvedLogoSrc) resolvedLogoSrc = FALLBACK_LOGO_URL;
+
+    htmlContent = templateFunction(
+      resolvedLogoSrc
+        ? { ...templateParams, logoSrc: resolvedLogoSrc }
+        : { ...templateParams },
+    );
+
     const payload = { from, to, subject, html: htmlContent };
 
-    // ✅ always include logo attachment (and merge extras if provided)
+    // Attachments are optional; however, if the logo is referenced via CID,
+    // we must include it.
     const extra =
       options && typeof options === "object"
         ? ensureArray(options.attachments)
         : [];
-    payload.attachments = hasLogo(extra)
-      ? extra
-      : [getInlineLogoAttachment(), ...extra];
+    const needsCidLogo = /^cid:/i.test(resolvedLogoSrc);
+    const mergedAttachments = needsCidLogo
+      ? hasLogoAttachment(extra)
+        ? extra
+        : [getInlineLogoAttachment(), ...extra]
+      : extra;
+    if (mergedAttachments.length > 0) payload.attachments = mergedAttachments;
 
     if (options && typeof options === "object") {
       if (options.replyTo) payload.reply_to = options.replyTo;

@@ -100,6 +100,10 @@ const userSchema = new mongoose.Schema(
           type: Boolean,
           default: true,
         },
+        outOfStock: {
+          type: Boolean,
+          default: true,
+        },
         deliveryUpdates: {
           type: Boolean,
           default: false,

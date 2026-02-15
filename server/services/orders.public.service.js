@@ -4,6 +4,9 @@ const ProductVariant = require("../models/variant.model");
 const stripe = require("../utils/stripe.util");
 const Customer = require("../models/customer.model");
 const { validateDiscountForOrder } = require("./discounts.public.service");
+const {
+  processInventoryAlertsForVariants,
+} = require("./inventory.notifications.service");
 
 function getReservationTtlMinutes() {
   const raw = process.env.ORDER_RESERVATION_TTL_MINUTES;
@@ -37,7 +40,7 @@ function normalizeBaseUrl(raw) {
 }
 
 function buildFrontendUrl(pathname) {
-  const base = normalizeBaseUrl(process.env.FRONTEND_URL_DEV);
+  const base = normalizeBaseUrl(process.env.CLIENT_FRONT_URL_DEV);
   if (!base) return "";
   return new URL(pathname, `${base}/`).toString();
 }
@@ -61,6 +64,7 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
     // 1️⃣ Resolve variants + reserve stock
     const resolvedItems = [];
     let subtotal = 0;
+    const lastKnownStockByVariantId = {};
 
     for (const item of items) {
       const quantity = Number(item.quantity);
@@ -100,6 +104,13 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
         session.endSession();
         return { success: false, message: "Not enough stock available" };
       }
+
+      // Capture last-known available stock before reservation for out-of-stock emails
+      const availableAfter =
+        Number(variant.stockQuantity || 0) -
+        Number(variant.reservedQuantity || 0);
+      lastKnownStockByVariantId[String(variant._id)] =
+        availableAfter + quantity;
 
       const lineSubtotal = variant.price * quantity;
 
@@ -224,6 +235,16 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
     // 5️⃣ Commit everything
     await session.commitTransaction();
     session.endSession();
+
+    // Inventory alerts (best-effort; run after commit)
+    try {
+      await processInventoryAlertsForVariants({
+        variantIds: resolvedItems.map((i) => i.variant),
+        lastKnownStockByVariantId,
+      });
+    } catch {
+      // ignore
+    }
 
     return {
       success: true,

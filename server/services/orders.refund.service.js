@@ -107,7 +107,7 @@ async function finalizeRefundForOrderByPaymentIntent(paymentIntentId) {
       status: "refund_pending",
     }).session(session);
 
-    if (!order) return;
+    if (!order) return null;
 
     if (order.refund?.restock === true) {
       for (const item of order.items) {
@@ -123,8 +123,12 @@ async function finalizeRefundForOrderByPaymentIntent(paymentIntentId) {
     order.refund.refundedAt = new Date();
     await order.save({ session });
 
+    const refundedOrderId = order._id;
+
     await session.commitTransaction();
     session.endSession();
+
+    return refundedOrderId;
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
