@@ -661,7 +661,10 @@ async function GetRecentOrders({ range, from, to, limit = 5 } = {}) {
   const createdAtMatch = buildCreatedAtMatch({ range, from, to });
   const lim = Math.max(1, Math.min(Number(limit) || 5, 25));
 
-  const orders = await Order.find({ ...createdAtMatch })
+  const orders = await Order.find({
+    ...createdAtMatch,
+    status: { $in: ["pending", "paid", "refund_pending", "refunded"] },
+  })
     .populate({ path: "customer", select: "firstName lastName email phone" })
     .sort({ createdAt: -1 })
     .limit(lim)

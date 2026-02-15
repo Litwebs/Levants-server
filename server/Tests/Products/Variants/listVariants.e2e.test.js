@@ -1,8 +1,37 @@
 const request = require("supertest");
 const app = require("../../testApp");
+const slugify = require("slugify");
+
+const Product = require("../../../models/product.model");
+const File = require("../../../models/file.model");
 
 const { createUser } = require("../../helpers/authTestData");
 const { getSetCookieHeader } = require("../../helpers/cookies");
+
+async function createProductInDb({ userId, overrides = {} } = {}) {
+  const thumb = await File.create({
+    originalName: "thumb.jpg",
+    filename: `test/thumb-${Date.now()}`,
+    mimeType: "image/jpeg",
+    sizeBytes: 1,
+    url: "https://example.com/thumb.jpg",
+    uploadedBy: userId,
+  });
+
+  const name = overrides.name || `Test Product ${Date.now()}`;
+
+  return Product.create({
+    name,
+    slug: slugify(name, { lower: true, strict: true }),
+    category: overrides.category || "Dairy",
+    description: overrides.description || "Test",
+    status: overrides.status || "active",
+    thumbnailImage: thumb._id,
+    galleryImages: [],
+    allergens: [],
+    storageNotes: null,
+  });
+}
 
 describe("GET /api/admin/variants/products/:productId/variants (E2E)", () => {
   /**
@@ -75,18 +104,8 @@ describe("GET /api/admin/variants/products/:productId/variants (E2E)", () => {
       password: "secret123",
     });
 
-    // Create product
-    const productRes = await request(app)
-      .post("/api/admin/products")
-      .set("Cookie", getSetCookieHeader(login))
-      .send({
-        name: "Test Product",
-        category: "Dairy",
-        description: "Test",
-        thumbnailImage: "/test.jpg",
-      });
-
-    const productId = productRes.body.data.product._id;
+    const product = await createProductInDb({ userId: admin._id });
+    const productId = String(product._id);
 
     // Create variants
     await request(app)

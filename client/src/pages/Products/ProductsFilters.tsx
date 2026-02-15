@@ -5,7 +5,7 @@ import styles from "./Products.module.css";
 
 const statuses = ["All", "active", "draft", "archived"];
 const stockFilters = [
-  { value: "All", label: "All stock" },
+  { value: "All", label: "Stock Quantity" },
   { value: "low", label: "Low stock" },
   { value: "out", label: "Out of stock" },
 ];

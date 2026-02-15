@@ -5,10 +5,11 @@ const { seedBusinessInfo } = require("../scripts/seedBusinessInfo"); // ✅ ADD
 
 process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_123";
 process.env.FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV || "localhost:3000";
+process.env.CLIENT_FRONT_URL_DEV =
+  process.env.CLIENT_FRONT_URL_DEV || process.env.FRONTEND_URL_DEV;
 
-// Keep test output clean
-jest.spyOn(console, "log").mockImplementation(() => {});
-jest.spyOn(console, "error").mockImplementation(() => {});
+// Keep test output clean (opt-out by setting JEST_SHOW_CONSOLE=1)
+const showConsole = process.env.JEST_SHOW_CONSOLE === "1";
 
 jest.mock("stripe", () => {
   return jest.fn(() => ({
@@ -75,6 +76,10 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  if (!showConsole) {
+    jest.spyOn(console, "log").mockImplementation(() => {});
+    jest.spyOn(console, "error").mockImplementation(() => {});
+  }
   await clearDatabase();
   await seedDefaultRoles(); // ✅ THIS IS THE FIX
   await seedBusinessInfo(); // ✅ Seed business info for tests
@@ -86,5 +91,7 @@ afterAll(async () => {
 });
 
 afterEach(() => {
+  // Restore any jest.spyOn() mocks (important for suites that mock mongoose, models, etc.)
+  jest.restoreAllMocks();
   jest.clearAllMocks();
 });

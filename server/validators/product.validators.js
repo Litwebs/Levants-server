@@ -1,34 +1,59 @@
 // src/validators/products.admin.validators.js
 const Joi = require("joi");
 
+const objectId = Joi.string().hex().length(24);
+const base64DataUrl = Joi.string().pattern(/^data:/);
+
+/**
+ * CREATE PRODUCT
+ */
 const createProductSchema = Joi.object({
   name: Joi.string().min(2).max(150).required(),
   category: Joi.string().min(2).max(100).required(),
   description: Joi.string().min(2).required(),
-  status: Joi.string().valid("draft", "active", "archived").default("draft"),
+
+  status: Joi.string()
+    .valid("draft", "active", "archived")
+    .default("draft"),
+
   allergens: Joi.array().items(Joi.string()).optional(),
   storageNotes: Joi.string().allow("").optional(),
 
-  thumbnailImage: Joi.string().min(1).required(),
+  // ✅ Service expects a data URL (base64) and uploads it
+  thumbnailImage: base64DataUrl.required(),
+
+  // ✅ Service accepts data URLs and uploads them (non-data strings are ignored)
   galleryImages: Joi.array().items(Joi.string().min(1)).max(10).optional(),
 }).unknown(false);
 
+/**
+ * UPDATE PRODUCT
+ */
 const updateProductSchema = Joi.object({
   name: Joi.string().min(2).max(150).optional(),
   category: Joi.string().min(2).max(100).optional(),
   description: Joi.string().min(2).optional(),
-  status: Joi.string().valid("draft", "active", "archived").optional(),
+
+  status: Joi.string()
+    .valid("draft", "active", "archived")
+    .optional(),
 
   allergens: Joi.array().items(Joi.string()).optional(),
   storageNotes: Joi.string().allow("").optional(),
 
-  thumbnailImage: Joi.string().min(1).optional(),
+  // ✅ Optional; service only replaces if a data URL is provided
+  thumbnailImage: Joi.alternatives().try(base64DataUrl, objectId).optional(),
+
+  // ✅ Service supports mixing base64 data URLs, File ids, and existing URLs
   galleryImages: Joi.array().items(Joi.string().min(1)).max(10).optional(),
 })
   .min(1)
   .unknown(false);
 
-publicProductsQuerySchema = Joi.object({
+/**
+ * PUBLIC PRODUCTS QUERY
+ */
+const publicProductsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   pageSize: Joi.number().integer().min(1).max(50).default(12),
 
@@ -46,15 +71,20 @@ publicProductsQuerySchema = Joi.object({
     .default("newest"),
 }).unknown(false);
 
+/**
+ * ADMIN PRODUCTS QUERY
+ */
+const adminProductsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  pageSize: Joi.number().integer().min(1).max(100).default(20),
+  status: Joi.string().valid("draft", "active", "archived").optional(),
+  category: Joi.string().trim().optional(),
+  search: Joi.string().trim().min(2).optional(),
+}).unknown(false);
+
 module.exports = {
   createProductSchema,
   updateProductSchema,
   publicProductsQuerySchema,
-  adminProductsQuerySchema: Joi.object({
-    page: Joi.number().integer().min(1).default(1),
-    pageSize: Joi.number().integer().min(1).max(100).default(20),
-    status: Joi.string().valid("draft", "active", "archived").optional(),
-    category: Joi.string().trim().optional(),
-    search: Joi.string().trim().min(2).optional(),
-  }).unknown(false),
+  adminProductsQuerySchema,
 };

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -137,12 +137,21 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     return hasAnyPermission(requiredAny);
   });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const theme = isDark ? "dark" : "light";
     document.documentElement.dataset.theme = theme;
     document.body.dataset.theme = theme;
     document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+    document.documentElement.style.colorScheme = theme;
+
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("levants:theme", themePreference);
+      }
+    } catch {
+      // ignore
+    }
+  }, [isDark, themePreference]);
 
   const initials = (user?.name || "")
     .split(" ")
@@ -199,19 +208,26 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             <Menu size={20} />
           </button>
 
-          <div className={styles.searchBar}>
+          {/* <div className={styles.searchBar}>
             <Search size={18} />
             <input
               type="text"
               placeholder="Search orders, products, customers..."
             />
-          </div>
+          </div> */}
 
           <div className={styles.topbarActions}>
             <button
               className={styles.iconBtn}
               onClick={() => {
                 const next = isDark ? "light" : "dark";
+                try {
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem("levants:theme", next);
+                  }
+                } catch {
+                  // ignore
+                }
                 void (async () => {
                   try {
                     await updateSelf({ preferences: { theme: next } } as any);
@@ -223,10 +239,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             >
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button className={styles.iconBtn}>
+            {/* <button className={styles.iconBtn}>
               <Bell size={20} />
               <span className={styles.notificationDot} />
-            </button>
+            </button> */}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

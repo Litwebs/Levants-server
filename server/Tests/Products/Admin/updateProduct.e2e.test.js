@@ -4,6 +4,17 @@ const app = require("../../testApp");
 const { createUser } = require("../../helpers/authTestData");
 const { getSetCookieHeader } = require("../../helpers/cookies");
 
+jest.mock("../../../services/files.service", () => ({
+  uploadAndCreateFile: jest.fn(async () => ({
+    success: true,
+    data: { _id: "507f191e810c19729de860ea" },
+  })),
+  deleteFileIfOrphaned: jest.fn(async () => true),
+}));
+
+const ONE_BY_ONE_PNG_BASE64 =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2G0qQAAAAASUVORK5CYII=";
+
 describe("PUT / DELETE /api/admin/products/:productId (E2E)", () => {
   test("admin updates product", async () => {
     const admin = await createUser({ role: "admin" });
@@ -20,9 +31,11 @@ describe("PUT / DELETE /api/admin/products/:productId (E2E)", () => {
         name: "Butter",
         category: "Dairy",
         description: "Butter",
-        thumbnailImage: "/butter.jpg",
+        status: "active",
+        thumbnailImage: ONE_BY_ONE_PNG_BASE64,
       });
 
+    expect(created.status).toBe(201);
     const productId = created.body.data.product._id;
 
     const res = await request(app)
@@ -49,9 +62,11 @@ describe("PUT / DELETE /api/admin/products/:productId (E2E)", () => {
         name: "Yoghurt",
         category: "Dairy",
         description: "Yoghurt",
-        thumbnailImage: "/yoghurt.jpg",
+        status: "active",
+        thumbnailImage: ONE_BY_ONE_PNG_BASE64,
       });
 
+    expect(created.status).toBe(201);
     const productId = created.body.data.product._id;
 
     const res = await request(app)

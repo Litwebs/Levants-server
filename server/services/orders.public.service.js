@@ -45,21 +45,42 @@ function buildFrontendUrl(pathname) {
   return new URL(pathname, `${base}/`).toString();
 }
 
-async function CreateOrder({ customerId, items, discountCode } = {}) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+function isTransientTransactionError(err) {
+  if (!err) return false;
 
-  try {
-    if (!customerId) {
-      await session.abortTransaction();
-      session.endSession();
-      return { success: false, message: "customerId is required" };
-    }
-    if (!Array.isArray(items) || items.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return { success: false, message: "items is required" };
-    }
+  // MongoDB driver may attach these in different shapes depending on versions.
+  if (Array.isArray(err.errorLabels) && err.errorLabels.includes("TransientTransactionError")) {
+    return true;
+  }
+  if (err.errorLabelSet && typeof err.errorLabelSet.has === "function") {
+    if (err.errorLabelSet.has("TransientTransactionError")) return true;
+  }
+
+  // Fallback by code/codeName for common transient cases.
+  const transientCodeNames = new Set(["WriteConflict", "LockTimeout"]);
+  if (err.codeName && transientCodeNames.has(err.codeName)) return true;
+
+  const transientCodes = new Set([112, 24]);
+  if (typeof err.code === "number" && transientCodes.has(err.code)) return true;
+
+  return false;
+}
+
+async function CreateOrder({ customerId, items, discountCode } = {}) {
+  if (!customerId) {
+    return { success: false, message: "customerId is required" };
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return { success: false, message: "items is required" };
+  }
+
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
 
     // 1️⃣ Resolve variants + reserve stock
     const resolvedItems = [];
@@ -255,14 +276,31 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
     };
   } catch (err) {
     console.error("Error creating order:", err);
-    await session.abortTransaction();
+    try {
+      await session.abortTransaction();
+    } catch {
+      // ignore
+    }
     session.endSession();
+
+    if (isTransientTransactionError(err) && attempt < maxAttempts) {
+      // Small backoff; keep this minimal for API latency.
+      await new Promise((r) => setTimeout(r, 25 * attempt));
+      continue;
+    }
 
     return {
       success: false,
       message: "Failed to create order",
     };
   }
+}
+
+  // Should never reach here, but keep a safe fallback.
+  return {
+    success: false,
+    message: "Failed to create order",
+  };
 }
 
 module.exports = {

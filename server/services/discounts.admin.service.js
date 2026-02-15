@@ -202,6 +202,7 @@ async function GetDiscountDetails({
     discount.variantIds.length > 0
   ) {
     const docs = await Variant.find({ _id: { $in: discount.variantIds } })
+      .where({ status: { $ne: "archived" } })
       .select("name sku")
       .lean();
 

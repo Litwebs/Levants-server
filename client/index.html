@@ -3,6 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+
+    <style>
+      /* Prevent white flash before CSS bundle loads */
+      html[data-theme="dark"],
+      html[data-theme="dark"] body {
+        background-color: hsl(222.2 84% 4.9%);
+      }
+      html[data-theme="light"],
+      html[data-theme="light"] body {
+        background-color: hsl(0 0% 100%);
+      }
+    </style>
+
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("levants:theme");
+          var theme =
+            stored === "light" || stored === "dark" || stored === "system"
+              ? stored
+              : "system";
+          var systemDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var isDark = theme === "dark" || (theme === "system" && systemDark);
+
+          var root = document.documentElement;
+          root.classList.toggle("dark", isDark);
+          root.dataset.theme = isDark ? "dark" : "light";
+          root.style.colorScheme = isDark ? "dark" : "light";
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
     <!-- TODO: Set the document title to the name of your application -->
     <title>Levants Dairy</title>
     <meta name="description" content="Lovable Generated Project" />

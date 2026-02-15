@@ -16,6 +16,7 @@ import {
   Plus,
   Search,
   Save,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -51,6 +52,7 @@ import {
   VariantStatus,
 } from "./types";
 import { getImageUrl, getStatusBadge } from "./product.utils";
+import VariantDeleteModal from "./Models/VariantDeleteModal";
 
 type VariantForm = {
   name: string;
@@ -589,6 +591,7 @@ const ProductVariantsPage = () => {
   const canUpdateVariant = hasPermission("variants.update");
   const canUpdateStock = hasPermission("stock.update");
   const canEditVariant = canUpdateVariant || canUpdateStock;
+  const canDeleteVariant = canUpdateVariant;
 
   const [isLoading, setIsLoading] = useState(false);
   const [product, setProduct] = useState<AdminProduct | null>(null);
@@ -618,6 +621,10 @@ const ProductVariantsPage = () => {
   const [disablingVariantId, setDisablingVariantId] = useState<string | null>(
     null,
   );
+
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [deletingVariant, setDeletingVariant] =
+    useState<AdminProductVariant | null>(null);
 
   const [selectedVariant, setSelectedVariant] =
     useState<AdminProductVariant | null>(null);
@@ -851,7 +858,7 @@ const ProductVariantsPage = () => {
     setDisablingVariantId(variantId);
     try {
       const res = await api.delete(`/admin/products/variants/${variantId}`);
-      showToast({ type: "success", title: "Variant disabled" });
+      showToast({ type: "success", title: "Variant deleted" });
 
       if (res?.data?.success) {
         await refreshProduct();
@@ -859,7 +866,7 @@ const ProductVariantsPage = () => {
     } catch (e: any) {
       showToast({
         type: "error",
-        title: "Failed to disable variant",
+        title: "Failed to delete variant",
         message: e?.response?.data?.message || e?.message,
       });
     } finally {
@@ -990,7 +997,7 @@ const ProductVariantsPage = () => {
               <TableHead>Reserved</TableHead>
               <TableHead>Available</TableHead>
               <TableHead>Status</TableHead>
-              {/* <TableHead>Actions</TableHead> */}
+              <TableHead className={styles.actionsCell}>Actions</TableHead>
             </TableRow>
           </TableHeader>
 
@@ -1010,6 +1017,7 @@ const ProductVariantsPage = () => {
                         }
                       }
                 }
+                className={styles.clickableRow}
               >
                 <TableCell>
                   <div className={styles.productCell}>
@@ -1062,13 +1070,32 @@ const ProductVariantsPage = () => {
                     {v.status}
                   </Badge>
                 </TableCell>
+
+                <TableCell className={styles.actionsCell}>
+                  <div className={styles.actions}>
+                    {canDeleteVariant ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        isLoading={disablingVariantId === v._id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeletingVariant(v);
+                          setIsDeleteOpen(true);
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    ) : null}
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
 
             {variants.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   align="center"
                   className={styles.tableEmptyCell}
                 >
@@ -1173,6 +1200,21 @@ const ProductVariantsPage = () => {
         onSave={updateVariant}
         canUpdateVariant={canUpdateVariant}
         canUpdateStock={canUpdateStock}
+      />
+
+      <VariantDeleteModal
+        isOpen={canDeleteVariant ? isDeleteOpen : false}
+        onClose={() => setIsDeleteOpen(false)}
+        variant={
+          deletingVariant
+            ? { _id: deletingVariant._id, name: deletingVariant.name }
+            : null
+        }
+        onConfirm={disableVariant}
+        isDeleting={Boolean(
+          disablingVariantId && deletingVariant?._id === disablingVariantId,
+        )}
+        canDelete={canDeleteVariant}
       />
     </div>
   );

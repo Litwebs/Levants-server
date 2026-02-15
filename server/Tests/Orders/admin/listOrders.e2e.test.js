@@ -36,7 +36,8 @@ describe("GET /api/admin/orders (Admin)", () => {
         subtotal: variant.price,
         deliveryFee: 0,
         total: variant.price,
-        status: "pending",
+        status: "paid",
+        paidAt: new Date(),
         reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
       },
       {
@@ -55,8 +56,9 @@ describe("GET /api/admin/orders (Admin)", () => {
         subtotal: variant.price * 2,
         deliveryFee: 0,
         total: variant.price * 2,
-        status: "paid",
-        paidAt: new Date(),
+        status: "refunded",
+        paidAt: new Date(Date.now() - 60 * 60 * 1000),
+        refund: { refundedAt: new Date() },
         reservationExpiresAt: new Date(),
       },
     ]);

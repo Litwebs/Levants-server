@@ -1,6 +1,9 @@
 const express = require("express");
 const cookieParser = require("cookie-parser");
 
+// Ensure all referenced models are registered for populate() calls in E2E.
+require("../models/file.model");
+
 const authRoutes = require("../routes/auth.routes");
 const accessRoutes = require("../routes/access.routes");
 const businessInfoRoutes = require("../routes/businessInfo.routes");

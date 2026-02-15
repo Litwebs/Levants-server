@@ -124,9 +124,10 @@ async function ListProducts({
   filters = {},
   search,
 } = {}) {
-  const query = {};
+  const query = { status: { $ne: "archived" } };
 
-  if (filters.status) query.status = filters.status;
+  if (filters.status && filters.status !== "archived")
+    query.status = filters.status;
   if (filters.category) query.category = filters.category;
 
   if (search) {
@@ -162,7 +163,10 @@ async function ListProducts({
 
   const productIds = products.map((p) => p._id);
 
-  const variants = await Variant.find({ product: { $in: productIds } }).lean();
+  const variants = await Variant.find({
+    product: { $in: productIds },
+    status: { $ne: "archived" },
+  }).lean();
 
   const variantsByProduct = variants.reduce((acc, v) => {
     acc[v.product] ??= [];
@@ -335,7 +339,21 @@ async function DeleteProduct({ productId }) {
   if (!product) {
     return {
       success: false,
+      statusCode: 404,
       message: "Product not found",
+    };
+  }
+
+  const hasVariant = await Variant.exists({
+    product: product._id,
+    status: { $ne: "archived" },
+  });
+  if (hasVariant) {
+    return {
+      success: false,
+      statusCode: 409,
+      message:
+        "Cannot archive product while variants exist. Delete the variants first.",
     };
   }
 

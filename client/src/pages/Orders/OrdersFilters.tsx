@@ -163,14 +163,14 @@ const OrdersFilters = ({
             Refunded only
           </label>
 
-          <label className={styles.checkboxFilter}>
+          {/* <label className={styles.checkboxFilter}>
             <input
               type="checkbox"
               checked={expiredOnly}
               onChange={(e) => setExpiredOnly(e.target.checked)}
             />
             Expired only
-          </label>
+          </label> */}
 
           <Button
             variant="ghost"

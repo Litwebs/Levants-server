@@ -86,6 +86,7 @@ async function ListVariants({
 
   const query = {
     product: productId,
+    status: { $ne: "archived" },
     ...(status && status !== "all" ? { status } : {}),
   };
 
@@ -106,7 +107,7 @@ async function ListVariants({
 
     // Stats for the whole product (not affected by paging/search/status filter)
     Variant.aggregate([
-      { $match: { product: product._id } },
+      { $match: { product: product._id, status: { $ne: "archived" } } },
       {
         $project: {
           status: 1,
@@ -283,7 +284,7 @@ async function DeleteVariant({ variantId }) {
   // Archive Stripe product
   await stripeService.archiveStripeProduct(variant.stripeProductId);
 
-  variant.status = "inactive";
+  variant.status = "archived";
   await variant.save();
 
   return { success: true };
@@ -316,6 +317,7 @@ async function SearchVariants({ q, limit = 10 } = {}) {
       { sku: rx },
       ...(productIds.length > 0 ? [{ product: { $in: productIds } }] : []),
     ],
+    status: { $ne: "archived" },
   })
     .select("name sku product status")
     .populate({ path: "product", select: "name" })

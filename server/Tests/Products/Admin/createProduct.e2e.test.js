@@ -1,8 +1,22 @@
+// Tests/Products/Admin/createProduct.e2e.test.js
 const request = require("supertest");
 const app = require("../../testApp");
 
 const { createUser } = require("../../helpers/authTestData");
 const { getSetCookieHeader } = require("../../helpers/cookies");
+
+// ✅ MOCK FILE SERVICE (correct path for your project structure)
+jest.mock("../../../services/files.service", () => ({
+  uploadAndCreateFile: jest.fn(async () => ({
+    success: true,
+    data: { _id: "507f191e810c19729de860ea" },
+  })),
+  deleteFileIfOrphaned: jest.fn(async () => true),
+}));
+
+// 1x1 png data url (tiny + valid)
+const ONE_BY_ONE_PNG_BASE64 =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2G0qQAAAAASUVORK5CYII=";
 
 describe("POST /api/admin/products (E2E)", () => {
   test("401 when not authenticated", async () => {
@@ -57,10 +71,12 @@ describe("POST /api/admin/products (E2E)", () => {
         name: "Fresh Milk",
         category: "Dairy",
         description: "Organic milk",
-        thumbnailImage: "/milk.jpg",
+        status: "active",
+        thumbnailImage: ONE_BY_ONE_PNG_BASE64,
       });
 
     expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
     expect(res.body.data.product.slug).toBe("fresh-milk");
   });
 
@@ -79,7 +95,8 @@ describe("POST /api/admin/products (E2E)", () => {
         name: "Cheese",
         category: "Dairy",
         description: "Cheese",
-        thumbnailImage: "/cheese.jpg",
+        status: "active",
+        thumbnailImage: ONE_BY_ONE_PNG_BASE64,
       });
 
     const res = await request(app)
@@ -89,7 +106,8 @@ describe("POST /api/admin/products (E2E)", () => {
         name: "Cheese",
         category: "Dairy",
         description: "Duplicate",
-        thumbnailImage: "/cheese.jpg",
+        status: "active",
+        thumbnailImage: ONE_BY_ONE_PNG_BASE64,
       });
 
     expect(res.status).toBe(409);

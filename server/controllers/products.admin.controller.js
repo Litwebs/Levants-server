@@ -86,7 +86,7 @@ const DeleteProduct = async (req, res) => {
 
   if (!result.success) {
     return sendErr(res, {
-      statusCode: 404,
+      statusCode: result.statusCode || 404,
       message: result.message,
     });
   }

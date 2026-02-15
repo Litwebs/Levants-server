@@ -361,7 +361,10 @@ async function listActiveDiscounts({ page = 1, pageSize = 50 } = {}) {
   const variantIds = Array.from(variantIdSet);
   const variants =
     variantIds.length > 0
-      ? await Variant.find({ _id: { $in: variantIds } })
+      ? await Variant.find({
+          _id: { $in: variantIds },
+          status: { $ne: "archived" },
+        })
           .select("name")
           .lean()
       : [];
