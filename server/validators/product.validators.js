@@ -12,9 +12,7 @@ const createProductSchema = Joi.object({
   category: Joi.string().min(2).max(100).required(),
   description: Joi.string().min(2).required(),
 
-  status: Joi.string()
-    .valid("draft", "active", "archived")
-    .default("draft"),
+  status: Joi.string().valid("draft", "active", "archived").default("draft"),
 
   allergens: Joi.array().items(Joi.string()).optional(),
   storageNotes: Joi.string().allow("").optional(),
@@ -34,9 +32,7 @@ const updateProductSchema = Joi.object({
   category: Joi.string().min(2).max(100).optional(),
   description: Joi.string().min(2).optional(),
 
-  status: Joi.string()
-    .valid("draft", "active", "archived")
-    .optional(),
+  status: Joi.string().valid("draft", "active", "archived").optional(),
 
   allergens: Joi.array().items(Joi.string()).optional(),
   storageNotes: Joi.string().allow("").optional(),
