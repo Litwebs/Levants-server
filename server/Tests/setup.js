@@ -73,6 +73,24 @@ beforeAll(async () => {
   });
   const uri = mongo.getUri();
   await mongoose.connect(uri);
+
+  // Pre-initialize model indexes/collections once.
+  // This reduces flaky transaction errors in mongodb-memory-server
+  // (e.g., "catalog changes" / lock timeouts during the first transactional write).
+  await Promise.all([
+    require("../models/file.model").init(),
+    require("../models/businessInfo.model").init(),
+    require("../models/role.model").init(),
+    require("../models/user.model").init(),
+    require("../models/session.model").init(),
+    require("../models/passwordResetToken.model").init(),
+    require("../models/customer.model").init(),
+    require("../models/product.model").init(),
+    require("../models/variant.model").init(),
+    require("../models/discount.model").init(),
+    require("../models/discountRedemption.model").init(),
+    require("../models/order.model").init(),
+  ]);
 });
 
 beforeEach(async () => {

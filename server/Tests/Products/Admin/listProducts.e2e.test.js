@@ -4,6 +4,7 @@ const slugify = require("slugify");
 
 const Product = require("../../../models/product.model");
 const File = require("../../../models/file.model");
+const Variant = require("../../../models/variant.model");
 
 const { createUser } = require("../../helpers/authTestData");
 const { getSetCookieHeader } = require("../../helpers/cookies");
@@ -81,5 +82,71 @@ describe("GET /api/admin/products (E2E)", () => {
     const ids = (res.body.data.products || []).map((p) => String(p._id));
     expect(ids).toContain(String(active._id));
     expect(ids).not.toContain(String(archived._id));
+  });
+
+  test("does not include archived variants in embedded variants", async () => {
+    const admin = await createUser({ role: "admin" });
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const product = await createProductInDb({
+      userId: admin._id,
+      overrides: { name: "Variants Product", status: "active" },
+    });
+
+    await Variant.create({
+      product: product._id,
+      name: "Active Variant",
+      sku: `AV-${Date.now()}`,
+      price: 1,
+      stockQuantity: 10,
+      reservedQuantity: 0,
+      lowStockAlert: 5,
+      status: "active",
+      thumbnailImage: product.thumbnailImage,
+    });
+
+    await Variant.create({
+      product: product._id,
+      name: "Inactive Variant",
+      sku: `IV-${Date.now()}`,
+      price: 2,
+      stockQuantity: 10,
+      reservedQuantity: 0,
+      lowStockAlert: 5,
+      status: "inactive",
+      thumbnailImage: product.thumbnailImage,
+    });
+
+    await Variant.create({
+      product: product._id,
+      name: "Archived Variant",
+      sku: `ARV-${Date.now()}`,
+      price: 3,
+      stockQuantity: 10,
+      reservedQuantity: 0,
+      lowStockAlert: 5,
+      status: "archived",
+      thumbnailImage: product.thumbnailImage,
+    });
+
+    const res = await request(app)
+      .get("/api/admin/products")
+      .set("Cookie", getSetCookieHeader(login));
+
+    expect(res.status).toBe(200);
+
+    const listed = (res.body.data.products || []).find(
+      (p) => String(p._id) === String(product._id),
+    );
+    expect(listed).toBeDefined();
+
+    const statuses = (listed.variants || []).map((v) => v.status);
+    expect(statuses).toContain("active");
+    expect(statuses).toContain("inactive");
+    expect(statuses).not.toContain("archived");
   });
 });

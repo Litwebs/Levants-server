@@ -1,7 +1,18 @@
 const BusinessInfo = require("../models/businessInfo.model");
 
+const SINGLETON_KEY = "business-info";
+
 async function getBusinessInfo() {
-  const info = await BusinessInfo.findOne();
+  let info = await BusinessInfo.findOne({ singletonKey: SINGLETON_KEY });
+
+  // Backward compatibility: older DBs may not have singletonKey.
+  if (!info) {
+    info = await BusinessInfo.findOne();
+    if (info && !info.singletonKey) {
+      info.singletonKey = SINGLETON_KEY;
+      await info.save();
+    }
+  }
 
   if (!info) {
     return {
@@ -16,7 +27,15 @@ async function getBusinessInfo() {
 }
 
 async function updateBusinessInfo({ data, userId }) {
-  const info = await BusinessInfo.findOne();
+  let info = await BusinessInfo.findOne({ singletonKey: SINGLETON_KEY });
+
+  // Backward compatibility: older DBs may not have singletonKey.
+  if (!info) {
+    info = await BusinessInfo.findOne();
+    if (info && !info.singletonKey) {
+      info.singletonKey = SINGLETON_KEY;
+    }
+  }
 
   if (!info) {
     return {

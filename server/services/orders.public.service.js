@@ -77,7 +77,12 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
     return { success: false, message: "items is required" };
   }
 
-  const maxAttempts = 3;
+  const customer = await Customer.findById(customerId).select("email").lean();
+  if (!customer) {
+    return { success: false, message: "Customer not found" };
+  }
+
+  const maxAttempts = 5;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const session = await mongoose.startSession();
@@ -200,9 +205,7 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
         ],
         { session },
       );
-      const customer = await Customer.findById(customerId)
-        .select("email")
-        .lean();
+
       // 3️⃣ Create Stripe Checkout Session
       const stripeSession = await stripe.checkout.sessions.create({
         mode: "payment",
@@ -288,8 +291,9 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
       session.endSession();
 
       if (isTransientTransactionError(err) && attempt < maxAttempts) {
-        // Small backoff; keep this minimal for API latency.
-        await new Promise((r) => setTimeout(r, 25 * attempt));
+        // Small backoff + jitter; keep this minimal for API latency.
+        const jitter = Math.floor(Math.random() * 25);
+        await new Promise((r) => setTimeout(r, 50 * attempt + jitter));
         continue;
       }
 

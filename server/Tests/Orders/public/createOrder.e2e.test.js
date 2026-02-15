@@ -25,7 +25,11 @@ describe("POST /api/orders (Public)", () => {
         ],
       });
 
-    expect(res.status).toBe(200);
+    if (res.status !== 200) {
+      throw new Error(
+        `Expected 200, got ${res.status}: ${JSON.stringify(res.body)}`,
+      );
+    }
     expect(res.body.success).toBe(true);
     expect(res.body.data.checkoutUrl).toBeDefined();
     expect(res.body.data.orderId).toBeDefined();
@@ -39,6 +43,27 @@ describe("POST /api/orders (Public)", () => {
     const res = await request(app).post("/api/orders").send({
       items: [],
     });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/customer/i);
+  });
+
+  test("fails when customer does not exist", async () => {
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 10 });
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: "64b000000000000000000000",
+        items: [
+          {
+            variantId: variant._id.toString(),
+            quantity: 1,
+          },
+        ],
+      });
 
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);

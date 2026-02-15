@@ -2,6 +2,15 @@ const mongoose = require("mongoose");
 
 const businessInfoSchema = new mongoose.Schema(
   {
+    // Singleton marker. Using a real unique key avoids invalid empty-index hacks.
+    singletonKey: {
+      type: String,
+      default: "business-info",
+      immutable: true,
+      unique: true,
+      index: true,
+    },
+
     companyName: {
       type: String,
       required: true,
@@ -36,8 +45,5 @@ const businessInfoSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
-
-// Single document only (singleton pattern)
-businessInfoSchema.index({}, { unique: true });
 
 module.exports = mongoose.model("BusinessInfo", businessInfoSchema);

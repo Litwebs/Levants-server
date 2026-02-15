@@ -51,15 +51,20 @@ const getBusinessInfoToSeed = () => {
 const seedBusinessInfo = async () => {
   const business = getBusinessInfoToSeed();
 
+  const singletonKey = "business-info";
+
   // ✅ Single-document upsert (business info is global)
   const doc = await BusinessInfo.findOneAndUpdate(
-    {},
+    { singletonKey },
     {
       $set: {
         companyName: business.companyName,
         email: business.email,
         phone: business.phone,
         address: business.address,
+      },
+      $setOnInsert: {
+        singletonKey,
       },
     },
     {

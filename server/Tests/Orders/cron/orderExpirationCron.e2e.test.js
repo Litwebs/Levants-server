@@ -13,6 +13,7 @@ const {
 describe("ORDER EXPIRATION CRON (E2E)", () => {
   let product;
   let variant;
+  let variant2;
 
   async function createTestFile() {
     return File.create({
@@ -25,7 +26,10 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
     });
   }
 
-  beforeAll(() => {
+  function installTransactionNoops() {
+    // Global test setup runs `jest.restoreAllMocks()` after each test.
+    // This suite needs the transaction/session no-ops for every test.
+
     // 1) no-op session/transactions
     jest.spyOn(mongoose, "startSession").mockImplementation(async () => ({
       startTransaction: jest.fn(),
@@ -59,9 +63,11 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
       delete safeOpts.session;
       return originalSave.call(this, safeOpts);
     });
-  });
+  }
 
   beforeEach(async () => {
+    installTransactionNoops();
+
     const file = await createTestFile();
 
     product = await Product.create({
@@ -78,6 +84,17 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
       name: "Cron Variant",
       sku: `CRON-SKU-${Date.now()}`,
       price: 10,
+      stockQuantity: 10,
+      reservedQuantity: 0,
+      status: "active",
+      thumbnailImage: file._id,
+    });
+
+    variant2 = await Variant.create({
+      product: product._id,
+      name: "Cron Variant 2",
+      sku: `CRON-SKU-2-${Date.now()}`,
+      price: 12,
       stockQuantity: 10,
       reservedQuantity: 0,
       status: "active",
@@ -116,6 +133,171 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
     const updatedVariant = await Variant.findById(variant._id);
 
     expect(updatedOrder.status).toBe("cancelled");
+    expect(updatedOrder.expiresAt).toBeInstanceOf(Date);
     expect(updatedVariant.reservedQuantity).toBe(0);
+  });
+
+  test("non-expired pending orders are not cancelled and reservations stay", async () => {
+    const pendingOrder = await Order.create({
+      customer: new mongoose.Types.ObjectId(),
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: "Cron Variant",
+          sku: variant.sku,
+          price: 10,
+          quantity: 2,
+          subtotal: 20,
+        },
+      ],
+      subtotal: 20,
+      deliveryFee: 0,
+      total: 20,
+      status: "pending",
+      reservationExpiresAt: new Date(Date.now() + 60 * 1000),
+    });
+
+    await Variant.findByIdAndUpdate(variant._id, {
+      $set: { reservedQuantity: 2 },
+    });
+
+    await runOrderExpirationJob();
+
+    const updatedOrder = await Order.findById(pendingOrder._id);
+    const updatedVariant = await Variant.findById(variant._id);
+
+    expect(updatedOrder.status).toBe("pending");
+    expect(updatedOrder.expiresAt).toBeUndefined();
+    expect(updatedVariant.reservedQuantity).toBe(2);
+  });
+
+  test("paid orders are ignored even if reservation is in the past", async () => {
+    const paidOrder = await Order.create({
+      customer: new mongoose.Types.ObjectId(),
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: "Cron Variant",
+          sku: variant.sku,
+          price: 10,
+          quantity: 2,
+          subtotal: 20,
+        },
+      ],
+      subtotal: 20,
+      deliveryFee: 0,
+      total: 20,
+      status: "paid",
+      reservationExpiresAt: new Date(Date.now() - 60 * 1000),
+      paidAt: new Date(),
+    });
+
+    await Variant.findByIdAndUpdate(variant._id, {
+      $set: { reservedQuantity: 2 },
+    });
+
+    await runOrderExpirationJob();
+
+    const updatedOrder = await Order.findById(paidOrder._id);
+    const updatedVariant = await Variant.findById(variant._id);
+
+    expect(updatedOrder.status).toBe("paid");
+    expect(updatedOrder.expiresAt).toBeUndefined();
+    expect(updatedVariant.reservedQuantity).toBe(2);
+  });
+
+  test("expired order with multiple variants releases reservations for each", async () => {
+    const expiredOrder = await Order.create({
+      customer: new mongoose.Types.ObjectId(),
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: "Cron Variant",
+          sku: variant.sku,
+          price: 10,
+          quantity: 2,
+          subtotal: 20,
+        },
+        {
+          product: product._id,
+          variant: variant2._id,
+          name: "Cron Variant 2",
+          sku: variant2.sku,
+          price: 12,
+          quantity: 3,
+          subtotal: 36,
+        },
+      ],
+      subtotal: 56,
+      deliveryFee: 0,
+      total: 56,
+      status: "pending",
+      reservationExpiresAt: new Date(Date.now() - 60 * 1000),
+    });
+
+    await Variant.findByIdAndUpdate(variant._id, {
+      $set: { reservedQuantity: 2 },
+    });
+    await Variant.findByIdAndUpdate(variant2._id, {
+      $set: { reservedQuantity: 3 },
+    });
+
+    await runOrderExpirationJob();
+
+    const updatedOrder = await Order.findById(expiredOrder._id);
+    const updatedVariant1 = await Variant.findById(variant._id);
+    const updatedVariant2 = await Variant.findById(variant2._id);
+
+    expect(updatedOrder.status).toBe("cancelled");
+    expect(updatedVariant1.reservedQuantity).toBe(0);
+    expect(updatedVariant2.reservedQuantity).toBe(0);
+  });
+
+  test("expiration is idempotent (running twice does not double-release)", async () => {
+    const expiredOrder = await Order.create({
+      customer: new mongoose.Types.ObjectId(),
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: "Cron Variant",
+          sku: variant.sku,
+          price: 10,
+          quantity: 2,
+          subtotal: 20,
+        },
+      ],
+      subtotal: 20,
+      deliveryFee: 0,
+      total: 20,
+      status: "pending",
+      reservationExpiresAt: new Date(Date.now() - 60 * 1000),
+    });
+
+    await Variant.findByIdAndUpdate(variant._id, {
+      $set: { reservedQuantity: 2 },
+    });
+
+    await runOrderExpirationJob();
+
+    const afterFirst = await Variant.findById(variant._id);
+    const orderAfterFirst = await Order.findById(expiredOrder._id);
+    const expiresAtFirst = orderAfterFirst.expiresAt;
+
+    expect(orderAfterFirst.status).toBe("cancelled");
+    expect(expiresAtFirst).toBeInstanceOf(Date);
+    expect(afterFirst.reservedQuantity).toBe(0);
+
+    await runOrderExpirationJob();
+
+    const afterSecond = await Variant.findById(variant._id);
+    const orderAfterSecond = await Order.findById(expiredOrder._id);
+
+    expect(orderAfterSecond.status).toBe("cancelled");
+    expect(orderAfterSecond.expiresAt.getTime()).toBe(expiresAtFirst.getTime());
+    expect(afterSecond.reservedQuantity).toBe(0);
   });
 });
