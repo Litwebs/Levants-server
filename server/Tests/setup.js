@@ -59,6 +59,10 @@ jest.mock("stripe", () => {
   }));
 });
 
+jest.mock("../Integration/google.geocode", () => ({
+  geocodeAddress: jest.fn(async () => ({ lat: 52.2053, lng: 0.1218 })),
+}));
+
 let mongo;
 
 async function clearDatabase() {

@@ -8,6 +8,17 @@ const {
 } = require("../helpers/orderFactory");
 
 describe("POST /api/orders (Public)", () => {
+  const getFutureIsoDate = () =>
+    new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  const getValidDeliveryAddress = () => ({
+    line1: "10 Downing Street",
+    line2: "",
+    city: "London",
+    postcode: "SW1A 2AA",
+    country: "United Kingdom",
+  });
+
   test("creates order and reserves stock (happy path)", async () => {
     const customer = await createCustomer();
     const product = await createProduct();
@@ -17,6 +28,8 @@ describe("POST /api/orders (Public)", () => {
       .post("/api/orders")
       .send({
         customerId: customer._id.toString(),
+        deliveryAddress: getValidDeliveryAddress(),
+        deliveryDate: getFutureIsoDate(),
         items: [
           {
             variantId: variant._id.toString(),
@@ -41,6 +54,8 @@ describe("POST /api/orders (Public)", () => {
 
   test("fails when customerId is missing", async () => {
     const res = await request(app).post("/api/orders").send({
+      deliveryAddress: getValidDeliveryAddress(),
+      deliveryDate: getFutureIsoDate(),
       items: [],
     });
 
@@ -57,6 +72,8 @@ describe("POST /api/orders (Public)", () => {
       .post("/api/orders")
       .send({
         customerId: "64b000000000000000000000",
+        deliveryAddress: getValidDeliveryAddress(),
+        deliveryDate: getFutureIsoDate(),
         items: [
           {
             variantId: variant._id.toString(),
@@ -75,6 +92,8 @@ describe("POST /api/orders (Public)", () => {
 
     const res = await request(app).post("/api/orders").send({
       customerId: customer._id.toString(),
+      deliveryAddress: getValidDeliveryAddress(),
+      deliveryDate: getFutureIsoDate(),
       items: [],
     });
 
@@ -89,6 +108,8 @@ describe("POST /api/orders (Public)", () => {
       .post("/api/orders")
       .send({
         customerId: customer._id.toString(),
+        deliveryAddress: getValidDeliveryAddress(),
+        deliveryDate: getFutureIsoDate(),
         items: [
           {
             variantId: "64b000000000000000000000",
@@ -110,6 +131,8 @@ describe("POST /api/orders (Public)", () => {
       .post("/api/orders")
       .send({
         customerId: customer._id.toString(),
+        deliveryAddress: getValidDeliveryAddress(),
+        deliveryDate: getFutureIsoDate(),
         items: [
           {
             variantId: variant._id.toString(),
@@ -134,6 +157,8 @@ describe("POST /api/orders (Public)", () => {
       .post("/api/orders")
       .send({
         customerId: customer._id.toString(),
+        deliveryAddress: getValidDeliveryAddress(),
+        deliveryDate: getFutureIsoDate(),
         items: [
           {
             variantId: variant._id.toString(),

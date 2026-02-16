@@ -55,6 +55,9 @@ Thumbs.db
 server/node_modules/.cache/
 **/mongodb-memory-server/
 
+keys/
+*.json
+
 
 # Optional: lockfiles (uncomment if you don't want them in git)
 # package-lock.json
