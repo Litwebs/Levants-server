@@ -10,6 +10,20 @@ const { optimizeRoutes } = require("./googleRoute.service");
 const WAREHOUSE_LAT = Number(process.env.WAREHOUSE_LAT);
 const WAREHOUSE_LNG = Number(process.env.WAREHOUSE_LNG);
 
+function extractEncodedPolyline(routeData) {
+  if (!routeData || typeof routeData !== "object") return null;
+
+  // Cloud Fleet Routing typically returns `routePolyline.points` when requested.
+  const points =
+    routeData.routePolyline?.points ||
+    routeData.routePolyline?.encodedPolyline ||
+    routeData.polyline?.points ||
+    routeData.polyline?.encodedPolyline ||
+    null;
+
+  return typeof points === "string" && points.trim() ? points : null;
+}
+
 async function generateRoutesForBatch({ batchId }) {
   const batch = await DeliveryBatch.findById(batchId);
   if (!batch) return { success: false, message: "Batch not found" };
@@ -58,6 +72,10 @@ async function generateRoutesForBatch({ batchId }) {
   }));
 
   const requestBody = {
+    // Ask the API to populate route polylines in the response.
+    populatePolylines: true,
+    populateTransitionPolylines: true,
+
     model: {
       globalStartTime: new Date(batch.deliveryDate).toISOString(),
       globalEndTime: new Date(
@@ -83,12 +101,15 @@ async function generateRoutesForBatch({ batchId }) {
   const createdRouteIds = [];
 
   for (const routeData of optimized.routes) {
+    const polyline = extractEncodedPolyline(routeData);
+
     const route = await Route.create({
       batch: batch._id,
       driver: routeData.vehicleLabel,
       totalStops: routeData.visits?.length || 0,
       totalDistanceMeters: routeData.metrics?.travelDistanceMeters || 0,
       totalDurationSeconds: parseDuration(routeData.metrics?.travelDuration),
+      polyline,
     });
 
     let sequence = 1;
