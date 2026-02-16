@@ -3,6 +3,7 @@ const Order = require("../models/order.model");
 const ProductVariant = require("../models/variant.model");
 const stripe = require("../utils/stripe.util");
 const Customer = require("../models/customer.model");
+const { geocodeAddress } = require("../Integration/google.geocode");
 const { validateDiscountForOrder } = require("./discounts.public.service");
 const {
   processInventoryAlertsForVariants,
@@ -69,7 +70,28 @@ function isTransientTransactionError(err) {
   return false;
 }
 
-async function CreateOrder({ customerId, items, discountCode } = {}) {
+async function CreateOrder({
+  customerId,
+  items,
+  discountCode,
+  deliveryAddress,
+} = {}) {
+  if (!deliveryAddress) {
+    return { success: false, message: "Delivery address is required" };
+  }
+
+  let location;
+
+  try {
+    location = await geocodeAddress(deliveryAddress);
+  } catch (err) {
+    console.error("Geocoding failed:", err.message);
+    return {
+      success: false,
+      message: "Invalid delivery address",
+    };
+  }
+
   if (!customerId) {
     return { success: false, message: "customerId is required" };
   }
@@ -201,6 +223,8 @@ async function CreateOrder({ customerId, items, discountCode } = {}) {
             isDiscounted: discountAmount > 0,
             status: "pending",
             reservationExpiresAt,
+            deliveryAddress,
+            location,
           },
         ],
         { session },

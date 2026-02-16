@@ -93,6 +93,25 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
+    deliveryAddress: {
+      line1: { type: String, required: true },
+      line2: { type: String },
+      city: { type: String, required: true },
+      postcode: { type: String, required: true },
+      country: { type: String, required: true },
+    },
+
+    deliveryDate: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    location: {
+      lat: { type: Number, required: true },
+      lng: { type: Number, required: true },
+    },
+
     deliveryFee: {
       type: Number,
       default: 0,
@@ -232,5 +251,8 @@ orderSchema.method("toJSON", function () {
   delete obj.__v;
   return obj;
 });
+
+orderSchema.index({ "location.lat": 1, "location.lng": 1 });
+orderSchema.index({ deliveryDate: 1, status: 1 });
 
 module.exports = mongoose.model("Order", orderSchema);

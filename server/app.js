@@ -32,6 +32,7 @@ const publicOrderRoutes = require("./routes/orders.public.routes");
 const adminAnalyticsRoutes = require("./routes/analytics.admin.routes");
 const adminDiscountRoutes = require("./routes/discounts.admin.routes");
 const publicDiscountRoutes = require("./routes/discounts.public.routes");
+const deliveryRoutes = require("./routes/delivery.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -125,6 +126,9 @@ app.use("/api/admin/analytics", adminAnalyticsRoutes);
 
 // Discounts / Promotions
 app.use("/api/admin/discounts", adminDiscountRoutes);
+
+// Delivery
+app.use("/api/admin/delivery", deliveryRoutes);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");

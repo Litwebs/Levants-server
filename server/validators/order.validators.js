@@ -2,10 +2,20 @@ const Joi = require("joi");
 
 const objectId = Joi.string().hex().length(24);
 
+const deliveryAddressSchema = Joi.object({
+  line1: Joi.string().trim().min(3).max(255).required(),
+  line2: Joi.string().trim().max(255).allow(null, "").optional(),
+  city: Joi.string().trim().min(2).max(100).required(),
+  postcode: Joi.string().trim().min(3).max(20).required(),
+  country: Joi.string().trim().min(2).max(100).required(),
+});
+
 const createOrderSchema = Joi.object({
   customerId: objectId.required(),
 
   discountCode: Joi.string().trim().uppercase().min(3).max(32).optional(),
+
+  deliveryAddress: deliveryAddressSchema.required(),
 
   items: Joi.array()
     .items(

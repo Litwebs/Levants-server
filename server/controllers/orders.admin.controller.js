@@ -118,10 +118,33 @@ const BulkUpdateDeliveryStatus = async (req, res) => {
   });
 };
 
+async function bulkAssignDeliveryDate(req, res) {
+  try {
+    const { orderIds, deliveryDate } = req.body;
+
+    const result = await service.bulkAssignDeliveryDate({
+      orderIds,
+      deliveryDate,
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to assign delivery date",
+    });
+  }
+}
+
 module.exports = {
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,
   RefundOrder,
   BulkUpdateDeliveryStatus,
+  bulkAssignDeliveryDate,
 };

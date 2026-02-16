@@ -271,9 +271,49 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
     },
   };
 }
+
+async function bulkAssignDeliveryDate({ orderIds, deliveryDate }) {
+  if (!Array.isArray(orderIds) || orderIds.length === 0) {
+    return { success: false, message: "orderIds required" };
+  }
+
+  if (!deliveryDate) {
+    return { success: false, message: "deliveryDate required" };
+  }
+
+  const date = new Date(deliveryDate);
+
+  if (Number.isNaN(date.getTime())) {
+    return { success: false, message: "Invalid deliveryDate" };
+  }
+
+  // Normalize to midnight UTC
+  date.setUTCHours(0, 0, 0, 0);
+
+  const result = await Order.updateMany(
+    {
+      _id: { $in: orderIds },
+      status: "paid",
+    },
+    {
+      $set: { deliveryDate: date },
+    },
+  );
+
+  return {
+    success: true,
+    data: {
+      matched: result.matchedCount,
+      modified: result.modifiedCount,
+      deliveryDate: date,
+    },
+  };
+}
+
 module.exports = {
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,
   BulkUpdateDeliveryStatus,
+  bulkAssignDeliveryDate,
 };

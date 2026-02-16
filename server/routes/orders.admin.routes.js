@@ -53,4 +53,11 @@ router.post(
   asyncHandler(controller.RefundOrder),
 );
 
+router.patch(
+  "/assign-delivery-date-bulk",
+  requireAuth,
+  requirePermission("orders.manage"),
+  asyncHandler(controller.bulkAssignDeliveryDate),
+);
+
 module.exports = router;
