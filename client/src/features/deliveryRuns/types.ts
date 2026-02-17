@@ -1,7 +1,9 @@
 // Delivery Runs Types
 
 export type RunStatus = 'draft' | 'locked' | 'routed' | 'dispatched' | 'completed';
-export type VanId = 'van-1' | 'van-2' | 'van-3';
+// Support any number of vans (routes). We still only have 3 style/color variants,
+// so extra vans cycle through the existing palette.
+export type VanId = `van-${number}`;
 export type IssueType = 'MISSING_GEO' | 'BAD_ADDRESS' | 'OUT_OF_RANGE' | 'CAPACITY_EXCEEDED';
 
 export interface ManifestItem {
@@ -9,6 +11,7 @@ export interface ManifestItem {
   name: string;
   qty: number;
   unit?: string;
+  ordersCount?: number;
 }
 
 export interface RouteStop {
@@ -23,6 +26,8 @@ export interface RouteStop {
   lng: number;
   notes?: string;
   eta?: string;
+  stopStatus?: 'pending' | 'delivered' | 'failed' | string;
+  orderDeliveryStatus?: string;
   items: ManifestItem[];
 }
 
@@ -98,6 +103,7 @@ export interface ListRunsParams {
 
 export interface CreateRunPayload {
   deliveryDate: string;
+  orderIds?: string[];
 }
 
 // Depot configuration
@@ -107,15 +113,25 @@ export const DEPOT_LOCATION = {
   label: 'Depot'
 };
 
-// Van colors for map display
-export const VAN_COLORS: Record<VanId, string> = {
-  'van-1': '#1a5f4a',
-  'van-2': '#e8a838',
-  'van-3': '#3b82f6'
+const VAN_COLOR_PALETTE = ['#1a5f4a', '#e8a838', '#3b82f6'] as const;
+const VAN_STYLE_KEYS = ['van1', 'van2', 'van3'] as const;
+
+export const getVanIndex = (vanId: VanId): number => {
+  const match = String(vanId).match(/van-(\d+)/i);
+  const n = match ? Number(match[1]) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
 };
 
-export const VAN_NAMES: Record<VanId, string> = {
-  'van-1': 'Van 1',
-  'van-2': 'Van 2',
-  'van-3': 'Van 3'
+export const getVanColor = (vanId: VanId): string => {
+  const idx = getVanIndex(vanId);
+  return VAN_COLOR_PALETTE[(idx - 1) % VAN_COLOR_PALETTE.length];
+};
+
+export const getVanDisplayName = (vanId: VanId): string => {
+  return `Van ${getVanIndex(vanId)}`;
+};
+
+export const getVanStyleKey = (vanId: VanId): (typeof VAN_STYLE_KEYS)[number] => {
+  const idx = getVanIndex(vanId);
+  return VAN_STYLE_KEYS[(idx - 1) % VAN_STYLE_KEYS.length];
 };

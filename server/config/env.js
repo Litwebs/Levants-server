@@ -41,7 +41,12 @@ module.exports = {
     SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
   },
-  RESEND_EMAIL_KEY: process.env.RESEND_URI,
+  // Resend API key (preferred env var: RESEND_EMAIL_KEY)
+  // Keep backwards compatibility with older deployments.
+  RESEND_EMAIL_KEY:
+    process.env.RESEND_EMAIL_KEY ||
+    process.env.RESEND_API_KEY ||
+    process.env.RESEND_URI,
   FRONTEND_URL:
     process.env.NODE_ENV === "production"
       ? process.env.FRONTEND_URL_PROD

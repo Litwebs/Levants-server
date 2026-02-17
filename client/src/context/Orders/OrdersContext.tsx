@@ -87,6 +87,11 @@ type OrdersContextType = {
       | "delivered"
       | "returned",
   ) => Promise<{ matched: number; modified: number }>;
+
+  bulkAssignDeliveryDate: (
+    orderIds: string[],
+    deliveryDate: string,
+  ) => Promise<{ matched: number; modified: number }>;
 };
 
 const OrdersContext = createContext<OrdersContextType | null>(null);
@@ -244,6 +249,40 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const bulkAssignDeliveryDate = useCallback(
+    async (orderIds: string[], deliveryDate: string) => {
+      dispatch({ type: ORDERS_REQUEST });
+
+      try {
+        const res = await api.patch("/admin/orders/assign-delivery-date-bulk", {
+          orderIds,
+          deliveryDate,
+        });
+
+        const data = unwrapData<{ matched: number; modified: number }>(
+          res.data,
+        );
+        if (!data) throw new Error("Bulk assign delivery date failed");
+
+        dispatch({
+          type: ORDERS_BULK_UPDATE_SUCCESS,
+          payload: {
+            orderIds,
+            patch: { deliveryDate },
+          },
+        });
+
+        return data;
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message || "Bulk assign delivery date failed";
+        dispatch({ type: ORDERS_FAILURE, payload: msg });
+        throw err;
+      }
+    },
+    [],
+  );
+
   const refundOrder = useCallback(
     async (orderId: string, body?: { reason?: string; restock?: boolean }) => {
       dispatch({ type: ORDERS_REQUEST });
@@ -291,6 +330,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       updateOrderStatus,
       refundOrder,
       bulkUpdateDeliveryStatus,
+      bulkAssignDeliveryDate,
     }),
     [
       state,
@@ -299,6 +339,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       updateOrderStatus,
       refundOrder,
       bulkUpdateDeliveryStatus,
+      bulkAssignDeliveryDate,
     ],
   );
 

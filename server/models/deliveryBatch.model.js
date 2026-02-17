@@ -10,7 +10,13 @@ const deliveryBatchSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["collecting", "locked", "routes_generated", "completed"],
+      enum: [
+        "collecting",
+        "locked",
+        "routes_generated",
+        "dispatched",
+        "completed",
+      ],
       default: "collecting",
       index: true,
     },
@@ -34,6 +40,14 @@ const deliveryBatchSchema = new mongoose.Schema(
     },
 
     generatedAt: {
+      type: Date,
+    },
+
+    dispatchedAt: {
+      type: Date,
+    },
+
+    completedAt: {
       type: Date,
     },
   },

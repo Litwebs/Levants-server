@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
-import { useDeliveryRun } from '../hooks/useDeliveryRun';
-import { VanId } from '../types';
+import React, { useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
+import { useDeliveryRun } from "../hooks/useDeliveryRun";
+import { VanId } from "../types";
 import {
   RunSummaryCards,
   RunActionsBar,
@@ -10,32 +10,54 @@ import {
   MapView,
   ManifestTables,
   RouteDrawer,
-  PrintLayout
-} from '../components';
-import { Button } from '@/components/common';
-import { useToast } from '@/components/common/Toast';
-import styles from './DeliveryRunDetailsPage.module.css';
+  PrintLayout,
+} from "../components";
+import { Button } from "@/components/common";
+import { useToast } from "@/components/common/Toast";
+import styles from "./DeliveryRunDetailsPage.module.css";
 
-type TabId = 'overview' | 'vans' | 'map' | 'manifests';
+type TabId = "overview" | "vans" | "map" | "manifests";
 
 export const DeliveryRunDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  
-  const { run, loading, error, actionLoading, lock, unlock, optimize, dispatch } = useDeliveryRun(id!);
-  
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
-  const [selectedVan, setSelectedVan] = useState<VanId | 'all'>('all');
-  const [routeDrawerVan, setRouteDrawerVan] = useState<VanId | null>(null);
-  const [printVan, setPrintVan] = useState<{ vanId: VanId; type: 'stops' | 'manifest' } | null>(null);
 
-  const handleAction = async (action: () => Promise<boolean>, successMsg: string, errorMsg: string) => {
-    const success = await action();
-    if (success) {
-      showToast({ type: 'success', title: successMsg });
-    } else {
-      showToast({ type: 'error', title: errorMsg });
+  const {
+    run,
+    loading,
+    error,
+    actionLoading,
+    lock,
+    unlock,
+    optimize,
+    dispatch,
+  } = useDeliveryRun(id!);
+
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [selectedVan, setSelectedVan] = useState<VanId | "all">("all");
+  const [routeDrawerVan, setRouteDrawerVan] = useState<VanId | null>(null);
+  const [printVan, setPrintVan] = useState<{
+    vanId: VanId;
+    type: "stops" | "manifest";
+  } | null>(null);
+
+  const handleAction = async (
+    action: () => Promise<boolean>,
+    successMsg: string,
+    errorMsg: string,
+  ) => {
+    try {
+      const success = await action();
+      if (success) {
+        showToast({ type: "success", title: successMsg });
+      } else {
+        showToast({ type: "error", title: errorMsg });
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message ? err.message : errorMsg;
+      showToast({ type: "error", title: message });
     }
   };
 
@@ -44,11 +66,11 @@ export const DeliveryRunDetailsPage: React.FC = () => {
   };
 
   const handleViewManifest = (vanId: VanId) => {
-    setActiveTab('manifests');
+    setActiveTab("manifests");
   };
 
   const handlePrint = (vanId: VanId) => {
-    setPrintVan({ vanId, type: 'stops' });
+    setPrintVan({ vanId, type: "stops" });
   };
 
   if (loading) {
@@ -65,9 +87,9 @@ export const DeliveryRunDetailsPage: React.FC = () => {
       <div className={styles.notFound}>
         <h2 className={styles.notFoundTitle}>Delivery Run Not Found</h2>
         <p className={styles.notFoundText}>
-          {error || 'The requested delivery run could not be found.'}
+          {error || "The requested delivery run could not be found."}
         </p>
-        <Button variant="primary" onClick={() => navigate('/delivery-runs')}>
+        <Button variant="primary" onClick={() => navigate("/delivery-runs")}>
           Back to Delivery Runs
         </Button>
       </div>
@@ -75,34 +97,40 @@ export const DeliveryRunDetailsPage: React.FC = () => {
   }
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-GB', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
+    return new Date(dateStr).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     });
   };
 
-  const selectedVanData = routeDrawerVan 
-    ? run.vans.find(v => v.vanId === routeDrawerVan) 
+  const selectedVanData = routeDrawerVan
+    ? run.vans.find((v) => v.vanId === routeDrawerVan)
     : null;
 
-  const printVanData = printVan 
-    ? run.vans.find(v => v.vanId === printVan.vanId)
+  const printVanData = printVan
+    ? run.vans.find((v) => v.vanId === printVan.vanId)
     : null;
 
   return (
     <div className={styles.page}>
       {/* Header */}
       <div className={styles.header}>
-        <button className={styles.backBtn} onClick={() => navigate('/delivery-runs')}>
+        <button
+          className={styles.backBtn}
+          onClick={() => navigate("/delivery-runs")}
+        >
           <ArrowLeft size={18} />
           Back
         </button>
         <div className={styles.headerInfo}>
-          <h1 className={styles.title}>Delivery Run: {formatDate(run.deliveryDate)}</h1>
+          <h1 className={styles.title}>
+            Delivery Run: {formatDate(run.deliveryDate)}
+          </h1>
           <p className={styles.subtitle}>
-            Run ID: {run.id} • Created: {new Date(run.createdAt).toLocaleString('en-GB')}
+            Run ID: {run.id} • Created:{" "}
+            {new Date(run.createdAt).toLocaleString("en-GB")}
           </p>
         </div>
       </div>
@@ -114,37 +142,59 @@ export const DeliveryRunDetailsPage: React.FC = () => {
       <RunActionsBar
         run={run}
         actionLoading={actionLoading}
-        onLock={() => handleAction(lock, 'Run locked successfully', 'Failed to lock run').then(() => true)}
-        onUnlock={() => handleAction(unlock, 'Run unlocked', 'Failed to unlock run').then(() => true)}
-        onOptimize={() => handleAction(optimize, 'Routes optimized!', 'Failed to optimize routes').then(() => true)}
-        onDispatch={() => handleAction(dispatch, 'Run dispatched!', 'Failed to dispatch run').then(() => true)}
+        onLock={() =>
+          handleAction(
+            lock,
+            "Run locked successfully",
+            "Failed to lock run",
+          ).then(() => true)
+        }
+        onUnlock={() =>
+          handleAction(unlock, "Run unlocked", "Failed to unlock run").then(
+            () => true,
+          )
+        }
+        onOptimize={(driverIds) =>
+          handleAction(
+            () => optimize(driverIds),
+            "Routes optimized!",
+            "Failed to optimize routes",
+          ).then(() => true)
+        }
+        onDispatch={() =>
+          handleAction(
+            dispatch,
+            "Run dispatched!",
+            "Failed to dispatch run",
+          ).then(() => true)
+        }
       />
 
       {/* Tabs */}
       <div className={styles.tabsContainer}>
         <div className={styles.tabsList}>
           <button
-            className={`${styles.tab} ${activeTab === 'overview' ? styles.active : ''}`}
-            onClick={() => setActiveTab('overview')}
+            className={`${styles.tab} ${activeTab === "overview" ? styles.active : ""}`}
+            onClick={() => setActiveTab("overview")}
           >
             Overview
           </button>
           <button
-            className={`${styles.tab} ${activeTab === 'vans' ? styles.active : ''}`}
-            onClick={() => setActiveTab('vans')}
+            className={`${styles.tab} ${activeTab === "vans" ? styles.active : ""}`}
+            onClick={() => setActiveTab("vans")}
           >
             Vans & Routes
           </button>
           <button
-            className={`${styles.tab} ${activeTab === 'map' ? styles.active : ''}`}
-            onClick={() => setActiveTab('map')}
+            className={`${styles.tab} ${activeTab === "map" ? styles.active : ""}`}
+            onClick={() => setActiveTab("map")}
             disabled={run.vans.length === 0}
           >
             Map View
           </button>
           <button
-            className={`${styles.tab} ${activeTab === 'manifests' ? styles.active : ''}`}
-            onClick={() => setActiveTab('manifests')}
+            className={`${styles.tab} ${activeTab === "manifests" ? styles.active : ""}`}
+            onClick={() => setActiveTab("manifests")}
             disabled={run.vans.length === 0}
           >
             Manifests
@@ -153,7 +203,7 @@ export const DeliveryRunDetailsPage: React.FC = () => {
 
         <div className={styles.tabContent}>
           {/* Overview Tab */}
-          {activeTab === 'overview' && (
+          {activeTab === "overview" && (
             <>
               {run.issues.length > 0 && (
                 <div className={styles.issuesPanel}>
@@ -165,9 +215,13 @@ export const DeliveryRunDetailsPage: React.FC = () => {
                     {run.issues.map((issue, idx) => (
                       <div key={idx} className={styles.issueItem}>
                         <span className={styles.issueType}>{issue.type}</span>
-                        <span className={styles.issueMessage}>{issue.message}</span>
+                        <span className={styles.issueMessage}>
+                          {issue.message}
+                        </span>
                         {issue.orderId && (
-                          <span className={styles.issueOrder}>{issue.orderId}</span>
+                          <span className={styles.issueOrder}>
+                            {issue.orderId}
+                          </span>
                         )}
                       </div>
                     ))}
@@ -181,11 +235,17 @@ export const DeliveryRunDetailsPage: React.FC = () => {
                     Unassigned Orders ({run.unassignedOrders.length})
                   </h3>
                   <div className={styles.unassignedGrid}>
-                    {run.unassignedOrders.map(order => (
-                      <div key={order.orderId} className={styles.unassignedCard}>
-                        <div className={styles.unassignedName}>{order.customerName}</div>
+                    {run.unassignedOrders.map((order) => (
+                      <div
+                        key={order.orderId}
+                        className={styles.unassignedCard}
+                      >
+                        <div className={styles.unassignedName}>
+                          {order.customerName}
+                        </div>
                         <div className={styles.unassignedMeta}>
-                          {order.orderId} • {order.postcode} • {order.totalItems} items
+                          {order.orderId} • {order.postcode} •{" "}
+                          {order.totalItems} items
                           {order.issueTag && ` • ⚠️ ${order.issueTag}`}
                         </div>
                       </div>
@@ -196,16 +256,16 @@ export const DeliveryRunDetailsPage: React.FC = () => {
 
               {run.issues.length === 0 && run.unassignedOrders.length === 0 && (
                 <div className={styles.emptyTab}>
-                  {run.vans.length === 0 
-                    ? 'No routes generated yet. Lock the run and optimize to create routes.'
-                    : 'All orders assigned. No issues detected.'}
+                  {run.vans.length === 0
+                    ? "No routes generated yet. Lock the run and optimize to create routes."
+                    : "All orders assigned. No issues detected."}
                 </div>
               )}
             </>
           )}
 
           {/* Vans & Routes Tab */}
-          {activeTab === 'vans' && (
+          {activeTab === "vans" && (
             <VansGrid
               vans={run.vans}
               onViewRoute={handleViewRoute}
@@ -215,24 +275,22 @@ export const DeliveryRunDetailsPage: React.FC = () => {
           )}
 
           {/* Map View Tab */}
-          {activeTab === 'map' && (
-            run.vans.length > 0 ? (
+          {activeTab === "map" &&
+            (run.vans.length > 0 ? (
               <MapView
                 vans={run.vans}
                 selectedVan={selectedVan}
                 onSelectVan={setSelectedVan}
+                runStatus={run.status}
               />
             ) : (
               <div className={styles.emptyTab}>
                 No routes to display. Generate routes first.
               </div>
-            )
-          )}
+            ))}
 
           {/* Manifests Tab */}
-          {activeTab === 'manifests' && (
-            <ManifestTables vans={run.vans} />
-          )}
+          {activeTab === "manifests" && <ManifestTables vans={run.vans} />}
         </div>
       </div>
 
@@ -243,7 +301,7 @@ export const DeliveryRunDetailsPage: React.FC = () => {
           isOpen={!!routeDrawerVan}
           onClose={() => setRouteDrawerVan(null)}
           onPrint={() => {
-            setPrintVan({ vanId: selectedVanData.vanId, type: 'stops' });
+            setPrintVan({ vanId: selectedVanData.vanId, type: "stops" });
           }}
         />
       )}

@@ -83,8 +83,9 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     },
 
     // Backend doesn't have delivery slot yet; keep UI stable.
+    // If admin assigns a deliveryDate, use it as the slot date.
     deliverySlot: {
-      date: order.createdAt,
+      date: order.deliveryDate || order.createdAt,
       timeWindow: "-",
     },
 
@@ -127,6 +128,7 @@ export const useOrders = () => {
     updateOrderStatus: updateOrderStatusApi,
     refundOrder: refundOrderApi,
     bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
+    bulkAssignDeliveryDate: bulkAssignDeliveryDateApi,
   } = useOrdersApi();
 
   // Backend filters
@@ -410,6 +412,46 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
   }
 };
 
+  const toUtcMidnightIsoFromDateInput = (value: string) => {
+    if (!value) return undefined;
+    // If already ISO-ish, pass through.
+    if (value.includes("T")) {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+    }
+    // From <input type="date">: YYYY-MM-DD
+    const dt = new Date(`${value}T00:00:00.000Z`);
+    return Number.isNaN(dt.getTime()) ? undefined : dt.toISOString();
+  };
+
+  const bulkAssignDeliveryDate = async (dateInput: string) => {
+    if (!selectedOrders.length) return;
+
+    const deliveryDate = toUtcMidnightIsoFromDateInput(dateInput);
+    if (!deliveryDate) {
+      showToast({ title: "Choose a delivery date", type: "error" });
+      return;
+    }
+
+    try {
+      const result = await bulkAssignDeliveryDateApi(selectedOrders, deliveryDate);
+
+      showToast({
+        title: `${result.modified} orders updated`,
+        type: "success",
+      });
+
+      setSelectedOrders([]);
+      await refresh();
+    } catch (err: any) {
+      showToast({
+        title:
+          err?.response?.data?.message || "Bulk assign delivery date failed",
+        type: "error",
+      });
+    }
+  };
+
 
   const exportToCSV = () => {
     const rows = filteredOrders.map(
@@ -493,6 +535,7 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     updateOrderStatus,
     refundOrder,
     bulkUpdateStatus,
+    bulkAssignDeliveryDate,
     exportToCSV,
     openOrderDetails,
   };

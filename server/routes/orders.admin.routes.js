@@ -12,6 +12,7 @@ const controller = require("../controllers/orders.admin.controller");
 const {
   updateOrderStatusSchema,
   bulkUpdateDeliveryStatusSchema,
+  bulkAssignDeliveryDateSchema,
 } = require("../validators/order.validators");
 
 const { refundOrderSchema } = require("../validators/orderRefund.validator");
@@ -55,8 +56,8 @@ router.post(
 
 router.patch(
   "/assign-delivery-date-bulk",
-  requireAuth,
-  requirePermission("orders.manage"),
+  requirePermission("orders.update"),
+  validateBody(bulkAssignDeliveryDateSchema),
   asyncHandler(controller.bulkAssignDeliveryDate),
 );
 

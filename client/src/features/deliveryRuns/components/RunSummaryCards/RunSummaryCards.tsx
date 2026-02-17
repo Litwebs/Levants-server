@@ -1,37 +1,52 @@
-import React from 'react';
-import { 
-  CheckCircle, Package, MapPin, AlertTriangle, 
-  Route, Clock, RefreshCw 
-} from 'lucide-react';
-import { DeliveryRun, RunStatus } from '../../types';
-import { Badge } from '@/components/common';
-import styles from './RunSummaryCards.module.css';
+import React from "react";
+import {
+  CheckCircle,
+  Package,
+  MapPin,
+  AlertTriangle,
+  Route,
+  Clock,
+  RefreshCw,
+} from "lucide-react";
+import { DeliveryRun, RunStatus } from "../../types";
+import { Badge } from "@/components/common";
+import styles from "./RunSummaryCards.module.css";
 
 interface RunSummaryCardsProps {
   run: DeliveryRun;
 }
 
-const STATUS_BADGE_VARIANTS: Record<RunStatus, 'default' | 'info' | 'warning' | 'success' | 'error'> = {
-  draft: 'default',
-  locked: 'info',
-  routed: 'warning',
-  dispatched: 'info',
-  completed: 'success'
+const STATUS_BADGE_VARIANTS: Record<
+  RunStatus,
+  "default" | "info" | "warning" | "success" | "error"
+> = {
+  draft: "default",
+  locked: "info",
+  routed: "warning",
+  dispatched: "info",
+  completed: "success",
 };
 
 const STATUS_LABELS: Record<RunStatus, string> = {
-  draft: 'Draft',
-  locked: 'Locked',
-  routed: 'Routed',
-  dispatched: 'Dispatched',
-  completed: 'Completed'
+  draft: "Draft",
+  locked: "Locked",
+  routed: "Routed",
+  dispatched: "Dispatched",
+  completed: "Completed",
+};
+
+const formatKm = (km: number) => {
+  const num = Number(km);
+  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
 };
 
 const formatDuration = (minutes: number) => {
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  const total = Number(minutes);
+  if (!Number.isFinite(total) || total <= 0) return "0.00m";
+  if (total < 60) return `${total.toFixed(2)}m`;
+  const hours = Math.floor(total / 60);
+  const mins = total - hours * 60;
+  return mins > 0 ? `${hours}h ${mins.toFixed(2)}m` : `${hours}h`;
 };
 
 export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
@@ -87,9 +102,9 @@ export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
           <span className={styles.cardLabel}>Distance</span>
         </div>
         <div className={styles.cardValue}>
-          {run.totals.estimatedDistanceKm > 0 
-            ? `${run.totals.estimatedDistanceKm} km` 
-            : '—'}
+          {run.totals.estimatedDistanceKm > 0
+            ? `${formatKm(run.totals.estimatedDistanceKm)} km`
+            : "—"}
         </div>
       </div>
 
@@ -101,9 +116,9 @@ export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
           <span className={styles.cardLabel}>Duration</span>
         </div>
         <div className={styles.cardValue}>
-          {run.totals.estimatedDurationMin > 0 
-            ? formatDuration(run.totals.estimatedDurationMin) 
-            : '—'}
+          {run.totals.estimatedDurationMin > 0
+            ? formatDuration(run.totals.estimatedDurationMin)
+            : "—"}
         </div>
       </div>
 
@@ -115,14 +130,14 @@ export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
           <span className={styles.cardLabel}>Optimized</span>
         </div>
         <div className={styles.cardSubtext}>
-          {run.lastOptimizedAt 
-            ? new Date(run.lastOptimizedAt).toLocaleString('en-GB', {
-                day: 'numeric',
-                month: 'short',
-                hour: '2-digit',
-                minute: '2-digit'
+          {run.lastOptimizedAt
+            ? new Date(run.lastOptimizedAt).toLocaleString("en-GB", {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
               })
-            : 'Not yet optimized'}
+            : "Not yet optimized"}
         </div>
       </div>
     </div>

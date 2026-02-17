@@ -11,6 +11,13 @@ function formatMoney(value) {
   return n.toFixed(2);
 }
 
+function isValidEmail(raw) {
+  const email = String(raw || "").trim();
+  if (!email) return false;
+  if (email.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 function normalizeBaseUrl(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
@@ -125,6 +132,12 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
 
   // Only send confirmations for successful orders
   if (order.status !== "paid") {
+    // This is commonly the root cause when customers report missing confirmations.
+    // Keep it best-effort, but log for debugging.
+    console.warn("[orders] confirmation email skipped (status not paid)", {
+      orderId: order._id?.toString?.() || String(orderId),
+      status: order.status,
+    });
     return { success: true, data: { skipped: true, reason: "not_paid" } };
   }
 
@@ -141,6 +154,17 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
   const to = String(customer?.email || "").trim();
   if (!to) {
     return { success: false, message: "Customer email not found" };
+  }
+
+  if (!isValidEmail(to)) {
+    console.warn(
+      "[orders] confirmation email skipped (invalid customer email)",
+      {
+        orderId: order._id?.toString?.() || String(orderId),
+        to,
+      },
+    );
+    return { success: true, data: { skipped: true, reason: "invalid_email" } };
   }
 
   const customerName = customer
@@ -174,6 +198,15 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
     "orderConfirmation",
     templateParams,
   );
+
+  if (!result || result.success !== true) {
+    console.error("[orders] confirmation email send failed", {
+      orderId: order._id?.toString?.() || String(orderId),
+      to,
+      error:
+        result?.error?.message || result?.message || result?.error || "unknown",
+    });
+  }
 
   if (result && result.success) {
     // Best-effort marker for idempotency

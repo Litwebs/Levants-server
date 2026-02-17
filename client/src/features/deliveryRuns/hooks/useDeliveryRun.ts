@@ -52,7 +52,7 @@ export function useDeliveryRun(id: string) {
       return false;
     } catch (err) {
       setState(s => ({ ...s, actionLoading: null }));
-      return false;
+      throw err;
     }
   }, [id]);
 
@@ -68,14 +68,14 @@ export function useDeliveryRun(id: string) {
       return false;
     } catch (err) {
       setState(s => ({ ...s, actionLoading: null }));
-      return false;
+      throw err;
     }
   }, [id]);
 
-  const handleOptimize = useCallback(async () => {
+  const handleOptimize = useCallback(async (driverIds: string[]) => {
     setState(s => ({ ...s, actionLoading: 'optimize' }));
     try {
-      const updated = await optimizeRun(id);
+      const updated = await optimizeRun(id, driverIds);
       if (updated) {
         setState(s => ({ ...s, run: updated, actionLoading: null }));
         return true;
@@ -84,7 +84,7 @@ export function useDeliveryRun(id: string) {
       return false;
     } catch (err) {
       setState(s => ({ ...s, actionLoading: null }));
-      return false;
+      throw err;
     }
   }, [id]);
 
@@ -100,7 +100,7 @@ export function useDeliveryRun(id: string) {
       return false;
     } catch (err) {
       setState(s => ({ ...s, actionLoading: null }));
-      return false;
+      throw err;
     }
   }, [id]);
 

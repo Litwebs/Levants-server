@@ -1,33 +1,52 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { VanRoute, VanId, DEPOT_LOCATION, VAN_COLORS, VAN_NAMES } from '../../types';
-import styles from './MapView.module.css';
+import React, { useMemo, useState, useEffect } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Polyline,
+  useMap,
+} from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import {
+  VanRoute,
+  VanId,
+  RunStatus,
+  DEPOT_LOCATION,
+  getVanColor,
+  getVanStyleKey,
+} from "../../types";
+import { getDepotLocation } from "../../api/deliveryRunsApi";
+import styles from "./MapView.module.css";
 
 // Fix for default marker icons in react-leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconRetinaUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
 });
 
 interface MapViewProps {
   vans: VanRoute[];
-  selectedVan: VanId | 'all';
-  onSelectVan: (vanId: VanId | 'all') => void;
+  selectedVan: VanId | "all";
+  onSelectVan: (vanId: VanId | "all") => void;
   onSelectStop?: (stopId: string) => void;
   activeStopId?: string;
+  runStatus?: RunStatus;
 }
 
 // Create numbered marker icons
-const createNumberedIcon = (number: number, color: string) => {
+const createNumberedIcon = (number: number, color: string, filled: boolean) => {
   return L.divIcon({
-    className: 'custom-marker',
+    className: "custom-marker",
     html: `<div style="
-      background: ${color};
-      color: white;
+      background: ${filled ? color : "white"};
+      color: ${filled ? "white" : color};
       width: 28px;
       height: 28px;
       border-radius: 50%;
@@ -36,7 +55,7 @@ const createNumberedIcon = (number: number, color: string) => {
       justify-content: center;
       font-size: 12px;
       font-weight: bold;
-      border: 2px solid white;
+      border: 2px solid ${filled ? "white" : color};
       box-shadow: 0 2px 4px rgba(0,0,0,0.3);
     ">${number}</div>`,
     iconSize: [28, 28],
@@ -45,9 +64,47 @@ const createNumberedIcon = (number: number, color: string) => {
   });
 };
 
+const formatEtaTime = (iso?: string) => {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+};
+
+const stopStatusLabel = (stop: VanRoute["stops"][0], runStatus?: RunStatus) => {
+  const stopStatus =
+    typeof (stop as any)?.stopStatus === "string"
+      ? (stop as any).stopStatus
+      : undefined;
+  const orderDeliveryStatus =
+    typeof (stop as any)?.orderDeliveryStatus === "string"
+      ? ((stop as any).orderDeliveryStatus as string)
+      : undefined;
+
+  if (stopStatus === "delivered" || orderDeliveryStatus === "delivered")
+    return "Delivered";
+  if (stopStatus === "failed") return "Failed";
+  if (runStatus === "dispatched") return "In transit";
+  if (runStatus === "routed") return "Planned";
+  if (runStatus === "locked") return "Ready";
+  return "Pending";
+};
+
+const isDeliveredStop = (stop: VanRoute["stops"][0]) => {
+  const stopStatus =
+    typeof (stop as any)?.stopStatus === "string"
+      ? (stop as any).stopStatus
+      : undefined;
+  const orderDeliveryStatus =
+    typeof (stop as any)?.orderDeliveryStatus === "string"
+      ? ((stop as any).orderDeliveryStatus as string)
+      : undefined;
+  return stopStatus === "delivered" || orderDeliveryStatus === "delivered";
+};
+
 // Depot icon
 const depotIcon = L.divIcon({
-  className: 'depot-marker',
+  className: "depot-marker",
   html: `<div style="
     background: #1f2937;
     color: white;
@@ -68,19 +125,21 @@ const depotIcon = L.divIcon({
 });
 
 // Fit bounds component
-const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({ bounds }) => {
+const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({
+  bounds,
+}) => {
   const map = useMap();
-  
+
   useEffect(() => {
     try {
-      if (bounds && map && typeof map.fitBounds === 'function') {
+      if (bounds && map && typeof map.fitBounds === "function") {
         map.fitBounds(bounds, { padding: [30, 30] });
       }
     } catch (err) {
-      console.warn('MapView: fitBounds failed', err);
+      console.warn("MapView: fitBounds failed", err);
     }
   }, [map, bounds]);
-  
+
   return null;
 };
 
@@ -89,34 +148,61 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedVan,
   onSelectVan,
   onSelectStop,
-  activeStopId
+  activeStopId,
+  runStatus,
 }) => {
-  const [activeStop, setActiveStop] = useState<string | null>(activeStopId || null);
+  const [activeStop, setActiveStop] = useState<string | null>(
+    activeStopId || null,
+  );
+  const [depot, setDepot] = useState<{
+    lat: number;
+    lng: number;
+    label: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const loc = await getDepotLocation();
+        if (mounted) setDepot(loc);
+      } catch {
+        if (mounted) setDepot(null);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const depotLat = depot?.lat ?? DEPOT_LOCATION.lat;
+  const depotLng = depot?.lng ?? DEPOT_LOCATION.lng;
+  const depotLabel = depot?.label ?? DEPOT_LOCATION.label;
 
   // Get stops to display based on selection
   const displayVans = useMemo(() => {
-    if (selectedVan === 'all') return vans;
-    return vans.filter(v => v.vanId === selectedVan);
+    if (selectedVan === "all") return vans;
+    return vans.filter((v) => v.vanId === selectedVan);
   }, [vans, selectedVan]);
 
   // Calculate bounds
   const bounds = useMemo(() => {
     try {
-      const allPoints: L.LatLng[] = [L.latLng(DEPOT_LOCATION.lat, DEPOT_LOCATION.lng)];
-      
-      displayVans.forEach(van => {
-        van.stops.forEach(stop => {
+      const allPoints: L.LatLng[] = [L.latLng(depotLat, depotLng)];
+
+      displayVans.forEach((van) => {
+        van.stops.forEach((stop) => {
           allPoints.push(L.latLng(stop.lat, stop.lng));
         });
       });
-      
+
       if (allPoints.length <= 1) return null;
       return L.latLngBounds(allPoints);
     } catch (err) {
-      console.warn('MapView: bounds calculation failed', err);
+      console.warn("MapView: bounds calculation failed", err);
       return null;
     }
-  }, [displayVans]);
+  }, [displayVans, depotLat, depotLng]);
 
   const handleStopClick = (stopId: string) => {
     setActiveStop(stopId);
@@ -125,9 +211,9 @@ export const MapView: React.FC<MapViewProps> = ({
 
   // Get stops list for sidebar
   const displayStops = useMemo(() => {
-    const stops: { vanId: VanId; stop: VanRoute['stops'][0] }[] = [];
-    displayVans.forEach(van => {
-      van.stops.forEach(stop => {
+    const stops: { vanId: VanId; stop: VanRoute["stops"][0] }[] = [];
+    displayVans.forEach((van) => {
+      van.stops.forEach((stop) => {
         stops.push({ vanId: van.vanId, stop });
       });
     });
@@ -143,18 +229,20 @@ export const MapView: React.FC<MapViewProps> = ({
       <div className={styles.vanSelector}>
         <div className={styles.vanSelectorTitle}>Select Van</div>
         <button
-          className={`${styles.vanButton} ${selectedVan === 'all' ? styles.active : ''}`}
-          onClick={() => onSelectVan('all')}
+          className={`${styles.vanButton} ${selectedVan === "all" ? styles.active : ""}`}
+          onClick={() => onSelectVan("all")}
         >
           All Vans
         </button>
-        {vans.map(van => (
+        {vans.map((van) => (
           <button
             key={van.vanId}
-            className={`${styles.vanButton} ${selectedVan === van.vanId ? styles.active : ''}`}
+            className={`${styles.vanButton} ${selectedVan === van.vanId ? styles.active : ""}`}
             onClick={() => onSelectVan(van.vanId)}
           >
-            <span className={`${styles.vanDot} ${styles[van.vanId.replace('-', '')]}`} />
+            <span
+              className={`${styles.vanDot} ${styles[getVanStyleKey(van.vanId)]}`}
+            />
             {van.name}
           </button>
         ))}
@@ -163,7 +251,7 @@ export const MapView: React.FC<MapViewProps> = ({
       {/* Map */}
       <div className={styles.mapContainer}>
         <MapContainer
-          center={[DEPOT_LOCATION.lat, DEPOT_LOCATION.lng]}
+          center={[depotLat, depotLng]}
           zoom={12}
           className={styles.map}
           scrollWheelZoom={true}
@@ -177,52 +265,76 @@ export const MapView: React.FC<MapViewProps> = ({
           {bounds && <FitBounds bounds={bounds} />}
 
           {/* Depot marker */}
-          <Marker position={[DEPOT_LOCATION.lat, DEPOT_LOCATION.lng]} icon={depotIcon}>
+          <Marker position={[depotLat, depotLng]} icon={depotIcon}>
             <Popup>
-              <div className={styles.popupTitle}>{DEPOT_LOCATION.label}</div>
+              <div className={styles.popupTitle}>{depotLabel}</div>
               <div className={styles.popupDetail}>Delivery Start Point</div>
             </Popup>
           </Marker>
 
           {/* Route polylines */}
-          {displayVans.map(van => {
+          {displayVans.map((van) => {
             const positions: [number, number][] = [
-              [DEPOT_LOCATION.lat, DEPOT_LOCATION.lng],
-              ...van.stops.map(s => [s.lat, s.lng] as [number, number])
+              [depotLat, depotLng],
+              ...van.stops.map((s) => [s.lat, s.lng] as [number, number]),
             ];
-            
+
             return (
               <Polyline
                 key={`route-${van.vanId}`}
                 positions={positions}
-                color={VAN_COLORS[van.vanId]}
+                color={getVanColor(van.vanId)}
                 weight={3}
                 opacity={0.7}
-                dashArray={van.vanId === 'van-2' ? '10, 5' : van.vanId === 'van-3' ? '5, 10' : undefined}
+                dashArray={
+                  van.vanId === "van-2"
+                    ? "10, 5"
+                    : van.vanId === "van-3"
+                      ? "5, 10"
+                      : undefined
+                }
               />
             );
           })}
 
           {/* Stop markers */}
-          {displayVans.map(van =>
-            van.stops.map(stop => (
+          {displayVans.map((van) =>
+            van.stops.map((stop) => (
               <Marker
                 key={stop.stopId}
                 position={[stop.lat, stop.lng]}
-                icon={createNumberedIcon(stop.sequence, VAN_COLORS[van.vanId])}
+                icon={createNumberedIcon(
+                  stop.sequence,
+                  getVanColor(van.vanId),
+                  isDeliveredStop(stop),
+                )}
                 eventHandlers={{
-                  click: () => handleStopClick(stop.stopId)
+                  click: () => handleStopClick(stop.stopId),
                 }}
               >
                 <Popup>
                   <div className={styles.popupTitle}>{stop.customerName}</div>
                   <div className={styles.popupDetail}>{stop.addressLine1}</div>
                   <div className={styles.popupDetail}>{stop.postcode}</div>
-                  <div className={styles.popupDetail}>Order: {stop.orderId}</div>
-                  {stop.eta && <div className={styles.popupDetail}>ETA: {stop.eta}</div>}
+                  <div className={styles.popupDetail}>
+                    Order: {stop.orderId}
+                  </div>
+                  <div className={styles.popupDetail}>
+                    Status: {stopStatusLabel(stop, runStatus)}
+                  </div>
+                  {stop.phone && (
+                    <div className={styles.popupDetail}>{stop.phone}</div>
+                  )}
+                  {stop.eta && (
+                    <div className={styles.popupDetail}>
+                      ETA: {formatEtaTime(stop.eta)}
+                    </div>
+                  )}
                   <div className={styles.popupItems}>
                     {stop.items.slice(0, 3).map((item, i) => (
-                      <div key={i}>{item.qty}x {item.name}</div>
+                      <div key={i}>
+                        {item.qty}x {item.name}
+                      </div>
                     ))}
                     {stop.items.length > 3 && (
                       <div>+{stop.items.length - 3} more items</div>
@@ -230,16 +342,14 @@ export const MapView: React.FC<MapViewProps> = ({
                   </div>
                 </Popup>
               </Marker>
-            ))
+            )),
           )}
         </MapContainer>
       </div>
 
       {/* Stops list */}
       <div className={styles.stopsList}>
-        <div className={styles.stopsHeader}>
-          Stops ({displayStops.length})
-        </div>
+        <div className={styles.stopsHeader}>Stops ({displayStops.length})</div>
         <div className={styles.stopsScroll}>
           {displayStops.length === 0 ? (
             <div className={styles.emptyStops}>No stops to display</div>
@@ -247,10 +357,12 @@ export const MapView: React.FC<MapViewProps> = ({
             displayStops.map(({ vanId, stop }) => (
               <div
                 key={stop.stopId}
-                className={`${styles.stopItem} ${activeStop === stop.stopId ? styles.active : ''}`}
+                className={`${styles.stopItem} ${activeStop === stop.stopId ? styles.active : ""}`}
                 onClick={() => handleStopClick(stop.stopId)}
               >
-                <span className={`${styles.stopSequence} ${styles[vanId.replace('-', '')]}`}>
+                <span
+                  className={`${styles.stopSequence} ${styles[vanId.replace("-", "")]}`}
+                >
                   {stop.sequence}
                 </span>
                 <span className={styles.stopName}>{stop.customerName}</span>

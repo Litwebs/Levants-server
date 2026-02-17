@@ -1,22 +1,36 @@
-import React, { useRef } from 'react';
-import { Printer, X } from 'lucide-react';
-import { VanRoute, DeliveryRun } from '../../types';
-import { Button, Modal, ModalFooter } from '@/components/common';
-import styles from './PrintLayouts.module.css';
+import React, { useRef } from "react";
+import { Printer, X } from "lucide-react";
+import { VanRoute, DeliveryRun } from "../../types";
+import { Button, Modal, ModalFooter } from "@/components/common";
+import styles from "./PrintLayouts.module.css";
 
 interface PrintLayoutProps {
   van: VanRoute;
   run: DeliveryRun;
-  type: 'stops' | 'manifest';
+  type: "stops" | "manifest";
   isOpen: boolean;
   onClose: () => void;
 }
 
+const formatKm = (km: number) => {
+  const num = Number(km);
+  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+};
+
+const formatEtaTime = (iso?: string) => {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+};
+
 const formatDuration = (minutes: number) => {
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  const total = Number(minutes);
+  if (!Number.isFinite(total) || total <= 0) return "0.00 min";
+  if (total < 60) return `${total.toFixed(2)} min`;
+  const hours = Math.floor(total / 60);
+  const mins = total - hours * 60;
+  return mins > 0 ? `${hours}h ${mins.toFixed(2)}m` : `${hours}h`;
 };
 
 export const PrintLayout: React.FC<PrintLayoutProps> = ({
@@ -24,7 +38,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
   run,
   type,
   isOpen,
-  onClose
+  onClose,
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -32,18 +46,18 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
     const printContent = printRef.current;
     if (!printContent) return;
 
-    const printWindow = window.open('', '_blank');
+    const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>${van.name} ${type === 'stops' ? 'Stop List' : 'Manifest'} - ${run.deliveryDate}</title>
+          <title>${van.name} ${type === "stops" ? "Stop List" : "Manifest"} - ${run.deliveryDate}</title>
           <style>
             * { box-sizing: border-box; margin: 0; padding: 0; }
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; }
-            ${styles.printContainer.replace('.printContainer', '')}
+            ${styles.printContainer.replace(".printContainer", "")}
             .printHeader { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #000; }
             .printTitle { font-size: 24px; font-weight: bold; margin: 0 0 4px 0; }
             .printSubtitle { font-size: 14px; color: #666; margin: 0; }
@@ -72,7 +86,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
 
     printWindow.document.close();
     printWindow.focus();
-    
+
     setTimeout(() => {
       printWindow.print();
       printWindow.close();
@@ -82,7 +96,12 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
   const totalQty = van.manifest.items.reduce((sum, item) => sum + item.qty, 0);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Print ${type === 'stops' ? 'Stop List' : 'Manifest'}`} size="lg">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Print ${type === "stops" ? "Stop List" : "Manifest"}`}
+      size="lg"
+    >
       <div className={styles.previewContainer}>
         <div className={styles.previewActions}>
           <Button variant="primary" onClick={handlePrint}>
@@ -99,19 +118,20 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
           <div className={styles.printHeader}>
             <div>
               <h1 className={styles.printTitle}>
-                {van.name} {type === 'stops' ? 'Stop List' : 'Manifest'}
+                {van.name} {type === "stops" ? "Stop List" : "Manifest"}
               </h1>
               <p className={styles.printSubtitle}>
-                Delivery Date: {new Date(run.deliveryDate).toLocaleDateString('en-GB', {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric'
+                Delivery Date:{" "}
+                {new Date(run.deliveryDate).toLocaleDateString("en-GB", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
                 })}
               </p>
             </div>
             <div className={styles.printMeta}>
-              <div>Printed: {new Date().toLocaleString('en-GB')}</div>
+              <div>Printed: {new Date().toLocaleString("en-GB")}</div>
               <div>Run ID: {run.id}</div>
             </div>
           </div>
@@ -122,14 +142,18 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
               <div className={styles.printStatLabel}>Stops</div>
             </div>
             <div className={styles.printStat}>
-              <div className={styles.printStatValue}>{van.stats.distanceKm} km</div>
+              <div className={styles.printStatValue}>
+                {formatKm(van.stats.distanceKm)} km
+              </div>
               <div className={styles.printStatLabel}>Distance</div>
             </div>
             <div className={styles.printStat}>
-              <div className={styles.printStatValue}>{formatDuration(van.stats.durationMin)}</div>
+              <div className={styles.printStatValue}>
+                {formatDuration(van.stats.durationMin)}
+              </div>
               <div className={styles.printStatLabel}>Duration</div>
             </div>
-            {type === 'manifest' && (
+            {type === "manifest" && (
               <div className={styles.printStat}>
                 <div className={styles.printStatValue}>{totalQty}</div>
                 <div className={styles.printStatLabel}>Total Items</div>
@@ -137,11 +161,11 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
             )}
           </div>
 
-          {type === 'stops' ? (
+          {type === "stops" ? (
             <table className={styles.printTable}>
               <thead>
                 <tr>
-                  <th style={{ width: '40px' }}>#</th>
+                  <th style={{ width: "40px" }}>#</th>
                   <th>Customer</th>
                   <th>Address</th>
                   <th>Order</th>
@@ -153,21 +177,28 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
                 {van.stops.map((stop) => (
                   <tr key={stop.stopId}>
                     <td>
-                      <span className={styles.printSequence}>{stop.sequence}</span>
+                      <span className={styles.printSequence}>
+                        {stop.sequence}
+                      </span>
                     </td>
                     <td>
                       <strong>{stop.customerName}</strong>
-                      {stop.phone && <div style={{ fontSize: '10px', color: '#666' }}>{stop.phone}</div>}
+                      {stop.phone && (
+                        <div style={{ fontSize: "10px", color: "#666" }}>
+                          {stop.phone}
+                        </div>
+                      )}
                     </td>
                     <td>
-                      {stop.addressLine1}<br />
+                      {stop.addressLine1}
+                      <br />
                       <strong>{stop.postcode}</strong>
                       {stop.notes && (
                         <div className={styles.printNotes}>📝 {stop.notes}</div>
                       )}
                     </td>
                     <td>{stop.orderId}</td>
-                    <td>{stop.eta || '—'}</td>
+                    <td>{formatEtaTime(stop.eta) || "—"}</td>
                     <td>
                       {stop.items.map((item, i) => (
                         <div key={i} className={styles.printItems}>
@@ -192,17 +223,23 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
               <tbody>
                 {van.manifest.items.map((item, idx) => (
                   <tr key={`${item.skuId}-${idx}`}>
-                    <td style={{ fontFamily: 'monospace', fontSize: '11px' }}>{item.skuId}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: "11px" }}>
+                      {item.skuId}
+                    </td>
                     <td>{item.name}</td>
                     <td className={styles.qtyCell}>{item.qty}</td>
-                    <td>{item.unit || '—'}</td>
+                    <td>{item.unit || "—"}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={2}><strong>Total</strong></td>
-                  <td className={styles.qtyCell}><strong>{totalQty}</strong></td>
+                  <td colSpan={2}>
+                    <strong>Total</strong>
+                  </td>
+                  <td className={styles.qtyCell}>
+                    <strong>{totalQty}</strong>
+                  </td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -210,7 +247,8 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
           )}
 
           <div className={styles.printFooter}>
-            Levants Dairy • Delivery Run Report • Generated {new Date().toISOString()}
+            Levants Dairy • Delivery Run Report • Generated{" "}
+            {new Date().toISOString()}
           </div>
         </div>
       </div>

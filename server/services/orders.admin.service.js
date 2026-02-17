@@ -274,17 +274,33 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
 
 async function bulkAssignDeliveryDate({ orderIds, deliveryDate }) {
   if (!Array.isArray(orderIds) || orderIds.length === 0) {
-    return { success: false, message: "orderIds required" };
+    return { success: false, statusCode: 400, message: "orderIds required" };
   }
 
   if (!deliveryDate) {
-    return { success: false, message: "deliveryDate required" };
+    return {
+      success: false,
+      statusCode: 400,
+      message: "deliveryDate required",
+    };
+  }
+
+  const ids = orderIds
+    .map((id) => String(id))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  if (!ids.length) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "No valid orderIds provided",
+    };
   }
 
   const date = new Date(deliveryDate);
-
   if (Number.isNaN(date.getTime())) {
-    return { success: false, message: "Invalid deliveryDate" };
+    return { success: false, statusCode: 400, message: "Invalid deliveryDate" };
   }
 
   // Normalize to midnight UTC
@@ -292,19 +308,19 @@ async function bulkAssignDeliveryDate({ orderIds, deliveryDate }) {
 
   const result = await Order.updateMany(
     {
-      _id: { $in: orderIds },
+      _id: { $in: ids },
       status: "paid",
     },
     {
-      $set: { deliveryDate: date },
+      $set: { deliveryDate: date, updatedAt: new Date() },
     },
   );
 
   return {
     success: true,
     data: {
-      matched: result.matchedCount,
-      modified: result.modifiedCount,
+      matched: result.matchedCount ?? result.n ?? 0,
+      modified: result.modifiedCount ?? result.nModified ?? 0,
       deliveryDate: date,
     },
   };

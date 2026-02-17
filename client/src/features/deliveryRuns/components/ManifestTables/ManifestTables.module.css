@@ -93,6 +93,12 @@
   font-weight: var(--font-semibold);
 }
 
+.ordersCell {
+  text-align: right;
+  color: var(--color-gray-600);
+  font-variant-numeric: tabular-nums;
+}
+
 .unitCell {
   color: var(--color-gray-500);
 }

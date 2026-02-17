@@ -10,6 +10,8 @@ interface UseDeliveryRunsState {
   creating: boolean;
 }
 
+type CreateRunResult = { success: true } | { success: false; message?: string };
+
 export function useDeliveryRuns(initialParams?: ListRunsParams) {
   const [state, setState] = useState<UseDeliveryRunsState>({
     runs: [],
@@ -41,16 +43,17 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
     setParams(p => ({ ...p, ...newParams }));
   }, []);
 
-  const handleCreateRun = useCallback(async (deliveryDate: string) => {
+  const handleCreateRun = useCallback(async (deliveryDate: string, orderIds?: string[]): Promise<CreateRunResult> => {
     setState(s => ({ ...s, creating: true }));
     try {
-      await createRun({ deliveryDate });
+      await createRun({ deliveryDate, orderIds });
       await fetchRuns();
       setState(s => ({ ...s, creating: false }));
-      return true;
+      return { success: true };
     } catch (err) {
       setState(s => ({ ...s, creating: false }));
-      return false;
+      const message = err instanceof Error ? err.message : 'Failed to create run';
+      return { success: false, message };
     }
   }, [fetchRuns]);
 

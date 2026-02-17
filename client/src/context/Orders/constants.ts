@@ -75,6 +75,9 @@ export type AdminOrder = {
   status: OrderStatus;
   deliveryStatus: string;
 
+  // Admin can set this via PATCH /admin/orders/assign-delivery-date-bulk
+  deliveryDate?: string | null;
+
   reservationExpiresAt?: string;
   paidAt?: string;
   expiresAt?: string;

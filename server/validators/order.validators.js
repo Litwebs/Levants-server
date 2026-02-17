@@ -47,8 +47,18 @@ const bulkUpdateDeliveryStatusSchema = Joi.object({
     .required(),
 });
 
+const bulkAssignDeliveryDateSchema = Joi.object({
+  orderIds: Joi.array()
+    .items(Joi.string().trim().length(24).hex().required())
+    .min(1)
+    .required(),
+
+  deliveryDate: Joi.date().iso().required(),
+}).unknown(false);
+
 module.exports = {
   createOrderSchema,
   updateOrderStatusSchema,
   bulkUpdateDeliveryStatusSchema,
+  bulkAssignDeliveryDateSchema,
 };

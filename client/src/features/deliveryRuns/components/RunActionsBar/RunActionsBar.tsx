@@ -1,19 +1,34 @@
-import React, { useState } from 'react';
-import { Lock, Unlock, Route, Truck, RefreshCw, AlertTriangle } from 'lucide-react';
-import { DeliveryRun } from '../../types';
-import { Button, Modal, ModalFooter } from '@/components/common';
-import styles from './RunActionsBar.module.css';
+import React, { useState } from "react";
+import {
+  Lock,
+  Unlock,
+  Route,
+  Truck,
+  RefreshCw,
+  AlertTriangle,
+} from "lucide-react";
+import { DeliveryRun } from "../../types";
+import { Button, Modal, ModalFooter } from "@/components/common";
+import { Checkbox } from "@/components/ui/checkbox";
+import { listDrivers } from "../../api/deliveryRunsApi";
+import styles from "./RunActionsBar.module.css";
 
 interface RunActionsBarProps {
   run: DeliveryRun;
-  actionLoading: 'lock' | 'unlock' | 'optimize' | 'dispatch' | null;
+  actionLoading: "lock" | "unlock" | "optimize" | "dispatch" | null;
   onLock: () => Promise<boolean>;
   onUnlock: () => Promise<boolean>;
-  onOptimize: () => Promise<boolean>;
+  onOptimize: (driverIds: string[]) => Promise<boolean>;
   onDispatch: () => Promise<boolean>;
 }
 
-type ConfirmAction = 'lock' | 'unlock' | 'optimize' | 'reoptimize' | 'dispatch' | null;
+type ConfirmAction =
+  | "lock"
+  | "unlock"
+  | "optimize"
+  | "reoptimize"
+  | "dispatch"
+  | null;
 
 export const RunActionsBar: React.FC<RunActionsBarProps> = ({
   run,
@@ -21,24 +36,47 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
   onLock,
   onUnlock,
   onOptimize,
-  onDispatch
+  onDispatch,
 }) => {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
+  const [drivers, setDrivers] = useState<
+    Array<{ id: string; name: string; email: string }>
+  >([]);
+  const [driversLoading, setDriversLoading] = useState(false);
+  const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>([]);
+
+  const openConfirm = async (action: ConfirmAction) => {
+    setConfirmAction(action);
+
+    if (action === "optimize" || action === "reoptimize") {
+      setDriversLoading(true);
+      try {
+        const list = await listDrivers();
+        setDrivers(list);
+        setSelectedDriverIds(list.map((d) => d.id));
+      } catch {
+        setDrivers([]);
+        setSelectedDriverIds([]);
+      } finally {
+        setDriversLoading(false);
+      }
+    }
+  };
 
   const handleConfirm = async () => {
     let success = false;
     switch (confirmAction) {
-      case 'lock':
+      case "lock":
         success = await onLock();
         break;
-      case 'unlock':
+      case "unlock":
         success = await onUnlock();
         break;
-      case 'optimize':
-      case 'reoptimize':
-        success = await onOptimize();
+      case "optimize":
+      case "reoptimize":
+        success = await onOptimize(selectedDriverIds);
         break;
-      case 'dispatch':
+      case "dispatch":
         success = await onDispatch();
         break;
     }
@@ -49,36 +87,43 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
 
   const getConfirmTitle = () => {
     switch (confirmAction) {
-      case 'lock': return 'Lock Delivery Run?';
-      case 'unlock': return 'Unlock Delivery Run?';
-      case 'optimize': return 'Optimize Routes?';
-      case 'reoptimize': return 'Re-optimize Routes?';
-      case 'dispatch': return 'Dispatch Delivery Run?';
-      default: return '';
+      case "lock":
+        return "Lock Delivery Run?";
+      case "unlock":
+        return "Unlock Delivery Run?";
+      case "optimize":
+        return "Optimize Routes?";
+      case "reoptimize":
+        return "Re-optimize Routes?";
+      case "dispatch":
+        return "Dispatch Delivery Run?";
+      default:
+        return "";
     }
   };
 
   const getConfirmMessage = () => {
     switch (confirmAction) {
-      case 'lock': 
-        return 'Locking will prevent automatic order additions. You can unlock later if needed.';
-      case 'unlock': 
-        return 'Unlocking will return this run to draft status. Routes will be preserved but may become outdated.';
-      case 'optimize': 
-        return 'This will generate optimized routes for all 3 vans based on current orders.';
-      case 'reoptimize': 
-        return 'This will regenerate all routes. Existing van assignments will be changed.';
-      case 'dispatch': 
-        return 'This will mark the run as dispatched. Drivers will receive their routes.';
-      default: return '';
+      case "lock":
+        return "Locking will prevent automatic order additions. You can unlock later if needed.";
+      case "unlock":
+        return "Unlocking will return this run to draft status. Routes will be preserved but may become outdated.";
+      case "optimize":
+        return "Select drivers, then generate optimized routes based on current orders.";
+      case "reoptimize":
+        return "This will regenerate all routes. Existing van assignments will be changed.";
+      case "dispatch":
+        return "This will mark the run as dispatched. Drivers will receive their routes.";
+      default:
+        return "";
     }
   };
 
-  const canLock = run.status === 'draft';
-  const canUnlock = run.status === 'locked' || run.status === 'routed';
-  const canOptimize = run.status === 'locked' || run.status === 'draft';
-  const canReoptimize = run.status === 'routed';
-  const canDispatch = run.status === 'routed';
+  const canLock = run.status === "draft";
+  const canUnlock = run.status === "locked" || run.status === "routed";
+  const canOptimize = run.status === "locked" || run.status === "draft";
+  const canReoptimize = run.status === "routed";
+  const canDispatch = run.status === "routed";
 
   return (
     <>
@@ -87,7 +132,7 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
           <Button
             variant="secondary"
             leftIcon={<Lock size={16} />}
-            onClick={() => setConfirmAction('lock')}
+            onClick={() => openConfirm("lock")}
             disabled={!!actionLoading}
           >
             Lock Run
@@ -98,7 +143,7 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
           <Button
             variant="ghost"
             leftIcon={<Unlock size={16} />}
-            onClick={() => setConfirmAction('unlock')}
+            onClick={() => openConfirm("unlock")}
             disabled={!!actionLoading}
           >
             Unlock
@@ -107,7 +152,7 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
 
         {canOptimize && (
           <>
-            {run.status === 'draft' && (
+            {run.status === "draft" && (
               <div className={styles.warning}>
                 <AlertTriangle size={16} />
                 Run is not locked
@@ -115,12 +160,20 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
             )}
             <Button
               variant="primary"
-              leftIcon={actionLoading === 'optimize' ? <RefreshCw size={16} className="animate-spin" /> : <Route size={16} />}
-              onClick={() => setConfirmAction('optimize')}
+              leftIcon={
+                actionLoading === "optimize" ? (
+                  <RefreshCw size={16} className="animate-spin" />
+                ) : (
+                  <Route size={16} />
+                )
+              }
+              onClick={() => openConfirm("optimize")}
               disabled={!!actionLoading}
-              isLoading={actionLoading === 'optimize'}
+              isLoading={actionLoading === "optimize"}
             >
-              {actionLoading === 'optimize' ? 'Optimizing...' : 'Optimize Routes'}
+              {actionLoading === "optimize"
+                ? "Optimizing..."
+                : "Optimize Routes"}
             </Button>
           </>
         )}
@@ -129,11 +182,11 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
           <Button
             variant="secondary"
             leftIcon={<RefreshCw size={16} />}
-            onClick={() => setConfirmAction('reoptimize')}
+            onClick={() => openConfirm("reoptimize")}
             disabled={!!actionLoading}
-            isLoading={actionLoading === 'optimize'}
+            isLoading={actionLoading === "optimize"}
           >
-            {actionLoading === 'optimize' ? 'Optimizing...' : 'Re-optimize'}
+            {actionLoading === "optimize" ? "Optimizing..." : "Re-optimize"}
           </Button>
         )}
 
@@ -143,7 +196,7 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
           <Button
             variant="primary"
             leftIcon={<Truck size={16} />}
-            onClick={() => setConfirmAction('dispatch')}
+            onClick={() => openConfirm("dispatch")}
             disabled={!!actionLoading}
           >
             Dispatch
@@ -157,19 +210,106 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
         title={getConfirmTitle()}
         size="sm"
       >
-        <p style={{ marginBottom: 'var(--space-4)', color: 'var(--color-gray-600)' }}>
+        <p
+          style={{
+            marginBottom: "var(--space-4)",
+            color: "var(--color-gray-600)",
+          }}
+        >
           {getConfirmMessage()}
         </p>
+
+        {(confirmAction === "optimize" || confirmAction === "reoptimize") && (
+          <div style={{ marginBottom: "var(--space-4)" }}>
+            <div
+              style={{
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--font-medium)",
+                color: "var(--color-gray-700)",
+                marginBottom: "var(--space-2)",
+              }}
+            >
+              Drivers
+            </div>
+
+            {driversLoading ? (
+              <div
+                style={{
+                  color: "var(--color-gray-600)",
+                  fontSize: "var(--text-sm)",
+                }}
+              >
+                Loading drivers...
+              </div>
+            ) : drivers.length === 0 ? (
+              <div
+                style={{
+                  color: "var(--color-gray-600)",
+                  fontSize: "var(--text-sm)",
+                }}
+              >
+                No drivers available.
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--space-2)",
+                  maxHeight: 220,
+                  overflow: "auto",
+                }}
+              >
+                {drivers.map((d) => {
+                  const checked = selectedDriverIds.includes(d.id);
+                  return (
+                    <label
+                      key={d.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "var(--space-2)",
+                        color: "var(--color-gray-700)",
+                      }}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(val) => {
+                          const isChecked = val === true;
+                          setSelectedDriverIds((prev) => {
+                            if (isChecked)
+                              return prev.includes(d.id)
+                                ? prev
+                                : [...prev, d.id];
+                            return prev.filter((x) => x !== d.id);
+                          });
+                        }}
+                      />
+                      <span style={{ fontSize: "var(--text-sm)" }}>
+                        {d.name} ({d.email})
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <ModalFooter>
           <Button variant="ghost" onClick={() => setConfirmAction(null)}>
             Cancel
           </Button>
-          <Button 
-            variant="primary" 
+          <Button
+            variant="primary"
             onClick={handleConfirm}
-            disabled={!!actionLoading}
+            disabled={
+              !!actionLoading ||
+              ((confirmAction === "optimize" ||
+                confirmAction === "reoptimize") &&
+                selectedDriverIds.length === 0)
+            }
           >
-            {actionLoading ? 'Processing...' : 'Confirm'}
+            {actionLoading ? "Processing..." : "Confirm"}
           </Button>
         </ModalFooter>
       </Modal>
