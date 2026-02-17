@@ -13,9 +13,12 @@ interface RouteDrawerProps {
   onPrint: () => void;
 }
 
-const formatKm = (km: number) => {
+const KM_TO_MI = 0.621371;
+
+const formatMilesFromKm = (km: number) => {
   const num = Number(km);
-  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+  if (!Number.isFinite(num) || num <= 0) return "0.00";
+  return (num * KM_TO_MI).toFixed(2);
 };
 
 const formatEtaTime = (iso?: string) => {
@@ -124,7 +127,8 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
           <div className={styles.headerInfo}>
             <div className={styles.title}>{van.name} Route</div>
             <div className={styles.subtitle}>
-              {van.stats.stops} stops • {formatKm(van.stats.distanceKm)} km •{" "}
+              {van.stats.stops} stops •{" "}
+              {formatMilesFromKm(van.stats.distanceKm)} mi •{" "}
               {formatDuration(van.stats.durationMin)}
             </div>
           </div>

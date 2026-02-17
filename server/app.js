@@ -17,6 +17,9 @@ const stripeWebhookRoutes = require("./routes/stripe.webhook.routes");
 const {
   startOrderExpirationCron,
 } = require("./scripts/orderExpiration.scheduler");
+const {
+  startInvitationCleanupCron,
+} = require("./scripts/userInvitation.scheduler");
 
 // Routes
 const authRoutes = require("./routes/auth.routes");
@@ -80,6 +83,7 @@ app.use(
 
     // ⏰ START CRON JOBS
     startOrderExpirationCron();
+    startInvitationCleanupCron();
   } catch (err) {
     console.error("❌ Startup failed", err);
     process.exit(1);

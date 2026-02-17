@@ -1,7 +1,7 @@
 // Hook for Delivery Runs list page
 import { useState, useEffect, useCallback } from 'react';
 import type { DeliveryRunListItem, ListRunsParams } from "@/context/DeliveryRuns";
-import { listRuns, createRun } from "@/context/DeliveryRuns";
+import { listRuns, createRun, deleteRun } from "@/context/DeliveryRuns";
 
 interface UseDeliveryRunsState {
   runs: DeliveryRunListItem[];
@@ -43,10 +43,19 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
     setParams(p => ({ ...p, ...newParams }));
   }, []);
 
-  const handleCreateRun = useCallback(async (deliveryDate: string, orderIds?: string[]): Promise<CreateRunResult> => {
+  const handleCreateRun = useCallback(async (
+    deliveryDate: string,
+    orderIds?: string[],
+    window?: { startTime: string; endTime?: string },
+  ): Promise<CreateRunResult> => {
     setState(s => ({ ...s, creating: true }));
     try {
-      await createRun({ deliveryDate, orderIds });
+      await createRun({
+        deliveryDate,
+        orderIds,
+        startTime: window?.startTime,
+        endTime: window?.endTime,
+      });
       await fetchRuns();
       setState(s => ({ ...s, creating: false }));
       return { success: true };
@@ -57,6 +66,22 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
     }
   }, [fetchRuns]);
 
+  const handleDeleteRun = useCallback(
+    async (runId: string): Promise<CreateRunResult> => {
+      if (!runId) return { success: false, message: "Invalid run" };
+      try {
+        await deleteRun(runId);
+        await fetchRuns();
+        return { success: true };
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to delete run";
+        return { success: false, message };
+      }
+    },
+    [fetchRuns],
+  );
+
   const refetch = useCallback(() => {
     fetchRuns();
   }, [fetchRuns]);
@@ -66,6 +91,7 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
     params,
     updateFilters,
     createRun: handleCreateRun,
+    deleteRun: handleDeleteRun,
     refetch
   };
 }

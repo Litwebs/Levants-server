@@ -14,9 +14,31 @@ const { generateGoogleMapsLink } = require("../utils/navigation.util");
 /**
  * Create a delivery batch for a specific date
  */
-async function createDeliveryBatch({ deliveryDate, orderIds } = {}) {
+async function createDeliveryBatch({
+  deliveryDate,
+  orderIds,
+  deliveryWindowStart,
+  deliveryWindowEnd,
+} = {}) {
   if (!deliveryDate) {
     return { success: false, message: "deliveryDate is required" };
+  }
+
+  const startTime =
+    typeof deliveryWindowStart === "string" && deliveryWindowStart.trim()
+      ? deliveryWindowStart.trim()
+      : undefined;
+  const endTime =
+    typeof deliveryWindowEnd === "string" && deliveryWindowEnd.trim()
+      ? deliveryWindowEnd.trim()
+      : undefined;
+
+  const hhmm = /^\d{2}:\d{2}$/;
+  if (startTime && !hhmm.test(startTime)) {
+    return { success: false, message: "startTime must be in HH:mm format" };
+  }
+  if (endTime && !hhmm.test(endTime)) {
+    return { success: false, message: "endTime must be in HH:mm format" };
   }
 
   const date = new Date(deliveryDate);
@@ -119,6 +141,8 @@ async function createDeliveryBatch({ deliveryDate, orderIds } = {}) {
           status: "locked",
           orders: selectedOrderIds,
           lockedAt: new Date(),
+          deliveryWindowStart: startTime,
+          deliveryWindowEnd: endTime,
         },
       ],
       { session },
@@ -416,9 +440,14 @@ async function dispatchBatch({ batchId } = {}) {
   return { success: true, data: { batchId: batch._id, status: batch.status } };
 }
 
-async function generateRoutes({ batchId, driverIds } = {}) {
+async function generateRoutes({ batchId, driverIds, startTime, endTime } = {}) {
   try {
-    const result = await generateRoutesForBatch({ batchId, driverIds });
+    const result = await generateRoutesForBatch({
+      batchId,
+      driverIds,
+      startTime,
+      endTime,
+    });
     if (!result.success) {
       return {
         success: false,
@@ -438,6 +467,56 @@ async function generateRoutes({ batchId, driverIds } = {}) {
       success: false,
       statusCode: 500,
       message: "Failed to generate routes",
+    };
+  }
+}
+
+/**
+ * Delete a delivery batch and cascade-delete associated routes + stops.
+ */
+async function deleteBatch({ batchId } = {}) {
+  try {
+    if (!batchId || !mongoose.Types.ObjectId.isValid(String(batchId))) {
+      return { success: false, statusCode: 400, message: "Invalid batchId" };
+    }
+
+    const existing = await DeliveryBatch.findById(batchId).select("_id").lean();
+    if (!existing) {
+      return { success: false, statusCode: 404, message: "Batch not found" };
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const routes = await Route.find({ batch: batchId })
+        .select("_id")
+        .session(session)
+        .lean();
+
+      const routeIds = routes.map((r) => r._id);
+
+      if (routeIds.length > 0) {
+        await Stop.deleteMany({ route: { $in: routeIds } }).session(session);
+        await Route.deleteMany({ _id: { $in: routeIds } }).session(session);
+      }
+
+      await DeliveryBatch.deleteOne({ _id: batchId }).session(session);
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return { success: true };
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
+  } catch (err) {
+    console.error("Delete batch error:", err);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Failed to delete delivery batch",
     };
   }
 }
@@ -575,4 +654,5 @@ module.exports = {
   getBatch,
   getRoute,
   getRouteStock,
+  deleteBatch,
 };

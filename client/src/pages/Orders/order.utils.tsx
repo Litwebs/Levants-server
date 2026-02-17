@@ -21,7 +21,10 @@ export const getStatusBadge = (status: FulfillmentStatus) => {
     returned: { variant: "error", label: "Returned" },
   };
 
-  const cfg = map[status] ?? { variant: "info", label: String(status) };
+  if (!status) return <Badge variant="outline">—</Badge>;
+
+  const key = String(status).toLowerCase().trim().replace(/\s+/g, "_");
+  const cfg = map[key] ?? { variant: "info", label: String(status) };
   return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
 };
 

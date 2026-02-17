@@ -43,6 +43,11 @@ export type User = {
 
   pendingEmail?: string;
 
+  // Invitation / email verification
+  emailVerifiedAt?: string | null;
+  inviteTokenExpiresAt?: string | null;
+  invitedAt?: string | null;
+
   emailChange?: {
     pending?: boolean;
     pendingEmail?: string;

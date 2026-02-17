@@ -14,6 +14,7 @@ const {
   getBatch,
   getRoute,
   getRouteStock,
+  deleteBatch,
 } = require("../controllers/delivery.controller");
 
 // Replace with your real auth middleware
@@ -120,6 +121,17 @@ router.get(
   requireAuth,
   requirePermission("delivery.routes.read"),
   getBatch,
+);
+
+/**
+ * DELETE /api/admin/delivery/batch/:batchId
+ * Delete delivery batch (and associated routes/stops)
+ */
+router.delete(
+  "/batch/:batchId",
+  requireAuth,
+  requirePermission("delivery.routes.update"),
+  deleteBatch,
 );
 
 /**

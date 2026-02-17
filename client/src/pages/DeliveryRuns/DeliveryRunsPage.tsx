@@ -11,13 +11,23 @@ import styles from "./DeliveryRunsPage.module.css";
 type QuickFilter = "next" | "week" | "all";
 
 export const DeliveryRunsPage: React.FC = () => {
-  const { runs, loading, error, params, updateFilters, createRun, creating } =
-    useDeliveryRuns();
+  const {
+    runs,
+    loading,
+    error,
+    params,
+    updateFilters,
+    createRun,
+    deleteRun,
+    creating,
+  } = useDeliveryRuns();
   const { showToast } = useToast();
 
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRunDate, setNewRunDate] = useState("");
+  const [newRunStartTime, setNewRunStartTime] = useState("08:00");
+  const [newRunEndTime, setNewRunEndTime] = useState("");
   const [eligibleOrders, setEligibleOrders] = useState<Array<any>>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -82,16 +92,25 @@ export const DeliveryRunsPage: React.FC = () => {
 
   const handleCreateRun = async () => {
     if (!newRunDate) return;
+    if (!newRunStartTime) {
+      showToast({ type: "error", title: "Select a start time" });
+      return;
+    }
     if (selectedOrderIds.length === 0) {
       showToast({ type: "error", title: "Select at least one order" });
       return;
     }
 
-    const result = await createRun(newRunDate, selectedOrderIds);
+    const result = await createRun(newRunDate, selectedOrderIds, {
+      startTime: newRunStartTime,
+      endTime: newRunEndTime || undefined,
+    });
     if (result.success) {
       showToast({ type: "success", title: "Delivery run created" });
       setShowCreateModal(false);
       setNewRunDate("");
+      setNewRunStartTime("08:00");
+      setNewRunEndTime("");
       setEligibleOrders([]);
       setSelectedOrderIds([]);
     } else {
@@ -188,7 +207,22 @@ export const DeliveryRunsPage: React.FC = () => {
         ) : error ? (
           <div className={styles.error}>{error}</div>
         ) : (
-          <DeliveryRunsTable runs={runs} />
+          <DeliveryRunsTable
+            runs={runs}
+            loading={loading}
+            onDeleteRun={async (runId: string) => {
+              const result = await deleteRun(runId);
+              if (result.success) {
+                showToast({ type: "success", title: "Delivery run deleted" });
+              } else {
+                showToast({
+                  type: "error",
+                  title: result.message || "Failed to delete delivery run",
+                });
+              }
+              return result;
+            }}
+          />
         )}
       </div>
 
@@ -225,6 +259,29 @@ export const DeliveryRunsPage: React.FC = () => {
           <p className={styles.formHelp}>
             Select the date for this delivery run. Orders for this date will be
             included.
+          </p>
+        </div>
+
+        <div className={styles.formField}>
+          <label className={styles.formLabel}>Delivery Window</label>
+          <div style={{ display: "flex", gap: "var(--space-3)" }}>
+            <input
+              type="time"
+              className={styles.formInput}
+              value={newRunStartTime}
+              onChange={(e) => setNewRunStartTime(e.target.value)}
+            />
+            <input
+              type="time"
+              className={styles.formInput}
+              value={newRunEndTime}
+              onChange={(e) => setNewRunEndTime(e.target.value)}
+              placeholder="End (optional)"
+            />
+          </div>
+          <p className={styles.formHelp}>
+            Start time is required; end time is optional. ETAs are scheduled
+            within this window.
           </p>
         </div>
 
@@ -294,7 +351,12 @@ export const DeliveryRunsPage: React.FC = () => {
           <Button
             variant="primary"
             onClick={handleCreateRun}
-            disabled={!newRunDate || creating || selectedOrderIds.length === 0}
+            disabled={
+              !newRunDate ||
+              !newRunStartTime ||
+              creating ||
+              selectedOrderIds.length === 0
+            }
           >
             {creating ? "Creating..." : "Create Run"}
           </Button>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -9,6 +9,7 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { useAuth } from "@/context/Auth/AuthContext";
 import {
   VanRoute,
   VanId,
@@ -18,7 +19,15 @@ import {
   getVanStyleKey,
 } from "@/context/DeliveryRuns";
 import { getDepotLocation } from "@/context/DeliveryRuns";
+import { getStatusBadge } from "@/pages/Orders/order.utils";
 import styles from "./MapView.module.css";
+
+const LIGHT_TILES_URL =
+  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const DARK_TILES_URL =
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILES_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 // Fix for default marker icons in react-leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -71,17 +80,49 @@ const formatEtaTime = (iso?: string) => {
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 };
 
+const getOrderDeliveryStatus = (stop: VanRoute["stops"][0]) => {
+  const candidate =
+    (stop as any)?.orderDeliveryStatus ??
+    (stop as any)?.deliveryStatus ??
+    (stop as any)?.order?.deliveryStatus ??
+    (stop as any)?.orderStatus;
+
+  return typeof candidate === "string" && candidate.trim().length > 0
+    ? candidate
+    : undefined;
+};
+
+const getStopEta = (stop: VanRoute["stops"][0]) => {
+  const candidate =
+    (stop as any)?.eta ??
+    (stop as any)?.etaTime ??
+    (stop as any)?.arrivalEta ??
+    (stop as any)?.order?.eta;
+
+  return typeof candidate === "string" && candidate.trim().length > 0
+    ? candidate
+    : undefined;
+};
+
+const formatDeliveryStatus = (status?: string) => {
+  if (!status) return "";
+  const readable = status.replace(/_/g, " ").trim();
+  if (!readable) return "";
+  return readable.replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
 const stopStatusLabel = (stop: VanRoute["stops"][0], runStatus?: RunStatus) => {
   const stopStatus =
     typeof (stop as any)?.stopStatus === "string"
       ? (stop as any).stopStatus
       : undefined;
-  const orderDeliveryStatus =
-    typeof (stop as any)?.orderDeliveryStatus === "string"
-      ? ((stop as any).orderDeliveryStatus as string)
+  const orderDeliveryStatus = getOrderDeliveryStatus(stop);
+  const normalizedOrder =
+    typeof orderDeliveryStatus === "string"
+      ? orderDeliveryStatus.toLowerCase()
       : undefined;
 
-  if (stopStatus === "delivered" || orderDeliveryStatus === "delivered")
+  if (stopStatus === "delivered" || normalizedOrder === "delivered")
     return "Delivered";
   if (stopStatus === "failed") return "Failed";
   if (runStatus === "dispatched") return "In transit";
@@ -95,11 +136,12 @@ const isDeliveredStop = (stop: VanRoute["stops"][0]) => {
     typeof (stop as any)?.stopStatus === "string"
       ? (stop as any).stopStatus
       : undefined;
-  const orderDeliveryStatus =
-    typeof (stop as any)?.orderDeliveryStatus === "string"
-      ? ((stop as any).orderDeliveryStatus as string)
+  const orderDeliveryStatus = getOrderDeliveryStatus(stop);
+  const normalizedOrder =
+    typeof orderDeliveryStatus === "string"
+      ? orderDeliveryStatus.toLowerCase()
       : undefined;
-  return stopStatus === "delivered" || orderDeliveryStatus === "delivered";
+  return stopStatus === "delivered" || normalizedOrder === "delivered";
 };
 
 // Depot icon
@@ -143,6 +185,37 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({
   return null;
 };
 
+const ActiveStopController: React.FC<{
+  activeStopId: string | null;
+  stopLookup: Map<string, { lat: number; lng: number }>;
+  markersRef: React.MutableRefObject<Record<string, L.Marker | undefined>>;
+}> = ({ activeStopId, stopLookup, markersRef }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!activeStopId) return;
+    const coords = stopLookup.get(activeStopId);
+    if (!coords) return;
+
+    try {
+      const targetZoom = Math.max(map.getZoom(), 14);
+      map.flyTo([coords.lat, coords.lng], targetZoom, {
+        animate: true,
+        duration: 0.5,
+      });
+
+      const marker = markersRef.current[activeStopId];
+      if (marker && typeof marker.openPopup === "function") {
+        marker.openPopup();
+      }
+    } catch (err) {
+      console.warn("MapView: active stop focus failed", err);
+    }
+  }, [activeStopId, map, stopLookup, markersRef]);
+
+  return null;
+};
+
 export const MapView: React.FC<MapViewProps> = ({
   vans,
   selectedVan,
@@ -151,14 +224,53 @@ export const MapView: React.FC<MapViewProps> = ({
   activeStopId,
   runStatus,
 }) => {
+  const { user } = useAuth();
+  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
+
+  const themePreference =
+    (user as any)?.preferences?.theme === "light" ||
+    (user as any)?.preferences?.theme === "dark" ||
+    (user as any)?.preferences?.theme === "system"
+      ? ((user as any).preferences.theme as "light" | "dark" | "system")
+      : "system";
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => setSystemPrefersDark(!!media.matches);
+    apply();
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", apply);
+      return () => media.removeEventListener("change", apply);
+    }
+
+    // Safari fallback
+    media.addListener(apply);
+    return () => media.removeListener(apply);
+  }, []);
+
+  const resolvedTheme =
+    themePreference === "system"
+      ? systemPrefersDark
+        ? "dark"
+        : "light"
+      : themePreference;
+
+  const isDark = resolvedTheme === "dark";
   const [activeStop, setActiveStop] = useState<string | null>(
     activeStopId || null,
   );
+  const markersRef = useRef<Record<string, L.Marker | undefined>>({});
   const [depot, setDepot] = useState<{
     lat: number;
     lng: number;
     label: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (typeof activeStopId === "string") setActiveStop(activeStopId);
+  }, [activeStopId]);
 
   useEffect(() => {
     let mounted = true;
@@ -209,6 +321,16 @@ export const MapView: React.FC<MapViewProps> = ({
     onSelectStop?.(stopId);
   };
 
+  const stopLookup = useMemo(() => {
+    const lookup = new Map<string, { lat: number; lng: number }>();
+    displayVans.forEach((van) => {
+      van.stops.forEach((stop) => {
+        lookup.set(stop.stopId, { lat: stop.lat, lng: stop.lng });
+      });
+    });
+    return lookup;
+  }, [displayVans]);
+
   // Get stops list for sidebar
   const displayStops = useMemo(() => {
     const stops: { vanId: VanId; stop: VanRoute["stops"][0] }[] = [];
@@ -257,12 +379,20 @@ export const MapView: React.FC<MapViewProps> = ({
           scrollWheelZoom={true}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            key={isDark ? "tiles-dark" : "tiles-light"}
+            attribution={TILES_ATTRIBUTION}
+            url={isDark ? DARK_TILES_URL : LIGHT_TILES_URL}
           />
 
           {/* Fit bounds when data changes */}
           {bounds && <FitBounds bounds={bounds} />}
+
+          {/* Focus selected stop from sidebar */}
+          <ActiveStopController
+            activeStopId={activeStop}
+            stopLookup={stopLookup}
+            markersRef={markersRef}
+          />
 
           {/* Depot marker */}
           <Marker position={[depotLat, depotLng]} icon={depotIcon}>
@@ -308,6 +438,9 @@ export const MapView: React.FC<MapViewProps> = ({
                   getVanColor(van.vanId),
                   isDeliveredStop(stop),
                 )}
+                ref={(marker) => {
+                  if (marker) markersRef.current[stop.stopId] = marker;
+                }}
                 eventHandlers={{
                   click: () => handleStopClick(stop.stopId),
                 }}
@@ -320,16 +453,22 @@ export const MapView: React.FC<MapViewProps> = ({
                     Order: {stop.orderId}
                   </div>
                   <div className={styles.popupDetail}>
-                    Status: {stopStatusLabel(stop, runStatus)}
+                    Delivery status:{" "}
+                    {getStatusBadge(
+                      (
+                        getOrderDeliveryStatus(stop) ||
+                        stopStatusLabel(stop, runStatus)
+                      )
+                        .toLowerCase()
+                        .replace(/\s+/g, " "),
+                    )}
                   </div>
                   {stop.phone && (
                     <div className={styles.popupDetail}>{stop.phone}</div>
                   )}
-                  {stop.eta && (
-                    <div className={styles.popupDetail}>
-                      ETA: {formatEtaTime(stop.eta)}
-                    </div>
-                  )}
+                  <div className={styles.popupDetail}>
+                    ETA: {formatEtaTime(getStopEta(stop)) ?? "—"}
+                  </div>
                   <div className={styles.popupItems}>
                     {stop.items.slice(0, 3).map((item, i) => (
                       <div key={i}>
@@ -367,6 +506,21 @@ export const MapView: React.FC<MapViewProps> = ({
                 </span>
                 <span className={styles.stopName}>{stop.customerName}</span>
                 <div className={styles.stopPostcode}>{stop.postcode}</div>
+                <div className={styles.stopMetaRow}>
+                  <span className={styles.stopMetaLabel}>Status</span>
+                  {getStatusBadge(
+                    (
+                      getOrderDeliveryStatus(stop) ||
+                      stopStatusLabel(stop, runStatus)
+                    )
+                      .toLowerCase()
+                      .replace(/\s+/g, " "),
+                  )}
+                </div>
+                <div className={styles.stopMetaRow}>
+                  <span className={styles.stopMetaLabel}>ETA</span>
+                  <span>{formatEtaTime(getStopEta(stop)) ?? "—"}</span>
+                </div>
               </div>
             ))
           )}

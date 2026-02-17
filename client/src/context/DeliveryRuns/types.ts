@@ -77,6 +77,8 @@ export interface DeliveryRun {
   createdAt: string;
   lockedAt?: string;
   lastOptimizedAt?: string;
+  deliveryWindowStart?: string;
+  deliveryWindowEnd?: string;
   totals: RunTotals;
   vans: VanRoute[];
   unassignedOrders: OrderSummary[];
@@ -104,6 +106,8 @@ export interface ListRunsParams {
 export interface CreateRunPayload {
   deliveryDate: string;
   orderIds?: string[];
+  startTime?: string;
+  endTime?: string;
 }
 
 // Depot configuration

@@ -22,6 +22,7 @@ import ForgotPassword from "./pages/Auth/ForgotPassword";
 import ResetPassword from "./pages/Auth/ResetPassword";
 import TwoFactor from "./pages/Auth/TwoFactor";
 import VerifyEmailChange from "./pages/Auth/VerifyEmailChange";
+import AcceptInvitationPage from "./pages/AcceptInvitationPage";
 import { AuthProvider, useAuth } from "./context/Auth/AuthContext";
 import { UsersProvider } from "./context/Users";
 import { AccessProvider } from "./context/Access";
@@ -117,6 +118,10 @@ const App = () => (
                     <Route
                       path="/forgot-password"
                       element={<ForgotPassword />}
+                    />
+                    <Route
+                      path="/accept-invitation"
+                      element={<AcceptInvitationPage />}
                     />
                     <Route path="/reset-password" element={<ResetPassword />} />
                     <Route

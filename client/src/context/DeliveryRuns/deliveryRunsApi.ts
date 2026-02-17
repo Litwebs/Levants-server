@@ -46,6 +46,8 @@ type BatchDetails = {
   _id: string;
   deliveryDate: string;
   status: string;
+  deliveryWindowStart?: string;
+  deliveryWindowEnd?: string;
   orders: any[];
   routes: any[];
   createdAt: string;
@@ -266,6 +268,10 @@ async function buildRunFromBatch(batch: BatchDetails): Promise<DeliveryRun> {
     createdAt: batch.createdAt,
     lockedAt: batch.lockedAt,
     lastOptimizedAt: batch.generatedAt,
+    deliveryWindowStart:
+      typeof batch.deliveryWindowStart === "string" ? batch.deliveryWindowStart : undefined,
+    deliveryWindowEnd:
+      typeof batch.deliveryWindowEnd === "string" ? batch.deliveryWindowEnd : undefined,
     totals: {
       ordersCount: orders.length,
       dropsCount,
@@ -340,6 +346,8 @@ export const createRun = async (payload: CreateRunPayload): Promise<DeliveryRun>
     const res = await api.post("/admin/delivery/batch", {
       deliveryDate: payload.deliveryDate,
       orderIds: (payload as any).orderIds,
+      startTime: (payload as any).startTime,
+      endTime: (payload as any).endTime,
     });
     const data = unwrap<{ batchId: string }>(res.data);
     const batchId = (data as any)?.batchId as string;
@@ -382,9 +390,14 @@ export const unlockRun = async (id: string): Promise<DeliveryRun | null> => {
 export const optimizeRun = async (
   id: string,
   driverIds: string[],
+  window?: { startTime: string; endTime?: string },
 ): Promise<DeliveryRun | null> => {
   try {
-    await api.post(`/admin/delivery/batch/${id}/generate-routes`, { driverIds });
+    await api.post(`/admin/delivery/batch/${id}/generate-routes`, {
+      driverIds,
+      startTime: window?.startTime,
+      endTime: window?.endTime,
+    });
     return getRun(id);
   } catch (err) {
     if (axios.isAxiosError(err)) {
@@ -404,6 +417,24 @@ export const optimizeRun = async (
 export const dispatchRun = async (id: string): Promise<DeliveryRun | null> => {
   await api.patch(`/admin/delivery/batch/${id}/dispatch`);
   return getRun(id);
+};
+
+/**
+ * Delete a delivery run (batch) and its routes/stops
+ * DELETE /api/admin/delivery/batch/:id
+ */
+export const deleteRun = async (id: string): Promise<void> => {
+  try {
+    await api.delete(`/admin/delivery/batch/${id}`);
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const message = (err.response?.data as any)?.message;
+      if (typeof message === "string" && message.trim()) {
+        throw new Error(message);
+      }
+    }
+    throw err;
+  }
 };
 
 export const listEligibleOrders = async (deliveryDate: string): Promise<EligibleOrder[]> => {

@@ -72,10 +72,14 @@ export function useDeliveryRun(id: string) {
     }
   }, [id]);
 
-  const handleOptimize = useCallback(async (driverIds: string[]) => {
+  const handleOptimize = useCallback(
+    async (
+      driverIds: string[],
+      window: { startTime: string; endTime?: string },
+    ) => {
     setState(s => ({ ...s, actionLoading: 'optimize' }));
     try {
-      const updated = await optimizeRun(id, driverIds);
+      const updated = await optimizeRun(id, driverIds, window);
       if (updated) {
         setState(s => ({ ...s, run: updated, actionLoading: null }));
         return true;

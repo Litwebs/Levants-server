@@ -8,7 +8,7 @@ const passwordUtil = require("../utils/password.util");
 const Session = require("../models/session.model");
 const cryptoUtil = require("../utils/crypto.util");
 const sendEmail = require("../Integration/Email.service");
-const { FRONTEND_URL } = require("../config/env");
+const { FRONTEND_URL, CLIENT_FRONT_URL } = require("../config/env");
 const {
   INVALID_EMAIL_OR_PASSWORD,
   ACCOUNT_DISABLED,
@@ -707,7 +707,74 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
   const { name, email, roleId, status, password, preferences } = updates;
 
   if (name !== undefined) user.name = name;
-  if (email !== undefined) user.email = email;
+
+  // Email change (admin) must be verified by the new email address
+  if (typeof email === "string") {
+    const nextEmail = email.trim().toLowerCase();
+
+    if (nextEmail && nextEmail !== user.email) {
+      const okFormat =
+        nextEmail.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail);
+
+      if (!okFormat) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: "Invalid email address",
+        };
+      }
+
+      const existing = await User.findOne({
+        _id: { $ne: user._id },
+        email: nextEmail,
+      }).lean();
+
+      if (existing) {
+        return {
+          success: false,
+          statusCode: 409,
+          message: "A user with that email already exists",
+        };
+      }
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      user.pendingEmail = nextEmail;
+      user.pendingEmailTokenHash = cryptoUtil.hashToken(rawToken);
+      user.pendingEmailTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      const frontBaseUrl =
+        String(process.env.PUBLIC_APP_URL || "").trim() ||
+        String(CLIENT_FRONT_URL || "").trim() ||
+        String(FRONTEND_URL || "").trim();
+
+      const verifyLink = frontBaseUrl
+        ? `${frontBaseUrl.replace(/\/$/, "")}/verify-email-change?userId=${user._id}&token=${rawToken}`
+        : "";
+
+      try {
+        if (verifyLink) {
+          await sendEmail(
+            nextEmail,
+            "Confirm your new email",
+            "verifyEmailChange",
+            {
+              name: user.name,
+              verifyLink,
+              expiresInMinutes: 60,
+            },
+          );
+        } else {
+          console.error(
+            "[email-change] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build verify link",
+            { userId: user._id.toString(), email: nextEmail },
+          );
+        }
+      } catch (_) {
+        // Do not fail update if email sending fails.
+      }
+    }
+  }
+
   if (status !== undefined) user.status = status;
 
   // Preferences (notifications only)
@@ -826,22 +893,37 @@ const UpdateSelf = async ({ userId, updates }, options = {}) => {
 
       user.pendingEmail = nextEmail;
       user.pendingEmailTokenHash = cryptoUtil.hashToken(rawToken);
-      user.pendingEmailTokenExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      user.pendingEmailTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
       emailChangeInitiated = true;
       delete updates.email;
 
-      const verifyLink = `${FRONTEND_URL}/verify-email-change?userId=${user._id}&token=${rawToken}`;
+      const frontBaseUrl =
+        String(process.env.PUBLIC_APP_URL || "").trim() ||
+        String(CLIENT_FRONT_URL || "").trim() ||
+        String(FRONTEND_URL || "").trim();
 
-      await sendEmail(
-        nextEmail,
-        "Confirm your new email",
-        "verifyEmailChange",
-        {
-          name: user.name,
-          verifyLink,
-        },
-      );
+      const verifyLink = frontBaseUrl
+        ? `${frontBaseUrl.replace(/\/$/, "")}/verify-email-change?userId=${user._id}&token=${rawToken}`
+        : "";
+
+      if (!verifyLink) {
+        console.error(
+          "[email-change] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build verify link",
+          { userId: user._id.toString(), email: nextEmail },
+        );
+      } else {
+        await sendEmail(
+          nextEmail,
+          "Confirm your new email",
+          "verifyEmailChange",
+          {
+            name: user.name,
+            verifyLink,
+            expiresInMinutes: 60,
+          },
+        );
+      }
     }
   }
 
@@ -990,7 +1072,13 @@ const confirmEmailChange = async ({ userId, token }) => {
   );
 
   // ✅ notify old email (recommended)
-  const securityUrl = `${FRONTEND_URL}/settings`;
+  const frontBaseUrl =
+    String(process.env.PUBLIC_APP_URL || "").trim() ||
+    String(CLIENT_FRONT_URL || "").trim() ||
+    String(FRONTEND_URL || "").trim();
+  const securityUrl = frontBaseUrl
+    ? `${frontBaseUrl.replace(/\/$/, "")}/settings`
+    : "";
 
   try {
     await sendEmail(
@@ -1050,7 +1138,112 @@ const sanitizeUser = (user) => {
   }
   delete obj.pendingEmailTokenExpiresAt;
 
+  // Never expose invitation hashes in responses
+  delete obj.inviteTokenHash;
+
   return obj;
+};
+
+const AcceptInvitation = async ({ userId, token } = {}) => {
+  if (!userId || !token) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "userId and token are required",
+    };
+  }
+
+  const user = await User.findById(userId)
+    .select("+inviteTokenHash")
+    .populate("role", "name permissions")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  if (!user.inviteTokenHash || !user.inviteTokenExpiresAt) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invitation is not pending",
+    };
+  }
+
+  const now = new Date();
+  if (user.inviteTokenExpiresAt <= now) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invitation has expired",
+    };
+  }
+
+  const tokenHash = cryptoUtil.hashToken(String(token || ""));
+  if (tokenHash !== user.inviteTokenHash) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid invitation token",
+    };
+  }
+
+  user.emailVerifiedAt = now;
+  user.inviteTokenHash = undefined;
+  user.inviteTokenExpiresAt = undefined;
+  user.status = "active";
+
+  await user.save();
+
+  return {
+    success: true,
+    data: {
+      user: sanitizeUser(user),
+    },
+  };
+};
+
+const DeleteUser = async ({ targetUserId, actorUserId } = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(String(targetUserId || ""))) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid userId",
+    };
+  }
+
+  if (String(targetUserId) === String(actorUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "You cannot delete your own account",
+    };
+  }
+
+  const user = await User.findById(targetUserId);
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  await Promise.all([
+    Session.deleteMany({ user: user._id }),
+    PasswordResetToken.deleteMany({ user: user._id }),
+  ]);
+
+  await User.deleteOne({ _id: user._id });
+
+  return {
+    success: true,
+    data: { deleted: true },
+  };
 };
 
 // CREATE USER (Admin)
@@ -1086,9 +1279,52 @@ const CreateUser = async ({ body, actorUserId }) => {
     email: normalizedEmail,
     passwordHash,
     role: role._id,
-    status: status || "active",
+    // New users must accept the invitation to verify email.
+    status: "disabled",
     createdBy: actorUserId,
+    invitedAt: new Date(),
+    invitedBy: actorUserId,
   });
+
+  // Issue invitation token (expires in 1 hour)
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const inviteTokenHash = cryptoUtil.hashToken(rawToken);
+  const inviteTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  user.inviteTokenHash = inviteTokenHash;
+  user.inviteTokenExpiresAt = inviteTokenExpiresAt;
+  await user.save();
+
+  // Send users to the frontend, which can call the API regardless of where it is hosted.
+  const frontBaseUrl =
+    String(process.env.PUBLIC_APP_URL || "").trim() ||
+    String(CLIENT_FRONT_URL || "").trim() ||
+    String(FRONTEND_URL || "").trim();
+
+  const acceptLink = frontBaseUrl
+    ? `${frontBaseUrl.replace(/\/$/, "")}/accept-invitation?userId=${user._id.toString()}&token=${rawToken}`
+    : "";
+
+  try {
+    if (!acceptLink) {
+      console.error(
+        "[invite] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build invitation link",
+        {
+          userId: user._id.toString(),
+          email: user.email,
+        },
+      );
+    } else {
+      await sendEmail(user.email, "Accept your invitation", "userInvitation", {
+        name: user.name,
+        invitedBy: "An admin",
+        acceptLink,
+        expiresInMinutes: 60,
+      });
+    }
+  } catch (_) {
+    // Do not fail user creation if email provider fails.
+  }
 
   const populated = await User.findById(user._id)
     .populate("role", "name permissions")
@@ -1176,5 +1412,7 @@ module.exports = {
   UpdateUser,
   UpdateSelf,
   confirmEmailChange,
+  AcceptInvitation,
+  DeleteUser,
   CreateUser,
 };

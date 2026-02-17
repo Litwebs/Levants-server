@@ -12,9 +12,12 @@ interface VansGridProps {
   onPrint: (vanId: VanId) => void;
 }
 
-const formatKm = (km: number) => {
+const KM_TO_MI = 0.621371;
+
+const formatMilesFromKm = (km: number) => {
   const num = Number(km);
-  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+  if (!Number.isFinite(num) || num <= 0) return "0.00";
+  return (num * KM_TO_MI).toFixed(2);
 };
 
 const formatDuration = (minutes: number) => {
@@ -66,7 +69,7 @@ export const VansGrid: React.FC<VansGridProps> = ({
             </div>
             <div className={styles.stat}>
               <div className={styles.statValue}>
-                {formatKm(van.stats.distanceKm)} km
+                {formatMilesFromKm(van.stats.distanceKm)} mi
               </div>
               <div className={styles.statLabel}>Distance</div>
             </div>

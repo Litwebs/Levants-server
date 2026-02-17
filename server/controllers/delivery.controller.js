@@ -11,6 +11,7 @@ const {
   getBatch: getBatchService,
   getRoute: getRouteService,
   getRouteStock: getRouteStockService,
+  deleteBatch: deleteBatchService,
 } = require("../services/delivery.service");
 
 async function listBatches(req, res) {
@@ -52,9 +53,14 @@ async function getDepot(req, res) {
  */
 async function createBatch(req, res) {
   try {
-    const { deliveryDate, orderIds } = req.body;
+    const { deliveryDate, orderIds, startTime, endTime } = req.body;
 
-    const result = await createDeliveryBatch({ deliveryDate, orderIds });
+    const result = await createDeliveryBatch({
+      deliveryDate,
+      orderIds,
+      deliveryWindowStart: startTime,
+      deliveryWindowEnd: endTime,
+    });
 
     if (!result.success) {
       return res.status(400).json(result);
@@ -105,7 +111,17 @@ async function generateRoutes(req, res) {
     ? req.body.driverIds
     : undefined;
 
-  const result = await generateRoutesService({ batchId, driverIds });
+  const startTime =
+    typeof req.body?.startTime === "string" ? req.body.startTime : undefined;
+  const endTime =
+    typeof req.body?.endTime === "string" ? req.body.endTime : undefined;
+
+  const result = await generateRoutesService({
+    batchId,
+    driverIds,
+    startTime,
+    endTime,
+  });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
@@ -145,6 +161,18 @@ async function getRouteStock(req, res) {
   return res.status(200).json(result);
 }
 
+/**
+ * Delete batch and associated routes/stops
+ */
+async function deleteBatch(req, res) {
+  const { batchId } = req.params;
+  const result = await deleteBatchService({ batchId });
+  if (!result.success) {
+    return res.status(result.statusCode || 400).json(result);
+  }
+  return res.status(200).json(result);
+}
+
 module.exports = {
   listBatches,
   listEligibleOrders,
@@ -158,4 +186,5 @@ module.exports = {
   getBatch,
   getRoute,
   getRouteStock,
+  deleteBatch,
 };

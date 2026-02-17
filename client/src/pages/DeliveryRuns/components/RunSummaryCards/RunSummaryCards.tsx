@@ -35,9 +35,12 @@ const STATUS_LABELS: Record<RunStatus, string> = {
   completed: "Completed",
 };
 
-const formatKm = (km: number) => {
+const KM_TO_MI = 0.621371;
+
+const formatMilesFromKm = (km: number) => {
   const num = Number(km);
-  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+  if (!Number.isFinite(num) || num <= 0) return "0.00";
+  return (num * KM_TO_MI).toFixed(2);
 };
 
 const formatDuration = (minutes: number) => {
@@ -103,7 +106,7 @@ export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
         </div>
         <div className={styles.cardValue}>
           {run.totals.estimatedDistanceKm > 0
-            ? `${formatKm(run.totals.estimatedDistanceKm)} km`
+            ? `${formatMilesFromKm(run.totals.estimatedDistanceKm)} mi`
             : "—"}
         </div>
       </div>

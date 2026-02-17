@@ -8,6 +8,14 @@ const deliveryBatchSchema = new mongoose.Schema(
       index: true,
     },
 
+    deliveryWindowStart: {
+      type: String,
+    },
+
+    deliveryWindowEnd: {
+      type: String,
+    },
+
     status: {
       type: String,
       enum: [

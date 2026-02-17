@@ -8,7 +8,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { DeliveryRun } from "@/context/DeliveryRuns";
-import { Button, Modal, ModalFooter } from "@/components/common";
+import { Button, Modal, ModalFooter, Input } from "@/components/common";
 import { Checkbox } from "@/components/ui/checkbox";
 import { listDrivers } from "@/context/DeliveryRuns";
 import styles from "./RunActionsBar.module.css";
@@ -18,7 +18,10 @@ interface RunActionsBarProps {
   actionLoading: "lock" | "unlock" | "optimize" | "dispatch" | null;
   onLock: () => Promise<boolean>;
   onUnlock: () => Promise<boolean>;
-  onOptimize: (driverIds: string[]) => Promise<boolean>;
+  onOptimize: (
+    driverIds: string[],
+    window: { startTime: string; endTime?: string },
+  ) => Promise<boolean>;
   onDispatch: () => Promise<boolean>;
 }
 
@@ -44,11 +47,17 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
   >([]);
   const [driversLoading, setDriversLoading] = useState(false);
   const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>([]);
+  const [startTime, setStartTime] = useState<string>(
+    run.deliveryWindowStart || "",
+  );
+  const [endTime, setEndTime] = useState<string>(run.deliveryWindowEnd || "");
 
   const openConfirm = async (action: ConfirmAction) => {
     setConfirmAction(action);
 
     if (action === "optimize" || action === "reoptimize") {
+      setStartTime(run.deliveryWindowStart || "");
+      setEndTime(run.deliveryWindowEnd || "");
       setDriversLoading(true);
       try {
         const list = await listDrivers();
@@ -74,7 +83,10 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
         break;
       case "optimize":
       case "reoptimize":
-        success = await onOptimize(selectedDriverIds);
+        success = await onOptimize(selectedDriverIds, {
+          startTime,
+          endTime: endTime || undefined,
+        });
         break;
       case "dispatch":
         success = await onDispatch();
@@ -293,6 +305,46 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
                 })}
               </div>
             )}
+
+            <div style={{ marginTop: "var(--space-4)" }}>
+              <div
+                style={{
+                  fontSize: "var(--text-sm)",
+                  fontWeight: "var(--font-medium)",
+                  color: "var(--color-gray-700)",
+                  marginBottom: "var(--space-2)",
+                }}
+              >
+                Delivery Window
+              </div>
+
+              <div style={{ display: "flex", gap: "var(--space-3)" }}>
+                <Input
+                  type="time"
+                  label="Start time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  fullWidth
+                />
+                <Input
+                  type="time"
+                  label="End time (optional)"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  fullWidth
+                />
+              </div>
+
+              <p
+                style={{
+                  marginTop: "var(--space-2)",
+                  color: "var(--color-gray-500)",
+                  fontSize: "var(--text-xs)",
+                }}
+              >
+                ETA will be scheduled within this window.
+              </p>
+            </div>
           </div>
         )}
         <ModalFooter>
@@ -306,7 +358,7 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
               !!actionLoading ||
               ((confirmAction === "optimize" ||
                 confirmAction === "reoptimize") &&
-                selectedDriverIds.length === 0)
+                (selectedDriverIds.length === 0 || !startTime))
             }
           >
             {actionLoading ? "Processing..." : "Confirm"}

@@ -35,7 +35,12 @@ function extractEncodedPolyline(routeData) {
   return typeof points === "string" && points.trim() ? points : null;
 }
 
-async function generateRoutesForBatch({ batchId, driverIds } = {}) {
+async function generateRoutesForBatch({
+  batchId,
+  driverIds,
+  startTime,
+  endTime,
+} = {}) {
   const batch = await DeliveryBatch.findById(batchId);
   if (!batch) return { success: false, message: "Batch not found" };
 
@@ -88,20 +93,60 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
     Math.ceil((orders?.length || 0) / drivers.length),
   );
 
-  const shipments = orders.map((order) => ({
-    deliveries: [
-      {
-        arrivalLocation: {
-          latitude: order.location.lat,
-          longitude: order.location.lng,
+  // Group orders that share the same delivery location into a single optimizer
+  // "visit" so they share the same ETA (while still creating one Stop per order).
+  const locationKeyForOrder = (order) => {
+    const lat = Number(order?.location?.lat);
+    const lng = Number(order?.location?.lng);
+    const latKey = Number.isFinite(lat) ? lat.toFixed(5) : "";
+    const lngKey = Number.isFinite(lng) ? lng.toFixed(5) : "";
+    const postcode = String(order?.deliveryAddress?.postcode || "")
+      .trim()
+      .toUpperCase();
+    const line1 = String(order?.deliveryAddress?.line1 || "")
+      .trim()
+      .toUpperCase();
+    return `${latKey}|${lngKey}|${postcode}|${line1}`;
+  };
+
+  const groupedOrders = [];
+  const groupMap = new Map();
+
+  for (const order of orders) {
+    const key = locationKeyForOrder(order);
+    const existing = groupMap.get(key);
+    if (existing) {
+      existing.orders.push(order);
+    } else {
+      const group = {
+        key,
+        lat: order.location.lat,
+        lng: order.location.lng,
+        orders: [order],
+      };
+      groupMap.set(key, group);
+      groupedOrders.push(group);
+    }
+  }
+
+  const shipments = groupedOrders.map((group) => {
+    const count = Array.isArray(group.orders) ? group.orders.length : 1;
+    const serviceSeconds = Math.max(60, 300 * count);
+    return {
+      deliveries: [
+        {
+          arrivalLocation: {
+            latitude: group.lat,
+            longitude: group.lng,
+          },
+          duration: `${serviceSeconds}s`,
         },
-        duration: "300s",
+      ],
+      loadDemands: {
+        weight: { amount: count },
       },
-    ],
-    loadDemands: {
-      weight: { amount: 1 },
-    },
-  }));
+    };
+  });
 
   const vehicles = drivers.map((driver) => ({
     startLocation: {
@@ -118,16 +163,85 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
     },
   }));
 
+  const hhmm = /^\d{2}:\d{2}$/;
+  const cleanStart =
+    typeof startTime === "string" && startTime.trim()
+      ? startTime.trim()
+      : undefined;
+  const cleanEnd =
+    typeof endTime === "string" && endTime.trim() ? endTime.trim() : undefined;
+
+  if (cleanStart && !hhmm.test(cleanStart)) {
+    return { success: false, message: "startTime must be in HH:mm format" };
+  }
+  if (cleanEnd && !hhmm.test(cleanEnd)) {
+    return { success: false, message: "endTime must be in HH:mm format" };
+  }
+
+  const toUtcIsoOnBatchDate = (time) => {
+    const [hh, mm] = String(time)
+      .split(":")
+      .map((x) => Number(x));
+    const d = new Date(batch.deliveryDate);
+    return new Date(
+      Date.UTC(
+        d.getUTCFullYear(),
+        d.getUTCMonth(),
+        d.getUTCDate(),
+        hh,
+        mm,
+        0,
+        0,
+      ),
+    ).toISOString();
+  };
+
+  const effectiveStart =
+    cleanStart ||
+    (typeof batch.deliveryWindowStart === "string" &&
+    batch.deliveryWindowStart.trim()
+      ? batch.deliveryWindowStart.trim()
+      : undefined);
+  const effectiveEnd =
+    cleanEnd ||
+    (typeof batch.deliveryWindowEnd === "string" &&
+    batch.deliveryWindowEnd.trim()
+      ? batch.deliveryWindowEnd.trim()
+      : undefined);
+
+  if (effectiveStart && !hhmm.test(effectiveStart)) {
+    return { success: false, message: "Stored deliveryWindowStart is invalid" };
+  }
+  if (effectiveEnd && !hhmm.test(effectiveEnd)) {
+    return { success: false, message: "Stored deliveryWindowEnd is invalid" };
+  }
+
+  const globalStartTime = effectiveStart
+    ? toUtcIsoOnBatchDate(effectiveStart)
+    : new Date(batch.deliveryDate).toISOString();
+
+  const globalEndTime = effectiveEnd
+    ? toUtcIsoOnBatchDate(effectiveEnd)
+    : new Date(
+        new Date(batch.deliveryDate).getTime() + 10 * 60 * 60 * 1000,
+      ).toISOString();
+
+  if (effectiveStart && effectiveEnd) {
+    const s = new Date(globalStartTime).getTime();
+    const e = new Date(globalEndTime).getTime();
+    if (Number.isFinite(s) && Number.isFinite(e) && e <= s) {
+      return { success: false, message: "endTime must be after startTime" };
+    }
+  }
+
   const requestBody = {
     // Ask the API to populate route polylines in the response.
     populatePolylines: true,
     populateTransitionPolylines: true,
 
     model: {
-      globalStartTime: new Date(batch.deliveryDate).toISOString(),
-      globalEndTime: new Date(
-        new Date(batch.deliveryDate).getTime() + 10 * 60 * 60 * 1000,
-      ).toISOString(),
+      globalStartTime,
+      globalEndTime,
       shipments,
       vehicles,
     },
@@ -160,7 +274,7 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
   }
 
   const missingShipmentIndices = [];
-  for (let i = 0; i < (orders?.length || 0); i++) {
+  for (let i = 0; i < (groupedOrders?.length || 0); i++) {
     if (!assignedShipmentIndices.has(i)) missingShipmentIndices.push(i);
   }
 
@@ -168,8 +282,14 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
 
   for (const routeData of optimized?.routes || []) {
     const visitCount = Array.isArray(routeData.visits)
-      ? routeData.visits.filter((v) => v && v.shipmentIndex !== undefined)
-          .length
+      ? routeData.visits
+          .filter((v) => v && v.shipmentIndex !== undefined)
+          .reduce((sum, v) => {
+            const idx = Number(v.shipmentIndex);
+            const group = groupedOrders[idx];
+            const n = Array.isArray(group?.orders) ? group.orders.length : 0;
+            return sum + n;
+          }, 0)
       : 0;
 
     // Don't create empty placeholder routes in Mongo.
@@ -191,16 +311,18 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
     for (const visit of routeData.visits || []) {
       if (visit.shipmentIndex === undefined) continue;
 
-      const order = orders[visit.shipmentIndex];
+      const group = groupedOrders[Number(visit.shipmentIndex)];
+      const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
 
-      await Stop.create({
-        route: route._id,
-        order: order._id,
-        sequence,
-        estimatedArrival: visit.startTime ? new Date(visit.startTime) : null,
-      });
-
-      sequence++;
+      for (const order of groupOrders) {
+        await Stop.create({
+          route: route._id,
+          order: order._id,
+          sequence,
+          estimatedArrival: visit.startTime ? new Date(visit.startTime) : null,
+        });
+        sequence++;
+      }
     }
 
     createdRouteIds.push(route._id);
@@ -223,7 +345,12 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
         const route = await Route.create({
           batch: batch._id,
           driver: driverId,
-          totalStops: missingShipmentIndices.length,
+          totalStops: missingShipmentIndices.reduce((sum, idx) => {
+            const group = groupedOrders[idx];
+            return (
+              sum + (Array.isArray(group?.orders) ? group.orders.length : 0)
+            );
+          }, 0),
           totalDistanceMeters: 0,
           totalDurationSeconds: 0,
           polyline: null,
@@ -231,15 +358,18 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
 
         let sequence = 1;
         for (const idx of missingShipmentIndices) {
-          const order = orders[idx];
-          if (!order?._id) continue;
-          await Stop.create({
-            route: route._id,
-            order: order._id,
-            sequence,
-            estimatedArrival: null,
-          });
-          sequence++;
+          const group = groupedOrders[idx];
+          const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
+          for (const order of groupOrders) {
+            if (!order?._id) continue;
+            await Stop.create({
+              route: route._id,
+              order: order._id,
+              sequence,
+              estimatedArrival: null,
+            });
+            sequence++;
+          }
         }
 
         createdRouteIds.push(route._id);
@@ -273,20 +403,25 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
       };
 
       for (const idx of missingShipmentIndices) {
-        const order = orders[idx];
-        if (!order?._id) continue;
+        const group = groupedOrders[idx];
+        const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
+        if (groupOrders.length === 0) continue;
 
         const routeIdx = pickRouteIndex();
         const routeInfo = createdRoutes[routeIdx];
-        routeInfo.stopsCount += 1;
+        routeInfo.stopsCount += groupOrders.length;
         affected.set(String(routeInfo.routeId), routeInfo.stopsCount);
 
-        await Stop.create({
-          route: routeInfo.routeId,
-          order: order._id,
-          sequence: routeInfo.stopsCount,
-          estimatedArrival: null,
-        });
+        for (let i = 0; i < groupOrders.length; i++) {
+          const order = groupOrders[i];
+          if (!order?._id) continue;
+          await Stop.create({
+            route: routeInfo.routeId,
+            order: order._id,
+            sequence: routeInfo.stopsCount - (groupOrders.length - 1) + i,
+            estimatedArrival: null,
+          });
+        }
       }
 
       for (const r of createdRoutes) {
@@ -309,6 +444,8 @@ async function generateRoutesForBatch({ batchId, driverIds } = {}) {
   batch.routes = createdRouteIds;
   batch.status = "routes_generated";
   batch.generatedAt = new Date();
+  if (cleanStart) batch.deliveryWindowStart = cleanStart;
+  if (cleanEnd) batch.deliveryWindowEnd = cleanEnd;
   await batch.save();
 
   return {

@@ -144,6 +144,11 @@ const confirmEmailChangeSchema = Joi.object({
   token: Joi.string().min(10).required(),
 });
 
+const acceptInvitationSchema = Joi.object({
+  userId: Joi.string().hex().length(24).required(),
+  token: Joi.string().trim().min(10).required(),
+}).unknown(false);
+
 const createUserSchema = Joi.object({
   name: Joi.string().min(2).max(100).required(),
   email: Joi.string().email().max(254).required(),
@@ -165,5 +170,6 @@ module.exports = {
   updateUserSchema,
   updateSelfSchema,
   confirmEmailChangeSchema,
+  acceptInvitationSchema,
   createUserSchema,
 };

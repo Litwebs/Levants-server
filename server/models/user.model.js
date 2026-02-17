@@ -33,6 +33,36 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // ===== Email verification (invitation acceptance) =====
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    inviteTokenHash: {
+      type: String,
+      select: false,
+      index: true,
+    },
+
+    inviteTokenExpiresAt: {
+      type: Date,
+      index: true,
+    },
+
+    invitedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    invitedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
     // ===== Email change flow =====
     pendingEmail: {
       type: String,

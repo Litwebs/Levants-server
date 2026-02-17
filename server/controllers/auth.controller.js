@@ -539,6 +539,29 @@ const CreateUser = async (req, res, next) => {
   }
 };
 
+// DELETE USER (Admin)
+const DeleteUser = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    const result = await authService.DeleteUser({
+      targetUserId: userId,
+      actorUserId: req.user.id,
+    });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode || 400,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, { deleted: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ========================= ACCESS CONTROL (ROLES & PERMISSIONS) =========================
 
 // USED TO LIST USERS WITH FILTERS (Authenticated, requires users.read permission)
@@ -632,6 +655,51 @@ const UpdateSelf = async (req, res, next) => {
     }
 
     return sendOk(res, { user: result.data.user });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ACCEPT INVITATION (Public)
+const AcceptInvitation = async (req, res, next) => {
+  try {
+    const { userId, token } = req.body || {};
+
+    const result = await authService.AcceptInvitation({ userId, token });
+
+    if (!result.success) {
+      return sendErr(res, {
+        statusCode: result.statusCode || 400,
+        message: result.message,
+      });
+    }
+
+    return sendOk(res, { accepted: true, user: result.data.user });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ACCEPT INVITATION (Public link)
+const AcceptInvitationLink = async (req, res, next) => {
+  try {
+    const { userId, token } = req.query || {};
+
+    const result = await authService.AcceptInvitation({ userId, token });
+
+    if (!result.success) {
+      return res
+        .status(result.statusCode || 400)
+        .send(
+          `<!doctype html><html><head><meta charset="utf-8" /><title>Invitation</title></head><body style="font-family: Arial, sans-serif; padding: 24px;"><h2>Invitation could not be accepted</h2><p>${String(result.message || "Invalid or expired invitation")}</p></body></html>`,
+        );
+    }
+
+    return res
+      .status(200)
+      .send(
+        `<!doctype html><html><head><meta charset="utf-8" /><title>Invitation accepted</title></head><body style="font-family: Arial, sans-serif; padding: 24px;"><h2>Invitation accepted</h2><p>Your email has been verified. You can now log in.</p></body></html>`,
+      );
   } catch (err) {
     next(err);
   }
@@ -749,5 +817,8 @@ module.exports = {
   UpdateUser,
   UpdateSelf,
   confirmEmailChange,
+  AcceptInvitation,
+  AcceptInvitationLink,
+  DeleteUser,
   CreateUser,
 };

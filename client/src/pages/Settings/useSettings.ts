@@ -78,6 +78,7 @@ export const useSettings = () => {
     fetchUsers,
     getUserById,
     createUser,
+    deleteUser: deleteUserApi,
     updateUser,
     updateUserStatus,
   } = useUsers();
@@ -419,7 +420,10 @@ export const useSettings = () => {
           status: userForm.status,
         });
 
-        showToast({ type: "success", title: "User created successfully" });
+        showToast({
+          type: "success",
+          title: "Invitation sent (expires in 1 hour)",
+        });
       } catch (err: any) {
         showToast({
           type: "error",
@@ -457,8 +461,17 @@ export const useSettings = () => {
     setUserForm(emptyUserForm);
   };
 
-  const deleteUser = (_id: string) => {
-    showToast({ type: "error", title: "Deleting users is not supported yet" });
+  const deleteUser = async (_id: string) => {
+    if (!_id) return;
+    try {
+      await deleteUserApi(_id);
+      showToast({ type: "success", title: "User deleted" });
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title: err?.response?.data?.message || "Failed to delete user",
+      });
+    }
   };
 
   const toggleUserStatus = (id: string) => {

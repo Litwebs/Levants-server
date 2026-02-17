@@ -1,7 +1,8 @@
-// Services/Templates/verifyEmailChange.js
+// Services/Templates/userInvitation.js
 module.exports = ({
   name = "there",
-  verifyLink,
+  invitedBy = "an admin",
+  acceptLink,
   expiresInMinutes = 60,
   logoSrc = "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png",
 }) => `
@@ -10,14 +11,14 @@ module.exports = ({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Confirm Your New Email</title>
+    <title>Accept your invitation</title>
   </head>
 
   <body style="margin:0; padding:0; background:#fdfaf6; font-family:'DM Sans', Arial, sans-serif;">
 
     <!-- Preheader -->
     <div style="display:none; font-size:1px; color:#fdfaf6; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden;">
-      Confirm your new levants email address.
+      Accept your invitation to access Levants.
     </div>
 
     <!-- Wrapper -->
@@ -35,12 +36,11 @@ module.exports = ({
                 <img
                   src="${logoSrc}"
                   alt="Levants"
-                  width="52"
-                  height="52"
+                  width="60"
                   style="display:block; border:0; outline:none; text-decoration:none; margin-bottom:12px; width:52px; height:52px; border-radius:9999px; object-fit:cover;"
                 />
                 <div style="margin-top:6px; font-size:13px; color:#e8e4dd;">
-                  Confirm New Email Address
+                  Invitation
                 </div>
               </td>
             </tr>
@@ -59,19 +59,19 @@ module.exports = ({
                 </h2>
 
                 <p style="margin:0 0 22px 0; font-size:15px; line-height:1.7; color:#444;">
-                  You requested to change the email address on your levants account.
-                  Please confirm this change by clicking the button below.
+                  ${invitedBy} invited you to access Levants.
+                  To verify this email address, please accept the invitation.
                 </p>
 
-                <p style="margin:0 0 18px 0; font-size:14px; line-height:1.7; color:#6a645c;">
-                  This link expires in <strong>${expiresInMinutes} minutes</strong>.
+                <p style="margin:0 0 16px 0; font-size:14px; line-height:1.7; color:#6a645c;">
+                  This link expires in <strong>${expiresInMinutes} minutes</strong>. If you don’t accept in time, the invitation will be voided.
                 </p>
 
                 <!-- Button -->
                 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 18px 0;">
                   <tr>
                     <td align="center">
-                      <a href="${verifyLink}"
+                      <a href="${acceptLink}"
                          style="
                            display:inline-block;
                            background:#244233;
@@ -83,16 +83,11 @@ module.exports = ({
                            border-radius:12px;
                            border:2px solid #244233;
                          ">
-                        Confirm New Email
+                        Accept Invitation
                       </a>
                     </td>
                   </tr>
                 </table>
-
-                <p style="margin:0 0 18px 0; font-size:14px; line-height:1.7; color:#6a645c;">
-                  If you didn’t request this change, you can safely ignore this email.
-                  Your account email will remain unchanged.
-                </p>
 
                 <!-- Divider -->
                 <div style="border-top:1px solid #ece6dc; margin:22px 0;"></div>
@@ -101,9 +96,8 @@ module.exports = ({
                 <div style="font-size:12px; line-height:1.6; color:#8a847c;">
                   If the button doesn’t work, copy and paste this link into your browser:
                   <br><br>
-                  <a href="${verifyLink}"
-                     style="color:#244233; word-break:break-all; text-decoration:none; font-weight:600;">
-                    ${verifyLink}
+                  <a href="${acceptLink}" style="color:#244233; word-break:break-all; text-decoration:none; font-weight:600;">
+                    ${acceptLink}
                   </a>
                 </div>
 
@@ -123,7 +117,7 @@ module.exports = ({
                 </div>
 
                 <div style="margin-top:10px; font-size:12px; color:#9c968d;">
-                  © 2025 levants. All rights reserved.
+                  © 2026 levants. All rights reserved.
                 </div>
 
               </td>

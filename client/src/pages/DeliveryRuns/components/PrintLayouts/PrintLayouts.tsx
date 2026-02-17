@@ -12,9 +12,12 @@ interface PrintLayoutProps {
   onClose: () => void;
 }
 
-const formatKm = (km: number) => {
+const KM_TO_MI = 0.621371;
+
+const formatMilesFromKm = (km: number) => {
   const num = Number(km);
-  return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+  if (!Number.isFinite(num) || num <= 0) return "0.00";
+  return (num * KM_TO_MI).toFixed(2);
 };
 
 const formatEtaTime = (iso?: string) => {
@@ -143,7 +146,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
             </div>
             <div className={styles.printStat}>
               <div className={styles.printStatValue}>
-                {formatKm(van.stats.distanceKm)} km
+                {formatMilesFromKm(van.stats.distanceKm)} mi
               </div>
               <div className={styles.printStatLabel}>Distance</div>
             </div>

@@ -28,6 +28,7 @@ const {
   updateUserSchema,
   updateSelfSchema,
   confirmEmailChangeSchema,
+  acceptInvitationSchema,
   createUserSchema,
 } = require("../validators/auth.validators");
 
@@ -164,6 +165,16 @@ router.put(
   asyncHandler(authController.UpdateUser),
 );
 
+// DELETE USER (Admin)
+router.delete(
+  "/users/:userId",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.delete"),
+  validateParams(userIdParamSchema),
+  asyncHandler(authController.DeleteUser),
+);
+
 // USED TO GET ALL USERS (Admin only)
 router.get(
   "/users",
@@ -196,6 +207,18 @@ router.post(
   "/confirm-email-change",
   validateBody(confirmEmailChangeSchema),
   asyncHandler(authController.confirmEmailChange),
+);
+
+// Invitation acceptance (public)
+router.get(
+  "/accept-invitation",
+  asyncHandler(authController.AcceptInvitationLink),
+);
+
+router.post(
+  "/accept-invitation",
+  validateBody(acceptInvitationSchema),
+  asyncHandler(authController.AcceptInvitation),
 );
 
 module.exports = router;

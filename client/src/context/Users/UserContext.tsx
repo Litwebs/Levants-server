@@ -67,6 +67,7 @@ type UsersContextType = {
     roleId: string;
     status?: "active" | "disabled";
   }) => Promise<User>;
+  deleteUser: (userId: string) => Promise<void>;
   updateUser: (userId: string, updates: Record<string, any>) => Promise<User>;
   updateUserStatus: (
     userId: string,
@@ -236,6 +237,21 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const deleteUser = useCallback(async (userId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await api.delete(`/auth/users/${userId}`);
+      setUsers((prev) => prev.filter((u) => getUserId(u as any) !== userId));
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || "Failed to delete user";
+      setError(msg);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       users,
@@ -247,6 +263,7 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
       fetchUsers,
       getUserById,
       createUser,
+      deleteUser,
       updateUser,
       updateUserStatus,
     }),
@@ -256,6 +273,7 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
       fetchUsers,
       getUserById,
       createUser,
+      deleteUser,
       loading,
       roles,
       rolesLoading,
