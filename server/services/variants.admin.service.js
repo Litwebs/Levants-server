@@ -238,6 +238,7 @@ async function UpdateVariant({ variantId, body, userId }) {
 
   // Normal updates
   if (body.name !== undefined) variant.name = body.name;
+  if (body.sku !== undefined) variant.sku = body.sku;
   if (body.stockQuantity !== undefined)
     variant.stockQuantity = body.stockQuantity;
   if (body.lowStockAlert !== undefined)

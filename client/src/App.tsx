@@ -30,11 +30,8 @@ import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
 import { usePermissions } from "@/hooks/usePermissions";
-import { DiscountsPage } from "./features/discounts";
-import {
-  DeliveryRunsPage,
-  DeliveryRunDetailsPage,
-} from "./features/deliveryRuns";
+import { DiscountsPage } from "./pages/Discounts";
+import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import "./styles/global.css";
 
 const AdminShell = () => (

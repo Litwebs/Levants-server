@@ -562,6 +562,8 @@ const VariantEditModal = ({
               try {
                 await onSave(variant._id, patch);
                 onClose();
+              } catch {
+                // Error toast is handled by onSave; keep modal open.
               } finally {
                 setIsSaving(false);
               }
@@ -844,11 +846,30 @@ const ProductVariantsPage = () => {
       if (body[k] === undefined) delete body[k];
     });
 
-    const res = await api.put(`/admin/products/variants/${variantId}`, body);
-    showToast({ type: "success", title: "Variant updated" });
+    try {
+      const res = await api.put(`/admin/products/variants/${variantId}`, body);
+      showToast({ type: "success", title: "Variant updated" });
 
-    if (res?.data?.success) {
-      await refreshProduct();
+      if (res?.data?.success) {
+        await refreshProduct();
+      }
+    } catch (e: any) {
+      const status = e?.response?.status;
+      const apiMessage = e?.response?.data?.message;
+      const code = e?.response?.data?.error?.code;
+
+      showToast({
+        type: "error",
+        title:
+          status === 409 ? "SKU already exists" : "Failed to update variant",
+        message:
+          apiMessage ||
+          (code === "DUPLICATE_KEY_ERROR"
+            ? "SKU already exists"
+            : e?.message || "Request failed"),
+      });
+
+      throw e;
     }
   };
 

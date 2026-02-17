@@ -37,8 +37,10 @@ const updateProductSchema = Joi.object({
   allergens: Joi.array().items(Joi.string()).optional(),
   storageNotes: Joi.string().allow("").optional(),
 
-  // ✅ Optional; service only replaces if a data URL is provided
-  thumbnailImage: Joi.alternatives().try(base64DataUrl, objectId).optional(),
+  // ✅ Optional; service replaces if a data URL is provided; supports clearing with null/""
+  thumbnailImage: Joi.alternatives()
+    .try(base64DataUrl, objectId, Joi.valid(null), Joi.valid(""))
+    .optional(),
 
   // ✅ Service supports mixing base64 data URLs, File ids, and existing URLs
   galleryImages: Joi.array().items(Joi.string().min(1)).max(10).optional(),

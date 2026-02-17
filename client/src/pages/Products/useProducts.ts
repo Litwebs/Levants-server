@@ -255,8 +255,10 @@ export function useProducts() {
 
     setIsSaving(true);
     try {
-      const resolvedThumbnail =
-        productImages.thumbnail || getImageUrl(editForm.thumbnailImage);
+      const thumbnailDraft = productImages.thumbnail;
+      const isThumbnailCleared = thumbnailDraft === "";
+      const isThumbnailBase64 =
+        typeof thumbnailDraft === "string" && thumbnailDraft.startsWith("data:");
 
       const payload: Record<string, any> = {
         name: editForm.name,
@@ -265,7 +267,11 @@ export function useProducts() {
         status: editForm.status,
         allergens: editForm.allergens,
         storageNotes: editForm.storageNotes ?? "",
-        thumbnailImage: resolvedThumbnail,
+        ...(isThumbnailCleared
+          ? { thumbnailImage: "" }
+          : isThumbnailBase64
+            ? { thumbnailImage: thumbnailDraft }
+            : {}),
         galleryImages: productImages.gallery,
       };
 

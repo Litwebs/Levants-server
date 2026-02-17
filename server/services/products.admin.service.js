@@ -232,7 +232,14 @@ async function UpdateProduct({ productId, body, userId }) {
   }
 
   // Replace thumbnail if new base64 provided
-  if (body.thumbnailImage?.startsWith("data:")) {
+  if (body.thumbnailImage === null || body.thumbnailImage === "") {
+    product.thumbnailImage = null;
+  } else if (
+    typeof body.thumbnailImage === "string" &&
+    isObjectIdLike(body.thumbnailImage)
+  ) {
+    product.thumbnailImage = body.thumbnailImage;
+  } else if (body.thumbnailImage?.startsWith("data:")) {
     const tmp = await base64ToTempFile(body.thumbnailImage);
 
     const uploaded = await uploadAndCreateFile({
