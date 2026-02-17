@@ -75,6 +75,7 @@ async function CreateOrder({
   items,
   discountCode,
   deliveryAddress,
+  deliveryDate,
 } = {}) {
   if (!deliveryAddress) {
     return { success: false, message: "Delivery address is required" };
@@ -225,6 +226,7 @@ async function CreateOrder({
             reservationExpiresAt,
             deliveryAddress,
             location,
+            ...(deliveryDate ? { deliveryDate } : {}),
           },
         ],
         { session },

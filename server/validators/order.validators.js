@@ -17,7 +17,7 @@ const createOrderSchema = Joi.object({
 
   deliveryAddress: deliveryAddressSchema.required(),
 
-  // deliveryDate: Joi.date().iso().greater("now").required(),
+  deliveryDate: Joi.date().iso().greater("now").optional(),
 
   items: Joi.array()
     .items(

@@ -12,6 +12,19 @@ const {
 } = require("../helpers/orderFactory");
 
 describe("GET /api/admin/orders/:id (Admin)", () => {
+  const getValidDeliveryAddress = () => ({
+    line1: "10 Downing Street",
+    line2: "",
+    city: "London",
+    postcode: "SW1A 2AA",
+    country: "United Kingdom",
+  });
+
+  const getValidLocation = () => ({
+    lat: 51.5033635,
+    lng: -0.1276248,
+  });
+
   test("returns order by id for admin", async () => {
     const adminCookie = await loginAsAdmin(app);
 
@@ -33,6 +46,8 @@ describe("GET /api/admin/orders/:id (Admin)", () => {
         },
       ],
       subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: variant.price,
       status: "paid",
@@ -119,6 +134,8 @@ describe("GET /api/admin/orders/:id (Admin)", () => {
         },
       ],
       subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: variant.price,
       status: "refunded",

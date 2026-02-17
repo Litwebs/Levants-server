@@ -15,6 +15,19 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
   let variant;
   let variant2;
 
+  const getValidDeliveryAddress = () => ({
+    line1: "10 Downing Street",
+    line2: "",
+    city: "London",
+    postcode: "SW1A 2AA",
+    country: "United Kingdom",
+  });
+
+  const getValidLocation = () => ({
+    lat: 51.5033635,
+    lng: -0.1276248,
+  });
+
   async function createTestFile() {
     return File.create({
       originalName: "cron.jpg",
@@ -117,6 +130,8 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
         },
       ],
       subtotal: 20,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: 20,
       status: "pending",
@@ -152,6 +167,8 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
         },
       ],
       subtotal: 20,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: 20,
       status: "pending",
@@ -187,6 +204,8 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
         },
       ],
       subtotal: 20,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: 20,
       status: "paid",
@@ -232,6 +251,8 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
         },
       ],
       subtotal: 56,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: 56,
       status: "pending",
@@ -271,6 +292,8 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
         },
       ],
       subtotal: 20,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: 20,
       status: "pending",

@@ -28,6 +28,19 @@ jest.mock("../../../utils/stripe.util", () => ({
 }));
 
 describe("POST /api/admin/orders/:id/refund (Admin)", () => {
+  const getValidDeliveryAddress = () => ({
+    line1: "10 Downing Street",
+    line2: "",
+    city: "London",
+    postcode: "SW1A 2AA",
+    country: "United Kingdom",
+  });
+
+  const getValidLocation = () => ({
+    lat: 51.5033635,
+    lng: -0.1276248,
+  });
+
   test("successfully initiates refund (no restock)", async () => {
     const adminCookie = await loginAsAdmin(app);
 
@@ -49,6 +62,8 @@ describe("POST /api/admin/orders/:id/refund (Admin)", () => {
         },
       ],
       subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: variant.price,
       status: "paid",
@@ -99,6 +114,8 @@ describe("POST /api/admin/orders/:id/refund (Admin)", () => {
         },
       ],
       subtotal: variant.price * 2,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: variant.price * 2,
       status: "paid",
@@ -174,6 +191,8 @@ describe("POST /api/admin/orders/:id/refund (Admin)", () => {
         },
       ],
       subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: variant.price,
       status: "pending",
@@ -208,6 +227,8 @@ describe("POST /api/admin/orders/:id/refund (Admin)", () => {
         },
       ],
       subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: variant.price,
       status: "refund_pending",
@@ -250,6 +271,8 @@ describe("POST /api/admin/orders/:id/refund (Admin)", () => {
         },
       ],
       subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
       deliveryFee: 0,
       total: variant.price,
       status: "paid",

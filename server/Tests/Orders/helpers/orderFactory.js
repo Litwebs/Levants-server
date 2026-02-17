@@ -73,6 +73,17 @@ async function createOrder({
     customer: customer._id,
     items,
     subtotal: 10,
+    deliveryAddress: {
+      line1: "10 Downing Street",
+      line2: "",
+      city: "London",
+      postcode: "SW1A 2AA",
+      country: "United Kingdom",
+    },
+    location: {
+      lat: 51.5033635,
+      lng: -0.1276248,
+    },
     deliveryFee: 0,
     total: 10,
     status,
