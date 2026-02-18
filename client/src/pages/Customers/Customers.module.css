@@ -1,0 +1,693 @@
+/* Customers Page - Using correct design system variables */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  /* Fit within AdminLayout content area (viewport minus topbar and content padding) */
+  height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.container *,
+.container *::before,
+.container *::after {
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.titleSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.titleSection svg {
+  color: var(--color-primary);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-gray-900);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  margin: 0;
+}
+
+/* Stats Grid */
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-5);
+}
+
+@media (max-width: 768px) {
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+}
+
+.statLabel {
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+.statValue {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--color-gray-900);
+}
+
+.statValue.vip {
+  color: var(--color-success);
+}
+
+.statValue.marketing {
+  color: var(--color-info);
+}
+
+.statValue.revenue {
+  color: var(--color-primary);
+}
+
+/* Filters */
+.filtersCard {
+  padding: var(--space-4);
+}
+
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.searchInput {
+  max-width: 400px;
+}
+
+/* Table Cells */
+.customerCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  color: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.avatarLarge {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  color: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.customerInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.customerName {
+  font-weight: 600;
+  color: var(--color-gray-900);
+}
+
+.customerEmail {
+  font-size: var(--text-sm);
+  color: var(--color-gray-400);
+}
+
+.contactCell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.contactCell span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ordersCell {
+  display: flex;
+  flex-direction: column;
+}
+
+.orderCount {
+  font-weight: 600;
+  color: var(--color-gray-900);
+}
+
+.orderTotal {
+  font-size: var(--text-sm);
+  color: var(--color-success);
+}
+
+.tagsCell {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.noTags {
+  color: var(--color-gray-400);
+}
+
+.lastOrder {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12);
+  color: var(--color-gray-400);
+  gap: var(--space-4);
+}
+
+/* Customer Detail Modal */
+.customerDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.detailHeader {
+  display: flex;
+  gap: var(--space-6);
+  align-items: center;
+}
+
+.detailInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.detailInfo h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+  color: var(--color-gray-900);
+}
+
+.detailMeta {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
+}
+
+@media (max-width: 600px) {
+  .detailGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detailSection {
+  border-top: 1px solid var(--color-gray-200);
+  padding-top: var(--space-4);
+}
+
+/* Customers Table: scroll inside table + pagination */
+.tableCard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tableScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tableArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tableLoadingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.tableLoadingOverlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-white);
+  opacity: 0.55;
+}
+
+.tableLoadingInner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2) var(--space-3);
+  box-shadow: var(--shadow-xs);
+}
+
+.spinnerIcon {
+  animation: spin 1s linear infinite;
+}
+
+.tableScroll thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.contactLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.emptyTableCell {
+  color: var(--color-gray-500);
+}
+
+.paginationFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.paginationInfo {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: var(--space-3);
+}
+
+.pageSizeSelect {
+  min-width: 140px;
+}
+
+.pageButtons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+
+.pageButtons button {
+  min-width: 88px;
+  justify-content: center;
+}
+
+
+.pageLabel {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+}
+
+.detailSection h3 {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-gray-500);
+  margin: 0 0 var(--space-2) 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.contactInfo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.contactInfo p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-gray-900);
+}
+
+.addressCard {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background-color: var(--color-gray-50);
+  border-radius: var(--radius-sm);
+}
+
+.addressCard svg {
+  color: var(--color-gray-400);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.addressCard p {
+  margin: 0;
+  color: var(--color-gray-900);
+  font-size: var(--text-sm);
+}
+
+/* Purchase Summary */
+.purchaseSummary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+}
+
+@media (max-width: 600px) {
+  .purchaseSummary {
+    grid-template-columns: 1fr;
+  }
+}
+
+.summaryItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background-color: var(--color-gray-50);
+  border-radius: var(--radius-md);
+}
+
+.summaryItem svg,
+.currencyIcon {
+  color: var(--color-primary);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  width: 24px;
+  text-align: center;
+}
+
+.summaryValue {
+  display: block;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-gray-900);
+}
+
+.summaryLabel {
+  font-size: var(--text-xs);
+  color: var(--color-gray-400);
+}
+
+/* Order History */
+.orderHistory {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.orderHistoryItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2);
+  background-color: var(--color-gray-50);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.orderHistoryItem:hover {
+  background-color: var(--color-gray-100);
+}
+
+.orderHistoryMain {
+  display: flex;
+  flex-direction: column;
+}
+
+.orderNumber {
+  font-weight: 600;
+  color: var(--color-gray-900);
+  font-size: var(--text-sm);
+}
+
+.orderDate {
+  font-size: var(--text-xs);
+  color: var(--color-gray-400);
+}
+
+.orderHistoryMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.orderAmount {
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+.noOrders {
+  color: var(--color-gray-400);
+  font-style: italic;
+  margin: 0;
+}
+
+.orderPagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.orderPaginationInfo {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.orderPaginationControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.orderPageSizeSelect {
+  min-width: 140px;
+}
+
+.orderPageLabel {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+}
+
+.customerNotes {
+  margin: 0;
+  padding: var(--space-2);
+  background-color: var(--color-gray-50);
+  border-radius: var(--radius-sm);
+  color: var(--color-gray-900);
+  font-style: italic;
+}
+
+.accountInfo {
+  margin: var(--space-1) 0;
+  color: var(--color-gray-600);
+  font-size: var(--text-sm);
+}
+
+/* Edit Form */
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.formSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.formLabel {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-700);
+}
+
+.formHint {
+  font-size: var(--text-xs);
+  color: var(--color-gray-400);
+  margin: 0;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-gray-900);
+  cursor: pointer;
+}
+
+.checkboxLabel input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.tagsEditor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-white);
+  min-height: 40px;
+  align-items: center;
+}
+
+.tagChip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background-color: var(--color-primary);
+  color: var(--color-white);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+}
+
+.tagRemove {
+  background: none;
+  border: none;
+  color: var(--color-white);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  opacity: 0.8;
+}
+
+.tagRemove:hover {
+  opacity: 1;
+}
+
+.tagInput {
+  flex: 1;
+  min-width: 100px;
+  height: 28px;
+  border: none;
+  background: none;
+  font-size: var(--text-sm);
+  color: var(--color-gray-900);
+  outline: none;
+}
+
+.tagInput::placeholder {
+  color: var(--color-gray-400);
+}
+
+.notesTextarea {
+  width: 100%;
+  height: 80px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-white);
+  color: var(--color-gray-900);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  resize: vertical;
+}
+
+.notesTextarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-bg);
+}
+
+.notesTextarea::placeholder {
+  color: var(--color-gray-400);
+}
+
+

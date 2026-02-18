@@ -24,8 +24,13 @@ function getLogoCidSrc() {
   return `cid:${LOGO_CONTENT_ID}`;
 }
 
+function getLogoDataUri() {
+  return `data:image/png;base64,${getLogoBase64()}`;
+}
+
 module.exports = {
   LOGO_CONTENT_ID,
   getInlineLogoAttachment,
   getLogoCidSrc,
+  getLogoDataUri,
 };

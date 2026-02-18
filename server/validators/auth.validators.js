@@ -44,7 +44,7 @@ const resetPasswordSchema = Joi.object({
     "any.required": "Reset token is required",
   }),
   newPassword: passwordRule.label("New password"),
-});
+}).unknown(false);
 
 const changePasswordSchema = Joi.object({
   currentPassword: Joi.string().min(1).required().messages({
@@ -78,6 +78,85 @@ const verify2FASchema = Joi.object({
   }),
 }).unknown(false);
 
+const updateUserStatusSchema = Joi.object({
+  status: Joi.string().valid("active", "disabled").required(),
+}).unknown(false);
+
+const updateUserSchema = Joi.object({
+  name: Joi.string().trim().min(2).max(100).optional(),
+  email: Joi.string().email().optional(),
+  roleId: Joi.string().hex().length(24).optional(),
+  status: Joi.string().valid("active", "disabled").optional(),
+
+  preferences: Joi.object({
+    notifications: Joi.object({
+      newOrders: Joi.boolean().optional(),
+      orderUpdates: Joi.boolean().optional(),
+      lowStockAlerts: Joi.boolean().optional(),
+      outOfStock: Joi.boolean().optional(),
+      deliveryUpdates: Joi.boolean().optional(),
+      customerMessages: Joi.boolean().optional(),
+      paymentReceived: Joi.boolean().optional(),
+    })
+      .min(1)
+      .unknown(false)
+      .required(),
+  })
+    .min(1)
+    .unknown(false)
+    .optional(),
+
+  // Password is optional but must be strong if provided
+  password: Joi.string().min(8).optional(),
+})
+  .min(1)
+  .unknown(false);
+
+const updateSelfSchema = Joi.object({
+  name: Joi.string().trim().min(2).max(100).optional(),
+
+  email: Joi.string().email().optional(),
+
+  preferences: Joi.object({
+    theme: Joi.string().valid("light", "dark", "system").optional(),
+    language: Joi.string().optional(),
+
+    notifications: Joi.object({
+      newOrders: Joi.boolean().optional(),
+      orderUpdates: Joi.boolean().optional(),
+      lowStockAlerts: Joi.boolean().optional(),
+      outOfStock: Joi.boolean().optional(),
+      deliveryUpdates: Joi.boolean().optional(),
+      customerMessages: Joi.boolean().optional(),
+      paymentReceived: Joi.boolean().optional(),
+    })
+      .min(1)
+      .optional(),
+  })
+    .min(1)
+    .optional(),
+})
+  .min(1)
+  .unknown(false);
+
+const confirmEmailChangeSchema = Joi.object({
+  userId: Joi.string().hex().length(24).required(),
+  token: Joi.string().min(10).required(),
+});
+
+const acceptInvitationSchema = Joi.object({
+  userId: Joi.string().hex().length(24).required(),
+  token: Joi.string().trim().min(10).required(),
+}).unknown(false);
+
+const createUserSchema = Joi.object({
+  name: Joi.string().min(2).max(100).required(),
+  email: Joi.string().email().max(254).required(),
+  password: Joi.string().min(8).required(),
+  roleId: Joi.string().hex().length(24).required(),
+  status: Joi.string().valid("active", "disabled").default("active"),
+});
+
 module.exports = {
   loginSchema,
   refreshSchema,
@@ -87,4 +166,10 @@ module.exports = {
   changePasswordSchema,
   enable2FASchema,
   verify2FASchema,
+  updateUserStatusSchema,
+  updateUserSchema,
+  updateSelfSchema,
+  confirmEmailChangeSchema,
+  acceptInvitationSchema,
+  createUserSchema,
 };

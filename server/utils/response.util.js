@@ -21,7 +21,7 @@ const Response = (
   message,
   data = null,
   meta = null,
-  error = null
+  error = null,
 ) => {
   return {
     success,
@@ -40,7 +40,7 @@ function sendCreated(res, data = null, opts = {}) {
       message: message || "Created successfully",
       ...(data !== null ? { data } : {}),
       ...(meta ? { meta } : {}),
-    })
+    }),
   );
 }
 
@@ -69,7 +69,7 @@ function sendPaginated(res, result, opts = {}) {
         total,
         ...restMeta,
       },
-    })
+    }),
   );
 }
 
@@ -92,11 +92,17 @@ function sendError(res, err) {
 }
 
 const sendErr = (res, err) => {
-  const status = Number(err?.statusCode) || Number(err?.status) || 500;
-  return res.status(status).json({
+  // Allow passing raw error OR mapped error
+  const statusCode = err.statusCode || err.status || 500;
+
+  return res.status(statusCode).json({
     success: false,
-    message: err?.message || "An error occurred",
+    message:
+      statusCode >= 500
+        ? "Something went wrong, please try again later."
+        : err.message || "Request failed",
     data: null,
+    ...(err.code ? { error: { code: err.code } } : {}),
   });
 };
 

@@ -1,13 +1,14 @@
 const crypto = require("crypto");
 const mongoose = require("mongoose");
 const User = require("../models/user.model");
+const Role = require("../models/role.model");
 const PasswordResetToken = require("../models/passwordResetToken.model");
 const jwtUtil = require("../utils/jwt.util");
 const passwordUtil = require("../utils/password.util");
 const Session = require("../models/session.model");
 const cryptoUtil = require("../utils/crypto.util");
 const sendEmail = require("../Integration/Email.service");
-const { FRONTEND_URL } = require("../config/env");
+const { FRONTEND_URL, CLIENT_FRONT_URL } = require("../config/env");
 const {
   INVALID_EMAIL_OR_PASSWORD,
   ACCOUNT_DISABLED,
@@ -52,9 +53,9 @@ const Login = async ({
     .trim()
     .toLowerCase();
 
-  const user = await User.findOne({ email: normalizedEmail }).select(
-    "+passwordHash",
-  );
+  const user = await User.findOne({ email: normalizedEmail })
+    .select("+passwordHash")
+    .populate("role", "name");
   if (!user) return Response(false, INVALID_EMAIL_OR_PASSWORD, null);
 
   if (user.status === "disabled" || user.archived) {
@@ -69,7 +70,7 @@ const Login = async ({
 
   if (user.twoFactorEnabled) {
     const code = generate6DigitCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes
 
     user.twoFactorLogin = {
       codeHash: cryptoUtil.hashToken(code),
@@ -85,7 +86,7 @@ const Login = async ({
     await user.save();
 
     // You need an email template called "login2FA" (or rename here)
-    await sendEmail(user.email, "Your Litwebs login code", "login2FA", {
+    await sendEmail(user.email, "Your login code", "login2FA", {
       name: user.name,
       code,
       expiresMinutes: 10,
@@ -158,9 +159,9 @@ const Verify2FA = async ({ tempToken, code, ip, userAgent }) => {
   }
 
   // ✅ IMPORTANT: only add the excluded field; keep the rest of user + twoFactorLogin intact
-  const user = await User.findById(payload.sub).select(
-    "+twoFactorLogin +twoFactorLogin.codeHash +twoFactorLogin.attempts",
-  );
+  const user = await User.findById(payload.sub)
+    .select("+twoFactorLogin +twoFactorLogin.codeHash +twoFactorLogin.attempts")
+    .populate("role");
 
   if (!user) return Response(false, USER_NOT_FOUND, null);
 
@@ -233,7 +234,7 @@ const Verify2FA = async ({ tempToken, code, ip, userAgent }) => {
 };
 
 const Enable2FA = async ({ userId }) => {
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate("role");
   if (!user) return Response(false, USER_NOT_FOUND, null);
 
   user.twoFactorEnabled = !user.twoFactorEnabled;
@@ -285,7 +286,7 @@ const RefreshToken = async ({ refreshToken, ip, userAgent }) => {
     return Response(false, INVALID_OR_EXPIRED_TOKEN, null);
   }
 
-  const user = await User.findById(payload.sub);
+  const user = await User.findById(payload.sub).populate("role");
   if (!user || user.status === "disabled" || user.archived) {
     await session.revoke("USER_INACTIVE");
     return Response(false, USER_NOT_FOUND, null);
@@ -363,7 +364,7 @@ const Logout = async ({ refreshToken, userId }) => {
   return Response(true, LOGGED_OUT, null);
 };
 
-const ForgotPassword = async ({ email, ip, userAgent }) => {
+const ForgotPassword = async ({ email, ip, userAgent } = {}) => {
   const normalizedEmail = email.trim().toLowerCase();
   const user = await User.findOne({ email: normalizedEmail });
 
@@ -400,7 +401,9 @@ const ResetPassword = async ({ token, newPassword, ip, userAgent }) => {
     return Response(false, INVALID_OR_EXPIRED_TOKEN, null);
   }
 
-  const user = await User.findById(resetRecord.user).select("+passwordHash");
+  const user = await User.findById(resetRecord.user)
+    .select("+passwordHash")
+    .populate("role");
   if (!user) {
     return Response(false, USER_NOT_FOUND, { reason: "USER_NOT_FOUND" });
   }
@@ -442,7 +445,9 @@ const ChangePassword = async ({
   ip,
   userAgent,
 }) => {
-  const user = await User.findById(userId).select("+passwordHash");
+  const user = await User.findById(userId)
+    .select("+passwordHash")
+    .populate("role");
   if (!user) {
     return Response(false, USER_NOT_FOUND, { reason: "USER_NOT_FOUND" });
   }
@@ -467,7 +472,7 @@ const ChangePassword = async ({
 };
 
 const GetAuthenticatedUser = async ({ userId }) => {
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate("role");
   if (!user) {
     return Response(false, USER_NOT_FOUND, null);
   }
@@ -572,6 +577,547 @@ const RevokeSession = async ({ userId, sessionId }) => {
   return Response(true, SESSION_REVOKED, null);
 };
 
+const UpdateUserStatus = async ({ targetUserId, status, actorUserId }) => {
+  if (String(targetUserId) === String(actorUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "You cannot change your own account status",
+    };
+  }
+
+  const user = await User.findById(targetUserId);
+
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  if (user.status === status) {
+    return {
+      success: true,
+      data: { user: sanitizeUser(user) },
+    };
+  }
+
+  user.status = status;
+  await user.save();
+
+  return {
+    success: true,
+    data: { user: sanitizeUser(user) },
+  };
+};
+
+const GetUserById = async ({ targetUserId, requesterUserId }) => {
+  // Optional rule: prevent self-lookup via admin route
+  // (encourage using /me instead)
+  if (String(targetUserId) === String(requesterUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Use /me endpoint to view your own profile",
+    };
+  }
+
+  const user = await User.findById(targetUserId)
+    .populate("role", "name permissions")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  return {
+    success: true,
+    data: { user: sanitizeUser(user) },
+  };
+};
+
+const ListUsers = async ({ page = 1, pageSize = 20, status, role, search }) => {
+  const query = {};
+
+  // Optional filters
+  if (status) {
+    query.status = status;
+  }
+
+  if (role) {
+    query.role = role; // expects role ObjectId
+  }
+
+  if (search) {
+    query.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const skip = (page - 1) * pageSize;
+
+  const [items, total] = await Promise.all([
+    User.find(query)
+      .populate("role", "name")
+      .select("-passwordHash -twoFactorSecret -twoFactorLogin")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(pageSize),
+    User.countDocuments(query),
+  ]);
+
+  return {
+    success: true,
+    data: {
+      users: items,
+    },
+    meta: {
+      page,
+      pageSize,
+      total,
+    },
+  };
+};
+
+const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
+  // ❌ Prevent admin editing themselves via admin route
+  if (String(targetUserId) === String(actorUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Use profile settings to update your own account",
+    };
+  }
+
+  const user = await User.findById(targetUserId);
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  const { name, email, roleId, status, password, preferences } = updates;
+
+  if (name !== undefined) user.name = name;
+
+  // Email change (admin) must be verified by the new email address
+  if (typeof email === "string") {
+    const nextEmail = email.trim().toLowerCase();
+
+    if (nextEmail && nextEmail !== user.email) {
+      const okFormat =
+        nextEmail.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail);
+
+      if (!okFormat) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: "Invalid email address",
+        };
+      }
+
+      const existing = await User.findOne({
+        _id: { $ne: user._id },
+        email: nextEmail,
+      }).lean();
+
+      if (existing) {
+        return {
+          success: false,
+          statusCode: 409,
+          message: "A user with that email already exists",
+        };
+      }
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      user.pendingEmail = nextEmail;
+      user.pendingEmailTokenHash = cryptoUtil.hashToken(rawToken);
+      user.pendingEmailTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      const frontBaseUrl =
+        String(process.env.PUBLIC_APP_URL || "").trim() ||
+        String(CLIENT_FRONT_URL || "").trim() ||
+        String(FRONTEND_URL || "").trim();
+
+      const verifyLink = frontBaseUrl
+        ? `${frontBaseUrl.replace(/\/$/, "")}/verify-email-change?userId=${user._id}&token=${rawToken}`
+        : "";
+
+      try {
+        if (verifyLink) {
+          await sendEmail(
+            nextEmail,
+            "Confirm your new email",
+            "verifyEmailChange",
+            {
+              name: user.name,
+              verifyLink,
+              expiresInMinutes: 60,
+            },
+          );
+        } else {
+          console.error(
+            "[email-change] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build verify link",
+            { userId: user._id.toString(), email: nextEmail },
+          );
+        }
+      } catch (_) {
+        // Do not fail update if email sending fails.
+      }
+    }
+  }
+
+  if (status !== undefined) user.status = status;
+
+  // Preferences (notifications only)
+  if (preferences?.notifications) {
+    const existingNotifications = user.preferences?.notifications?.toObject
+      ? user.preferences.notifications.toObject()
+      : user.preferences?.notifications || {};
+
+    user.set("preferences.notifications", {
+      ...existingNotifications,
+      ...preferences.notifications,
+    });
+  }
+
+  // Role change
+  if (roleId) {
+    const role = await Role.findById(roleId);
+    if (!role) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Invalid role",
+      };
+    }
+    user.role = role._id;
+  }
+
+  // Password change
+  if (password) {
+    const newHash = await passwordUtil.hashPassword(password);
+    user.passwordHash = newHash;
+  }
+
+  await user.save();
+
+  const updatedUser = await User.findById(user._id)
+    .populate("role", "name permissions")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  return {
+    success: true,
+    data: { user: sanitizeUser(updatedUser) },
+  };
+};
+
+const UpdateSelf = async ({ userId, updates }, options = {}) => {
+  const { updatedBy } = options;
+
+  const user = await User.findById(userId).select("+pendingEmailTokenHash");
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  // =========================
+  // FIELD RULES (SELF)
+  // =========================
+  const allowedFields = new Set(["name", "email", "avatarUrl", "preferences"]);
+
+  const forbiddenFields = new Set([
+    "_id",
+    "id",
+    "role",
+    "status",
+    "archived",
+    "passwordHash",
+    "createdAt",
+    "updatedAt",
+  ]);
+
+  Object.keys(updates).forEach((key) => {
+    if (forbiddenFields.has(key) || !allowedFields.has(key)) {
+      delete updates[key];
+    }
+  });
+
+  // =========================
+  // EMAIL CHANGE (SELF)
+  // =========================
+  let emailChangeInitiated = false;
+
+  if (typeof updates.email === "string") {
+    const nextEmail = updates.email.trim().toLowerCase();
+
+    if (!nextEmail || nextEmail === user.email) {
+      delete updates.email;
+    } else {
+      const okFormat =
+        nextEmail.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail);
+
+      if (!okFormat) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: "Invalid email address",
+        };
+      }
+
+      const existing = await User.findOne({
+        _id: { $ne: user._id },
+        email: nextEmail,
+      }).lean();
+
+      if (existing) {
+        return {
+          success: false,
+          statusCode: 409,
+          message: "A user with that email already exists",
+        };
+      }
+
+      const rawToken = crypto.randomBytes(32).toString("hex");
+
+      user.pendingEmail = nextEmail;
+      user.pendingEmailTokenHash = cryptoUtil.hashToken(rawToken);
+      user.pendingEmailTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+      emailChangeInitiated = true;
+      delete updates.email;
+
+      const frontBaseUrl =
+        String(process.env.PUBLIC_APP_URL || "").trim() ||
+        String(CLIENT_FRONT_URL || "").trim() ||
+        String(FRONTEND_URL || "").trim();
+
+      const verifyLink = frontBaseUrl
+        ? `${frontBaseUrl.replace(/\/$/, "")}/verify-email-change?userId=${user._id}&token=${rawToken}`
+        : "";
+
+      if (!verifyLink) {
+        console.error(
+          "[email-change] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build verify link",
+          { userId: user._id.toString(), email: nextEmail },
+        );
+      } else {
+        await sendEmail(
+          nextEmail,
+          "Confirm your new email",
+          "verifyEmailChange",
+          {
+            name: user.name,
+            verifyLink,
+            expiresInMinutes: 60,
+          },
+        );
+      }
+    }
+  }
+
+  // =========================
+  // SAFE PREFERENCES MERGE
+  // =========================
+  if (updates.preferences) {
+    if (updates.preferences.theme !== undefined) {
+      user.set("preferences.theme", updates.preferences.theme);
+    }
+
+    if (updates.preferences.language !== undefined) {
+      user.set("preferences.language", updates.preferences.language);
+    }
+
+    if (updates.preferences.notifications) {
+      const existing =
+        user.preferences?.notifications?.toObject?.() ||
+        user.preferences?.notifications ||
+        {};
+
+      user.set("preferences.notifications", {
+        ...existing,
+        ...updates.preferences.notifications,
+      });
+    }
+
+    delete updates.preferences;
+  }
+
+  // =========================
+  // APPLY REMAINING UPDATES
+  // =========================
+  Object.assign(user, updates, { updatedBy });
+
+  const saved = await user.save();
+  const out = sanitizeUser(saved);
+
+  if (emailChangeInitiated) {
+    out.emailChange = {
+      pending: true,
+      pendingEmail: saved.pendingEmail,
+      expiresAt: saved.pendingEmailTokenExpiresAt,
+    };
+  }
+
+  return {
+    success: true,
+    data: { user: out },
+    emailChangeInitiated,
+  };
+};
+
+const confirmEmailChange = async ({ userId, token }) => {
+  if (!mongoose.Types.ObjectId.isValid(String(userId || ""))) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid userId",
+      data: null,
+    };
+  }
+
+  const user = await User.findById(userId).select("+pendingEmailTokenHash");
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+      data: null,
+    };
+  }
+
+  if (user.status === "disabled" || user.archived) {
+    return {
+      success: false,
+      message: "User not found or inactive",
+      data: null,
+    };
+  }
+
+  if (!user.pendingEmail || !user.pendingEmailTokenHash) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "No pending email change",
+      data: null,
+    };
+  }
+
+  if (
+    !user.pendingEmailTokenExpiresAt ||
+    user.pendingEmailTokenExpiresAt < new Date()
+  ) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Verification token expired",
+      data: null,
+    };
+  }
+
+  const tokenHash = cryptoUtil.hashToken(String(token || ""));
+  if (tokenHash !== user.pendingEmailTokenHash) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid verification token",
+      data: null,
+    };
+  }
+
+  // ✅ capture these BEFORE mutating user.email
+  const oldEmail = user.email;
+  const newEmail = user.pendingEmail;
+
+  // final uniqueness check
+  const existing = await User.findOne({
+    _id: { $ne: user._id },
+    email: newEmail,
+  }).lean();
+
+  if (existing) {
+    return {
+      success: false,
+      statusCode: 409,
+      message: "A user with that email already exists",
+      data: null,
+    };
+  }
+
+  // apply change
+  user.email = newEmail;
+
+  // clear pending fields
+  user.pendingEmail = undefined;
+  user.pendingEmailTokenHash = undefined;
+  user.pendingEmailTokenExpiresAt = undefined;
+
+  await user.save();
+
+  // ✅ revoke ALL active sessions (force logout everywhere)
+  await Session.updateMany(
+    { user: user._id, revokedAt: null },
+    { $set: { revokedAt: new Date(), revokedReason: "EMAIL_CHANGED" } },
+  );
+
+  // ✅ notify old email (recommended)
+  const frontBaseUrl =
+    String(process.env.PUBLIC_APP_URL || "").trim() ||
+    String(CLIENT_FRONT_URL || "").trim() ||
+    String(FRONTEND_URL || "").trim();
+  const securityUrl = frontBaseUrl
+    ? `${frontBaseUrl.replace(/\/$/, "")}/settings`
+    : "";
+
+  try {
+    await sendEmail(
+      oldEmail,
+      "Your Litwebs email was changed",
+      "emailChanged",
+      {
+        name: user.name,
+        oldEmail,
+        newEmail,
+        when: new Date().toLocaleString("en-GB"),
+        securityUrl,
+      },
+    );
+
+    // optional: also notify the new email
+    await sendEmail(
+      newEmail,
+      "Your Litwebs email was changed",
+      "emailChanged",
+      {
+        name: user.name,
+        oldEmail,
+        newEmail,
+        when: new Date().toLocaleString("en-GB"),
+        securityUrl,
+      },
+    );
+  } catch (_) {
+    // don't fail the verification if email sending fails
+  }
+
+  return {
+    success: true,
+    message: "Email changed successfully",
+    data: sanitizeUser(user),
+  };
+};
+
 const sanitizeUser = (user) => {
   if (!user) return null;
 
@@ -592,7 +1138,204 @@ const sanitizeUser = (user) => {
   }
   delete obj.pendingEmailTokenExpiresAt;
 
+  // Never expose invitation hashes in responses
+  delete obj.inviteTokenHash;
+
   return obj;
+};
+
+const AcceptInvitation = async ({ userId, token } = {}) => {
+  if (!userId || !token) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "userId and token are required",
+    };
+  }
+
+  const user = await User.findById(userId)
+    .select("+inviteTokenHash")
+    .populate("role", "name permissions")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  if (!user.inviteTokenHash || !user.inviteTokenExpiresAt) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invitation is not pending",
+    };
+  }
+
+  const now = new Date();
+  if (user.inviteTokenExpiresAt <= now) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invitation has expired",
+    };
+  }
+
+  const tokenHash = cryptoUtil.hashToken(String(token || ""));
+  if (tokenHash !== user.inviteTokenHash) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid invitation token",
+    };
+  }
+
+  user.emailVerifiedAt = now;
+  user.inviteTokenHash = undefined;
+  user.inviteTokenExpiresAt = undefined;
+  user.status = "active";
+
+  await user.save();
+
+  return {
+    success: true,
+    data: {
+      user: sanitizeUser(user),
+    },
+  };
+};
+
+const DeleteUser = async ({ targetUserId, actorUserId } = {}) => {
+  if (!mongoose.Types.ObjectId.isValid(String(targetUserId || ""))) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid userId",
+    };
+  }
+
+  if (String(targetUserId) === String(actorUserId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "You cannot delete your own account",
+    };
+  }
+
+  const user = await User.findById(targetUserId);
+  if (!user) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "User not found",
+    };
+  }
+
+  await Promise.all([
+    Session.deleteMany({ user: user._id }),
+    PasswordResetToken.deleteMany({ user: user._id }),
+  ]);
+
+  await User.deleteOne({ _id: user._id });
+
+  return {
+    success: true,
+    data: { deleted: true },
+  };
+};
+
+// CREATE USER (Admin)
+const CreateUser = async ({ body, actorUserId }) => {
+  const { name, email, password, roleId, status } = body;
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Ensure role exists
+  const role = await Role.findById(roleId);
+  if (!role) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid role",
+    };
+  }
+
+  // Ensure email uniqueness
+  const existing = await User.findOne({ email: normalizedEmail }).lean();
+  if (existing) {
+    return {
+      success: false,
+      statusCode: 409,
+      message: "A user with that email already exists",
+    };
+  }
+
+  const passwordHash = await passwordUtil.hashPassword(password);
+
+  const user = await User.create({
+    name,
+    email: normalizedEmail,
+    passwordHash,
+    role: role._id,
+    // New users must accept the invitation to verify email.
+    status: "disabled",
+    createdBy: actorUserId,
+    invitedAt: new Date(),
+    invitedBy: actorUserId,
+  });
+
+  // Issue invitation token (expires in 1 hour)
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const inviteTokenHash = cryptoUtil.hashToken(rawToken);
+  const inviteTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  user.inviteTokenHash = inviteTokenHash;
+  user.inviteTokenExpiresAt = inviteTokenExpiresAt;
+  await user.save();
+
+  // Send users to the frontend, which can call the API regardless of where it is hosted.
+  const frontBaseUrl =
+    String(process.env.PUBLIC_APP_URL || "").trim() ||
+    String(CLIENT_FRONT_URL || "").trim() ||
+    String(FRONTEND_URL || "").trim();
+
+  const acceptLink = frontBaseUrl
+    ? `${frontBaseUrl.replace(/\/$/, "")}/accept-invitation?userId=${user._id.toString()}&token=${rawToken}`
+    : "";
+
+  try {
+    if (!acceptLink) {
+      console.error(
+        "[invite] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build invitation link",
+        {
+          userId: user._id.toString(),
+          email: user.email,
+        },
+      );
+    } else {
+      await sendEmail(user.email, "Accept your invitation", "userInvitation", {
+        name: user.name,
+        invitedBy: "An admin",
+        acceptLink,
+        expiresInMinutes: 60,
+      });
+    }
+  } catch (_) {
+    // Do not fail user creation if email provider fails.
+  }
+
+  const populated = await User.findById(user._id)
+    .populate("role", "name permissions")
+    .select("-passwordHash -twoFactorSecret -twoFactorLogin");
+
+  return {
+    success: true,
+    data: {
+      user: sanitizeUser(populated),
+    },
+  };
 };
 
 function sessionLabelFromUserAgent(userAgent, ip) {
@@ -663,4 +1406,13 @@ module.exports = {
   GetSessions,
   RevokeOtherSessions,
   RevokeSession,
+  UpdateUserStatus,
+  GetUserById,
+  ListUsers,
+  UpdateUser,
+  UpdateSelf,
+  confirmEmailChange,
+  AcceptInvitation,
+  DeleteUser,
+  CreateUser,
 };

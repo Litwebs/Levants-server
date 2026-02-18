@@ -14,7 +14,7 @@ const twoFactorLoginSchema = new mongoose.Schema(
     userAgent: { type: String, default: null },
     rememberMe: { type: Boolean, default: false },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const userSchema = new mongoose.Schema(
@@ -28,9 +28,39 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true, // this already creates a unique index
+      unique: true,
       lowercase: true,
       trim: true,
+    },
+
+    // ===== Email verification (invitation acceptance) =====
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    inviteTokenHash: {
+      type: String,
+      select: false,
+      index: true,
+    },
+
+    inviteTokenExpiresAt: {
+      type: Date,
+      index: true,
+    },
+
+    invitedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    invitedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
 
     // ===== Email change flow =====
@@ -42,7 +72,7 @@ const userSchema = new mongoose.Schema(
     },
     pendingEmailTokenHash: {
       type: String,
-      select: false, // never return it by default
+      select: false,
     },
     pendingEmailTokenExpiresAt: {
       type: Date,
@@ -51,19 +81,22 @@ const userSchema = new mongoose.Schema(
     passwordHash: {
       type: String,
       required: true,
-      select: false, // ✅ better: never return by default
+      select: false,
     },
 
+    // ✅ Role reference (RBAC)
     role: {
-      type: String,
-      enum: ["admin", "developer", "designer", "sales", "support"],
-      default: "developer",
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Role",
+      required: true,
+      index: true,
     },
 
     status: {
       type: String,
       enum: ["active", "disabled"],
       default: "active",
+      index: true,
     },
 
     avatarUrl: {
@@ -84,6 +117,36 @@ const userSchema = new mongoose.Schema(
         type: String,
         default: "en-GB",
       },
+      notifications: {
+        newOrders: {
+          type: Boolean,
+          default: true,
+        },
+        orderUpdates: {
+          type: Boolean,
+          default: true,
+        },
+        lowStockAlerts: {
+          type: Boolean,
+          default: true,
+        },
+        outOfStock: {
+          type: Boolean,
+          default: true,
+        },
+        deliveryUpdates: {
+          type: Boolean,
+          default: false,
+        },
+        customerMessages: {
+          type: Boolean,
+          default: true,
+        },
+        paymentReceived: {
+          type: Boolean,
+          default: true,
+        },
+      },
     },
 
     // ===== 2FA =====
@@ -92,17 +155,15 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
-    // (kept for future TOTP; not used for email-code login)
     twoFactorSecret: {
       type: String,
       select: false,
     },
 
-    // Email-code login challenge (stored on user)
     twoFactorLogin: {
       type: twoFactorLoginSchema,
-      default: undefined, // keeps document clean when unused
-      select: false, // ✅ never return any of it by default
+      default: undefined,
+      select: false,
     },
 
     createdBy: {
@@ -112,14 +173,15 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Indexes
-userSchema.index({ role: 1 });
-userSchema.index({ status: 1 });
+// NOTE: keep indexes defined once. `email` is indexed via `unique: true`.
+// `role` and `status` are indexed via `index: true` on the fields.
+// (Duplicate index definitions trigger Mongoose warnings.)
 
-// Clean JSON output (extra safety)
+// Clean JSON output
 userSchema.method("toJSON", function () {
   const obj = this.toObject({ virtuals: true });
 

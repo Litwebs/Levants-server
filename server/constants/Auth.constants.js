@@ -46,7 +46,79 @@ const OK = "OK";
 
 const EMAIL_REQUIRED = "Email is required.";
 
+// src/constants/auth.constants.js
+
+const PERMISSIONS = [
+  // =========================
+  // Orders
+  // =========================
+  "orders.create",
+  "orders.read",
+  "orders.update",
+  "orders.delete",
+  "orders.refund",
+
+  // =========================
+  // Products
+  // =========================
+  "products.create",
+  "products.read",
+  "products.update",
+  "products.delete",
+  "products.publish",
+
+  "variants.create",
+  "variants.update",
+  "variants.delete",
+
+  "stock.update",
+  // =========================
+  // Customers
+  // =========================
+  "customers.create",
+  "customers.read",
+  "customers.update",
+  "customers.delete",
+
+  // =========================
+  // Delivery / Routes
+  // =========================
+  "delivery.routes.create",
+  "delivery.routes.read",
+  "delivery.routes.update",
+  "delivery.routes.delete",
+
+  // =========================
+  // Promotions
+  // =========================
+  "promotions.create",
+  "promotions.read",
+  "promotions.update",
+  "promotions.delete",
+
+  // =========================
+  // Business Info
+  // =========================
+  "business.info.read",
+  "business.info.update",
+
+  // =========================
+  // Audit
+  // =========================
+  "audit.read",
+  "analytics.read",
+
+  // =========================
+  // Users / Auth
+  // =========================
+  "users.read",
+  "users.update",
+  "users.status.update", // ✅ enable / disable users
+  "users.roles.update", // ✅ assign roles
+];
+
 module.exports = {
+  PERMISSIONS,
   INVALID_EMAIL_OR_PASSWORD,
   INVALID_OR_EXPIRED_SESSION,
   INVALID_RESET_PASSWORD_TOKEN,

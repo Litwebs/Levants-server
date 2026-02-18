@@ -1,0 +1,165 @@
+.printContainer {
+  display: none;
+}
+
+@media print {
+  .printContainer {
+    display: block;
+    padding: 20px;
+    font-family: var(--font-body);
+  }
+  
+  .noPrint {
+    display: none !important;
+  }
+}
+
+.printHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #000;
+}
+
+.printTitle {
+  font-size: 24px;
+  font-weight: bold;
+  margin: 0 0 4px 0;
+}
+
+.printSubtitle {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+.printMeta {
+  text-align: right;
+  font-size: 12px;
+}
+
+.printStats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding: 12px;
+  background: #f5f5f5;
+}
+
+.printStat {
+  text-align: center;
+}
+
+.printStatValue {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.printStatLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #666;
+}
+
+.printTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 24px;
+}
+
+.printTable th {
+  background: #333;
+  color: white;
+  padding: 8px;
+  text-align: left;
+  font-weight: 600;
+}
+
+.printTable td {
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+  vertical-align: top;
+}
+
+.printTable tr:nth-child(even) {
+  background: #f9f9f9;
+}
+
+.printSequence {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #333;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 11px;
+}
+
+.printItems {
+  font-size: 10px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.printNotes {
+  font-size: 10px;
+  color: #666;
+  font-style: italic;
+}
+
+.printManifestTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.printManifestTable th {
+  background: #333;
+  color: white;
+  padding: 8px;
+  text-align: left;
+}
+
+.printManifestTable td {
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+}
+
+.printManifestTable .qtyCell {
+  text-align: right;
+  font-weight: bold;
+}
+
+.printManifestTable tfoot td {
+  background: #f5f5f5;
+  font-weight: bold;
+}
+
+.printFooter {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #ddd;
+  font-size: 10px;
+  color: #666;
+  text-align: center;
+}
+
+/* Screen preview styles */
+.previewContainer {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px;
+  background: white;
+}
+
+.previewActions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}

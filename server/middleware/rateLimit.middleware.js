@@ -1,5 +1,5 @@
 const rateLimit = require("express-rate-limit");
-const { sendError } = require("../utils/response.util");
+const { sendErr } = require("../utils/response.util");
 
 // Helper to safely read integer env vars
 function intFromEnv(name, defaultValue) {
@@ -18,12 +18,12 @@ const DEFAULT_LOGIN_MAX = intFromEnv("RATE_LIMIT_LOGIN_MAX", 7);
 
 const DEFAULT_AUTH_WINDOW_MS = intFromEnv(
   "RATE_LIMIT_AUTH_WINDOW_MS",
-  15 * 60 * 1000,
-); // 15 mins
-const DEFAULT_AUTH_MAX = intFromEnv("RATE_LIMIT_AUTH_MAX", 7);
+  60 * 1000,
+); // 1 min
+const DEFAULT_AUTH_MAX = intFromEnv("RATE_LIMIT_AUTH_MAX", 120);
 
 const DEFAULT_API_WINDOW_MS = intFromEnv("RATE_LIMIT_API_WINDOW_MS", 60 * 1000); // 1 min
-const DEFAULT_API_MAX = intFromEnv("RATE_LIMIT_API_MAX", 5);
+const DEFAULT_API_MAX = intFromEnv("RATE_LIMIT_API_MAX", 60);
 
 // Contact form submissions (public)
 const DEFAULT_SUBMISSIONS_WINDOW_MS = intFromEnv(
@@ -49,25 +49,53 @@ function rateLimitHandler(req, res, _next, options) {
     res.setHeader("Retry-After", retrySecs.toString());
   }
 
-  const err = new Error(
-    options.message ||
-      "Too many requests, please slow down and try again shortly.",
-  );
-  err.statusCode = options.statusCode || 429;
-  err.code = "TOO_MANY_REQUESTS";
+  const DEFAULT_MSG =
+    "Too many requests, please slow down and try again shortly.";
+  const GENERIC_SHORT_MSG = "Too many requests, please slow down.";
 
-  return sendError(res, err);
+  const optionMessage =
+    typeof options?.message === "string" ? options.message.trim() : "";
+  const message =
+    !optionMessage || optionMessage === GENERIC_SHORT_MSG
+      ? DEFAULT_MSG
+      : optionMessage;
+
+  const status = Number(options?.statusCode) || 429;
+  const code = "TOO_MANY_REQUESTS";
+
+  if (res.headersSent) return;
+
+  return res.status(status).json({
+    success: false,
+    code,
+    message,
+    data: null,
+    error: {
+      code,
+      message,
+      data: null,
+    },
+  });
 }
 
 /**
  * Generic factory if you ever want custom limiters in routes.
  */
-function createRateLimiter({ windowMs, max, message, keyGenerator, skip }) {
+function createRateLimiter({
+  windowMs,
+  max,
+  message,
+  keyGenerator,
+  skip,
+  legacyHeaders,
+  standardHeaders,
+}) {
   const options = {
     windowMs,
     max,
-    standardHeaders: true,
-    legacyHeaders: false,
+    standardHeaders:
+      typeof standardHeaders === "boolean" ? standardHeaders : true,
+    legacyHeaders: typeof legacyHeaders === "boolean" ? legacyHeaders : false,
     message,
     handler: rateLimitHandler,
   };

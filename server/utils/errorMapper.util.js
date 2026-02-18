@@ -1,4 +1,14 @@
 function mapError(err) {
+  // ✅ RESPECT explicit errors FIRST
+  if (err && err.statusCode && err.message) {
+    return {
+      statusCode: err.statusCode,
+      code: err.code || null,
+      message: err.message,
+      details: err.details || null,
+    };
+  }
+
   // Defaults
   let statusCode = err.statusCode || err.status || 500;
   let code = err.code || "INTERNAL_SERVER_ERROR";
@@ -13,7 +23,7 @@ function mapError(err) {
     details = err.details?.map((d) => d.message) || null;
   }
 
-  // JSON Web Token errors
+  // JWT errors
   if (err.name === "JsonWebTokenError") {
     statusCode = 401;
     code = "UNAUTHENTICATED";
@@ -26,7 +36,7 @@ function mapError(err) {
     message = "Access token has expired";
   }
 
-  // Mongoose validation errors
+  // Mongoose validation
   if (err.name === "ValidationError") {
     statusCode = 400;
     code = "MONGOOSE_VALIDATION_ERROR";
@@ -38,22 +48,39 @@ function mapError(err) {
   if (err.code === 11000) {
     statusCode = 409;
     code = "DUPLICATE_KEY_ERROR";
-    message = "Duplicate value for a unique field";
-    details = { keyValue: err.keyValue };
+    const keyValue = err.keyValue || null;
+    const keyPattern = err.keyPattern || null;
+    const field =
+      (keyValue && Object.keys(keyValue)[0]) ||
+      (keyPattern && Object.keys(keyPattern)[0]) ||
+      null;
+
+    if (field === "sku") {
+      message = "SKU already exists";
+    } else if (field) {
+      message = `Duplicate value for ${field}`;
+    } else {
+      message = "Duplicate value for a unique field";
+    }
+
+    details = {
+      ...(field ? { field } : {}),
+      ...(keyValue ? { keyValue } : {}),
+    };
   }
 
-  // Common auth codes
-  if (err.code === "UNAUTHORIZED") {
+  // Auth fallbacks (ONLY if message is missing)
+  if (err.code === "UNAUTHORIZED" && !err.message) {
     statusCode = 401;
-    message = err.message || "Unauthorized";
+    message = "Unauthorized";
   }
 
-  if (err.code === "FORBIDDEN") {
+  if (err.code === "FORBIDDEN" && !err.message) {
     statusCode = 403;
-    message = err.message || "Forbidden";
+    message = "Forbidden";
   }
 
-  // Production: avoid leaking internals for 500s
+  // Production hardening
   if (process.env.NODE_ENV === "production" && statusCode >= 500) {
     message = "Internal server error";
   }

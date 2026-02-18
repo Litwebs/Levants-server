@@ -2,13 +2,19 @@
 const express = require("express");
 
 const asyncHandler = require("../utils/asyncHandler.util");
-const { validateBody } = require("../middleware/validate.middleware");
+const {
+  validateBody,
+  validateParams,
+} = require("../middleware/validate.middleware");
 const { requireAuth } = require("../middleware/auth.middleware");
+const { requirePermission } = require("../middleware/permission.middleware");
 const authController = require("../controllers/auth.controller");
 const {
   loginLimiter,
   apiLimiter,
+  authLimiter,
 } = require("../middleware/rateLimit.middleware");
+const { userIdParamSchema } = require("../validators/common.validators");
 
 const {
   loginSchema,
@@ -18,17 +24,27 @@ const {
   changePasswordSchema,
   enable2FASchema,
   verify2FASchema,
+  updateUserStatusSchema,
+  updateUserSchema,
+  updateSelfSchema,
+  confirmEmailChangeSchema,
+  acceptInvitationSchema,
+  createUserSchema,
 } = require("../validators/auth.validators");
 
 const router = express.Router();
 
 // USED TO CHECK IF AUTHENTICATED
-router.get("/authenticated", asyncHandler(authController.CheckAuth));
+router.get(
+  "/authenticated",
+  apiLimiter,
+  asyncHandler(authController.CheckAuth),
+);
 
 // USED TO GET ACTIVE SESSIONS
 router.get(
   "/sessions",
-  apiLimiter,
+  authLimiter,
   requireAuth,
   asyncHandler(authController.GetSessions),
 );
@@ -36,7 +52,7 @@ router.get(
 // USED TO GET CURRENT USER INFO
 router.get(
   "/me",
-  apiLimiter,
+  authLimiter,
   requireAuth,
   asyncHandler(authController.GetAuthenticatedUser),
 );
@@ -59,6 +75,7 @@ router.post(
 
 // USED TO LOGOUT
 router.get("/logout", asyncHandler(authController.Logout));
+
 // USED TO REQUEST PASSWORD CHANGE SEND EMAIL
 router.post(
   "/forgot-password",
@@ -70,6 +87,7 @@ router.post(
 // USED TO VERIFY RESET PASSWORD TOKEN
 router.get(
   "/reset-password/verify",
+  apiLimiter,
   asyncHandler(authController.VerifyResetPasswordToken),
 );
 
@@ -84,7 +102,7 @@ router.post(
 // USED TO CHANGE PASSWORD IN APP (Authenticated)
 router.post(
   "/change-password",
-  apiLimiter,
+  authLimiter,
   requireAuth,
   validateBody(changePasswordSchema),
   asyncHandler(authController.ChangePassword),
@@ -93,6 +111,7 @@ router.post(
 // USED TO TOGGLE 2 FACTOR AUTHENTICATION (Authenticated)
 router.get(
   "/2fa/toggle",
+  authLimiter,
   requireAuth,
   validateBody(enable2FASchema),
   asyncHandler(authController.Toggle2FA),
@@ -101,19 +120,105 @@ router.get(
 // ✅ IMPORTANT: no requireAuth here
 router.post(
   "/2fa/verify",
+  apiLimiter,
   validateBody(verify2FASchema),
   asyncHandler(authController.Verify2FA),
 );
 
+// USED TO REVOKE A SESSION
 router.post(
   "/sessions/:sessionId/revoke",
+  apiLimiter,
   requireAuth,
   asyncHandler(authController.RevokeSession),
 );
-// router.post(
-//   "/sessions/revoke-others",
-//   requireAuth,
-//   asyncHandler(authController.RevokeOtherSessions)
-// );
+
+// USED TO REVOKE ALL SESSIONS
+router.put(
+  "/users/:userId/status",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.status.update"),
+  validateParams(userIdParamSchema),
+  validateBody(updateUserStatusSchema),
+  asyncHandler(authController.UpdateUserStatus),
+);
+
+// USED TO GET USER BY ID (Admin or self)
+router.get(
+  "/users/:userId",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.read"),
+  validateParams(userIdParamSchema),
+  asyncHandler(authController.GetUserById),
+);
+
+// USED TO UPDATE USER (Admin or self)
+router.put(
+  "/users/:userId",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.update"),
+  validateParams(userIdParamSchema),
+  validateBody(updateUserSchema),
+  asyncHandler(authController.UpdateUser),
+);
+
+// DELETE USER (Admin)
+router.delete(
+  "/users/:userId",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.delete"),
+  validateParams(userIdParamSchema),
+  asyncHandler(authController.DeleteUser),
+);
+
+// USED TO GET ALL USERS (Admin only)
+router.get(
+  "/users",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.read"),
+  asyncHandler(authController.ListUsers),
+);
+
+// CREATE USER (Admin only)
+router.post(
+  "/users",
+  apiLimiter,
+  requireAuth,
+  requirePermission("users.create"),
+  validateBody(createUserSchema),
+  asyncHandler(authController.CreateUser),
+);
+
+// USED TO UPDATE SELF INFO (Authenticated users)
+router.put(
+  "/me",
+  apiLimiter,
+  requireAuth,
+  validateBody(updateSelfSchema),
+  asyncHandler(authController.UpdateSelf),
+);
+
+router.post(
+  "/confirm-email-change",
+  validateBody(confirmEmailChangeSchema),
+  asyncHandler(authController.confirmEmailChange),
+);
+
+// Invitation acceptance (public)
+router.get(
+  "/accept-invitation",
+  asyncHandler(authController.AcceptInvitationLink),
+);
+
+router.post(
+  "/accept-invitation",
+  validateBody(acceptInvitationSchema),
+  asyncHandler(authController.AcceptInvitation),
+);
 
 module.exports = router;

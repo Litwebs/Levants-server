@@ -1,0 +1,201 @@
+.chartContainer {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.barChart {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding-bottom: var(--space-6);
+}
+
+.barWrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+
+.barContainer {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.bar {
+  width: 80%;
+  max-width: 48px;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  position: relative;
+  min-height: 4px;
+  transition: height var(--transition-normal);
+}
+
+.highlight {
+  box-shadow: 0 0 0 2px var(--color-gray-900);
+}
+
+.highlightLabel {
+  color: var(--color-gray-900);
+  font-weight: var(--font-semibold);
+}
+
+.bar.primary {
+  background: linear-gradient(180deg, var(--color-primary), var(--color-primary-dark));
+}
+
+.bar.success {
+  background: linear-gradient(180deg, var(--color-success), #15803d);
+}
+
+.bar.info {
+  background: linear-gradient(180deg, var(--color-info), #1d4ed8);
+}
+
+.barValue {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-600);
+  white-space: nowrap;
+}
+
+.barLabel {
+  margin-top: var(--space-2);
+  font-size: 10px;
+  color: var(--color-gray-500);
+  text-align: center;
+}
+
+/* Horizontal Bar Chart */
+.horizontalChart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.horizontalBarItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.horizontalLabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.horizontalName {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-700);
+}
+
+.horizontalValue {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.horizontalBarBg {
+  height: 8px;
+  background-color: var(--color-gray-100);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.horizontalBar {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--transition-normal);
+}
+
+.horizontalBar.primary {
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-dark));
+}
+
+.horizontalBar.success {
+  background: linear-gradient(90deg, var(--color-success), #15803d);
+}
+
+.horizontalBar.info {
+  background: linear-gradient(90deg, var(--color-info), #1d4ed8);
+}
+
+.horizontalBar.warning {
+  background: linear-gradient(90deg, var(--color-warning), #d97706);
+}
+
+/* Donut Chart */
+.donutContainer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.donutSvg {
+  flex-shrink: 0;
+}
+
+.donutSegment {
+  transition: opacity var(--transition-fast);
+}
+
+.donutSegment:hover {
+  opacity: 0.8;
+}
+
+.donutCenter {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.donutValue {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-gray-900);
+}
+
+.donutLabel {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.donutLegend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+}
+
+.legendText {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}

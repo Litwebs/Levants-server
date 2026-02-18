@@ -1,188 +1,140 @@
 // Services/Templates/verifyEmailChange.js
-module.exports = ({ name = "there", verifyLink }) => `
+module.exports = ({
+  name = "there",
+  verifyLink,
+  expiresInMinutes = 60,
+  logoSrc = "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png",
+}) => `
 <!doctype html>
-<html lang="en">
+<html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="x-apple-disable-message-reformatting" />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="supported-color-schemes" content="light dark" />
-    <title>Confirm your new email</title>
-    <style>
-      @media (max-width: 520px) {
-        .container { width: 100% !important; }
-        .px { padding-left: 18px !important; padding-right: 18px !important; }
-        .card { padding: 18px !important; }
-        .btn { width: 100% !important; }
-      }
-    </style>
+    <title>Confirm Your New Email</title>
   </head>
 
-  <body style="margin:0; padding:0; background:#0b0b0f;">
-    <!-- Preheader (hidden) -->
-    <div style="display:none; font-size:1px; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden;">
-      Confirm your new Litwebs email address.
+  <body style="margin:0; padding:0; background:#fdfaf6; font-family:'DM Sans', Arial, sans-serif;">
+
+    <!-- Preheader -->
+    <div style="display:none; font-size:1px; color:#fdfaf6; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden;">
+      Confirm your new levants email address.
     </div>
 
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#0b0b0f; padding:26px 0;">
+    <!-- Wrapper -->
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fdfaf6; padding:40px 0;">
       <tr>
-        <td align="center" style="padding:0 14px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="500" class="container" style="width:500px; max-width:500px;">
+        <td align="center">
+
+          <!-- Container -->
+          <table width="560" cellpadding="0" cellspacing="0" border="0"
+            style="background:#ffffff; border-radius:18px; overflow:hidden; box-shadow:0 20px 40px rgba(0,0,0,0.06);">
+
+            <!-- Header -->
             <tr>
-              <td class="px" style="padding:0 6px;">
+              <td style="background:#244233; padding:30px 30px 24px 30px;" align="left">
+                <img
+                  src="${logoSrc}"
+                  alt="Levants"
+                  width="52"
+                  height="52"
+                  style="display:block; border:0; outline:none; text-decoration:none; margin-bottom:12px; width:52px; height:52px; border-radius:9999px; object-fit:cover;"
+                />
+                <div style="margin-top:6px; font-size:13px; color:#e8e4dd;">
+                  Confirm New Email Address
+                </div>
+              </td>
+            </tr>
 
-                <!-- Header -->
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+            <!-- Gold Divider -->
+            <tr>
+              <td style="height:4px; background:#d4a017;"></td>
+            </tr>
+
+            <!-- Body -->
+            <tr>
+              <td style="padding:36px 32px;">
+
+                <h2 style="margin:0 0 14px 0; font-family:'Playfair Display', Georgia, serif; font-size:24px; color:#2b2b2b;">
+                  Hello ${name},
+                </h2>
+
+                <p style="margin:0 0 22px 0; font-size:15px; line-height:1.7; color:#444;">
+                  You requested to change the email address on your levants account.
+                  Please confirm this change by clicking the button below.
+                </p>
+
+                <p style="margin:0 0 18px 0; font-size:14px; line-height:1.7; color:#6a645c;">
+                  This link expires in <strong>${expiresInMinutes} minutes</strong>.
+                </p>
+
+                <!-- Button -->
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 18px 0;">
                   <tr>
-                    <td align="left" style="padding:10px 6px 16px 6px;">
-                      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                        <tr>
-                          <td valign="middle" style="padding-right:10px;">
-                            <div
-                              style="
-                                width:34px;
-                                height:34px;
-                                border-radius:10px;
-                                background:linear-gradient(135deg,#6ee7ff,#a78bfa,#22c55e);
-                                display:block;
-                              "
-                            ></div>
-                          </td>
-
-                          <td valign="middle" style="padding:0;">
-                            <div
-                              style="
-                                font-family:Arial, sans-serif;
-                                font-size:18px;
-                                font-weight:700;
-                                color:#ffffff;
-                                letter-spacing:0.2px;
-                                line-height:1.1;
-                                margin:0;
-                                padding:0;
-                              "
-                            >
-                              Litwebs
-                            </div>
-
-                            <div
-                              style="
-                                font-family:Arial, sans-serif;
-                                font-size:12px;
-                                color:#a3a3a3;
-                                line-height:1.2;
-                                margin:4px 0 0 0;
-                                padding:0;
-                              "
-                            >
-                              Confirm your new email
-                            </div>
-                          </td>
-                        </tr>
-                      </table>
+                    <td align="center">
+                      <a href="${verifyLink}"
+                         style="
+                           display:inline-block;
+                           background:#244233;
+                           color:#ffffff;
+                           font-size:14px;
+                           font-weight:600;
+                           text-decoration:none;
+                           padding:14px 30px;
+                           border-radius:12px;
+                           border:2px solid #244233;
+                         ">
+                        Confirm New Email
+                      </a>
                     </td>
                   </tr>
                 </table>
 
-                <!-- Card -->
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="
-                  background:#ffffff;
-                  border-radius:16px;
-                  overflow:hidden;
-                  border:1px solid rgba(255,255,255,0.10);
-                  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
-                ">
-                  <tr>
-                    <td style="height:6px; background:linear-gradient(90deg,#6ee7ff,#a78bfa,#22c55e); line-height:6px; font-size:0;">
-                      &nbsp;
-                    </td>
-                  </tr>
+                <p style="margin:0 0 18px 0; font-size:14px; line-height:1.7; color:#6a645c;">
+                  If you didn’t request this change, you can safely ignore this email.
+                  Your account email will remain unchanged.
+                </p>
 
-                  <tr>
-                    <td class="card" style="padding:22px;">
-                      <div style="font-family:Arial, sans-serif; font-size:12px; color:#6b7280; letter-spacing:0.3px; text-transform:uppercase;">
-                        Email change
-                      </div>
+                <!-- Divider -->
+                <div style="border-top:1px solid #ece6dc; margin:22px 0;"></div>
 
-                      <h2 style="margin:10px 0 8px 0; font-family:Arial, sans-serif; font-size:22px; line-height:1.25; color:#111827;">
-                        Hi ${name},
-                      </h2>
-
-                      <p style="margin:0 0 14px 0; font-family:Arial, sans-serif; font-size:14px; line-height:1.6; color:#374151;">
-                        You requested to change the email on your Litwebs account.
-                        Please confirm this change using the button below.
-                      </p>
-
-                      <!-- Button -->
-                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:18px 0 10px 0;">
-                        <tr>
-                          <td align="center">
-                            <a
-                              href="${verifyLink}"
-                              target="_blank"
-                              class="btn"
-                              style="
-                                display:inline-block;
-                                font-family:Arial, sans-serif;
-                                font-size:14px;
-                                font-weight:700;
-                                letter-spacing:0.2px;
-                                text-decoration:none;
-                                color:#ffffff;
-                                background:#111827;
-                                padding:13px 18px;
-                                border-radius:12px;
-                                border:1px solid rgba(17,24,39,0.25);
-                                box-shadow: 0 8px 18px rgba(17,24,39,0.18);
-                              "
-                            >
-                              Confirm new email
-                            </a>
-                          </td>
-                        </tr>
-                      </table>
-
-                      <p style="margin:10px 0 0 0; font-family:Arial, sans-serif; font-size:13px; line-height:1.6; color:#6b7280;">
-                        If you didn’t request this, ignore this email — your account email will stay the same.
-                      </p>
-
-                      <div style="height:1px; background:#eef2f7; margin:18px 0;"></div>
-
-                      <p style="margin:0; font-family:Arial, sans-serif; font-size:12px; line-height:1.6; color:#6b7280;">
-                        Button not working? Copy and paste this link into your browser:
-                        <br />
-                        <a href="${verifyLink}" target="_blank" style="color:#111827; word-break:break-all; text-decoration:underline;">
-                          ${verifyLink}
-                        </a>
-                      </p>
-                    </td>
-                  </tr>
-                </table>
-
-                <!-- Footer -->
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-                  <tr>
-                    <td align="center" style="padding:14px 8px 0 8px;">
-                      <p style="margin:0; font-family:Arial, sans-serif; font-size:12px; color:#a3a3a3;">
-                        Need help?
-                        <a href="mailto:contact@litwebs.co.uk" style="color:#ffffff; text-decoration:none; border-bottom:1px solid rgba(255,255,255,0.35);">
-                          contact@litwebs.co.uk
-                        </a>
-                      </p>
-                      <p style="margin:8px 0 0 0; font-family:Arial, sans-serif; font-size:12px; color:#6b7280;">
-                        &copy; 2025 Litwebs. All rights reserved.
-                      </p>
-                    </td>
-                  </tr>
-                </table>
+                <!-- Fallback -->
+                <div style="font-size:12px; line-height:1.6; color:#8a847c;">
+                  If the button doesn’t work, copy and paste this link into your browser:
+                  <br><br>
+                  <a href="${verifyLink}"
+                     style="color:#244233; word-break:break-all; text-decoration:none; font-weight:600;">
+                    ${verifyLink}
+                  </a>
+                </div>
 
               </td>
             </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="background:#f6f2ec; padding:24px 20px;" align="center">
+
+                <div style="font-size:13px; color:#5e5952;">
+                  Need help?
+                  <a href="mailto:contact@levants.co.uk"
+                     style="color:#244233; text-decoration:none; font-weight:600;">
+                    contact@levants.co.uk
+                  </a>
+                </div>
+
+                <div style="margin-top:10px; font-size:12px; color:#9c968d;">
+                  © 2025 levants. All rights reserved.
+                </div>
+
+              </td>
+            </tr>
+
           </table>
+
         </td>
       </tr>
     </table>
+
   </body>
 </html>
 `;

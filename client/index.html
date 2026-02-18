@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+
+    <style>
+      /* Prevent white flash before CSS bundle loads */
+      html[data-theme="dark"],
+      html[data-theme="dark"] body {
+        background-color: hsl(222.2 84% 4.9%);
+      }
+      html[data-theme="light"],
+      html[data-theme="light"] body {
+        background-color: hsl(0 0% 100%);
+      }
+    </style>
+
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("levants:theme");
+          var theme =
+            stored === "light" || stored === "dark" || stored === "system"
+              ? stored
+              : "system";
+          var systemDark =
+            window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var isDark = theme === "dark" || (theme === "system" && systemDark);
+
+          var root = document.documentElement;
+          root.classList.toggle("dark", isDark);
+          root.dataset.theme = isDark ? "dark" : "light";
+          root.style.colorScheme = isDark ? "dark" : "light";
+        } catch (e) {
+          // ignore
+        }
+      })();
+    </script>
+    <title>Levants Admin</title>
+    <meta name="description" content="Lovable Generated Project" />
+    <meta name="author" content="Lovable" />
+
+    <!-- TODO: Update og:title to match your application name -->
+    <meta property="og:title" content="Levants Admin" />
+    <meta property="og:description" content="Lovable Generated Project" />
+    <meta property="og:type" content="website" />
+    <!-- <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" /> -->
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@Lovable" />
+    <!-- <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" /> -->
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

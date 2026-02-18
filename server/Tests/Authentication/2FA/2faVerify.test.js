@@ -43,6 +43,8 @@ describe("2FA verify rate limiter", () => {
     expect(res.headers["ratelimit-limit"]).toBeTruthy();
 
     // Your handler sets this code
-    expect(res.body?.code || res.body?.error?.code).toBe("TOO_MANY_REQUESTS");
+    expect(res.body?.message || res.body?.error?.message).toBe(
+      "Too many requests, please slow down and try again shortly.",
+    );
   });
 });
