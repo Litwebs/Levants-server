@@ -89,6 +89,36 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 const TEMP_TOKEN_STORAGE_KEY = "levants.tempToken";
 const TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY = "levants.tempTokenExpiresAt";
+const TEMP_TOKEN_REMEMBER_ME_STORAGE_KEY = "levants.tempTokenRememberMe";
+
+// Used to decide whether we should try a silent refresh on app boot.
+// We store it in sessionStorage for non-remembered sessions, and localStorage when rememberMe=true.
+const AUTH_HINT_STORAGE_KEY = "levants.authHint";
+
+const hasAuthHint = () => {
+  if (typeof window === "undefined") return false;
+  return (
+    window.sessionStorage.getItem(AUTH_HINT_STORAGE_KEY) === "1" ||
+    window.localStorage.getItem(AUTH_HINT_STORAGE_KEY) === "1"
+  );
+};
+
+const setAuthHint = (rememberMe: boolean) => {
+  if (typeof window === "undefined") return;
+  // Always set the session hint (helps within a tab even when rememberMe=true)
+  window.sessionStorage.setItem(AUTH_HINT_STORAGE_KEY, "1");
+  if (rememberMe) {
+    window.localStorage.setItem(AUTH_HINT_STORAGE_KEY, "1");
+  } else {
+    window.localStorage.removeItem(AUTH_HINT_STORAGE_KEY);
+  }
+};
+
+const clearAuthHint = () => {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(AUTH_HINT_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_HINT_STORAGE_KEY);
+};
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { showToast } = useToast();
@@ -124,7 +154,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
       window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+      window.sessionStorage.removeItem(TEMP_TOKEN_REMEMBER_ME_STORAGE_KEY);
     }
+    clearAuthHint();
     dispatch({ type: AUTH_LOGOUT });
     showToast({
       type: "info",
@@ -194,6 +226,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return false;
         }
 
+        // Access token might have expired (5 min) but refresh cookie may still be valid.
+        // Only attempt refresh if we have a hint that the user previously logged in.
+        if (hasAuthHint()) {
+          try {
+            await api.post("/auth/refresh", {});
+
+            const user = await fetchMe();
+            if (user) {
+              dispatch({
+                type: AUTH_SUCCESS,
+                payload: { user, isAuthenticated: true },
+              });
+              return true;
+            }
+          } catch {
+            // fall through to logout
+          }
+
+          // We expected a session but refresh didn't work.
+          handleUnauthorized();
+          return false;
+        }
+
         dispatch({ type: AUTH_LOGOUT });
         return false;
       }
@@ -219,7 +274,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: AUTH_LOGOUT });
       return false;
     }
-  }, [fetchMe, state.twoFactorPending]);
+  }, [fetchMe, handleUnauthorized, state.twoFactorPending]);
 
   // Backwards-compatible API (existing consumers expect Promise<void>)
   const checkAuth = useCallback(async (): Promise<void> => {
@@ -249,6 +304,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             TEMP_TOKEN_STORAGE_KEY,
             loginData.tempToken,
           );
+          window.sessionStorage.setItem(
+            TEMP_TOKEN_REMEMBER_ME_STORAGE_KEY,
+            rememberMe ? "1" : "0",
+          );
           if (loginData.expiresAt) {
             window.sessionStorage.setItem(
               TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY,
@@ -275,6 +334,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Login response may not include full role permissions; hydrate via /auth/me.
       const hydrated = await fetchMe();
       const nextUser = hydrated || user;
+      setAuthHint(rememberMe);
       dispatch({
         type: AUTH_SUCCESS,
         payload: { user: nextUser, isAuthenticated: true },
@@ -328,6 +388,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
         window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+
+        const rememberMeFlag =
+          window.sessionStorage.getItem(TEMP_TOKEN_REMEMBER_ME_STORAGE_KEY) ===
+          "1";
+        window.sessionStorage.removeItem(TEMP_TOKEN_REMEMBER_ME_STORAGE_KEY);
+        setAuthHint(rememberMeFlag);
       }
       dispatch({
         type: AUTH_SUCCESS,
@@ -353,7 +419,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem(TEMP_TOKEN_STORAGE_KEY);
         window.sessionStorage.removeItem(TEMP_TOKEN_EXPIRES_AT_STORAGE_KEY);
+        window.sessionStorage.removeItem(TEMP_TOKEN_REMEMBER_ME_STORAGE_KEY);
       }
+      clearAuthHint();
       dispatch({ type: AUTH_LOGOUT });
       setAuthTransition(null);
     }
@@ -362,6 +430,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   /* ---------- REFRESH ---------- */
   const refresh = async () => {
     await api.post("/auth/refresh");
+    console.log("[auth] manual refresh: success");
     await checkAuth();
   };
 

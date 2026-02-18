@@ -103,7 +103,12 @@ const App = () => (
           <CustomersProvider>
             <OrdersProvider>
               <AnalyticsProvider>
-                <BrowserRouter>
+                <BrowserRouter
+                  future={{
+                    v7_startTransition: true,
+                    v7_relativeSplatPath: true,
+                  }}
+                >
                   <AuthTransitionOverlay />
                   <Routes>
                     <Route

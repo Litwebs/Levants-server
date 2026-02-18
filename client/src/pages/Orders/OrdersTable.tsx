@@ -18,7 +18,6 @@ const OrdersTable = ({
   setPageSize,
   meta,
 }: any) => {
-  console.log("OrdersTable render", filteredOrders);
   const total = meta?.total ?? filteredOrders?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
