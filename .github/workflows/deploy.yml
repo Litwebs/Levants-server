@@ -1,0 +1,59 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      # Build client on GitHub runner
+      - name: Build client
+        working-directory: client
+        run: |
+          npm ci
+          npm run build
+
+      # Upload client build to VPS so it ends up as: /root/LWS-Scripts/Levants-server/client/build
+      - name: Upload client build to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: root
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: "client/build" # upload the folder itself (not /**)
+          target: "/root/LWS-Scripts/Levants-server/client"
+          strip_components: 1 # drops "client" so build lands under /client/build
+          overwrite: true
+
+      # Setup SSH (native) — avoids appleboy/ssh-action 504 issues
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Trust VPS host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p ${{ secrets.VPS_PORT }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      # Run backend deploy (no client build) on VPS
+      - name: SSH into VPS and deploy backend
+        run: |
+          REPO_URL="https://github.com/${{ github.repository }}.git"
+          ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \
+            "cd /root/LWS-Scripts && export SKIP_CLIENT_BUILD=1 && ./05-auto-deploy.sh \"$REPO_URL\""
