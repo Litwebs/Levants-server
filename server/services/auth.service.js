@@ -743,9 +743,9 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
       user.pendingEmailTokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
       const frontBaseUrl =
-        String(process.env.PUBLIC_APP_URL || "").trim() ||
-        String(CLIENT_FRONT_URL || "").trim() ||
-        String(FRONTEND_URL || "").trim();
+        process.env.NODE_ENV === "production"
+          ? process.env.FRONTEND_URL_PROD
+          : process.env.FRONTEND_URL_DEV;
 
       const verifyLink = frontBaseUrl
         ? `${frontBaseUrl.replace(/\/$/, "")}/verify-email-change?userId=${user._id}&token=${rawToken}`
@@ -899,9 +899,9 @@ const UpdateSelf = async ({ userId, updates }, options = {}) => {
       delete updates.email;
 
       const frontBaseUrl =
-        String(process.env.PUBLIC_APP_URL || "").trim() ||
-        String(CLIENT_FRONT_URL || "").trim() ||
-        String(FRONTEND_URL || "").trim();
+        process.env.NODE_ENV === "production"
+          ? process.env.FRONTEND_URL_PROD
+          : process.env.FRONTEND_URL_DEV;
 
       const verifyLink = frontBaseUrl
         ? `${frontBaseUrl.replace(/\/$/, "")}/verify-email-change?userId=${user._id}&token=${rawToken}`
@@ -909,7 +909,7 @@ const UpdateSelf = async ({ userId, updates }, options = {}) => {
 
       if (!verifyLink) {
         console.error(
-          "[email-change] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build verify link",
+          "[email-change] missing FRONTEND_URL_PROD/FRONTEND_URL_DEV; cannot build verify link",
           { userId: user._id.toString(), email: nextEmail },
         );
       } else {
@@ -1072,10 +1072,11 @@ const confirmEmailChange = async ({ userId, token }) => {
   );
 
   // ✅ notify old email (recommended)
+
   const frontBaseUrl =
-    String(process.env.PUBLIC_APP_URL || "").trim() ||
-    String(CLIENT_FRONT_URL || "").trim() ||
-    String(FRONTEND_URL || "").trim();
+    process.env.NODE_ENV === "production"
+      ? process.env.FRONTEND_URL_PROD
+      : process.env.FRONTEND_URL_DEV;
   const securityUrl = frontBaseUrl
     ? `${frontBaseUrl.replace(/\/$/, "")}/settings`
     : "";
@@ -1297,9 +1298,9 @@ const CreateUser = async ({ body, actorUserId }) => {
 
   // Send users to the frontend, which can call the API regardless of where it is hosted.
   const frontBaseUrl =
-    String(process.env.PUBLIC_APP_URL || "").trim() ||
-    String(CLIENT_FRONT_URL || "").trim() ||
-    String(FRONTEND_URL || "").trim();
+    process.env.NODE_ENV === "production"
+      ? process.env.FRONTEND_URL_PROD
+      : process.env.FRONTEND_URL_DEV;
 
   const acceptLink = frontBaseUrl
     ? `${frontBaseUrl.replace(/\/$/, "")}/accept-invitation?userId=${user._id.toString()}&token=${rawToken}`
@@ -1308,7 +1309,7 @@ const CreateUser = async ({ body, actorUserId }) => {
   try {
     if (!acceptLink) {
       console.error(
-        "[invite] missing PUBLIC_APP_URL/CLIENT_FRONT_URL; cannot build invitation link",
+        "[invite] missing FRONTEND_URL_PROD/FRONTEND_URL_DEV; cannot build invitation link",
         {
           userId: user._id.toString(),
           email: user.email,
