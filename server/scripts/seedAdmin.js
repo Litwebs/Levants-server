@@ -1,22 +1,24 @@
-// scripts/seedBusinessInfo.js
-// Seeds business info safely (idempotent upsert).
+// scripts/seedAdmin.js
+// Seeds one or more admin users safely (idempotent upsert).
 //
 // Usage:
-//   node scripts/seedBusinessInfo.js
+//   node scripts/seedAdmin.js
 //
 // Env required:
-//   MONGO_URI=...
+//   MONGODB_URI=...
 //
 // Optional env:
-//   BUSINESS_NAME="Levants Dairy Farm"
-//   BUSINESS_EMAIL="info@levantsdairy.com"
-//   BUSINESS_PHONE="+1 (555) 123-4567"
-//   BUSINESS_ADDRESS="123 Farm Road, Countryside"
+//   SEED_ADMINS_JSON='[{"name":"Hesam","email":"admin@litwebs.co.uk","password":"ChangeMe123!"}]'
+//   ADMIN_EMAIL=admin@example.com
+//   ADMIN_PASSWORD=ChangeMe123!
+//   ADMIN_NAME="Admin"
 
 require("dotenv").config();
 
 const mongoose = require("mongoose");
-const BusinessInfo = require("../models/businessInfo.model");
+const bcrypt = require("bcryptjs");
+
+const User = require("../models/user.model");
 
 const must = (k) => {
   const v = process.env[k];
@@ -24,64 +26,95 @@ const must = (k) => {
   return v;
 };
 
-const getBusinessInfoToSeed = () => {
-  const companyName = (process.env.BUSINESS_NAME || "My Business").trim();
-  const email = (process.env.BUSINESS_EMAIL || "").trim().toLowerCase();
-  const phone = (process.env.BUSINESS_PHONE || "").trim();
-  const address = (process.env.BUSINESS_ADDRESS || "").trim();
+const getAdminsToSeed = () => {
+  // Preferred: seed multiple admins via JSON env var
+  if (process.env.SEED_ADMINS_JSON) {
+    try {
+      const parsed = JSON.parse(process.env.SEED_ADMINS_JSON);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        throw new Error("SEED_ADMINS_JSON must be a non-empty array");
+      }
+      return parsed.map((a) => ({
+        name: String(a.name || "").trim(),
+        email: String(a.email || "")
+          .trim()
+          .toLowerCase(),
+        password: String(a.password || ""),
+      }));
+    } catch (e) {
+      throw new Error(`Invalid SEED_ADMINS_JSON: ${e.message}`);
+    }
+  }
 
-  if (!email || !email.includes("@")) {
+  // Fallback: single admin via ADMIN_* env vars
+  const email = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD || "";
+  const name = (process.env.ADMIN_NAME || "Admin").trim();
+
+  if (!email || !password) {
     throw new Error(
-      "BUSINESS_EMAIL is required and must be a valid email address",
+      "Provide either SEED_ADMINS_JSON or ADMIN_EMAIL + ADMIN_PASSWORD",
     );
   }
 
-  if (!companyName) {
-    throw new Error("BUSINESS_NAME is required");
-  }
-
-  return {
-    companyName,
-    email,
-    phone: phone || null,
-    address: address || null,
-  };
+  return [{ name, email, password }];
 };
 
 const main = async () => {
   const uri = must("MONGO_URI");
-  const business = getBusinessInfoToSeed();
+
+  const admins = getAdminsToSeed();
+
+  // basic validation
+  for (const a of admins) {
+    if (!a.name) throw new Error("Admin name is required");
+    if (!a.email || !a.email.includes("@"))
+      throw new Error(`Invalid admin email: ${a.email}`);
+    if (a.password.length < 8)
+      throw new Error(
+        `Password too short for ${a.email}. Use at least 8 characters.`,
+      );
+  }
 
   await mongoose.connect(uri);
 
-  // ✅ Single-document upsert (business info is global)
-  const doc = await BusinessInfo.findOneAndUpdate(
-    {},
-    {
-      $set: {
-        companyName: business.companyName,
-        email: business.email,
-        phone: business.phone,
-        address: business.address,
-      },
-    },
-    {
-      upsert: true,
-      new: true,
-      setDefaultsOnInsert: true,
-    },
-  );
+  const results = [];
 
-  console.log("✅ Seeded business info:", {
-    id: String(doc._id),
-    companyName: doc.companyName,
-    email: doc.email,
-  });
+  for (const a of admins) {
+    const passwordHash = await bcrypt.hash(a.password, 12);
+
+    // idempotent: update if exists, create otherwise
+    const user = await User.findOneAndUpdate(
+      { email: a.email },
+      {
+        $set: {
+          name: a.name,
+          email: a.email,
+          passwordHash,
+          role: "admin",
+          status: "active",
+          // optional: ensure defaults
+          preferences: { theme: "system", language: "en-GB" },
+        },
+        $unset: {
+          pendingEmail: "",
+          pendingEmailTokenHash: "",
+          pendingEmailTokenExpiresAt: "",
+          twoFactorLogin: "",
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+
+    results.push({ id: String(user._id), email: user.email, role: user.role });
+  }
+
+  console.log("✅ Seeded admins:", results);
 
   await mongoose.disconnect();
 };
 
 main().catch((err) => {
-  console.error("❌ seed-business-info failed:", err.message);
+  console.error("❌ seed-admin failed:", err.message);
   process.exitCode = 1;
 });
