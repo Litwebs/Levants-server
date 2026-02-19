@@ -41,7 +41,11 @@ function normalizeBaseUrl(raw) {
 }
 
 function buildFrontendUrl(pathname) {
-  const base = normalizeBaseUrl(process.env.CLIENT_FRONT_URL_DEV);
+  const base = normalizeBaseUrl(
+    process.env.NODE_ENV === "production"
+      ? process.env.CLIENT_FRONT_URL_PROD
+      : process.env.CLIENT_FRONT_URL_DEV,
+  );
   if (!base) return "";
   return new URL(pathname, `${base}/`).toString();
 }
