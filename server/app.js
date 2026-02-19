@@ -40,32 +40,32 @@ const deliveryRoutes = require("./routes/delivery.routes");
 const app = express();
 app.set("trust proxy", 1);
 
-app.use(helmet());
+// app.use(helmet());
 
-// app.use(
-//   helmet({
-//     crossOriginResourcePolicy: false,
-//     crossOriginOpenerPolicy: false,
-//     contentSecurityPolicy: {
-//       directives: {
-//         defaultSrc: ["'self'"],
-//         scriptSrc: ["'self'"],
-//         styleSrc: ["'self'", "https:", "'unsafe-inline'"],
-//         imgSrc: ["'self'", "data:", "https://res.cloudinary.com"],
-//         fontSrc: ["'self'", "https:", "data:"],
-//         connectSrc: [
-//           // "'self'",
-//           "https://levantsdairy.co.uk",
-//           "https://api.levantsdairy.co.uk",
-//           "http://localhost:8080",
-//         ],
-//         objectSrc: ["'none'"],
-//         frameAncestors: ["'self'"],
-//         baseUri: ["'self'"],
-//       },
-//     },
-//   }),
-// );
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+    crossOriginOpenerPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "https:", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https://res.cloudinary.com"],
+        fontSrc: ["'self'", "https:", "data:"],
+        connectSrc: [
+          // "'self'",
+          "https://levantsdairy.co.uk",
+          "https://api.levantsdairy.co.uk",
+          "http://localhost:8080",
+        ],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'self'"],
+        baseUri: ["'self'"],
+      },
+    },
+  }),
+);
 
 // CORS (enabled for both dev and prod with explicit allowed origins)
 // app.use(
