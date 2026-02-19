@@ -67,20 +67,22 @@ app.use(
   }),
 );
 
-// CORS (enabled for both dev and prod with explicit allowed origins)
-// app.use(
-//   cors({
-//     origin: allowedOrigins,
-//     credentials: true,
-//     exposedHeaders: [
-//       "Content-Disposition",
-//       "X-File-Meta",
-//       "X-File-Name",
-//       "X-File-Size",
-//       "X-File-Mime",
-//     ],
-//   }),
-// );
+if (env === "development") {
+  // CORS (enabled for both dev and prod with explicit allowed origins)
+  app.use(
+    cors({
+      origin: allowedOrigins,
+      credentials: true,
+      exposedHeaders: [
+        "Content-Disposition",
+        "X-File-Meta",
+        "X-File-Name",
+        "X-File-Size",
+        "X-File-Mime",
+      ],
+    }),
+  );
+}
 
 // ✅ Stripe webhook routes MUST be before express.json()
 app.use("/api/webhooks/stripe", stripeWebhookRoutes);
