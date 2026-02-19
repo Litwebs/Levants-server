@@ -38,12 +38,12 @@ const navItems = [
     icon: LayoutDashboard,
     requiredAny: ["analytics.read"],
   },
-  {
-    path: "/deliveries",
-    label: "Deliveries",
-    icon: Truck,
-    requiredAny: ["delivery.routes.read"],
-  },
+  // {
+  //   path: "/deliveries",
+  //   label: "Deliveries",
+  //   icon: Truck,
+  //   requiredAny: ["delivery.routes.read"],
+  // },
   {
     path: "/delivery-runs",
     label: "Delivery Runs",
@@ -90,6 +90,7 @@ interface AdminLayoutProps {
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -166,10 +167,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     navigate("/login", { replace: true });
   };
 
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
+
   return (
     <div className={styles.layout} data-theme={isDark ? "dark" : "light"}>
       <aside
-        className={`${styles.sidebar} ${collapsed ? styles.collapsed : ""}`}
+        className={`${styles.sidebar} ${collapsed ? styles.collapsed : ""} ${mobileSidebarOpen ? styles.open : ""}`}
       >
         <div className={styles.logo}>
           <div className={styles.logoIcon}>LD</div>
@@ -186,6 +191,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 to={item.path}
                 className={`${styles.navItem} ${isActive ? styles.active : ""}`}
                 title={collapsed ? item.label : undefined}
+                onClick={() => setMobileSidebarOpen(false)}
               >
                 <Icon size={20} />
                 {!collapsed && <span>{item.label}</span>}
@@ -204,7 +210,15 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
       <div className={styles.main}>
         <header className={styles.topbar}>
-          <button className={styles.mobileMenu}>
+          <button
+            type="button"
+            className={styles.mobileMenu}
+            aria-label={
+              mobileSidebarOpen ? "Close navigation" : "Open navigation"
+            }
+            aria-expanded={mobileSidebarOpen}
+            onClick={() => setMobileSidebarOpen((v) => !v)}
+          >
             <Menu size={20} />
           </button>
 

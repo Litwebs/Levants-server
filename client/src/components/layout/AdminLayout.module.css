@@ -15,7 +15,7 @@
   left: 0;
   bottom: 0;
   z-index: var(--z-fixed);
-  transition: width var(--transition-smooth);
+  transition: width var(--transition-smooth), transform var(--transition-smooth);
 }
 
 .sidebar.collapsed {
@@ -302,6 +302,7 @@
   
   .main {
     margin-left: 0;
+    width: 100%;
   }
   
   .mobileMenu {
