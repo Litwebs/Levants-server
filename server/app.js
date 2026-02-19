@@ -40,9 +40,6 @@ const deliveryRoutes = require("./routes/delivery.routes");
 const app = express();
 app.set("trust proxy", 1);
 
-// Basic security headers
-const helmet = require("helmet");
-
 app.use(
   helmet({
     contentSecurityPolicy: {
