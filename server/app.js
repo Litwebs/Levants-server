@@ -54,7 +54,7 @@ app.use(
 
         fontSrc: ["'self'", "https:", "data:"],
 
-        connectSrc: ["'self'"],
+        connectSrc: ["'self'", "https://levantsdairy.co.uk"],
 
         objectSrc: ["'none'"],
 
