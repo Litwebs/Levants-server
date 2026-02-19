@@ -17,6 +17,7 @@ import {
   Moon,
   Sun,
   Menu,
+  X,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -179,6 +180,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         <div className={styles.logo}>
           <div className={styles.logoIcon}>LD</div>
           {!collapsed && <span className={styles.logoText}>Levants Dairy</span>}
+          <button
+            type="button"
+            className={styles.mobileClose}
+            aria-label="Close navigation"
+            onClick={() => setMobileSidebarOpen(false)}
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <nav className={styles.nav}>

@@ -4,6 +4,14 @@
   background-color: var(--color-cream);
 }
 
+/*
+  CSS Modules: define modifier classes explicitly so they are always exported
+  (used as `styles.open`, `styles.collapsed`, `styles.active`).
+*/
+.open {}
+.collapsed {}
+.active {}
+
 /* Sidebar */
 .sidebar {
   width: var(--sidebar-width);
@@ -28,6 +36,21 @@
   gap: var(--space-3);
   padding: var(--space-5) var(--space-4);
   border-bottom: 1px solid var(--sidebar-border);
+}
+
+.mobileClose {
+  display: none;
+  margin-left: auto;
+  padding: var(--space-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--sidebar-text-active);
+  cursor: pointer;
+}
+
+.mobileClose:hover {
+  background-color: var(--sidebar-hover);
 }
 
 .logoIcon {
@@ -295,12 +318,23 @@
   .sidebar {
     transform: translateX(-100%);
   }
+
+  /* Mobile: sidebar is either fully hidden or fully open (no "collapsed" mode) */
+  .sidebar.collapsed {
+    width: var(--sidebar-width);
+  }
   
   .sidebar.open {
     transform: translateX(0);
   }
   
   .main {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  /* Override the desktop sibling selector which otherwise leaves a gap */
+  .sidebar.collapsed ~ .main {
     margin-left: 0;
     width: 100%;
   }
@@ -311,5 +345,15 @@
   
   .userInfo {
     display: none;
+  }
+
+  .collapseBtn {
+    display: none;
+  }
+
+  .mobileClose {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
