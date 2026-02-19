@@ -5,7 +5,7 @@
 //   node scripts/seedAdmin.js
 //
 // Env required:
-//   MONGODB_URI=...
+//   MONGO_URI=...
 //
 // Optional env:
 //   SEED_ADMINS_JSON='[{"name":"Hesam","email":"admin@litwebs.co.uk","password":"ChangeMe123!"}]'
@@ -19,6 +19,7 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
 const User = require("../models/user.model");
+const Role = require("../models/role.model");
 
 const must = (k) => {
   const v = process.env[k];
@@ -78,40 +79,59 @@ const main = async () => {
 
   await mongoose.connect(uri);
 
-  const results = [];
+  try {
+    // Ensure the referenced Role exists; `User.role` expects an ObjectId.
+    // (The app seeds default roles at startup, but the seed script may run standalone.)
+    let adminRole = await Role.findOne({ name: "admin" }).select("_id name");
+    if (!adminRole) {
+      adminRole = await Role.create({
+        name: "admin",
+        description: "Full system access",
+        permissions: ["*"],
+        isSystem: true,
+      });
+      console.log("✅ Seeded role: admin");
+    }
 
-  for (const a of admins) {
-    const passwordHash = await bcrypt.hash(a.password, 12);
+    const results = [];
 
-    // idempotent: update if exists, create otherwise
-    const user = await User.findOneAndUpdate(
-      { email: a.email },
-      {
-        $set: {
-          name: a.name,
-          email: a.email,
-          passwordHash,
-          role: "admin",
-          status: "active",
-          // optional: ensure defaults
-          preferences: { theme: "system", language: "en-GB" },
+    for (const a of admins) {
+      const passwordHash = await bcrypt.hash(a.password, 12);
+
+      // idempotent: update if exists, create otherwise
+      const user = await User.findOneAndUpdate(
+        { email: a.email },
+        {
+          $set: {
+            name: a.name,
+            email: a.email,
+            passwordHash,
+            role: adminRole._id,
+            status: "active",
+            "preferences.theme": "system",
+            "preferences.language": "en-GB",
+          },
+          $unset: {
+            pendingEmail: "",
+            pendingEmailTokenHash: "",
+            pendingEmailTokenExpiresAt: "",
+            twoFactorLogin: "",
+          },
         },
-        $unset: {
-          pendingEmail: "",
-          pendingEmailTokenHash: "",
-          pendingEmailTokenExpiresAt: "",
-          twoFactorLogin: "",
-        },
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
 
-    results.push({ id: String(user._id), email: user.email, role: user.role });
+      results.push({
+        id: String(user._id),
+        email: user.email,
+        roleId: String(user.role),
+      });
+    }
+
+    console.log("✅ Seeded admins:", results);
+  } finally {
+    await mongoose.disconnect();
   }
-
-  console.log("✅ Seeded admins:", results);
-
-  await mongoose.disconnect();
 };
 
 main().catch((err) => {
