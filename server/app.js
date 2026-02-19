@@ -41,7 +41,33 @@ const app = express();
 app.set("trust proxy", 1);
 
 // Basic security headers
-app.use(helmet());
+const helmet = require("helmet");
+
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+
+        scriptSrc: ["'self'"],
+
+        styleSrc: ["'self'", "https:", "'unsafe-inline'"],
+
+        imgSrc: ["'self'", "data:", "https://res.cloudinary.com"],
+
+        fontSrc: ["'self'", "https:", "data:"],
+
+        connectSrc: ["'self'"],
+
+        objectSrc: ["'none'"],
+
+        frameAncestors: ["'self'"],
+
+        baseUri: ["'self'"],
+      },
+    },
+  }),
+);
 
 // CORS (enabled for both dev and prod with explicit allowed origins)
 app.use(
