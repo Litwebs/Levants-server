@@ -255,7 +255,7 @@ async function generateRoutesForBatch({
     return {
       success: false,
       message: "Google optimization failed",
-      error: err.response?.data || err.message,
+      error: err,
     };
   }
 
