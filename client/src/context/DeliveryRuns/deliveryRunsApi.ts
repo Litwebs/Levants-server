@@ -152,8 +152,73 @@ const manifestFromRouteStock = (stock: RouteStockData | null | undefined): Manif
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 };
 
-const mapStops = (stops: any[]): RouteStop[] => {
-  return (stops || []).map((s: any) => {
+const mapStops = (
+  stops: any[],
+  opts?: {
+    deliveryDate?: string;
+    deliveryWindowStart?: string;
+    deliveryWindowEnd?: string;
+  },
+): RouteStop[] => {
+  const hhmm = /^\d{2}:\d{2}$/;
+  const deliveryDate = opts?.deliveryDate;
+  const winStart =
+    typeof opts?.deliveryWindowStart === "string" &&
+    hhmm.test(opts.deliveryWindowStart)
+      ? opts.deliveryWindowStart
+      : undefined;
+  const winEnd =
+    typeof opts?.deliveryWindowEnd === "string" && hhmm.test(opts.deliveryWindowEnd)
+      ? opts.deliveryWindowEnd
+      : undefined;
+
+  const toUtcIsoOnDate = (dateIso: string, time: string) => {
+    const [hh, mm] = String(time)
+      .split(":")
+      .map((x) => Number(x));
+    const d = new Date(dateIso);
+    return new Date(
+      Date.UTC(
+        d.getUTCFullYear(),
+        d.getUTCMonth(),
+        d.getUTCDate(),
+        hh,
+        mm,
+        0,
+        0,
+      ),
+    ).toISOString();
+  };
+
+  const startIso =
+    deliveryDate && winStart
+      ? toUtcIsoOnDate(deliveryDate, winStart)
+      : deliveryDate
+        ? new Date(deliveryDate).toISOString()
+        : undefined;
+  const endIso =
+    deliveryDate && winEnd
+      ? toUtcIsoOnDate(deliveryDate, winEnd)
+      : startIso
+        ? new Date(new Date(startIso).getTime() + 10 * 60 * 60 * 1000).toISOString()
+        : undefined;
+
+  const startMs = startIso ? new Date(startIso).getTime() : NaN;
+  const endMs = endIso ? new Date(endIso).getTime() : NaN;
+  const totalStops = Array.isArray(stops) ? stops.length : 0;
+
+  const canFallbackEta =
+    Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs && totalStops > 0;
+  const minStepMs = 10 * 60 * 1000;
+  const naiveStepMs = canFallbackEta
+    ? Math.floor((endMs - startMs) / Math.max(1, totalStops + 1))
+    : NaN;
+  const stepMs =
+    Number.isFinite(naiveStepMs) && naiveStepMs > 0
+      ? Math.max(minStepMs, naiveStepMs)
+      : minStepMs;
+
+  return (stops || []).map((s: any, idx: number) => {
     const order = s.order;
     const customer = order?.customer;
     const customerName = customer && typeof customer === "object"
@@ -179,7 +244,14 @@ const mapStops = (stops: any[]): RouteStop[] => {
       postcode: String(order?.deliveryAddress?.postcode ?? ""),
       lat: Number(order?.location?.lat ?? 0),
       lng: Number(order?.location?.lng ?? 0),
-      eta: s.estimatedArrival ? new Date(s.estimatedArrival).toISOString() : undefined,
+      eta: s.estimatedArrival
+        ? new Date(s.estimatedArrival).toISOString()
+        : canFallbackEta
+          ? new Date(
+              startMs +
+                (Math.max(1, Number(s.sequence ?? idx + 1)) * stepMs),
+            ).toISOString()
+          : undefined,
       stopStatus: typeof s?.status === "string" ? s.status : undefined,
       orderDeliveryStatus: typeof order?.deliveryStatus === "string" ? order.deliveryStatus : undefined,
       items,
@@ -198,7 +270,17 @@ async function buildRunFromBatch(batch: BatchDetails): Promise<DeliveryRun> {
     const routeId = String(route._id);
     const routeRes = await api.get(`/admin/delivery/route/${routeId}`);
     const routeData = unwrap<RouteDetails>(routeRes.data);
-    const mappedStops = mapStops(routeData?.stops || []);
+    const mappedStops = mapStops(routeData?.stops || [], {
+      deliveryDate: String(batch?.deliveryDate ?? ""),
+      deliveryWindowStart:
+        typeof (batch as any)?.deliveryWindowStart === "string"
+          ? (batch as any).deliveryWindowStart
+          : undefined,
+      deliveryWindowEnd:
+        typeof (batch as any)?.deliveryWindowEnd === "string"
+          ? (batch as any).deliveryWindowEnd
+          : undefined,
+    });
 
     let stockManifest: ManifestItem[] | null = null;
     try {

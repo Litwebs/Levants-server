@@ -1,12 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Popup,
-  Polyline,
-  useMap,
-} from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useAuth } from "@/context/Auth/AuthContext";
@@ -54,8 +47,8 @@ const createNumberedIcon = (number: number, color: string, filled: boolean) => {
   return L.divIcon({
     className: "custom-marker",
     html: `<div style="
-      background: ${filled ? color : "white"};
-      color: ${filled ? "white" : color};
+      background: ${filled ? color : "var(--color-white)"};
+      color: ${filled ? "#ffffff" : color};
       width: 28px;
       height: 28px;
       border-radius: 50%;
@@ -64,8 +57,8 @@ const createNumberedIcon = (number: number, color: string, filled: boolean) => {
       justify-content: center;
       font-size: 12px;
       font-weight: bold;
-      border: 2px solid ${filled ? "white" : color};
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      border: 2px solid ${filled ? "var(--color-gray-900)" : color};
+      box-shadow: var(--shadow-sm);
     ">${number}</div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
@@ -148,8 +141,8 @@ const isDeliveredStop = (stop: VanRoute["stops"][0]) => {
 const depotIcon = L.divIcon({
   className: "depot-marker",
   html: `<div style="
-    background: #1f2937;
-    color: white;
+    background: var(--color-gray-900);
+    color: var(--color-white);
     width: 36px;
     height: 36px;
     border-radius: 50%;
@@ -158,8 +151,8 @@ const depotIcon = L.divIcon({
     justify-content: center;
     font-size: 14px;
     font-weight: bold;
-    border: 3px solid white;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    border: 3px solid var(--color-white);
+    box-shadow: var(--shadow-md);
   ">D</div>`,
   iconSize: [36, 36],
   iconAnchor: [18, 18],
@@ -401,31 +394,6 @@ export const MapView: React.FC<MapViewProps> = ({
               <div className={styles.popupDetail}>Delivery Start Point</div>
             </Popup>
           </Marker>
-
-          {/* Route polylines */}
-          {displayVans.map((van) => {
-            const positions: [number, number][] = [
-              [depotLat, depotLng],
-              ...van.stops.map((s) => [s.lat, s.lng] as [number, number]),
-            ];
-
-            return (
-              <Polyline
-                key={`route-${van.vanId}`}
-                positions={positions}
-                color={getVanColor(van.vanId)}
-                weight={3}
-                opacity={0.7}
-                dashArray={
-                  van.vanId === "van-2"
-                    ? "10, 5"
-                    : van.vanId === "van-3"
-                      ? "5, 10"
-                      : undefined
-                }
-              />
-            );
-          })}
 
           {/* Stop markers */}
           {displayVans.map((van) =>

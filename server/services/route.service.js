@@ -35,6 +35,17 @@ function extractEncodedPolyline(routeData) {
   return typeof points === "string" && points.trim() ? points : null;
 }
 
+function toDateMs(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function clampMinMs(ms, minMs) {
+  return Number.isFinite(ms) && ms >= minMs ? ms : minMs;
+}
+
 async function generateRoutesForBatch({
   batchId,
   driverIds,
@@ -234,6 +245,16 @@ async function generateRoutesForBatch({
     }
   }
 
+  const globalStartMs = new Date(globalStartTime).getTime();
+  const globalEndMs = new Date(globalEndTime).getTime();
+  const effectiveGlobalStartMs = Number.isFinite(globalStartMs)
+    ? globalStartMs
+    : Date.now();
+  const effectiveGlobalEndMs = Number.isFinite(globalEndMs)
+    ? globalEndMs
+    : effectiveGlobalStartMs + 10 * 60 * 60 * 1000;
+  const DEFAULT_STEP_MS = 10 * 60 * 1000;
+
   const requestBody = {
     // Ask the API to populate route polylines in the response.
     populatePolylines: true,
@@ -262,6 +283,7 @@ async function generateRoutesForBatch({
 
   const createdRouteIds = [];
   const createdRoutes = [];
+  const lastEtaByRouteId = new Map();
 
   // Track shipments not covered by the optimizer so we can fallback-assign them
   // (business requirement: never leave orders unassigned).
@@ -307,6 +329,10 @@ async function generateRoutesForBatch({
       polyline,
     });
 
+    // Track the last ETA assigned so we can generate sensible ETAs for any
+    // fallback/appended stops (when the optimizer skips shipments).
+    let lastEtaMs = effectiveGlobalStartMs;
+
     let sequence = 1;
 
     for (const visit of routeData.visits || []) {
@@ -315,16 +341,23 @@ async function generateRoutesForBatch({
       const group = groupedOrders[Number(visit.shipmentIndex)];
       const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
 
+      const visitEtaMs = toDateMs(visit.startTime);
+      const resolvedVisitEtaMs =
+        visitEtaMs !== null ? visitEtaMs : (lastEtaMs += DEFAULT_STEP_MS);
+      lastEtaMs = resolvedVisitEtaMs;
+
       for (const order of groupOrders) {
         await Stop.create({
           route: route._id,
           order: order._id,
           sequence,
-          estimatedArrival: visit.startTime ? new Date(visit.startTime) : null,
+          estimatedArrival: new Date(resolvedVisitEtaMs),
         });
         sequence++;
       }
     }
+
+    lastEtaByRouteId.set(String(route._id), lastEtaMs);
 
     createdRouteIds.push(route._id);
     createdRoutes.push({
@@ -343,35 +376,46 @@ async function generateRoutesForBatch({
     if (createdRoutes.length === 0) {
       const driverId = drivers[0]?._id?.toString?.();
       if (driverId) {
+        const totalStops = missingShipmentIndices.reduce((sum, idx) => {
+          const group = groupedOrders[idx];
+          return sum + (Array.isArray(group?.orders) ? group.orders.length : 0);
+        }, 0);
+
         const route = await Route.create({
           batch: batch._id,
           driver: driverId,
-          totalStops: missingShipmentIndices.reduce((sum, idx) => {
-            const group = groupedOrders[idx];
-            return (
-              sum + (Array.isArray(group?.orders) ? group.orders.length : 0)
-            );
-          }, 0),
+          totalStops,
           totalDistanceMeters: 0,
           totalDurationSeconds: 0,
           polyline: null,
         });
 
         let sequence = 1;
+        let baseEtaMs = effectiveGlobalStartMs;
+        const naiveStepMs = Math.floor(
+          (effectiveGlobalEndMs - effectiveGlobalStartMs) /
+            Math.max(1, totalStops + 1),
+        );
+        const stepMs = clampMinMs(naiveStepMs, DEFAULT_STEP_MS);
+
         for (const idx of missingShipmentIndices) {
           const group = groupedOrders[idx];
           const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
           for (const order of groupOrders) {
             if (!order?._id) continue;
+
+            baseEtaMs += stepMs;
             await Stop.create({
               route: route._id,
               order: order._id,
               sequence,
-              estimatedArrival: null,
+              estimatedArrival: new Date(baseEtaMs),
             });
             sequence++;
           }
         }
+
+        lastEtaByRouteId.set(String(route._id), baseEtaMs);
 
         createdRouteIds.push(route._id);
         createdRoutes.push({
@@ -410,19 +454,38 @@ async function generateRoutesForBatch({
 
         const routeIdx = pickRouteIndex();
         const routeInfo = createdRoutes[routeIdx];
+        const routeIdStr = String(routeInfo.routeId);
         routeInfo.stopsCount += groupOrders.length;
         affected.set(String(routeInfo.routeId), routeInfo.stopsCount);
+
+        // Best-effort ETA assignment for appended stops.
+        // We continue from the last known ETA on that route.
+        let baseEtaMs = lastEtaByRouteId.get(routeIdStr);
+        if (!Number.isFinite(baseEtaMs)) baseEtaMs = effectiveGlobalStartMs;
+
+        // Try to spread remaining stops across the global window, but always
+        // keep a sensible minimum step.
+        const remainingWindowMs = effectiveGlobalEndMs - baseEtaMs;
+        const naiveStepMs = Math.floor(
+          remainingWindowMs / (groupOrders.length + 1),
+        );
+        const stepMs = clampMinMs(naiveStepMs, DEFAULT_STEP_MS);
 
         for (let i = 0; i < groupOrders.length; i++) {
           const order = groupOrders[i];
           if (!order?._id) continue;
+
+          baseEtaMs += stepMs;
+
           await Stop.create({
             route: routeInfo.routeId,
             order: order._id,
             sequence: routeInfo.stopsCount - (groupOrders.length - 1) + i,
-            estimatedArrival: null,
+            estimatedArrival: new Date(baseEtaMs),
           });
         }
+
+        lastEtaByRouteId.set(routeIdStr, baseEtaMs);
       }
 
       for (const r of createdRoutes) {
