@@ -35,15 +35,19 @@ function extractEncodedPolyline(routeData) {
   return typeof points === "string" && points.trim() ? points : null;
 }
 
-function toDateMs(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  const ms = d.getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
-
-function clampMinMs(ms, minMs) {
-  return Number.isFinite(ms) && ms >= minMs ? ms : minMs;
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const toRad = (deg) => (Number(deg) * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 async function generateRoutesForBatch({
@@ -54,6 +58,14 @@ async function generateRoutesForBatch({
 } = {}) {
   const batch = await DeliveryBatch.findById(batchId);
   if (!batch) return { success: false, message: "Batch not found" };
+
+  // If we're regenerating, we will replace existing routes/stops.
+  // Defer deletion until we've confirmed optimization succeeded so we don't
+  // accidentally wipe a usable previous plan.
+  const existingRoutes = await Route.find({ batch: batch._id })
+    .select("_id")
+    .lean();
+  const existingRouteIds = existingRoutes.map((r) => r._id);
 
   if (!isValidLatLng(WAREHOUSE_LAT, WAREHOUSE_LNG)) {
     return {
@@ -140,9 +152,42 @@ async function generateRoutesForBatch({
     }
   }
 
-  const shipments = groupedOrders.map((group) => {
+  // Service time is a modelling parameter that heavily impacts feasibility.
+  // The previous behaviour (5 minutes per order) can easily make the optimizer
+  // skip shipments inside realistic windows, especially for grouped addresses.
+  // Default: 2 min base + 1 min per additional order, capped at 12 min.
+  const STOP_SERVICE_MIN_SECONDS = Math.max(
+    0,
+    Number(process.env.STOP_SERVICE_MIN_SECONDS ?? 60) || 60,
+  );
+  const STOP_SERVICE_BASE_SECONDS = Math.max(
+    0,
+    Number(process.env.STOP_SERVICE_BASE_SECONDS ?? 120) || 120,
+  );
+  const STOP_SERVICE_PER_ORDER_SECONDS = Math.max(
+    0,
+    Number(process.env.STOP_SERVICE_PER_ORDER_SECONDS ?? 60) || 60,
+  );
+  const STOP_SERVICE_MAX_SECONDS = Math.max(
+    STOP_SERVICE_MIN_SECONDS,
+    Number(process.env.STOP_SERVICE_MAX_SECONDS ?? 12 * 60) || 12 * 60,
+  );
+
+  const computeServiceSeconds = (orderCount) => {
+    const c = Math.max(1, Number(orderCount) || 1);
+    const seconds =
+      STOP_SERVICE_BASE_SECONDS +
+      Math.max(0, c - 1) * STOP_SERVICE_PER_ORDER_SECONDS;
+    const clamped = Math.min(
+      STOP_SERVICE_MAX_SECONDS,
+      Math.max(STOP_SERVICE_MIN_SECONDS, seconds),
+    );
+    return Math.round(clamped);
+  };
+
+  let shipments = groupedOrders.map((group) => {
     const count = Array.isArray(group.orders) ? group.orders.length : 1;
-    const serviceSeconds = Math.max(60, 300 * count);
+    const serviceSeconds = computeServiceSeconds(count);
     return {
       deliveries: [
         {
@@ -159,6 +204,51 @@ async function generateRoutesForBatch({
     };
   });
 
+  if (
+    process.env.DEBUG_ROUTE_OPTIMIZER === "1" &&
+    process.env.NODE_ENV !== "production"
+  ) {
+    const serviceSecondsList = groupedOrders.map((g) =>
+      computeServiceSeconds(Array.isArray(g.orders) ? g.orders.length : 1),
+    );
+    const sumServiceSeconds = serviceSecondsList.reduce(
+      (s, x) => s + (Number(x) || 0),
+      0,
+    );
+    const maxServiceSeconds = serviceSecondsList.reduce(
+      (m, x) => Math.max(m, Number(x) || 0),
+      0,
+    );
+    const groupedOrderCounts = groupedOrders.map((g) =>
+      Array.isArray(g.orders) ? g.orders.length : 1,
+    );
+    const maxGroupCount = groupedOrderCounts.reduce(
+      (m, x) => Math.max(m, Number(x) || 0),
+      0,
+    );
+    // eslint-disable-next-line no-console
+    console.log("[route.optimize] shipments", {
+      batchId: String(batch?._id || ""),
+      orders: orders?.length || 0,
+      groupedStops: groupedOrders.length,
+      maxGroupedOrdersAtOneStop: maxGroupCount,
+      serviceSeconds: {
+        min: STOP_SERVICE_MIN_SECONDS,
+        base: STOP_SERVICE_BASE_SECONDS,
+        perOrder: STOP_SERVICE_PER_ORDER_SECONDS,
+        max: STOP_SERVICE_MAX_SECONDS,
+        sum: sumServiceSeconds,
+        maxStop: maxServiceSeconds,
+      },
+    });
+  }
+
+  const maxGroupedLoad = groupedOrders.reduce((max, group) => {
+    const count = Array.isArray(group?.orders) ? group.orders.length : 1;
+    return Math.max(max, Number(count) || 0);
+  }, 0);
+  const vehicleMaxLoad = Math.max(maxOrdersPerDriver, maxGroupedLoad || 0);
+
   const vehicles = drivers.map((driver) => ({
     startLocation: {
       latitude: WAREHOUSE_LAT,
@@ -170,8 +260,23 @@ async function generateRoutesForBatch({
     },
     label: driver._id.toString(),
     loadLimits: {
-      weight: { maxLoad: maxOrdersPerDriver },
+      // Ensure the biggest grouped shipment can fit on any vehicle.
+      // If maxLoad is too small, the optimizer will skip shipments, which
+      // results in missing (or synthetic) ETAs.
+      weight: { maxLoad: vehicleMaxLoad },
     },
+  }));
+
+  const vehiclesNoLimits = drivers.map((driver) => ({
+    startLocation: {
+      latitude: WAREHOUSE_LAT,
+      longitude: WAREHOUSE_LNG,
+    },
+    endLocation: {
+      latitude: WAREHOUSE_LAT,
+      longitude: WAREHOUSE_LNG,
+    },
+    label: driver._id.toString(),
   }));
 
   const hhmm = /^\d{2}:\d{2}$/;
@@ -189,22 +294,74 @@ async function generateRoutesForBatch({
     return { success: false, message: "endTime must be in HH:mm format" };
   }
 
+  // Delivery batches are normalized to start-of-day UTC, but the delivery
+  // window times (HH:mm) should be interpreted in the business's local time.
+  // Otherwise, "18:00" is treated as 18:00Z, unintentionally shrinking the
+  // available planning horizon and causing Google to skip shipments.
+  const DELIVERY_TIME_ZONE =
+    process.env.DELIVERY_TIME_ZONE ||
+    process.env.BUSINESS_TIME_ZONE ||
+    "Europe/London";
+
+  const getTimeZoneOffsetMs = (date, timeZone) => {
+    // Returns (zonedWallClockAsUTC - dateUTC) in milliseconds.
+    // Example: America/Los_Angeles will typically return -28800000.
+    const dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+
+    const parts = dtf.formatToParts(date);
+    const map = {};
+    for (const p of parts) {
+      if (p.type !== "literal") map[p.type] = p.value;
+    }
+
+    let hour = Number(map.hour);
+    if (hour === 24) hour = 0;
+
+    const asUTC = Date.UTC(
+      Number(map.year),
+      Number(map.month) - 1,
+      Number(map.day),
+      hour,
+      Number(map.minute),
+      Number(map.second),
+    );
+
+    return asUTC - date.getTime();
+  };
+
   const toUtcIsoOnBatchDate = (time) => {
     const [hh, mm] = String(time)
       .split(":")
       .map((x) => Number(x));
+
+    // Use the stored UTC delivery date as the calendar day anchor.
     const d = new Date(batch.deliveryDate);
-    return new Date(
-      Date.UTC(
-        d.getUTCFullYear(),
-        d.getUTCMonth(),
-        d.getUTCDate(),
-        hh,
-        mm,
-        0,
-        0,
-      ),
-    ).toISOString();
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth();
+    const day = d.getUTCDate();
+
+    // First guess: interpret wall-clock time as UTC.
+    const utcGuess = new Date(Date.UTC(year, month, day, hh, mm, 0, 0));
+
+    // Refine using the target zone's offset (handles DST via iteration).
+    let corrected = utcGuess;
+    for (let i = 0; i < 3; i++) {
+      const offset = getTimeZoneOffsetMs(corrected, DELIVERY_TIME_ZONE);
+      const next = new Date(utcGuess.getTime() - offset);
+      if (next.getTime() === corrected.getTime()) break;
+      corrected = next;
+    }
+
+    return corrected.toISOString();
   };
 
   const effectiveStart =
@@ -231,11 +388,86 @@ async function generateRoutesForBatch({
     ? toUtcIsoOnBatchDate(effectiveStart)
     : new Date(batch.deliveryDate).toISOString();
 
+  const DEFAULT_OPTIMIZER_HORIZON_HOURS = Math.max(
+    1,
+    Number(process.env.DEFAULT_OPTIMIZER_HORIZON_HOURS ?? 10) || 10,
+  );
+  const DEFAULT_OPTIMIZER_HORIZON_MS =
+    DEFAULT_OPTIMIZER_HORIZON_HOURS * 60 * 60 * 1000;
+
+  // Important: if the user supplies only a startTime, the planning horizon should
+  // extend from that startTime (e.g. 08:00 -> 18:00 for a 10h default), not from
+  // midnight of the delivery date.
   const globalEndTime = effectiveEnd
     ? toUtcIsoOnBatchDate(effectiveEnd)
     : new Date(
-        new Date(batch.deliveryDate).getTime() + 10 * 60 * 60 * 1000,
+        (Number.isFinite(new Date(globalStartTime).getTime())
+          ? new Date(globalStartTime).getTime()
+          : new Date(batch.deliveryDate).getTime()) +
+          DEFAULT_OPTIMIZER_HORIZON_MS,
       ).toISOString();
+
+  // If we require vehicles to return to the warehouse (`endLocation`), treating
+  // `endTime` as a hard route end can cause otherwise-feasible deliveries to be
+  // skipped (the last stop may be deliverable by endTime, but not returnable to
+  // depot by endTime). Model this as:
+  // - deliveries must occur within [globalStartTime, globalEndTime]
+  // - vehicles may finish the route (incl. return) by globalEndTime + buffer
+  const RETURN_TO_DEPOT_BUFFER_HOURS = Math.max(
+    0,
+    Number(process.env.RETURN_TO_DEPOT_BUFFER_HOURS ?? 2) || 2,
+  );
+  const returnBufferMs = RETURN_TO_DEPOT_BUFFER_HOURS * 60 * 60 * 1000;
+
+  const deliveryWindowEndMs = new Date(globalEndTime).getTime();
+  const buildOptimizationEndTime = (bufferHours) => {
+    const h = Math.max(0, Number(bufferHours) || 0);
+    const ms = h * 60 * 60 * 1000;
+    if (effectiveEnd && Number.isFinite(deliveryWindowEndMs) && ms > 0) {
+      return new Date(deliveryWindowEndMs + ms).toISOString();
+    }
+    return globalEndTime;
+  };
+
+  let lastReturnToDepotBufferHours = RETURN_TO_DEPOT_BUFFER_HOURS;
+  let optimizationGlobalEndTime = buildOptimizationEndTime(
+    lastReturnToDepotBufferHours,
+  );
+
+  // Constrain deliveries to the delivery window even if we extend the model
+  // horizon to allow returning to the depot.
+  if (effectiveEnd) {
+    for (const sh of shipments) {
+      const first = Array.isArray(sh?.deliveries) ? sh.deliveries[0] : null;
+      if (!first) continue;
+      first.timeWindows = [
+        {
+          startTime: globalStartTime,
+          endTime: globalEndTime,
+        },
+      ];
+    }
+  }
+
+  if (
+    process.env.DEBUG_ROUTE_OPTIMIZER === "1" &&
+    process.env.NODE_ENV !== "production"
+  ) {
+    // eslint-disable-next-line no-console
+    console.log("[route.optimize] delivery window", {
+      batchId: String(batch?._id || ""),
+      deliveryDate: batch?.deliveryDate,
+      tz: DELIVERY_TIME_ZONE,
+      returnToDepotBufferHours: lastReturnToDepotBufferHours,
+      cleanStart,
+      cleanEnd,
+      effectiveStart,
+      effectiveEnd,
+      globalStartTime,
+      globalEndTime,
+      optimizationGlobalEndTime,
+    });
+  }
 
   if (effectiveStart && effectiveEnd) {
     const s = new Date(globalStartTime).getTime();
@@ -245,16 +477,6 @@ async function generateRoutesForBatch({
     }
   }
 
-  const globalStartMs = new Date(globalStartTime).getTime();
-  const globalEndMs = new Date(globalEndTime).getTime();
-  const effectiveGlobalStartMs = Number.isFinite(globalStartMs)
-    ? globalStartMs
-    : Date.now();
-  const effectiveGlobalEndMs = Number.isFinite(globalEndMs)
-    ? globalEndMs
-    : effectiveGlobalStartMs + 10 * 60 * 60 * 1000;
-  const DEFAULT_STEP_MS = 10 * 60 * 1000;
-
   const requestBody = {
     // Ask the API to populate route polylines in the response.
     populatePolylines: true,
@@ -262,44 +484,305 @@ async function generateRoutesForBatch({
 
     model: {
       globalStartTime,
-      globalEndTime,
+      globalEndTime: optimizationGlobalEndTime,
       shipments,
       vehicles,
     },
   };
 
-  let optimized;
+  const computeMissingShipmentIndices = (opt) => {
+    const assigned = new Set();
+    for (const r of opt?.routes || []) {
+      for (const v of r?.visits || []) {
+        if (v && v.shipmentIndex !== undefined && v.shipmentIndex !== null) {
+          assigned.add(Number(v.shipmentIndex));
+        }
+      }
+    }
+    const missing = [];
+    for (let i = 0; i < (groupedOrders?.length || 0); i++) {
+      if (!assigned.has(i)) missing.push(i);
+    }
+    return { assigned, missing };
+  };
 
-  try {
-    optimized = await optimizeRoutes(requestBody);
-  } catch (err) {
-    console.error("Google optimization error:", err);
+  const runOptimize = async (body) => {
+    try {
+      return await optimizeRoutes(body);
+    } catch (err) {
+      console.error("Google optimization error:", err);
+      return null;
+    }
+  };
+
+  let optimized = await runOptimize(requestBody);
+  if (!optimized) {
     return {
       success: false,
       message: "Google optimization failed",
-      error: err,
     };
+  }
+
+  const tryWithOverrides = async ({
+    globalEndTimeOverride,
+    vehiclesOverride,
+  } = {}) => {
+    const body = {
+      ...requestBody,
+      model: {
+        ...requestBody.model,
+        globalEndTime: globalEndTimeOverride || requestBody.model.globalEndTime,
+        vehicles: vehiclesOverride || requestBody.model.vehicles,
+      },
+    };
+    return await runOptimize(body);
+  };
+
+  // If Google skips shipments, progressively relax the planning horizon.
+  // If still skipped, retry once without load limits to avoid infeasible
+  // capacity constraints created by grouped stops.
+  let { missing: missingShipmentIndices } =
+    computeMissingShipmentIndices(optimized);
+
+  const hasFixedEndTime = Boolean(effectiveEnd);
+
+  // If the user provided an endTime (or one is stored), we must respect it.
+  // We only relax the end time when no explicit window end is set.
+  if (!hasFixedEndTime && missingShipmentIndices.length > 0) {
+    const startMs = new Date(globalStartTime).getTime();
+    const baseStartMs = Number.isFinite(startMs) ? startMs : Date.now();
+
+    const retry24h = await tryWithOverrides({
+      globalEndTimeOverride: new Date(
+        baseStartMs + 24 * 60 * 60 * 1000,
+      ).toISOString(),
+    });
+    if (retry24h) {
+      optimized = retry24h;
+      ({ missing: missingShipmentIndices } =
+        computeMissingShipmentIndices(optimized));
+    }
+  }
+
+  if (!hasFixedEndTime && missingShipmentIndices.length > 0) {
+    const startMs = new Date(globalStartTime).getTime();
+    const baseStartMs = Number.isFinite(startMs) ? startMs : Date.now();
+
+    const retry48h = await tryWithOverrides({
+      globalEndTimeOverride: new Date(
+        baseStartMs + 48 * 60 * 60 * 1000,
+      ).toISOString(),
+    });
+    if (retry48h) {
+      optimized = retry48h;
+      ({ missing: missingShipmentIndices } =
+        computeMissingShipmentIndices(optimized));
+    }
+  }
+
+  // Always attempt a no-load-limits retry (within the same horizon) in case
+  // capacity constraints from grouping cause infeasibility.
+  if (missingShipmentIndices.length > 0) {
+    const retryNoLimits = await tryWithOverrides({
+      vehiclesOverride: vehiclesNoLimits,
+    });
+    if (retryNoLimits) {
+      optimized = retryNoLimits;
+      ({ missing: missingShipmentIndices } =
+        computeMissingShipmentIndices(optimized));
+    }
+  }
+
+  // If we have a fixed delivery endTime, deliveries are already constrained via
+  // shipment timeWindows. The remaining infeasibility is often the depot return.
+  // Retry with progressively larger return buffers without changing the delivery window.
+  if (
+    hasFixedEndTime &&
+    missingShipmentIndices.length > 0 &&
+    Number.isFinite(deliveryWindowEndMs)
+  ) {
+    const bufferCandidates = [4, 8, 12];
+    for (const bufferHours of bufferCandidates) {
+      if (bufferHours <= lastReturnToDepotBufferHours) continue;
+      const overrideEnd = buildOptimizationEndTime(bufferHours);
+      if (!overrideEnd || overrideEnd === requestBody.model.globalEndTime)
+        continue;
+
+      const retryMoreReturnTime = await tryWithOverrides({
+        globalEndTimeOverride: overrideEnd,
+      });
+      if (retryMoreReturnTime) {
+        optimized = retryMoreReturnTime;
+        lastReturnToDepotBufferHours = bufferHours;
+        optimizationGlobalEndTime = overrideEnd;
+        ({ missing: missingShipmentIndices } =
+          computeMissingShipmentIndices(optimized));
+      }
+
+      if (missingShipmentIndices.length === 0) break;
+    }
+  }
+
+  // If shipments are still skipped after retry, we cannot produce accurate ETAs
+  // for all stops. Prefer leaving skipped orders unassigned (no fake ETAs)
+  // instead of creating routes with null ETAs or failing the whole run when
+  // only a small number are skipped.
+  let skipped = null;
+  if (missingShipmentIndices.length > 0) {
+    const missingOrders = missingShipmentIndices.flatMap((idx) => {
+      const group = groupedOrders[idx];
+      const orders = Array.isArray(group?.orders) ? group.orders : [];
+      return orders.map((o) => ({
+        _id: o?._id?.toString?.() || String(o?._id || ""),
+        orderId: o?.orderId || "",
+        postcode: o?.deliveryAddress?.postcode || "",
+        addressLine1: o?.deliveryAddress?.line1 || "",
+        lat: isFiniteNumber(o?.location?.lat)
+          ? Number(o.location.lat)
+          : undefined,
+        lng: isFiniteNumber(o?.location?.lng)
+          ? Number(o.location.lng)
+          : undefined,
+        distanceFromWarehouseKm:
+          isValidLatLng(WAREHOUSE_LAT, WAREHOUSE_LNG) &&
+          isValidLatLng(o?.location?.lat, o?.location?.lng)
+            ? Math.round(
+                haversineKm(
+                  WAREHOUSE_LAT,
+                  WAREHOUSE_LNG,
+                  Number(o.location.lat),
+                  Number(o.location.lng),
+                ) * 10,
+              ) / 10
+            : undefined,
+      }));
+    });
+
+    const startMs = new Date(globalStartTime).getTime();
+    const endMs = new Date(globalEndTime).getTime();
+    const horizonMinutes =
+      Number.isFinite(startMs) && Number.isFinite(endMs)
+        ? Math.max(0, Math.round((endMs - startMs) / 60000))
+        : undefined;
+
+    const windowLabel = effectiveStart
+      ? effectiveEnd
+        ? `${effectiveStart}–${effectiveEnd}`
+        : `${effectiveStart}–(no end)`
+      : effectiveEnd
+        ? `(no start)–${effectiveEnd}`
+        : "(no window)";
+
+    const bufferLabel =
+      hasFixedEndTime && lastReturnToDepotBufferHours
+        ? `; return buffer ${lastReturnToDepotBufferHours}h`
+        : "";
+
+    const firstMissing = Array.isArray(missingOrders) ? missingOrders[0] : null;
+    const missingLabel = firstMissing
+      ? ` Skipped: ${firstMissing.orderId || firstMissing._id || ""}${firstMissing.postcode ? ` (${firstMissing.postcode})` : ""}${typeof firstMissing.distanceFromWarehouseKm === "number" ? ` ~${firstMissing.distanceFromWarehouseKm}km from depot` : ""}.`
+      : "";
+
+    const defaultAllowedSkips = Math.min(
+      3,
+      Math.max(1, Math.floor((shipments?.length || 0) * 0.02)),
+    );
+    const envAllowedSkips =
+      process.env.MAX_SKIPPED_SHIPMENTS_ALLOWED !== undefined
+        ? Number(process.env.MAX_SKIPPED_SHIPMENTS_ALLOWED)
+        : undefined;
+    const allowedSkips = Number.isFinite(envAllowedSkips)
+      ? Math.max(0, envAllowedSkips)
+      : defaultAllowedSkips;
+
+    skipped = {
+      skippedShipments: optimized?.skippedShipments || undefined,
+      missingShipmentsCount: missingShipmentIndices.length,
+      missingOrders,
+      allowedSkips,
+      driversCount: drivers.length,
+      vehiclesCount: requestBody?.model?.vehicles?.length || drivers.length,
+      note:
+        missingShipmentIndices.length <= allowedSkips
+          ? "Proceeding with partial plan; skipped orders remain unassigned."
+          : "Too many skipped shipments to proceed.",
+      debug: {
+        windowLabel,
+        horizonMinutes,
+        bufferLabel,
+        missingLabel,
+      },
+    };
+
+    if (missingShipmentIndices.length > allowedSkips) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: `Cannot generate accurate ETAs: optimizer skipped ${missingShipmentIndices.length} shipment(s) within window ${windowLabel}${typeof horizonMinutes === "number" ? ` (${horizonMinutes} min)` : ""}${bufferLabel}.${missingLabel} Increase the delivery window (endTime), add more drivers, or reduce service times.`,
+        data: {
+          deliveryWindow: {
+            tz: DELIVERY_TIME_ZONE,
+            startTime: effectiveStart,
+            endTime: effectiveEnd,
+            globalStartTime,
+            globalEndTime,
+            optimizationGlobalEndTime,
+            returnToDepotBufferHours: lastReturnToDepotBufferHours,
+            horizonMinutes,
+            hasFixedEndTime,
+          },
+          serviceTimeSeconds: {
+            min: STOP_SERVICE_MIN_SECONDS,
+            base: STOP_SERVICE_BASE_SECONDS,
+            perOrder: STOP_SERVICE_PER_ORDER_SECONDS,
+            max: STOP_SERVICE_MAX_SECONDS,
+          },
+          counts: {
+            orders: orders?.length || 0,
+            groupedStops: groupedOrders.length,
+            shipments: shipments.length,
+            drivers: drivers.length,
+          },
+          skipped,
+        },
+      };
+    }
+
+    // Continue generating routes for the scheduled visits only.
+    // Skipped orders will remain unassigned and will not get Stop entries.
+    missingShipmentIndices = [];
+  }
+
+  // Ensure the optimizer returned explicit startTime per scheduled visit.
+  // Without it, Stop.estimatedArrival would be null and ETA would not display.
+  let missingVisitStartTimes = 0;
+  for (const r of optimized?.routes || []) {
+    for (const v of r?.visits || []) {
+      if (!v) continue;
+      if (v.shipmentIndex === undefined || v.shipmentIndex === null) continue;
+      if (!v.startTime) missingVisitStartTimes++;
+    }
+  }
+  if (missingVisitStartTimes > 0) {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "Cannot generate accurate ETAs: optimizer did not return startTime for some visits.",
+      data: {
+        missingVisitStartTimes,
+      },
+    };
+  }
+
+  // At this point optimization is good enough to replace existing data.
+  if (existingRouteIds.length > 0) {
+    await Stop.deleteMany({ route: { $in: existingRouteIds } });
+    await Route.deleteMany({ _id: { $in: existingRouteIds } });
   }
 
   const createdRouteIds = [];
   const createdRoutes = [];
-  const lastEtaByRouteId = new Map();
-
-  // Track shipments not covered by the optimizer so we can fallback-assign them
-  // (business requirement: never leave orders unassigned).
-  const assignedShipmentIndices = new Set();
-  for (const r of optimized?.routes || []) {
-    for (const v of r?.visits || []) {
-      if (v && v.shipmentIndex !== undefined && v.shipmentIndex !== null) {
-        assignedShipmentIndices.add(Number(v.shipmentIndex));
-      }
-    }
-  }
-
-  const missingShipmentIndices = [];
-  for (let i = 0; i < (groupedOrders?.length || 0); i++) {
-    if (!assignedShipmentIndices.has(i)) missingShipmentIndices.push(i);
-  }
 
   // We'll create fallback route(s) later if needed.
 
@@ -329,10 +812,6 @@ async function generateRoutesForBatch({
       polyline,
     });
 
-    // Track the last ETA assigned so we can generate sensible ETAs for any
-    // fallback/appended stops (when the optimizer skips shipments).
-    let lastEtaMs = effectiveGlobalStartMs;
-
     let sequence = 1;
 
     for (const visit of routeData.visits || []) {
@@ -341,23 +820,16 @@ async function generateRoutesForBatch({
       const group = groupedOrders[Number(visit.shipmentIndex)];
       const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
 
-      const visitEtaMs = toDateMs(visit.startTime);
-      const resolvedVisitEtaMs =
-        visitEtaMs !== null ? visitEtaMs : (lastEtaMs += DEFAULT_STEP_MS);
-      lastEtaMs = resolvedVisitEtaMs;
-
       for (const order of groupOrders) {
         await Stop.create({
           route: route._id,
           order: order._id,
           sequence,
-          estimatedArrival: new Date(resolvedVisitEtaMs),
+          estimatedArrival: visit.startTime ? new Date(visit.startTime) : null,
         });
         sequence++;
       }
     }
-
-    lastEtaByRouteId.set(String(route._id), lastEtaMs);
 
     createdRouteIds.push(route._id);
     createdRoutes.push({
@@ -391,31 +863,21 @@ async function generateRoutesForBatch({
         });
 
         let sequence = 1;
-        let baseEtaMs = effectiveGlobalStartMs;
-        const naiveStepMs = Math.floor(
-          (effectiveGlobalEndMs - effectiveGlobalStartMs) /
-            Math.max(1, totalStops + 1),
-        );
-        const stepMs = clampMinMs(naiveStepMs, DEFAULT_STEP_MS);
 
         for (const idx of missingShipmentIndices) {
           const group = groupedOrders[idx];
           const groupOrders = Array.isArray(group?.orders) ? group.orders : [];
           for (const order of groupOrders) {
             if (!order?._id) continue;
-
-            baseEtaMs += stepMs;
             await Stop.create({
               route: route._id,
               order: order._id,
               sequence,
-              estimatedArrival: new Date(baseEtaMs),
+              estimatedArrival: null,
             });
             sequence++;
           }
         }
-
-        lastEtaByRouteId.set(String(route._id), baseEtaMs);
 
         createdRouteIds.push(route._id);
         createdRoutes.push({
@@ -454,38 +916,19 @@ async function generateRoutesForBatch({
 
         const routeIdx = pickRouteIndex();
         const routeInfo = createdRoutes[routeIdx];
-        const routeIdStr = String(routeInfo.routeId);
         routeInfo.stopsCount += groupOrders.length;
         affected.set(String(routeInfo.routeId), routeInfo.stopsCount);
-
-        // Best-effort ETA assignment for appended stops.
-        // We continue from the last known ETA on that route.
-        let baseEtaMs = lastEtaByRouteId.get(routeIdStr);
-        if (!Number.isFinite(baseEtaMs)) baseEtaMs = effectiveGlobalStartMs;
-
-        // Try to spread remaining stops across the global window, but always
-        // keep a sensible minimum step.
-        const remainingWindowMs = effectiveGlobalEndMs - baseEtaMs;
-        const naiveStepMs = Math.floor(
-          remainingWindowMs / (groupOrders.length + 1),
-        );
-        const stepMs = clampMinMs(naiveStepMs, DEFAULT_STEP_MS);
 
         for (let i = 0; i < groupOrders.length; i++) {
           const order = groupOrders[i];
           if (!order?._id) continue;
-
-          baseEtaMs += stepMs;
-
           await Stop.create({
             route: routeInfo.routeId,
             order: order._id,
             sequence: routeInfo.stopsCount - (groupOrders.length - 1) + i,
-            estimatedArrival: new Date(baseEtaMs),
+            estimatedArrival: null,
           });
         }
-
-        lastEtaByRouteId.set(routeIdStr, baseEtaMs);
       }
 
       for (const r of createdRoutes) {
@@ -517,6 +960,7 @@ async function generateRoutesForBatch({
     data: {
       routesCreated: createdRouteIds.length,
       fallback,
+      skipped,
     },
   };
 }
