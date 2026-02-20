@@ -51,7 +51,12 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "https:", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https://res.cloudinary.com"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "https://res.cloudinary.com",
+          "https://*.basemaps.cartocdn.com",
+        ],
         fontSrc: ["'self'", "https:", "data:"],
         connectSrc: [
           // "'self'",
