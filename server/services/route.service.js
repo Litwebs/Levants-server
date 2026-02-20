@@ -252,6 +252,7 @@ async function generateRoutesForBatch({
   try {
     optimized = await optimizeRoutes(requestBody);
   } catch (err) {
+    console.error("Google optimization error:", err);
     return {
       success: false,
       message: "Google optimization failed",
