@@ -20,7 +20,7 @@ interface RunActionsBarProps {
   onUnlock: () => Promise<boolean>;
   onOptimize: (
     driverIds: string[],
-    window: { startTime: string; endTime?: string },
+    window: { startTime: string },
   ) => Promise<boolean>;
   onDispatch: () => Promise<boolean>;
 }
@@ -50,14 +50,12 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
   const [startTime, setStartTime] = useState<string>(
     run.deliveryWindowStart || "",
   );
-  const [endTime, setEndTime] = useState<string>(run.deliveryWindowEnd || "");
 
   const openConfirm = async (action: ConfirmAction) => {
     setConfirmAction(action);
 
     if (action === "optimize" || action === "reoptimize") {
       setStartTime(run.deliveryWindowStart || "");
-      setEndTime(run.deliveryWindowEnd || "");
       setDriversLoading(true);
       try {
         const list = await listDrivers();
@@ -85,7 +83,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
       case "reoptimize":
         success = await onOptimize(selectedDriverIds, {
           startTime,
-          endTime: endTime || undefined,
         });
         break;
       case "dispatch":
@@ -326,13 +323,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
                   onChange={(e) => setStartTime(e.target.value)}
                   fullWidth
                 />
-                <Input
-                  type="time"
-                  label="End time (optional)"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  fullWidth
-                />
               </div>
 
               <p
@@ -342,7 +332,7 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
                   fontSize: "var(--text-xs)",
                 }}
               >
-                ETA will be scheduled within this window.
+                ETA will be scheduled from this start time.
               </p>
             </div>
           </div>

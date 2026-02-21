@@ -46,7 +46,7 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
   const handleCreateRun = useCallback(async (
     deliveryDate: string,
     orderIds?: string[],
-    window?: { startTime: string; endTime?: string },
+    window?: { startTime: string },
   ): Promise<CreateRunResult> => {
     setState(s => ({ ...s, creating: true }));
     try {
@@ -54,7 +54,6 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
         deliveryDate,
         orderIds,
         startTime: window?.startTime,
-        endTime: window?.endTime,
       });
       await fetchRuns();
       setState(s => ({ ...s, creating: false }));

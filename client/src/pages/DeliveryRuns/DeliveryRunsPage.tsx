@@ -27,7 +27,6 @@ export const DeliveryRunsPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRunDate, setNewRunDate] = useState("");
   const [newRunStartTime, setNewRunStartTime] = useState("08:00");
-  const [newRunEndTime, setNewRunEndTime] = useState("");
   const [eligibleOrders, setEligibleOrders] = useState<Array<any>>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -103,14 +102,12 @@ export const DeliveryRunsPage: React.FC = () => {
 
     const result = await createRun(newRunDate, selectedOrderIds, {
       startTime: newRunStartTime,
-      endTime: newRunEndTime || undefined,
     });
     if (result.success) {
       showToast({ type: "success", title: "Delivery run created" });
       setShowCreateModal(false);
       setNewRunDate("");
       setNewRunStartTime("08:00");
-      setNewRunEndTime("");
       setEligibleOrders([]);
       setSelectedOrderIds([]);
     } else {
@@ -271,17 +268,9 @@ export const DeliveryRunsPage: React.FC = () => {
               value={newRunStartTime}
               onChange={(e) => setNewRunStartTime(e.target.value)}
             />
-            <input
-              type="time"
-              className={styles.formInput}
-              value={newRunEndTime}
-              onChange={(e) => setNewRunEndTime(e.target.value)}
-              placeholder="End (optional)"
-            />
           </div>
           <p className={styles.formHelp}>
-            Start time is required; end time is optional. ETAs are scheduled
-            within this window.
+            Start time is required. ETAs are scheduled from this time.
           </p>
         </div>
 

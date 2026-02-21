@@ -349,7 +349,6 @@ export const createRun = async (payload: CreateRunPayload): Promise<DeliveryRun>
       deliveryDate: payload.deliveryDate,
       orderIds: (payload as any).orderIds,
       startTime: (payload as any).startTime,
-      endTime: (payload as any).endTime,
     });
     const data = unwrap<{ batchId: string }>(res.data);
     const batchId = (data as any)?.batchId as string;
@@ -392,13 +391,12 @@ export const unlockRun = async (id: string): Promise<DeliveryRun | null> => {
 export const optimizeRun = async (
   id: string,
   driverIds: string[],
-  window?: { startTime: string; endTime?: string },
+  window?: { startTime: string },
 ): Promise<DeliveryRun | null> => {
   try {
     const payload = {
       driverIds,
       startTime: window?.startTime,
-      endTime: window?.endTime,
     };
 
     if (import.meta.env.DEV) {

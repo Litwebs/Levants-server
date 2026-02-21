@@ -5,6 +5,9 @@ const ProductVariant = require("../models/variant.model");
 const Customer = require("../models/customer.model");
 const Order = require("../models/order.model");
 
+const MONGO_URI =
+  "mongodb+srv://Admin:EnvDb_123@developmentenvironment.zbyi2i0.mongodb.net/LevantsEnvDB?appName=DevelopmentEnvironment";
+
 // Bradford base coords
 const BRADFORD_LAT = 53.795;
 const BRADFORD_LNG = -1.759;
