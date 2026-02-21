@@ -10,7 +10,12 @@ const { optimizeRoutes } = require("./googleRoute.service");
 const WAREHOUSE_LAT = Number(process.env.WAREHOUSE_LAT);
 const WAREHOUSE_LNG = Number(process.env.WAREHOUSE_LNG);
 
-const DEFAULT_TRAVEL_SECONDS = Number(process.env.FORCED_TRAVEL_SECONDS ?? 600); // 10 min fallback travel
+const DEFAULT_TRAVEL_SECONDS = Number(process.env.FORCED_TRAVEL_SECONDS ?? 600);
+
+const DELIVERY_TIME_ZONE =
+  process.env.DELIVERY_TIME_ZONE ||
+  process.env.BUSINESS_TIME_ZONE ||
+  "Europe/London";
 
 function isFiniteNumber(n) {
   return typeof n === "number" && Number.isFinite(n);
@@ -25,16 +30,9 @@ function isValidLatLng(lat, lng) {
 
 function extractEncodedPolyline(routeData) {
   if (!routeData || typeof routeData !== "object") return null;
-
   const points =
     routeData.routePolyline?.points || routeData.polyline?.points || null;
-
   return typeof points === "string" && points.trim() ? points : null;
-}
-
-function parseDuration(durationString) {
-  if (!durationString) return 0;
-  return Number(durationString.replace("s", ""));
 }
 
 function isHHMM(value) {
@@ -47,30 +45,80 @@ function isHHMM(value) {
   return true;
 }
 
-function toISODateTimeOnBatchDayUTC(batchDeliveryDate, hhmm) {
-  const base = new Date(batchDeliveryDate);
-  if (Number.isNaN(base.getTime())) return null;
-  if (!isHHMM(hhmm)) return null;
-
-  const [hh, mm] = hhmm.split(":").map((x) => Number(x));
-  const dt = new Date(
-    Date.UTC(
-      base.getUTCFullYear(),
-      base.getUTCMonth(),
-      base.getUTCDate(),
-      hh,
-      mm,
-      0,
-      0,
-    ),
-  );
-  return dt.toISOString();
+function parseDurationSeconds(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+  if (typeof value === "string" && value.trim()) {
+    const trimmed = value.trim();
+    // Cloud Fleet Routing commonly returns durations like "123s".
+    if (trimmed.endsWith("s")) {
+      const n = Number.parseFloat(trimmed.slice(0, -1));
+      return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+    }
+    const n = Number.parseFloat(trimmed);
+    return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
+  }
+  return 0;
 }
 
-function coerceToISO(value) {
-  if (typeof value !== "string" || !value.trim()) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+function getTimeZoneOffsetMs(date, timeZone) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+
+  const parts = dtf.formatToParts(date);
+  const map = {};
+  for (const p of parts) {
+    if (p.type !== "literal") map[p.type] = p.value;
+  }
+
+  let hour = Number(map.hour);
+  if (hour === 24) hour = 0;
+
+  const asUTC = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    hour,
+    Number(map.minute),
+    Number(map.second),
+  );
+
+  return asUTC - date.getTime();
+}
+
+function toUtcIsoOnBatchDate(batchDeliveryDate, hhmm, timeZone) {
+  if (!isHHMM(hhmm)) return null;
+  const base = new Date(batchDeliveryDate);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const [hh, mm] = hhmm.split(":").map((x) => Number(x));
+
+  // Anchor the *calendar day* using the stored UTC deliveryDate.
+  const year = base.getUTCFullYear();
+  const month = base.getUTCMonth();
+  const day = base.getUTCDate();
+
+  const utcGuess = new Date(Date.UTC(year, month, day, hh, mm, 0, 0));
+
+  // Refine for DST using iterative offset correction.
+  let corrected = utcGuess;
+  for (let i = 0; i < 3; i++) {
+    const offset = getTimeZoneOffsetMs(corrected, timeZone);
+    const next = new Date(utcGuess.getTime() - offset);
+    if (next.getTime() === corrected.getTime()) break;
+    corrected = next;
+  }
+
+  return corrected.toISOString();
 }
 
 function resolveOptimizationWindow({ batch, startTime, endTime }) {
@@ -92,33 +140,49 @@ function resolveOptimizationWindow({ batch, startTime, endTime }) {
 
   const fallbackStartISO = new Date(batch.deliveryDate).toISOString();
 
-  const startISO = isHHMM(startCandidate)
-    ? toISODateTimeOnBatchDayUTC(batch.deliveryDate, startCandidate)
-    : coerceToISO(startCandidate);
+  const coerceToISO = (value) => {
+    if (typeof value !== "string" || !value.trim()) return null;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
 
-  const effectiveStartISO = startISO || fallbackStartISO;
-  const effectiveStart = new Date(effectiveStartISO);
+  const startISO = startCandidate
+    ? isHHMM(startCandidate)
+      ? toUtcIsoOnBatchDate(
+          batch.deliveryDate,
+          startCandidate,
+          DELIVERY_TIME_ZONE,
+        )
+      : coerceToISO(startCandidate)
+    : null;
 
-  let endISO = isHHMM(endCandidate)
-    ? toISODateTimeOnBatchDayUTC(batch.deliveryDate, endCandidate)
-    : coerceToISO(endCandidate);
+  const globalStartTime = startISO || fallbackStartISO;
+  const start = new Date(globalStartTime);
 
-  let effectiveEnd;
+  const endISO = endCandidate
+    ? isHHMM(endCandidate)
+      ? toUtcIsoOnBatchDate(
+          batch.deliveryDate,
+          endCandidate,
+          DELIVERY_TIME_ZONE,
+        )
+      : coerceToISO(endCandidate)
+    : null;
+
+  let end;
   if (endISO) {
-    effectiveEnd = new Date(endISO);
+    end = new Date(endISO);
   } else {
-    // Keep the previous behavior: a broad horizon for optimization.
-    effectiveEnd = new Date(effectiveStart.getTime() + 24 * 60 * 60 * 1000);
+    end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   }
 
-  // If end time is earlier than start (or invalid), push it forward by 24h.
-  if (Number.isNaN(effectiveEnd.getTime()) || effectiveEnd <= effectiveStart) {
-    effectiveEnd = new Date(effectiveStart.getTime() + 24 * 60 * 60 * 1000);
+  if (Number.isNaN(end.getTime()) || end <= start) {
+    end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
   }
 
   return {
-    globalStartTime: effectiveStart.toISOString(),
-    globalEndTime: effectiveEnd.toISOString(),
+    globalStartTime: start.toISOString(),
+    globalEndTime: end.toISOString(),
   };
 }
 
@@ -165,7 +229,7 @@ async function generateRoutesForBatch({
     return { success: false, message: "No active drivers found" };
 
   // -------------------------
-  // Group Orders by Location
+  // Group Orders
   // -------------------------
   const groupedOrders = [];
   const map = new Map();
@@ -183,9 +247,6 @@ async function generateRoutesForBatch({
     map.get(key).orders.push(order);
   }
 
-  // -------------------------
-  // Service Model
-  // -------------------------
   const computeServiceSeconds = (count) => {
     const base = 120;
     const perOrder = 60;
@@ -208,9 +269,7 @@ async function generateRoutesForBatch({
     },
   }));
 
-  // -------------------------
-  // Equal Distribution via Capacity
-  // -------------------------
+  // Equal distribution enforcement
   const maxOrdersPerDriver = Math.ceil(orders.length / drivers.length);
 
   const vehicles = drivers.map((driver) => ({
@@ -266,15 +325,19 @@ async function generateRoutesForBatch({
   const assignedIndexes = new Set();
 
   // -------------------------
-  // Create Optimized Routes
+  // Create Routes
   // -------------------------
   for (const routeData of optimized.routes || []) {
+    const initialDurationSeconds = parseDurationSeconds(
+      routeData.metrics?.totalDuration ?? routeData.metrics?.travelDuration,
+    );
+
     const route = await Route.create({
       batch: batch._id,
       driver: routeData.vehicleLabel,
       totalStops: 0,
       totalDistanceMeters: routeData.metrics?.travelDistanceMeters || 0,
-      totalDurationSeconds: parseDuration(routeData.metrics?.travelDuration),
+      totalDurationSeconds: initialDurationSeconds,
       polyline: extractEncodedPolyline(routeData),
     });
 
@@ -285,15 +348,21 @@ async function generateRoutesForBatch({
 
       const idx = Number(visit.shipmentIndex);
       assignedIndexes.add(idx);
-
       const group = groupedOrders[idx];
+
+      const serviceSeconds = computeServiceSeconds(group.orders.length);
+      const arrival = visit.startTime ? new Date(visit.startTime) : null;
+      const departure = arrival
+        ? new Date(arrival.getTime() + serviceSeconds * 1000)
+        : null;
 
       for (const order of group.orders) {
         await Stop.create({
           route: route._id,
           order: order._id,
           sequence,
-          estimatedArrival: visit.startTime ? new Date(visit.startTime) : null,
+          estimatedArrival: arrival,
+          estimatedDeparture: departure,
         });
         sequence++;
       }
@@ -307,13 +376,14 @@ async function generateRoutesForBatch({
     createdRoutes.push({
       routeId: route._id,
       stopsCount: sequence - 1,
+      durationSeconds: initialDurationSeconds,
     });
 
     createdRouteIds.push(route._id);
   }
 
   // -------------------------
-  // Equal Redistribution (ETA from Start Time)
+  // Force Equal Redistribution if Needed
   // -------------------------
   const skippedIndexes = groupedOrders
     .map((_, i) => i)
@@ -326,42 +396,57 @@ async function generateRoutesForBatch({
       const routeInfo = createdRoutes[routePointer];
       const group = groupedOrders[idx];
 
-      const lastStop = await Stop.findOne({ route: routeInfo.routeId })
+      const lastStop = await Stop.findOne({
+        route: routeInfo.routeId,
+      })
         .sort({ sequence: -1 })
         .lean();
 
-      let baseTime = lastStop?.estimatedArrival
-        ? new Date(lastStop.estimatedArrival)
-        : new Date(globalStartTime);
+      let baseTime = lastStop?.estimatedDeparture
+        ? new Date(lastStop.estimatedDeparture)
+        : lastStop?.estimatedArrival
+          ? new Date(lastStop.estimatedArrival)
+          : new Date(globalStartTime);
 
       let sequence = routeInfo.stopsCount + 1;
 
       for (const order of group.orders) {
-        baseTime = new Date(baseTime.getTime() + DEFAULT_TRAVEL_SECONDS * 1000);
-
+        const arrival = new Date(
+          baseTime.getTime() + DEFAULT_TRAVEL_SECONDS * 1000,
+        );
         const serviceSeconds = computeServiceSeconds(1);
-
-        const eta = new Date(baseTime.getTime() + serviceSeconds * 1000);
+        const departure = new Date(arrival.getTime() + serviceSeconds * 1000);
 
         await Stop.create({
           route: routeInfo.routeId,
           order: order._id,
           sequence,
-          estimatedArrival: eta,
+          estimatedArrival: arrival,
+          estimatedDeparture: departure,
           forcedAssignment: true,
         });
 
-        baseTime = eta;
+        baseTime = departure;
+        routeInfo.durationSeconds =
+          Math.max(0, Number(routeInfo.durationSeconds) || 0) +
+          DEFAULT_TRAVEL_SECONDS +
+          serviceSeconds;
         sequence++;
       }
 
       routeInfo.stopsCount += group.orders.length;
-
       await Route.updateOne(
         { _id: routeInfo.routeId },
-        { $set: { totalStops: routeInfo.stopsCount } },
+        {
+          $set: {
+            totalStops: routeInfo.stopsCount,
+            totalDurationSeconds: Math.max(
+              0,
+              Math.round(Number(routeInfo.durationSeconds) || 0),
+            ),
+          },
+        },
       );
-
       routePointer = (routePointer + 1) % createdRoutes.length;
     }
   }
@@ -369,6 +454,13 @@ async function generateRoutesForBatch({
   batch.routes = createdRouteIds;
   batch.status = "routes_generated";
   batch.generatedAt = new Date();
+
+  if (typeof startTime === "string" && isHHMM(startTime.trim())) {
+    batch.deliveryWindowStart = startTime.trim();
+  }
+  if (typeof endTime === "string" && isHHMM(endTime.trim())) {
+    batch.deliveryWindowEnd = endTime.trim();
+  }
   await batch.save();
 
   return {
