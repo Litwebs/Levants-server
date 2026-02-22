@@ -1,9 +1,5 @@
 // Services/Templates/resetPassword.js
-module.exports = ({
-  name = "there",
-  resetLink,
-  logoSrc = "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png",
-}) => `
+module.exports = ({ name = "there", resetLink }) => `
 <!doctype html>
 <html>
   <head>

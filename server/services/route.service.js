@@ -307,7 +307,8 @@ async function generateRoutesForBatch({
   let optimized;
   try {
     optimized = await optimizeRoutes(requestBody);
-  } catch {
+  } catch (e) {
+    console.error("Route optimization error:", e);
     return { success: false, message: "Optimization failed" };
   }
 

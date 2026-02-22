@@ -13,8 +13,8 @@ const resend = new Resend(RESEND_EMAIL_KEY || "");
 const FALLBACK_LOGO_URL =
   "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png";
 
-const DEFAULT_FROM = "no-reply@litwebs.co.uk";
-const DEFAULT_FALLBACK_FROM = "contact@litwebs.co.uk";
+const DEFAULT_FROM = "no-reply@levantsdairy.co.uk";
+const DEFAULT_FALLBACK_FROM = "contact@levantsdairy.co.uk";
 
 function isValidEmail(raw) {
   const email = String(raw || "").trim();
@@ -73,7 +73,7 @@ function canUseFromEmail(email) {
     .trim()
     .toLowerCase();
   if (!e) return false;
-  return e.endsWith("@litwebs.co.uk");
+  return e.endsWith("@levantsdairy.co.uk");
 }
 
 const ensureArray = (v) => (Array.isArray(v) ? v : []);
