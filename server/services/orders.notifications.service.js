@@ -99,17 +99,34 @@ async function sendNewOrderAlertEmailToUsers({ orderId }) {
 
   const subject = `New Order Alert${order.orderId ? ` – ${order.orderId}` : ""}`;
 
-  const results = await Promise.all(
-    emails.map(async (to) => {
-      try {
-        return await sendEmail(to, subject, "newOrderAlert", templateParams);
-      } catch (e) {
-        return { success: false, error: e };
-      }
-    }),
-  );
+  // IMPORTANT:
+  // Resend enforces strict rate limits (e.g. 2 req/sec on some plans).
+  // If we send one email per admin user, bursts can trigger 429s and cause
+  // customer confirmations to be delayed or dropped.
+  // Use a single request with BCC to keep admin recipients private.
+  let result;
+  try {
+    if (emails.length === 1) {
+      result = await sendEmail(
+        emails[0],
+        subject,
+        "newOrderAlert",
+        templateParams,
+      );
+    } else {
+      result = await sendEmail(
+        emails[0],
+        subject,
+        "newOrderAlert",
+        templateParams,
+        { bcc: emails.slice(1) },
+      );
+    }
+  } catch (e) {
+    result = { success: false, error: e };
+  }
 
-  const sent = results.filter((r) => r && r.success).length;
+  const sent = result && result.success ? emails.length : 0;
 
   // Best-effort marker for idempotency
   try {

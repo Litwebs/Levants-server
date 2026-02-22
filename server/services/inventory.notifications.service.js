@@ -136,12 +136,26 @@ async function processInventoryAlertsForVariants({
         dashboardUrl,
       };
 
-      const results = await Promise.all(
-        emailsForLowStock.map((to) =>
-          sendEmail(to, subject, "lowStockAlert", params),
-        ),
-      );
-      sent += results.filter((r) => r && r.success).length;
+      // Send once with BCC to avoid provider rate limits.
+      let result;
+      if (emailsForLowStock.length === 1) {
+        result = await sendEmail(
+          emailsForLowStock[0],
+          subject,
+          "lowStockAlert",
+          params,
+        );
+      } else {
+        result = await sendEmail(
+          emailsForLowStock[0],
+          subject,
+          "lowStockAlert",
+          params,
+          { bcc: emailsForLowStock.slice(1) },
+        );
+      }
+
+      if (result && result.success) sent += emailsForLowStock.length;
 
       await Variant.updateOne(
         { _id: v._id },
@@ -179,12 +193,26 @@ async function processInventoryAlertsForVariants({
         dashboardUrl,
       };
 
-      const results = await Promise.all(
-        emailsForOutOfStock.map((to) =>
-          sendEmail(to, subject, "outOfStockAlert", params),
-        ),
-      );
-      sent += results.filter((r) => r && r.success).length;
+      // Send once with BCC to avoid provider rate limits.
+      let result;
+      if (emailsForOutOfStock.length === 1) {
+        result = await sendEmail(
+          emailsForOutOfStock[0],
+          subject,
+          "outOfStockAlert",
+          params,
+        );
+      } else {
+        result = await sendEmail(
+          emailsForOutOfStock[0],
+          subject,
+          "outOfStockAlert",
+          params,
+          { bcc: emailsForOutOfStock.slice(1) },
+        );
+      }
+
+      if (result && result.success) sent += emailsForOutOfStock.length;
 
       await Variant.updateOne(
         { _id: v._id },
