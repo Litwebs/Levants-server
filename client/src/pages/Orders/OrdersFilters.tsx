@@ -56,6 +56,7 @@ const OrdersFilters = ({
           variant="outline"
           leftIcon={<Filter size={16} />}
           onClick={() => setShowFilters(!showFilters)}
+          className={styles.filtersToggleBtn}
         >
           Filters
         </Button>
@@ -63,6 +64,7 @@ const OrdersFilters = ({
         <Select
           value={sortBy}
           onChange={setSortBy}
+          className={styles.sortSelect}
           options={[
             { value: "newest", label: "Newest First" },
             { value: "oldest", label: "Oldest First" },

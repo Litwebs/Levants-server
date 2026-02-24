@@ -10,92 +10,6 @@ const {
 
 const resend = new Resend(RESEND_EMAIL_KEY || "");
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Some provider plans enforce very low throughput (e.g. 2 requests / second).
-// Throttle in-process to reduce 429s during bursts (webhooks, alerts, etc.).
-const EMAIL_SEND_MIN_INTERVAL_MS = Math.max(
-  0,
-  Number(process.env.EMAIL_SEND_MIN_INTERVAL_MS || 600),
-);
-let queueTail = Promise.resolve();
-let nextSendAt = 0;
-
-function scheduleSend(taskFn) {
-  const run = async () => {
-    const now = Date.now();
-    const wait = Math.max(0, nextSendAt - now);
-    if (wait > 0) await sleep(wait);
-    try {
-      return await taskFn();
-    } finally {
-      nextSendAt = Date.now() + EMAIL_SEND_MIN_INTERVAL_MS;
-    }
-  };
-
-  const task = queueTail.catch(() => undefined).then(run);
-  // Keep the queue moving even when a send fails.
-  queueTail = task.then(
-    () => undefined,
-    () => undefined,
-  );
-
-  return task;
-}
-
-function isRateLimitError(error) {
-  const status = error?.statusCode || error?.status || error?.code;
-  if (status === 429) return true;
-  const msg = String(error?.message || "");
-  return /too many requests|rate limit/i.test(msg);
-}
-
-function getRetryAfterMs(error) {
-  const candidates = [
-    error?.retryAfter,
-    error?.retry_after,
-    error?.response?.headers?.["retry-after"],
-    error?.response?.headers?.get?.("retry-after"),
-    error?.headers?.["retry-after"],
-  ].filter((v) => v != null);
-
-  const v = candidates.length > 0 ? candidates[0] : null;
-  if (v == null) return null;
-
-  const raw = Array.isArray(v) ? v[0] : v;
-  const s = String(raw).trim();
-  if (!s) return null;
-
-  // Retry-After can be seconds or an HTTP-date.
-  const seconds = Number(s);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
-
-  const date = Date.parse(s);
-  if (Number.isFinite(date)) return Math.max(0, date - Date.now());
-
-  return null;
-}
-
-async function sendWithRetry(sendFn, { maxAttempts = 3 } = {}) {
-  let attempt = 0;
-  // Short bounded retries (webhooks shouldn't hang indefinitely).
-  while (attempt < maxAttempts) {
-    attempt += 1;
-    try {
-      return await sendFn();
-    } catch (error) {
-      const canRetry = isRateLimitError(error) && attempt < maxAttempts;
-      if (!canRetry) throw error;
-
-      const retryAfterMs = getRetryAfterMs(error);
-      const backoff = retryAfterMs ?? Math.min(5000, 800 * attempt);
-      await sleep(backoff);
-    }
-  }
-  // Should be unreachable.
-  return await sendFn();
-}
-
 const FALLBACK_LOGO_URL =
   "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png";
 
@@ -307,9 +221,7 @@ const sendEmail = async (
       }
     }
 
-    const response = await scheduleSend(() =>
-      sendWithRetry(() => resend.emails.send(payload)),
-    );
+    const response = await resend.emails.send(payload);
     return { success: true, response };
   } catch (error) {
     console.error("[email] send failed", {

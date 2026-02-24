@@ -36,6 +36,7 @@ const adminAnalyticsRoutes = require("./routes/analytics.admin.routes");
 const adminDiscountRoutes = require("./routes/discounts.admin.routes");
 const publicDiscountRoutes = require("./routes/discounts.public.routes");
 const deliveryRoutes = require("./routes/delivery.routes");
+const publicDeliveryRoutes = require("./routes/delivery.public.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -139,6 +140,7 @@ app.use("/api/business-info", businessInfoRoutes);
 // 🟢 PUBLIC (frontend)
 app.use("/api/products", publicProductRoutes);
 app.use("/api/discounts", publicDiscountRoutes);
+app.use("/api/delivery", publicDeliveryRoutes);
 
 // 🔐 ADMIN (dashboard)
 app.use("/api/admin/products", adminProductRoutes);

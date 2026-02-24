@@ -125,86 +125,88 @@ export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
 
   return (
     <>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <th className={styles.headerCell}>Delivery Date</th>
-            <th className={styles.headerCell}>Status</th>
-            <th className={styles.headerCell}>Orders</th>
-            <th className={styles.headerCell}>Drops</th>
-            <th className={styles.headerCell}>Unassigned</th>
-            <th className={styles.headerCell}>Distance</th>
-            <th className={styles.headerCell}>Duration</th>
-            <th className={styles.headerCell}>Last Optimized</th>
-            <th className={styles.headerCell}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {pageRuns.map((run) => (
-            <tr key={run.id} className={styles.row}>
-              <td className={`${styles.cell} ${styles.dateCell}`}>
-                {formatDate(run.deliveryDate)}
-              </td>
-              <td className={styles.cell}>
-                <Badge variant={STATUS_BADGE_VARIANTS[run.status]}>
-                  {STATUS_LABELS[run.status]}
-                </Badge>
-              </td>
-              <td className={styles.cell}>{run.ordersCount}</td>
-              <td className={styles.cell}>{run.dropsCount}</td>
-              <td className={styles.cell}>
-                {run.unassignedCount > 0 ? (
-                  <span className={styles.unassignedWarning}>
-                    {run.unassignedCount}
-                  </span>
-                ) : (
-                  run.unassignedCount
-                )}
-              </td>
-              <td className={styles.cell}>
-                {run.distanceKm > 0
-                  ? `${formatMilesFromKm(run.distanceKm)} mi`
-                  : "—"}
-              </td>
-              <td className={styles.cell}>
-                {run.durationMin > 0 ? formatDuration(run.durationMin) : "—"}
-              </td>
-              <td className={styles.cell}>
-                {run.lastOptimizedAt
-                  ? new Date(run.lastOptimizedAt).toLocaleString("en-GB", {
-                      day: "numeric",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : "—"}
-              </td>
-              <td className={styles.cell}>
-                <div className={styles.actions}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => navigate(`/delivery-runs/${run.id}`)}
-                  >
-                    <Eye size={16} />
-                    View
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setConfirmRun(run)}
-                    disabled={!onDeleteRun}
-                  >
-                    <Trash2 size={16} />
-                    Delete
-                  </Button>
-                </div>
-              </td>
+      <div className={styles.tableWrapper}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.headerCell}>Delivery Date</th>
+              <th className={styles.headerCell}>Status</th>
+              <th className={styles.headerCell}>Orders</th>
+              <th className={styles.headerCell}>Drops</th>
+              <th className={styles.headerCell}>Unassigned</th>
+              <th className={styles.headerCell}>Distance</th>
+              <th className={styles.headerCell}>Duration</th>
+              <th className={styles.headerCell}>Last Optimized</th>
+              <th className={styles.headerCell}></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {pageRuns.map((run) => (
+              <tr key={run.id} className={styles.row}>
+                <td className={`${styles.cell} ${styles.dateCell}`}>
+                  {formatDate(run.deliveryDate)}
+                </td>
+                <td className={styles.cell}>
+                  <Badge variant={STATUS_BADGE_VARIANTS[run.status]}>
+                    {STATUS_LABELS[run.status]}
+                  </Badge>
+                </td>
+                <td className={styles.cell}>{run.ordersCount}</td>
+                <td className={styles.cell}>{run.dropsCount}</td>
+                <td className={styles.cell}>
+                  {run.unassignedCount > 0 ? (
+                    <span className={styles.unassignedWarning}>
+                      {run.unassignedCount}
+                    </span>
+                  ) : (
+                    run.unassignedCount
+                  )}
+                </td>
+                <td className={styles.cell}>
+                  {run.distanceKm > 0
+                    ? `${formatMilesFromKm(run.distanceKm)} mi`
+                    : "—"}
+                </td>
+                <td className={styles.cell}>
+                  {run.durationMin > 0 ? formatDuration(run.durationMin) : "—"}
+                </td>
+                <td className={styles.cell}>
+                  {run.lastOptimizedAt
+                    ? new Date(run.lastOptimizedAt).toLocaleString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "—"}
+                </td>
+                <td className={styles.cell}>
+                  <div className={styles.actions}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate(`/delivery-runs/${run.id}`)}
+                    >
+                      <Eye size={16} />
+                      View
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmRun(run)}
+                      disabled={!onDeleteRun}
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <Modal
         isOpen={!!confirmRun}

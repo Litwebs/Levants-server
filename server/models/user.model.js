@@ -122,27 +122,11 @@ const userSchema = new mongoose.Schema(
           type: Boolean,
           default: true,
         },
-        orderUpdates: {
-          type: Boolean,
-          default: true,
-        },
         lowStockAlerts: {
           type: Boolean,
           default: true,
         },
         outOfStock: {
-          type: Boolean,
-          default: true,
-        },
-        deliveryUpdates: {
-          type: Boolean,
-          default: false,
-        },
-        customerMessages: {
-          type: Boolean,
-          default: true,
-        },
-        paymentReceived: {
           type: Boolean,
           default: true,
         },

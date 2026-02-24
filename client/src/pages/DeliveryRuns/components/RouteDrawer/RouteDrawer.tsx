@@ -192,15 +192,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
         </div>
 
         <div className={styles.footer}>
-          <Button variant="secondary" onClick={handleOpenMaps}>
-            <ExternalLink size={16} />
-            Open in Maps
-          </Button>
-          <Button variant="ghost" onClick={handleCopyRoute}>
-            <Copy size={16} />
-            Copy Link
-          </Button>
-          <Button variant="ghost" onClick={onPrint}>
+          <Button variant="primary" onClick={onPrint}>
             <Printer size={16} />
             Print
           </Button>

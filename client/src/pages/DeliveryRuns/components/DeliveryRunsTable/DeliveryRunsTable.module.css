@@ -1,6 +1,13 @@
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 920px;
 }
 
 .headerCell {
@@ -125,11 +132,6 @@
 }
 
 @media (max-width: 768px) {
-  .headerCell:nth-child(n+4),
-  .cell:nth-child(n+4) {
-    display: none;
-  }
-  
   .cell {
     padding: var(--space-3);
   }

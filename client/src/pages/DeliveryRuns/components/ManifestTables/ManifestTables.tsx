@@ -54,51 +54,53 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
               </span>
             </div>
 
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th className={styles.headerCell}>SKU</th>
-                  <th className={styles.headerCell}>Product</th>
-                  <th className={`${styles.headerCell} ${styles.ordersCell}`}>
-                    Orders
-                  </th>
-                  <th className={`${styles.headerCell} ${styles.qtyCell}`}>
-                    Qty
-                  </th>
-                  <th className={styles.headerCell}>Unit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {van.manifest.items.map((item, idx) => (
-                  <tr key={`${van.vanId}-${item.skuId}-${idx}`}>
-                    <td className={`${styles.cell} ${styles.skuCell}`}>
-                      {item.skuId}
-                    </td>
-                    <td className={`${styles.cell} ${styles.nameCell}`}>
-                      {item.name}
-                    </td>
-                    <td className={`${styles.cell} ${styles.ordersCell}`}>
-                      {item.ordersCount ?? "—"}
-                    </td>
-                    <td className={`${styles.cell} ${styles.qtyCell}`}>
-                      {item.qty}
-                    </td>
-                    <td className={`${styles.cell} ${styles.unitCell}`}>
-                      {item.unit || "—"}
-                    </td>
+            <div className={styles.tableWrapper}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th className={styles.headerCell}>SKU</th>
+                    <th className={styles.headerCell}>Product</th>
+                    <th className={`${styles.headerCell} ${styles.ordersCell}`}>
+                      Orders
+                    </th>
+                    <th className={`${styles.headerCell} ${styles.qtyCell}`}>
+                      Qty
+                    </th>
+                    {/* <th className={styles.headerCell}>Unit</th> */}
                   </tr>
-                ))}
-                <tr className={styles.totalRow}>
-                  <td className={styles.cell}></td>
-                  <td className={styles.cell}>Total</td>
-                  <td className={`${styles.cell} ${styles.ordersCell}`}></td>
-                  <td className={`${styles.cell} ${styles.qtyCell}`}>
-                    {totalQty}
-                  </td>
-                  <td className={styles.cell}></td>
-                </tr>
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {van.manifest.items.map((item, idx) => (
+                    <tr key={`${van.vanId}-${item.skuId}-${idx}`}>
+                      <td className={`${styles.cell} ${styles.skuCell}`}>
+                        {item.skuId}
+                      </td>
+                      <td className={`${styles.cell} ${styles.nameCell}`}>
+                        {item.name}
+                      </td>
+                      <td className={`${styles.cell} ${styles.ordersCell}`}>
+                        {item.ordersCount ?? "—"}
+                      </td>
+                      <td className={`${styles.cell} ${styles.qtyCell}`}>
+                        {item.qty}
+                      </td>
+                      {/* <td className={`${styles.cell} ${styles.unitCell}`}>
+                        {item.unit || "—"}
+                      </td> */}
+                    </tr>
+                  ))}
+                  <tr className={styles.totalRow}>
+                    <td className={styles.cell}></td>
+                    <td className={styles.cell}>Total</td>
+                    <td className={`${styles.cell} ${styles.ordersCell}`}></td>
+                    <td className={`${styles.cell} ${styles.qtyCell}`}>
+                      {totalQty}
+                    </td>
+                    {/* <td className={styles.cell}></td> */}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
             {van.manifest.itemsByStop &&
               van.manifest.itemsByStop.length > 0 && (

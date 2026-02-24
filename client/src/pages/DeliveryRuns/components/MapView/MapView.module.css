@@ -177,6 +177,7 @@
 /* Leaflet overrides */
 :global(.leaflet-container) {
   font-family: var(--font-body);
+  background-color: var(--color-gray-100);
 }
 
 :global(.leaflet-popup-content-wrapper) {

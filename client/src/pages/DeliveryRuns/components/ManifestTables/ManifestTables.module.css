@@ -54,9 +54,16 @@
   color: var(--color-gray-500);
 }
 
+.tableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 520px;
 }
 
 .headerCell {
@@ -89,12 +96,12 @@
 }
 
 .qtyCell {
-  text-align: right;
+  text-align: center;
   font-weight: var(--font-semibold);
 }
 
 .ordersCell {
-  text-align: right;
+  text-align: center;
   color: var(--color-gray-600);
   font-variant-numeric: tabular-nums;
 }
@@ -169,4 +176,15 @@
   padding: var(--space-12);
   text-align: center;
   color: var(--color-gray-500);
+}
+
+@media (max-width: 640px) {
+  .vanHeader {
+    flex-wrap: wrap;
+  }
+
+  .itemCount {
+    width: 100%;
+    margin-left: 0;
+  }
 }

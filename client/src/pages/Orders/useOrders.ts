@@ -55,10 +55,39 @@ const getDefaultAddress = (customer: any) => {
   );
 };
 
+const isNonEmptyString = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+
+const getOrderDeliveryAddress = (order: AdminOrder, customer: any) => {
+  const fromOrder = (order as any)?.deliveryAddress;
+  if (fromOrder && typeof fromOrder === "object") {
+    const line1 = (fromOrder as any).line1;
+    const city = (fromOrder as any).city;
+    const postcode = (fromOrder as any).postcode;
+
+    if (isNonEmptyString(line1) && isNonEmptyString(city) && isNonEmptyString(postcode)) {
+      return {
+        line1: String(line1).trim(),
+        line2: isNonEmptyString((fromOrder as any).line2)
+          ? String((fromOrder as any).line2).trim()
+          : undefined,
+        city: String(city).trim(),
+        postcode: String(postcode).trim(),
+      };
+    }
+  }
+
+  const addr = getDefaultAddress(customer);
+  return {
+    line1: addr.line1 ?? "-",
+    line2: addr.line2 ?? undefined,
+    city: addr.city ?? "-",
+    postcode: addr.postcode ?? "-",
+  };
+};
+
 const mapAdminOrderToUi = (order: AdminOrder): Order => {
   const customer =
     order.customer && typeof order.customer === "object" ? order.customer : null;
-  const addr = getDefaultAddress(customer);
 
   const customerName = customer
     ? `${customer.firstName ?? ""} ${customer.lastName ?? ""}`.trim() ||
@@ -75,12 +104,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
       phone: customer?.phone ?? "-",
     },
 
-    deliveryAddress: {
-      line1: addr.line1 ?? "-",
-      line2: addr.line2 ?? undefined,
-      city: addr.city ?? "-",
-      postcode: addr.postcode ?? "-",
-    },
+    deliveryAddress: getOrderDeliveryAddress(order, customer),
 
     // Backend doesn't have delivery slot yet; keep UI stable.
     // If admin assigns a deliveryDate, use it as the slot date.

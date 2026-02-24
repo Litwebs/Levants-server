@@ -7,7 +7,6 @@ import {
 } from "../../components/common";
 import { Save } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
-import styles from "./Customers.module.css";
 
 const CustomerEditModal = ({
   isEditModalOpen,
