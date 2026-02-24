@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: "https://api.levantsdairy.co.uk/api",
   // baseURL: "http://localhost:5001/api",,
   withCredentials: true,
 });
