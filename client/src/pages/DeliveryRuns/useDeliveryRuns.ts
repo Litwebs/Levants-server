@@ -47,6 +47,7 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
     deliveryDate: string,
     orderIds?: string[],
     window?: { startTime: string },
+    ordersFile?: File | null,
   ): Promise<CreateRunResult> => {
     setState(s => ({ ...s, creating: true }));
     try {
@@ -54,6 +55,7 @@ export function useDeliveryRuns(initialParams?: ListRunsParams) {
         deliveryDate,
         orderIds,
         startTime: window?.startTime,
+        ordersFile: ordersFile ?? undefined,
       });
       await fetchRuns();
       setState(s => ({ ...s, creating: false }));

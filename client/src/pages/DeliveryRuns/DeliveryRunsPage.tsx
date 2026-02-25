@@ -30,6 +30,7 @@ export const DeliveryRunsPage: React.FC = () => {
   const [eligibleOrders, setEligibleOrders] = useState<Array<any>>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [ordersFile, setOrdersFile] = useState<File | null>(null);
 
   // Calculate quick filter dates
   const filterDates = useMemo(() => {
@@ -95,14 +96,20 @@ export const DeliveryRunsPage: React.FC = () => {
       showToast({ type: "error", title: "Select a start time" });
       return;
     }
-    if (selectedOrderIds.length === 0) {
-      showToast({ type: "error", title: "Select at least one order" });
+    if (selectedOrderIds.length === 0 && !ordersFile) {
+      showToast({
+        type: "error",
+        title: "Select orders or upload a file",
+      });
       return;
     }
 
-    const result = await createRun(newRunDate, selectedOrderIds, {
-      startTime: newRunStartTime,
-    });
+    const result = await createRun(
+      newRunDate,
+      selectedOrderIds,
+      { startTime: newRunStartTime },
+      ordersFile,
+    );
     if (result.success) {
       showToast({ type: "success", title: "Delivery run created" });
       setShowCreateModal(false);
@@ -110,10 +117,11 @@ export const DeliveryRunsPage: React.FC = () => {
       setNewRunStartTime("08:00");
       setEligibleOrders([]);
       setSelectedOrderIds([]);
+      setOrdersFile(null);
     } else {
       showToast({
         type: "error",
-        title: result.message || "Failed to create run",
+        title: (result as any).message || "Failed to create run",
       });
     }
   };
@@ -214,7 +222,8 @@ export const DeliveryRunsPage: React.FC = () => {
               } else {
                 showToast({
                   type: "error",
-                  title: result.message || "Failed to delete delivery run",
+                  title:
+                    (result as any).message || "Failed to delete delivery run",
                 });
               }
               return result;
@@ -333,6 +342,27 @@ export const DeliveryRunsPage: React.FC = () => {
           )}
         </div>
 
+        <div className={styles.formField}>
+          <label className={styles.formLabel}>
+            Import from XLSX/CSV (optional)
+          </label>
+          <input
+            type="file"
+            className={styles.formInput}
+            accept=".xlsx,.xls,.csv"
+            onChange={(e) => {
+              const f = e.target.files?.[0] || null;
+              setOrdersFile(f);
+            }}
+          />
+          <p className={styles.formHelp}>
+            Upload a Google Sheets export (XLSX) to create additional one-time
+            paid orders for this route. Columns: name, address, postcode,
+            contact, order (e.g. "1x test-csv,2x test-csv-2"), delivery fee,
+            total.
+          </p>
+        </div>
+
         <ModalFooter>
           <Button variant="ghost" onClick={() => setShowCreateModal(false)}>
             Cancel
@@ -344,7 +374,7 @@ export const DeliveryRunsPage: React.FC = () => {
               !newRunDate ||
               !newRunStartTime ||
               creating ||
-              selectedOrderIds.length === 0
+              (selectedOrderIds.length === 0 && !ordersFile)
             }
           >
             {creating ? "Creating..." : "Create Run"}

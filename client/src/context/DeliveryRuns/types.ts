@@ -107,6 +107,7 @@ export interface CreateRunPayload {
   deliveryDate: string;
   orderIds?: string[];
   startTime?: string;
+  ordersFile?: File | null;
 }
 
 // Depot configuration

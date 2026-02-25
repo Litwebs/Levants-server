@@ -58,6 +58,18 @@ const deliveryBatchSchema = new mongoose.Schema(
     completedAt: {
       type: Date,
     },
+
+    // Optional: metadata about imported spreadsheet orders attached to this batch
+    orderImport: {
+      originalName: { type: String },
+      mimeType: { type: String },
+      sizeBytes: { type: Number },
+      detectedType: { type: String },
+      uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      uploadedAt: { type: Date },
+      rowsCount: { type: Number },
+      createdOrdersCount: { type: Number },
+    },
   },
   { timestamps: true },
 );

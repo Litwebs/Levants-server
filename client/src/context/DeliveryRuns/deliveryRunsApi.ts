@@ -345,11 +345,30 @@ export const getRun = async (id: string): Promise<DeliveryRun | null> => {
  */
 export const createRun = async (payload: CreateRunPayload): Promise<DeliveryRun> => {
   try {
-    const res = await api.post("/admin/delivery/batch", {
-      deliveryDate: payload.deliveryDate,
-      orderIds: (payload as any).orderIds,
-      startTime: (payload as any).startTime,
-    });
+    const hasFile = Boolean((payload as any)?.ordersFile);
+
+    const res = hasFile
+      ? await api.post(
+          "/admin/delivery/batch",
+          (() => {
+            const form = new FormData();
+            form.append("deliveryDate", payload.deliveryDate);
+            if ((payload as any).startTime) {
+              form.append("startTime", String((payload as any).startTime));
+            }
+            if (Array.isArray((payload as any).orderIds)) {
+              form.append("orderIds", JSON.stringify((payload as any).orderIds));
+            }
+            form.append("ordersFile", (payload as any).ordersFile);
+            return form;
+          })(),
+          { headers: { "Content-Type": "multipart/form-data" } },
+        )
+      : await api.post("/admin/delivery/batch", {
+          deliveryDate: payload.deliveryDate,
+          orderIds: (payload as any).orderIds,
+          startTime: (payload as any).startTime,
+        });
     const data = unwrap<{ batchId: string }>(res.data);
     const batchId = (data as any)?.batchId as string;
     const run = await getRun(batchId);
