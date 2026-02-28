@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const multer = require("multer");
 
 const {
   listBatches,
@@ -20,6 +21,13 @@ const {
 // Replace with your real auth middleware
 const { requireAuth } = require("../middleware/auth.middleware");
 const { requirePermission } = require("../middleware/permission.middleware");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // up to 5MB for XLSX exports
+  },
+});
 
 /**
  * GET /api/admin/delivery/batches
@@ -70,6 +78,7 @@ router.post(
   "/batch",
   requireAuth,
   requirePermission("delivery.routes.update"),
+  upload.single("ordersFile"),
   createBatch,
 );
 

@@ -4,6 +4,8 @@
   right: 0;
   bottom: 0;
   left: 0;
+  height: 100vh;
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.5);
   z-index: var(--z-modal-backdrop);
   animation: fadeIn var(--transition-fast);
@@ -14,6 +16,8 @@
   top: 0;
   right: 0;
   bottom: 0;
+  height: 100vh;
+  height: 100dvh;
   width: 480px;
   max-width: 100%;
   background: var(--color-white);
@@ -140,6 +144,44 @@
   margin-bottom: var(--space-2);
 }
 
+.statusBtn {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gray-200);
+  background: var(--color-white);
+  color: var(--color-gray-700);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.statusBtn:hover {
+  background: var(--color-gray-50);
+  border-color: var(--color-gray-300);
+}
+
+.statusBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btnSpinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .stopSequence {
   width: 28px;
   height: 28px;
@@ -218,5 +260,21 @@
 @media (max-width: 540px) {
   .drawer {
     width: 100%;
+  }
+
+  .header {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .searchBar {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .stop {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .footer {
+    padding: var(--space-3) var(--space-4);
   }
 }

@@ -2,7 +2,12 @@ import React, { useMemo, useRef, useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { ExternalLink, Loader2, Pencil } from "lucide-react";
 import { useAuth } from "@/context/Auth/AuthContext";
+import { useToast } from "@/components/common/Toast";
+import { useOrdersApi } from "@/context/Orders";
+import { usePermissions } from "@/hooks/usePermissions";
+import OrderStatusModal from "@/pages/Orders/OrderStatusModal";
 import {
   VanRoute,
   VanId,
@@ -124,12 +129,31 @@ const stopStatusLabel = (stop: VanRoute["stops"][0], runStatus?: RunStatus) => {
   return "Pending";
 };
 
-const isDeliveredStop = (stop: VanRoute["stops"][0]) => {
+const buildStopNavigationUrl = (stop: VanRoute["stops"][0]) => {
+  const existing = (stop as any)?.navigationUrl;
+  if (typeof existing === "string" && existing.trim().length > 0) {
+    return existing;
+  }
+
+  const lat = Number((stop as any)?.lat);
+  const lng = Number((stop as any)?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+};
+
+const isDeliveredStop = (
+  stop: VanRoute["stops"][0],
+  orderDeliveryStatusOverride?: string,
+) => {
   const stopStatus =
     typeof (stop as any)?.stopStatus === "string"
       ? (stop as any).stopStatus
       : undefined;
-  const orderDeliveryStatus = getOrderDeliveryStatus(stop);
+  const orderDeliveryStatus =
+    typeof orderDeliveryStatusOverride === "string"
+      ? orderDeliveryStatusOverride
+      : getOrderDeliveryStatus(stop);
   const normalizedOrder =
     typeof orderDeliveryStatus === "string"
       ? orderDeliveryStatus.toLowerCase()
@@ -218,6 +242,23 @@ export const MapView: React.FC<MapViewProps> = ({
   runStatus,
 }) => {
   const { user } = useAuth();
+  const { showToast } = useToast();
+  const { listOrders, updateOrderStatus } = useOrdersApi();
+  const { hasPermission } = usePermissions();
+
+  const [statusResolveStopId, setStatusResolveStopId] = useState<string | null>(
+    null,
+  );
+  const [statusStopId, setStatusStopId] = useState<string | null>(null);
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [selectedOrderForStatus, setSelectedOrderForStatus] = useState<{
+    id: string;
+    orderNumber: string;
+    deliveryStatus: string;
+  } | null>(null);
+  const [deliveryStatusOverrides, setDeliveryStatusOverrides] = useState<
+    Record<string, string>
+  >({});
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
 
   const themePreference =
@@ -283,6 +324,88 @@ export const MapView: React.FC<MapViewProps> = ({
   const depotLat = depot?.lat ?? DEPOT_LOCATION.lat;
   const depotLng = depot?.lng ?? DEPOT_LOCATION.lng;
   const depotLabel = depot?.label ?? DEPOT_LOCATION.label;
+
+  const getEffectiveDeliveryStatus = (stop: VanRoute["stops"][0]) => {
+    const override = deliveryStatusOverrides[stop.stopId];
+    if (typeof override === "string" && override.trim().length > 0)
+      return override;
+    return getOrderDeliveryStatus(stop);
+  };
+
+  const resolveOrderIdForStop = async (stop: VanRoute["stops"][0]) => {
+    const direct = (stop as any)?.orderDbId || (stop as any)?.order?._id;
+    if (typeof direct === "string" && direct.trim().length > 0) return direct;
+
+    // Fallback: search orders by order number (ORD-...) and find an exact match.
+    const term = String((stop as any)?.orderId ?? "").trim();
+    if (!term) return null;
+
+    try {
+      const result = await listOrders({ page: 1, pageSize: 10, search: term });
+      const exact = (result?.orders ?? []).find(
+        (o: any) => String(o?.orderId) === term,
+      );
+      return exact?._id ? String(exact._id) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const openStatusModalForStop = async (stop: VanRoute["stops"][0]) => {
+    if (!hasPermission("orders.update")) return;
+    setStatusResolveStopId(stop.stopId);
+    try {
+      const orderDbId = await resolveOrderIdForStop(stop);
+      if (!orderDbId) {
+        showToast({
+          type: "error",
+          title: "Could not find order for this stop",
+        });
+        return;
+      }
+
+      const current = getEffectiveDeliveryStatus(stop) || "ordered";
+      setStatusStopId(stop.stopId);
+      setSelectedOrderForStatus({
+        id: orderDbId,
+        orderNumber: stop.orderId,
+        deliveryStatus: current,
+      });
+      setIsStatusModalOpen(true);
+    } finally {
+      setStatusResolveStopId(null);
+    }
+  };
+
+  const handleUpdateOrderStatus = async (id: string, nextStatus: string) => {
+    try {
+      await updateOrderStatus(
+        id,
+        nextStatus as
+          | "ordered"
+          | "dispatched"
+          | "in_transit"
+          | "delivered"
+          | "returned",
+      );
+      showToast({ type: "success", title: "Order status updated" });
+
+      setSelectedOrderForStatus((prev) =>
+        prev ? { ...prev, deliveryStatus: nextStatus } : prev,
+      );
+
+      if (statusStopId) {
+        setDeliveryStatusOverrides((prev) => ({
+          ...prev,
+          [statusStopId]: nextStatus,
+        }));
+      }
+
+      setIsStatusModalOpen(false);
+    } catch {
+      showToast({ type: "error", title: "Failed to update status" });
+    }
+  };
 
   // Get stops to display based on selection
   const displayVans = useMemo(() => {
@@ -404,7 +527,7 @@ export const MapView: React.FC<MapViewProps> = ({
                 icon={createNumberedIcon(
                   stop.sequence,
                   getVanColor(van.vanId),
-                  isDeliveredStop(stop),
+                  isDeliveredStop(stop, getEffectiveDeliveryStatus(stop)),
                 )}
                 ref={(marker) => {
                   if (marker) markersRef.current[stop.stopId] = marker;
@@ -424,7 +547,7 @@ export const MapView: React.FC<MapViewProps> = ({
                     Delivery status:{" "}
                     {getStatusBadge(
                       (
-                        getOrderDeliveryStatus(stop) ||
+                        getEffectiveDeliveryStatus(stop) ||
                         stopStatusLabel(stop, runStatus)
                       )
                         .toLowerCase()
@@ -461,39 +584,91 @@ export const MapView: React.FC<MapViewProps> = ({
           {displayStops.length === 0 ? (
             <div className={styles.emptyStops}>No stops to display</div>
           ) : (
-            displayStops.map(({ vanId, stop }) => (
-              <div
-                key={stop.stopId}
-                className={`${styles.stopItem} ${activeStop === stop.stopId ? styles.active : ""}`}
-                onClick={() => handleStopClick(stop.stopId)}
-              >
-                <span
-                  className={`${styles.stopSequence} ${styles[vanId.replace("-", "")]}`}
+            displayStops.map(({ vanId, stop }) => {
+              const navigationUrl = buildStopNavigationUrl(stop);
+              const canUpdateOrders = hasPermission("orders.update");
+              const isResolvingStatus = statusResolveStopId === stop.stopId;
+              const effectiveStatus =
+                getEffectiveDeliveryStatus(stop) ||
+                stopStatusLabel(stop, runStatus);
+
+              return (
+                <div
+                  key={stop.stopId}
+                  className={`${styles.stopItem} ${activeStop === stop.stopId ? styles.active : ""}`}
+                  onClick={() => handleStopClick(stop.stopId)}
                 >
-                  {stop.sequence}
-                </span>
-                <span className={styles.stopName}>{stop.customerName}</span>
-                <div className={styles.stopPostcode}>{stop.postcode}</div>
-                <div className={styles.stopMetaRow}>
-                  <span className={styles.stopMetaLabel}>Status</span>
-                  {getStatusBadge(
-                    (
-                      getOrderDeliveryStatus(stop) ||
-                      stopStatusLabel(stop, runStatus)
-                    )
-                      .toLowerCase()
-                      .replace(/\s+/g, " "),
-                  )}
+                  <div className={styles.stopTopRow}>
+                    <span
+                      className={`${styles.stopSequence} ${styles[vanId.replace("-", "")]}`}
+                    >
+                      {stop.sequence}
+                    </span>
+                    <span className={styles.stopName}>{stop.customerName}</span>
+                    {(canUpdateOrders || navigationUrl) && (
+                      <div className={styles.stopActions}>
+                        {canUpdateOrders && (
+                          <button
+                            type="button"
+                            className={styles.statusBtn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openStatusModalForStop(stop);
+                            }}
+                            disabled={isResolvingStatus}
+                            title="Edit delivery status"
+                          >
+                            {isResolvingStatus ? (
+                              <Loader2
+                                size={14}
+                                className={styles.btnSpinner}
+                              />
+                            ) : (
+                              <Pencil size={14} />
+                            )}
+                            Status
+                          </button>
+                        )}
+                        {navigationUrl && (
+                          <a
+                            className={styles.directionsBtn}
+                            href={navigationUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Open directions in Google Maps"
+                          >
+                            Directions
+                            <ExternalLink size={14} />
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.stopPostcode}>{stop.postcode}</div>
+                  <div className={styles.stopMetaRow}>
+                    <span className={styles.stopMetaLabel}>Status</span>
+                    {getStatusBadge(
+                      effectiveStatus.toLowerCase().replace(/\s+/g, " "),
+                    )}
+                  </div>
+                  <div className={styles.stopMetaRow}>
+                    <span className={styles.stopMetaLabel}>ETA</span>
+                    <span>{formatEtaTime(getStopEta(stop)) ?? "—"}</span>
+                  </div>
                 </div>
-                <div className={styles.stopMetaRow}>
-                  <span className={styles.stopMetaLabel}>ETA</span>
-                  <span>{formatEtaTime(getStopEta(stop)) ?? "—"}</span>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
+
+      <OrderStatusModal
+        selectedOrder={selectedOrderForStatus}
+        isStatusModalOpen={isStatusModalOpen}
+        setIsStatusModalOpen={setIsStatusModalOpen}
+        updateOrderStatus={handleUpdateOrderStatus}
+      />
     </div>
   );
 };

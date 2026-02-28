@@ -17,6 +17,8 @@ export interface ManifestItem {
 export interface RouteStop {
   stopId: string;
   sequence: number;
+  /** Internal DB id for the order (used for admin status updates) */
+  orderDbId?: string;
   orderId: string;
   customerName: string;
   phone?: string;
@@ -24,6 +26,8 @@ export interface RouteStop {
   postcode: string;
   lat: number;
   lng: number;
+  /** Optional server-provided navigation link */
+  navigationUrl?: string;
   notes?: string;
   eta?: string;
   stopStatus?: 'pending' | 'delivered' | 'failed' | string;
@@ -107,6 +111,7 @@ export interface CreateRunPayload {
   deliveryDate: string;
   orderIds?: string[];
   startTime?: string;
+  ordersFile?: File | null;
 }
 
 // Depot configuration

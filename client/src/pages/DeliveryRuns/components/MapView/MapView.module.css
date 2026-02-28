@@ -8,6 +8,8 @@
   border: 1px solid var(--color-gray-200);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  position: relative;
+  z-index: 0;
 }
 
 .vanSelector {
@@ -105,6 +107,83 @@
   border-bottom: 1px solid var(--color-gray-100);
   cursor: pointer;
   transition: background var(--transition-fast);
+}
+
+.stopTopRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.stopActions {
+  margin-left: auto;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.statusBtn,
+.directionsBtn {
+  min-width: 80px;
+  max-width: 80px;
+  justify-content: center;
+}
+
+.directionsBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  color: var(--color-gray-700);
+  font-size: var(--text-xs);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.directionsBtn:hover {
+  background: var(--color-gray-50);
+  border-color: var(--color-gray-300);
+}
+
+.statusBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  color: var(--color-gray-700);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.statusBtn:hover {
+  background: var(--color-gray-50);
+  border-color: var(--color-gray-300);
+}
+
+.statusBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btnSpinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .stopItem:hover,
@@ -231,5 +310,13 @@
     border-left: none;
     border-top: 1px solid var(--color-gray-200);
     max-height: 300px;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
   }
 }

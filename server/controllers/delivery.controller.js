@@ -14,9 +14,38 @@ const {
   deleteBatch: deleteBatchService,
 } = require("../services/delivery.service");
 
+const { spreadsheetUploadToRows } = require("../utils/ordersSpreadsheet.util");
+
+const parseStringArrayField = (value) => {
+  if (Array.isArray(value)) return value.map((x) => String(x));
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  // JSON array
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((x) => String(x));
+    } catch (_) {}
+  }
+
+  // Comma/newline separated
+  const parts = trimmed
+    .split(/[\n,]/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return parts.length ? parts : undefined;
+};
+
 async function listBatches(req, res) {
   const { fromDate, toDate, status } = req.query;
-  const result = await listBatchesService({ fromDate, toDate, status });
+  const result = await listBatchesService({
+    fromDate,
+    toDate,
+    status,
+    user: req.user,
+  });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
@@ -53,13 +82,35 @@ async function getDepot(req, res) {
  */
 async function createBatch(req, res) {
   try {
-    const { deliveryDate, orderIds, startTime, endTime } = req.body;
+    const { deliveryDate, startTime, endTime } = req.body;
+    const orderIds = parseStringArrayField(req.body?.orderIds);
+
+    const ordersSheet = req.file
+      ? (() => {
+          const { detectedType, rows, csvText } = spreadsheetUploadToRows({
+            buffer: req.file.buffer,
+            originalName: req.file.originalname,
+            mimeType: req.file.mimetype,
+          });
+
+          return {
+            originalName: req.file.originalname,
+            mimeType: req.file.mimetype,
+            sizeBytes: req.file.size,
+            detectedType,
+            rows,
+            csvText,
+            uploadedBy: req.user?._id,
+          };
+        })()
+      : undefined;
 
     const result = await createDeliveryBatch({
       deliveryDate,
       orderIds,
       deliveryWindowStart: startTime,
       deliveryWindowEnd: endTime,
+      ordersSheet,
     });
 
     if (!result.success) {
@@ -133,7 +184,7 @@ async function generateRoutes(req, res) {
  */
 async function getBatch(req, res) {
   const { batchId } = req.params;
-  const result = await getBatchService({ batchId });
+  const result = await getBatchService({ batchId, user: req.user });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
@@ -145,7 +196,7 @@ async function getBatch(req, res) {
  */
 async function getRoute(req, res) {
   const { routeId } = req.params;
-  const result = await getRouteService({ routeId });
+  const result = await getRouteService({ routeId, user: req.user });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
@@ -154,7 +205,7 @@ async function getRoute(req, res) {
 
 async function getRouteStock(req, res) {
   const { routeId } = req.params;
-  const result = await getRouteStockService({ routeId });
+  const result = await getRouteStockService({ routeId, user: req.user });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
