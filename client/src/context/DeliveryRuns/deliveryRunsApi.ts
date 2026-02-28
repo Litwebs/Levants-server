@@ -172,6 +172,7 @@ const mapStops = (stops: any[]): RouteStop[] => {
     return {
       stopId: String(s._id),
       sequence: Number(s.sequence ?? 0),
+      orderDbId: order?._id ? String(order._id) : undefined,
       orderId: String(order?.orderId ?? ""),
       customerName,
       phone: phone ?? undefined,
@@ -179,6 +180,8 @@ const mapStops = (stops: any[]): RouteStop[] => {
       postcode: String(order?.deliveryAddress?.postcode ?? ""),
       lat: Number(order?.location?.lat ?? 0),
       lng: Number(order?.location?.lng ?? 0),
+      navigationUrl:
+        typeof s?.navigationUrl === "string" ? s.navigationUrl : undefined,
       eta: s.estimatedArrival
         ? new Date(s.estimatedArrival).toISOString()
         : undefined,

@@ -40,7 +40,12 @@ const parseStringArrayField = (value) => {
 
 async function listBatches(req, res) {
   const { fromDate, toDate, status } = req.query;
-  const result = await listBatchesService({ fromDate, toDate, status });
+  const result = await listBatchesService({
+    fromDate,
+    toDate,
+    status,
+    user: req.user,
+  });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
@@ -179,7 +184,7 @@ async function generateRoutes(req, res) {
  */
 async function getBatch(req, res) {
   const { batchId } = req.params;
-  const result = await getBatchService({ batchId });
+  const result = await getBatchService({ batchId, user: req.user });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
@@ -191,7 +196,7 @@ async function getBatch(req, res) {
  */
 async function getRoute(req, res) {
   const { routeId } = req.params;
-  const result = await getRouteService({ routeId });
+  const result = await getRouteService({ routeId, user: req.user });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }
@@ -200,7 +205,7 @@ async function getRoute(req, res) {
 
 async function getRouteStock(req, res) {
   const { routeId } = req.params;
-  const result = await getRouteStockService({ routeId });
+  const result = await getRouteStockService({ routeId, user: req.user });
   if (!result.success) {
     return res.status(result.statusCode || 400).json(result);
   }

@@ -115,62 +115,60 @@ export const DeliveryRunDetailsPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      {/* Header */}
-      <div className={styles.header}>
-        <button
-          className={styles.backBtn}
-          onClick={() => navigate("/delivery-runs")}
-        >
-          <ArrowLeft size={18} />
-          Back
-        </button>
-        <div className={styles.headerInfo}>
-          <h1 className={styles.title}>
-            Delivery Run: {formatDate(run.deliveryDate)}
-          </h1>
-          <p className={styles.subtitle}>
-            Run ID: {run.id} • Created:{" "}
-            {new Date(run.createdAt).toLocaleString("en-GB")}
-          </p>
+      <div className={styles.topSection}>
+        <div className={styles.header}>
+          <button
+            className={styles.backBtn}
+            onClick={() => navigate("/delivery-runs")}
+          >
+            <ArrowLeft size={18} />
+            Back
+          </button>
+          <div className={styles.headerInfo}>
+            <h1 className={styles.title}>
+              Delivery Run: {formatDate(run.deliveryDate)}
+            </h1>
+            <p className={styles.subtitle}>
+              Run ID: {run.id} • Created:{" "}
+              {new Date(run.createdAt).toLocaleString("en-GB")}
+            </p>
+          </div>
         </div>
+
+        {/* Summary Cards */}
+        <RunSummaryCards run={run} />
+        <RunActionsBar
+          run={run}
+          actionLoading={actionLoading}
+          onLock={() =>
+            handleAction(
+              lock,
+              "Run locked successfully",
+              "Failed to lock run",
+            ).then(() => true)
+          }
+          onUnlock={() =>
+            handleAction(unlock, "Run unlocked", "Failed to unlock run").then(
+              () => true,
+            )
+          }
+          onOptimize={(driverIds, window) =>
+            handleAction(
+              () => optimize(driverIds, window),
+              "Routes optimized!",
+              "Failed to optimize routes",
+            ).then(() => true)
+          }
+          onDispatch={() =>
+            handleAction(
+              dispatch,
+              "Run dispatched!",
+              "Failed to dispatch run",
+            ).then(() => true)
+          }
+        />
       </div>
 
-      {/* Summary Cards */}
-      <RunSummaryCards run={run} />
-
-      {/* Actions Bar */}
-      <RunActionsBar
-        run={run}
-        actionLoading={actionLoading}
-        onLock={() =>
-          handleAction(
-            lock,
-            "Run locked successfully",
-            "Failed to lock run",
-          ).then(() => true)
-        }
-        onUnlock={() =>
-          handleAction(unlock, "Run unlocked", "Failed to unlock run").then(
-            () => true,
-          )
-        }
-        onOptimize={(driverIds, window) =>
-          handleAction(
-            () => optimize(driverIds, window),
-            "Routes optimized!",
-            "Failed to optimize routes",
-          ).then(() => true)
-        }
-        onDispatch={() =>
-          handleAction(
-            dispatch,
-            "Run dispatched!",
-            "Failed to dispatch run",
-          ).then(() => true)
-        }
-      />
-
-      {/* Tabs */}
       <div className={styles.tabsContainer}>
         <div className={styles.tabsList}>
           <button
@@ -277,12 +275,14 @@ export const DeliveryRunDetailsPage: React.FC = () => {
           {/* Map View Tab */}
           {activeTab === "map" &&
             (run.vans.length > 0 ? (
-              <MapView
-                vans={run.vans}
-                selectedVan={selectedVan}
-                onSelectVan={setSelectedVan}
-                runStatus={run.status}
-              />
+              <div className={styles.mapTab}>
+                <MapView
+                  vans={run.vans}
+                  selectedVan={selectedVan}
+                  onSelectVan={setSelectedVan}
+                  runStatus={run.status}
+                />
+              </div>
             ) : (
               <div className={styles.emptyTab}>
                 No routes to display. Generate routes first.

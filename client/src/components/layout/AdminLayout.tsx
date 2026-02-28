@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -98,6 +98,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const { user, logout, updateSelf } = useAuth();
   const { hasAnyPermission } = usePermissions();
 
+  const isDeliveryRunDetailsRoute = useMemo(() => {
+    return /^\/delivery-runs\/[^/]+$/.test(location.pathname);
+  }, [location.pathname]);
+
   const themePreference =
     (user as any)?.preferences?.theme === "light" ||
     (user as any)?.preferences?.theme === "dark" ||
@@ -134,6 +138,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     typeof user?.role === "string" ? user.role : user?.role?.name;
 
   const visibleNavItems = navItems.filter((item) => {
+    if (item.path === "/orders" && String(roleLabel || "") === "driver") {
+      return false;
+    }
     const requiredAny = (item as any).requiredAny as string[] | undefined;
     if (!Array.isArray(requiredAny) || requiredAny.length === 0) return true;
     return hasAnyPermission(requiredAny);
@@ -299,7 +306,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           </div>
         </header>
 
-        <main className={styles.content}>{children}</main>
+        <main
+          className={`${styles.content} ${isDeliveryRunDetailsRoute ? styles.contentEdgeToEdgeMobile : ""}`}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

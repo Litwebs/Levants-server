@@ -11,6 +11,7 @@
   flex-wrap: wrap;
 }
 
+
 .backBtn {
   display: flex;
   align-items: center;
@@ -185,13 +186,14 @@
   background: var(--color-white);
   border: 1px solid var(--color-gray-200);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* overflow: hidden; */
 }
 
 .tabsList {
   display: flex;
   border-bottom: 1px solid var(--color-gray-200);
   background: var(--color-gray-50);
+  padding: 3px;
 }
 
 .tab {
@@ -221,6 +223,16 @@
   padding: var(--space-5);
 }
 
+@media (max-width: 1024px) {
+  /* Make MapView span full width (counteracts .tabContent padding) */
+  .mapTab {
+    margin: calc(0px - var(--space-5));
+  }
+  .topSection{
+    margin: 0 10px;
+  }
+}
+
 .emptyTab {
   text-align: center;
   padding: var(--space-12);
@@ -240,4 +252,6 @@
   .tab {
     white-space: nowrap;
   }
+
 }
+  

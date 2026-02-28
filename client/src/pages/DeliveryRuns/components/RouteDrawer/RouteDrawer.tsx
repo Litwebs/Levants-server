@@ -1,9 +1,13 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { X, Truck, ExternalLink, Printer, Copy } from "lucide-react";
+import { X, Truck, Printer, Pencil, Loader2 } from "lucide-react";
 import type { VanRoute, VanId } from "@/context/DeliveryRuns";
 import { DEPOT_LOCATION, getVanStyleKey } from "@/context/DeliveryRuns";
 import { Button } from "@/components/common";
 import { getDepotLocation } from "@/context/DeliveryRuns";
+import { useToast } from "@/components/common/Toast";
+import { useOrdersApi } from "@/context/Orders";
+import { usePermissions } from "@/hooks/usePermissions";
+import OrderStatusModal from "@/pages/Orders/OrderStatusModal";
 import styles from "./RouteDrawer.module.css";
 
 interface RouteDrawerProps {
@@ -44,6 +48,22 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
   onPrint,
 }) => {
   const [search, setSearch] = useState("");
+  const { showToast } = useToast();
+  const { listOrders, updateOrderStatus } = useOrdersApi();
+  const { hasPermission } = usePermissions();
+
+  const [statusResolveStopId, setStatusResolveStopId] = useState<string | null>(
+    null,
+  );
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [selectedOrderForStatus, setSelectedOrderForStatus] = useState<{
+    id: string;
+    orderNumber: string;
+    deliveryStatus: string;
+  } | null>(null);
+  const [deliveryStatusOverrides, setDeliveryStatusOverrides] = useState<
+    Record<string, string>
+  >({});
   const [depot, setDepot] = useState<{
     lat: number;
     lng: number;
@@ -77,6 +97,99 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
         stop.addressLine1.toLowerCase().includes(term),
     );
   }, [van.stops, search]);
+
+  const getEffectiveDeliveryStatus = (stop: VanRoute["stops"][0]) => {
+    const override = deliveryStatusOverrides[stop.stopId];
+    if (typeof override === "string" && override.trim().length > 0)
+      return override;
+
+    const candidate =
+      (stop as any)?.orderDeliveryStatus ??
+      (stop as any)?.deliveryStatus ??
+      (stop as any)?.order?.deliveryStatus;
+
+    return typeof candidate === "string" && candidate.trim().length > 0
+      ? candidate
+      : undefined;
+  };
+
+  const resolveOrderIdForStop = async (stop: VanRoute["stops"][0]) => {
+    const direct = (stop as any)?.orderDbId || (stop as any)?.order?._id;
+    if (typeof direct === "string" && direct.trim().length > 0) return direct;
+
+    const term = String((stop as any)?.orderId ?? "").trim();
+    if (!term) return null;
+
+    try {
+      const result = await listOrders({ page: 1, pageSize: 10, search: term });
+      const exact = (result?.orders ?? []).find(
+        (o: any) => String(o?.orderId) === term,
+      );
+      return exact?._id ? String(exact._id) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const openStatusModalForStop = async (stop: VanRoute["stops"][0]) => {
+    if (!hasPermission("orders.update")) return;
+    setStatusResolveStopId(stop.stopId);
+    try {
+      const orderDbId = await resolveOrderIdForStop(stop);
+      if (!orderDbId) {
+        showToast({
+          type: "error",
+          title: "Could not find order for this stop",
+        });
+        return;
+      }
+
+      const current = getEffectiveDeliveryStatus(stop) || "ordered";
+      setSelectedOrderForStatus({
+        id: orderDbId,
+        orderNumber: stop.orderId,
+        deliveryStatus: current,
+      });
+      setIsStatusModalOpen(true);
+    } finally {
+      setStatusResolveStopId(null);
+    }
+  };
+
+  const handleUpdateOrderStatus = async (id: string, nextStatus: string) => {
+    try {
+      await updateOrderStatus(
+        id,
+        nextStatus as
+          | "ordered"
+          | "dispatched"
+          | "in_transit"
+          | "delivered"
+          | "returned",
+      );
+      showToast({ type: "success", title: "Order status updated" });
+
+      setSelectedOrderForStatus((prev) =>
+        prev ? { ...prev, deliveryStatus: nextStatus } : prev,
+      );
+
+      // Find the stopId for this order by matching the opened modal's orderNumber.
+      const orderNumber = selectedOrderForStatus?.orderNumber;
+      if (orderNumber) {
+        const match = van.stops.find((s) => s.orderId === orderNumber);
+        if (match?.stopId) {
+          setDeliveryStatusOverrides((prev) => ({
+            ...prev,
+            [match.stopId]: nextStatus,
+          }));
+        }
+      }
+
+      setIsStatusModalOpen(false);
+    } catch {
+      showToast({ type: "error", title: "Failed to update status" });
+    }
+  };
 
   // Build Google Maps directions URL
   const buildMapsUrl = () => {
@@ -185,6 +298,22 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                       ))}
                     </div>
                   </div>
+
+                  {hasPermission("orders.update") && (
+                    <button
+                      type="button"
+                      className={styles.statusBtn}
+                      onClick={() => void openStatusModalForStop(stop)}
+                      disabled={statusResolveStopId === stop.stopId}
+                      title="Edit delivery status"
+                    >
+                      {statusResolveStopId === stop.stopId ? (
+                        <Loader2 size={16} className={styles.btnSpinner} />
+                      ) : (
+                        <Pencil size={16} />
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -198,6 +327,13 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
           </Button>
         </div>
       </div>
+
+      <OrderStatusModal
+        selectedOrder={selectedOrderForStatus}
+        isStatusModalOpen={isStatusModalOpen}
+        setIsStatusModalOpen={setIsStatusModalOpen}
+        updateOrderStatus={handleUpdateOrderStatus}
+      />
     </>
   );
 };

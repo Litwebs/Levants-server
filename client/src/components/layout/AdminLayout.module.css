@@ -22,7 +22,8 @@
   top: 0;
   left: 0;
   bottom: 0;
-  z-index: var(--z-fixed);
+  /* Leaflet controls/popups can reach z-index ~800; keep sidebar above them */
+  z-index: calc(var(--z-toast) + 1);
   transition: width var(--transition-smooth), transform var(--transition-smooth);
 }
 
@@ -313,6 +314,9 @@
   max-width: none;
 }
 
+.contentEdgeToEdgeMobile {
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .sidebar {
@@ -355,5 +359,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  /* Allow specific pages to render edge-to-edge on mobile */
+  .contentEdgeToEdgeMobile {
+    padding: 0;
   }
 }

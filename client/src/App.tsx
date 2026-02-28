@@ -30,6 +30,7 @@ import { CustomersProvider } from "./context/Customers";
 import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
+import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
@@ -71,11 +72,16 @@ const AuthTransitionOverlay = () => {
 
 const HomeRoute = () => {
   const { hasPermission, hasAnyPermission } = usePermissions();
+  const { user } = useAuth();
+
+  const roleName =
+    typeof user?.role === "string" ? user.role : (user?.role as any)?.name;
+  const isDriver = String(roleName || "") === "driver";
 
   if (hasPermission("analytics.read")) return <Dashboard />;
 
   const firstAllowed =
-    (hasPermission("orders.read") && "/orders") ||
+    (!isDriver && hasPermission("orders.read") && "/orders") ||
     (hasPermission("products.read") && "/products") ||
     (hasPermission("customers.read") && "/customers") ||
     (hasPermission("delivery.routes.read") && "/delivery-runs") ||
@@ -147,7 +153,9 @@ const App = () => (
                         path="/orders"
                         element={
                           <RequirePermission permission="orders.read">
-                            <Orders />
+                            <RequireNotRole role="driver" fallbackPath="/delivery-runs">
+                              <Orders />
+                            </RequireNotRole>
                           </RequirePermission>
                         }
                       />

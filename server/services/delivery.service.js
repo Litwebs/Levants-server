@@ -15,6 +15,13 @@ const { generateGoogleMapsLink } = require("../utils/navigation.util");
 const { normalizeKey } = require("../utils/ordersSpreadsheet.util");
 const { geocodeAddress } = require("../Integration/google.geocode");
 
+const isDriverUser = (user) => String(user?.role?.name || "") === "driver";
+
+const getUserId = (user) => {
+  const id = user?._id || user?.id;
+  return id ? String(id) : null;
+};
+
 const sanitizeSku = (raw) => {
   if (typeof raw !== "string") return "";
   let s = raw.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
@@ -701,7 +708,7 @@ function normalizeDateRange({ fromDate, toDate } = {}) {
   return Object.keys(filter).length ? filter : null;
 }
 
-async function listBatches({ fromDate, toDate, status } = {}) {
+async function listBatches({ fromDate, toDate, status, user } = {}) {
   try {
     const filter = {};
     const dateRange = normalizeDateRange({ fromDate, toDate });
@@ -719,25 +726,57 @@ async function listBatches({ fromDate, toDate, status } = {}) {
       })
       .lean();
 
-    const items = batches.map((b) => {
+    const userId = getUserId(user);
+    const driverScoped = isDriverUser(user) && Boolean(userId);
+
+    const scopedBatches = driverScoped
+      ? batches
+          .map((b) => {
+            const allRoutes = Array.isArray(b.routes) ? b.routes : [];
+            const routes = allRoutes.filter((r) => {
+              const driver = r?.driver;
+              const driverId = driver
+                ? String(
+                    typeof driver === "string"
+                      ? driver
+                      : driver._id || driver.id || "",
+                  )
+                : "";
+              return driverId && driverId === userId;
+            });
+            return { ...b, routes };
+          })
+          .filter((b) => (Array.isArray(b.routes) ? b.routes.length : 0) > 0)
+      : batches;
+
+    const items = scopedBatches.map((b) => {
       const routes = Array.isArray(b.routes) ? b.routes : [];
+
       const distanceKm =
         routes.reduce((sum, r) => sum + (r?.totalDistanceMeters || 0), 0) /
         1000;
       const durationMin =
         routes.reduce((sum, r) => sum + (r?.totalDurationSeconds || 0), 0) / 60;
 
+      const dropsCount = routes.reduce(
+        (sum, r) => sum + (r?.totalStops || 0),
+        0,
+      );
+      const ordersCount = driverScoped
+        ? dropsCount
+        : Array.isArray(b.orders)
+          ? b.orders.length
+          : 0;
+
       return {
         id: b._id,
         deliveryDate: b.deliveryDate,
         status: b.status,
-        ordersCount: Array.isArray(b.orders) ? b.orders.length : 0,
-        dropsCount: routes.reduce((sum, r) => sum + (r?.totalStops || 0), 0),
-        unassignedCount: Math.max(
-          0,
-          (Array.isArray(b.orders) ? b.orders.length : 0) -
-            routes.reduce((sum, r) => sum + (r?.totalStops || 0), 0),
-        ),
+        ordersCount,
+        dropsCount,
+        unassignedCount: driverScoped
+          ? 0
+          : Math.max(0, ordersCount - dropsCount),
         distanceKm,
         durationMin,
         lastOptimizedAt: b.generatedAt || null,
@@ -1014,7 +1053,7 @@ async function deleteBatch({ batchId } = {}) {
   }
 }
 
-async function getBatch({ batchId } = {}) {
+async function getBatch({ batchId, user } = {}) {
   try {
     if (!batchId) {
       return {
@@ -1024,26 +1063,76 @@ async function getBatch({ batchId } = {}) {
       };
     }
 
+    const userId = getUserId(user);
+    const driverScoped = isDriverUser(user) && Boolean(userId);
+
+    if (!driverScoped) {
+      const batch = await DeliveryBatch.findById(batchId)
+        .populate({
+          path: "orders",
+          populate: { path: "customer", select: "firstName lastName phone" },
+        })
+        .populate({
+          path: "routes",
+          populate: {
+            path: "driver",
+            select: "name email",
+          },
+        });
+
+      if (!batch) {
+        return { success: false, statusCode: 404, message: "Batch not found" };
+      }
+
+      return {
+        success: true,
+        data: batch,
+      };
+    }
+
     const batch = await DeliveryBatch.findById(batchId)
-      .populate({
-        path: "orders",
-        populate: { path: "customer", select: "firstName lastName phone" },
-      })
       .populate({
         path: "routes",
         populate: {
           path: "driver",
           select: "name email",
         },
-      });
+      })
+      .lean();
 
     if (!batch) {
       return { success: false, statusCode: 404, message: "Batch not found" };
     }
 
+    const allRoutes = Array.isArray(batch.routes) ? batch.routes : [];
+    const routes = allRoutes.filter((r) => {
+      const driver = r?.driver;
+      const driverId = driver
+        ? String(
+            typeof driver === "string" ? driver : driver._id || driver.id || "",
+          )
+        : "";
+      return driverId && driverId === userId;
+    });
+
+    if (!routes.length) {
+      return { success: false, statusCode: 404, message: "Batch not found" };
+    }
+
+    const routeIds = routes.map((r) => r._id).filter(Boolean);
+    const orderIds = await Stop.distinct("order", { route: { $in: routeIds } });
+
+    const orders = await Order.find({ _id: { $in: orderIds } })
+      .populate("customer", "firstName lastName phone")
+      .lean();
+
     return {
       success: true,
-      data: batch,
+      data: {
+        ...batch,
+        routes,
+        orders,
+      },
     };
   } catch (err) {
     console.error("Get batch error:", err);
@@ -1055,7 +1144,7 @@ async function getBatch({ batchId } = {}) {
   }
 }
 
-async function getRoute({ routeId } = {}) {
+async function getRoute({ routeId, user } = {}) {
   try {
     if (!routeId) {
       return {
@@ -1071,6 +1160,23 @@ async function getRoute({ routeId } = {}) {
 
     if (!route) {
       return { success: false, statusCode: 404, message: "Route not found" };
+    }
+
+    const userId = getUserId(user);
+    const driverScoped = isDriverUser(user) && Boolean(userId);
+    if (driverScoped) {
+      const routeDriver = route?.driver;
+      const routeDriverId = routeDriver
+        ? String(
+            typeof routeDriver === "string"
+              ? routeDriver
+              : routeDriver._id || routeDriver.id || "",
+          )
+        : "";
+
+      if (!routeDriverId || routeDriverId !== userId) {
+        return { success: false, statusCode: 404, message: "Route not found" };
+      }
     }
 
     const stops = await Stop.find({ route: routeId })
@@ -1109,8 +1215,31 @@ async function getRoute({ routeId } = {}) {
   }
 }
 
-async function getRouteStock({ routeId } = {}) {
+async function getRouteStock({ routeId, user } = {}) {
   try {
+    const userId = getUserId(user);
+    const driverScoped = isDriverUser(user) && Boolean(userId);
+
+    if (driverScoped) {
+      if (!routeId) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: "routeId is required",
+        };
+      }
+
+      const route = await Route.findById(routeId).select("driver").lean();
+      if (!route) {
+        return { success: false, statusCode: 404, message: "Route not found" };
+      }
+
+      const routeDriverId = route?.driver ? String(route.driver) : "";
+      if (!routeDriverId || routeDriverId !== userId) {
+        return { success: false, statusCode: 404, message: "Route not found" };
+      }
+    }
+
     const result = await getRouteStockAggregation({ routeId });
     if (!result.success) {
       return {
