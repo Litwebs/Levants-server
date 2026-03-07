@@ -241,6 +241,8 @@ async function UpdateOrderStatus({
   deliveryProofUrl,
   deliveryProofFile,
   actorUserId,
+  actorRoleName,
+  actorPermissions,
 }) {
   const order = await Order.findById(orderId);
 
@@ -249,6 +251,41 @@ async function UpdateOrderStatus({
   }
 
   const prevDeliveryStatus = order.deliveryStatus;
+
+  const permissionAllows = (permissions, requiredPermission) => {
+    if (!Array.isArray(permissions)) return false;
+
+    if (permissions.includes("*")) return true;
+    if (permissions.includes(requiredPermission)) return true;
+
+    for (const perm of permissions) {
+      if (typeof perm !== "string") continue;
+      if (!perm.endsWith(".*")) continue;
+      const prefix = perm.slice(0, -1); // keep trailing dot
+      if (requiredPermission.startsWith(prefix)) return true;
+    }
+
+    return false;
+  };
+
+  const normalizedRoleName =
+    typeof actorRoleName === "string" ? actorRoleName.toLowerCase() : "";
+  const isDriverActor =
+    normalizedRoleName === "driver" ||
+    (permissionAllows(actorPermissions, "delivery.routes.read") &&
+      !permissionAllows(actorPermissions, "delivery.routes.update"));
+
+  if (
+    isDriverActor &&
+    prevDeliveryStatus === "delivered" &&
+    deliveryStatus !== "delivered"
+  ) {
+    return {
+      success: false,
+      statusCode: 403,
+      message: "Delivered orders are locked",
+    };
+  }
 
   order.deliveryStatus = deliveryStatus;
 

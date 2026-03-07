@@ -38,6 +38,9 @@ export interface RouteStop {
 export interface VanRoute {
   vanId: VanId;
   name: string;
+  driverId?: string;
+  driverName?: string;
+  driverEmail?: string;
   stats: {
     stops: number;
     distanceKm: number;

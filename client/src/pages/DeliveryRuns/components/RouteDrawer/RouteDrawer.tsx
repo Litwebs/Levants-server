@@ -7,6 +7,7 @@ import { getDepotLocation } from "@/context/DeliveryRuns";
 import { useToast } from "@/components/common/Toast";
 import { useOrdersApi } from "@/context/Orders";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/context/Auth/AuthContext";
 import OrderStatusModal from "@/pages/Orders/OrderStatusModal";
 import styles from "./RouteDrawer.module.css";
 
@@ -51,6 +52,16 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
   const { showToast } = useToast();
   const { listOrders, updateOrderStatus } = useOrdersApi();
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
+
+  const roleName =
+    typeof (user as any)?.role === "string"
+      ? String((user as any).role)
+      : String((user as any)?.role?.name || "");
+  const isDriver =
+    roleName.toLowerCase() === "driver" ||
+    (hasPermission("delivery.routes.read") &&
+      !hasPermission("delivery.routes.update"));
 
   const [statusResolveStopId, setStatusResolveStopId] = useState<string | null>(
     null,
@@ -133,6 +144,13 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
 
   const openStatusModalForStop = async (stop: VanRoute["stops"][0]) => {
     if (!hasPermission("orders.update")) return;
+
+    const current = getEffectiveDeliveryStatus(stop) || "ordered";
+    if (isDriver && String(current).toLowerCase() === "delivered") {
+      showToast({ type: "info", title: "Delivered orders are locked" });
+      return;
+    }
+
     setStatusResolveStopId(stop.stopId);
     try {
       const orderDbId = await resolveOrderIdForStop(stop);
@@ -144,7 +162,6 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
         return;
       }
 
-      const current = getEffectiveDeliveryStatus(stop) || "ordered";
       setSelectedOrderForStatus({
         id: orderDbId,
         orderNumber: stop.orderId,
@@ -304,21 +321,37 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                     </div>
                   </div>
 
-                  {hasPermission("orders.update") && (
-                    <button
-                      type="button"
-                      className={styles.statusBtn}
-                      onClick={() => void openStatusModalForStop(stop)}
-                      disabled={statusResolveStopId === stop.stopId}
-                      title="Edit delivery status"
-                    >
-                      {statusResolveStopId === stop.stopId ? (
-                        <Loader2 size={16} className={styles.btnSpinner} />
-                      ) : (
-                        <Pencil size={16} />
-                      )}
-                    </button>
-                  )}
+                  {hasPermission("orders.update") &&
+                    (() => {
+                      const effectiveStatus =
+                        getEffectiveDeliveryStatus(stop) || "ordered";
+                      const isStatusLocked =
+                        isDriver &&
+                        String(effectiveStatus).toLowerCase() === "delivered";
+
+                      return (
+                        <button
+                          type="button"
+                          className={styles.statusBtn}
+                          onClick={() => void openStatusModalForStop(stop)}
+                          disabled={
+                            statusResolveStopId === stop.stopId ||
+                            isStatusLocked
+                          }
+                          title={
+                            isStatusLocked
+                              ? "Delivered orders are locked"
+                              : "Edit delivery status"
+                          }
+                        >
+                          {statusResolveStopId === stop.stopId ? (
+                            <Loader2 size={16} className={styles.btnSpinner} />
+                          ) : (
+                            <Pencil size={16} />
+                          )}
+                        </button>
+                      );
+                    })()}
                 </div>
               </div>
             ))

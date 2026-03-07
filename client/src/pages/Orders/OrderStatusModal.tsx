@@ -27,7 +27,10 @@ const OrderStatusModal = ({
 
   const roleName =
     typeof user?.role === "string" ? user.role : user?.role?.name;
-  const isDriver = String(roleName || "").toLowerCase() === "driver";
+  const isDriver =
+    String(roleName || "").toLowerCase() === "driver" ||
+    (hasPermission("delivery.routes.read") &&
+      !hasPermission("delivery.routes.update"));
 
   const statuses = useMemo(
     () => (isDriver ? DRIVER_STATUSES : STATUSES),
@@ -62,6 +65,12 @@ const OrderStatusModal = ({
   if (!hasPermission("orders.update")) return null;
   if (!selectedOrder) return null;
 
+  const normalizedCurrent = String(
+    selectedOrder.deliveryStatus || "",
+  ).toLowerCase();
+  const isDeliveredLockedForDriver =
+    isDriver && normalizedCurrent === "delivered";
+
   const handleClose = () => {
     if (isUpdating) return;
     setIsStatusModalOpen(false);
@@ -70,7 +79,8 @@ const OrderStatusModal = ({
   const canMark =
     !!selectedStatus &&
     selectedStatus !== selectedOrder.deliveryStatus &&
-    !isUpdating;
+    !isUpdating &&
+    !isDeliveredLockedForDriver;
 
   const markLabel = selectedStatus
     ? `Mark as ${selectedStatus.replace(/_/g, " ")}`
@@ -113,6 +123,12 @@ const OrderStatusModal = ({
           Current status: {getStatusBadge(selectedOrder.deliveryStatus)}
         </p>
 
+        {isDeliveredLockedForDriver && (
+          <p className={styles.statusModalCurrent}>
+            Delivered orders are locked and can’t be changed.
+          </p>
+        )}
+
         <div className={styles.statusOptionsLabel}>Choose new status</div>
         <div className={styles.statusOptions}>
           {statuses.map((status) => (
@@ -123,10 +139,14 @@ const OrderStatusModal = ({
                 selectedOrder.deliveryStatus === status ? styles.current : ""
               } ${selectedStatus === status ? styles.selected : ""}`}
               onClick={() => {
-                if (isUpdating) return;
+                if (isUpdating || isDeliveredLockedForDriver) return;
                 setSelectedStatus(status);
               }}
-              disabled={isUpdating || selectedOrder.deliveryStatus === status}
+              disabled={
+                isUpdating ||
+                isDeliveredLockedForDriver ||
+                selectedOrder.deliveryStatus === status
+              }
             >
               {status === "ordered" ? (
                 <Clock size={18} />

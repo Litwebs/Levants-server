@@ -220,9 +220,17 @@ async function buildRunFromBatch(batch: BatchDetails): Promise<DeliveryRun> {
     }
 
     const vanId = toVanId(i);
+    const driverId = route?.driver?._id ? String(route.driver._id) : undefined;
+    const driverName =
+      typeof route?.driver?.name === "string" ? route.driver.name : undefined;
+    const driverEmail =
+      typeof route?.driver?.email === "string" ? route.driver.email : undefined;
     vans.push({
       vanId,
-      name: route?.driver?.name || `Van ${i + 1}`,
+      name: driverName || `Van ${i + 1}`,
+      driverId,
+      driverName,
+      driverEmail,
       stats: {
         stops: Number(route?.totalStops ?? mappedStops.length ?? 0),
         distanceKm: Number(route?.totalDistanceMeters ?? 0) / 1000,

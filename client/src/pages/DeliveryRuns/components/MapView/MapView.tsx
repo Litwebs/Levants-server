@@ -45,6 +45,7 @@ interface MapViewProps {
   onSelectStop?: (stopId: string) => void;
   activeStopId?: string;
   runStatus?: RunStatus;
+  hideVanSelector?: boolean;
 }
 
 // Create numbered marker icons
@@ -202,6 +203,25 @@ const FitBounds: React.FC<{ bounds: L.LatLngBoundsExpression }> = ({
   return null;
 };
 
+const InvalidateMapSize: React.FC<{ nonce: number }> = ({ nonce }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raf = window.requestAnimationFrame(() => {
+      try {
+        map.invalidateSize();
+      } catch (err) {
+        console.warn("MapView: invalidateSize failed", err);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [map, nonce]);
+
+  return null;
+};
+
 const ActiveStopController: React.FC<{
   activeStopId: string | null;
   stopLookup: Map<string, { lat: number; lng: number }>;
@@ -240,11 +260,152 @@ export const MapView: React.FC<MapViewProps> = ({
   onSelectStop,
   activeStopId,
   runStatus,
+  hideVanSelector = false,
 }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
   const { listOrders, updateOrderStatus } = useOrdersApi();
   const { hasPermission } = usePermissions();
+
+  const roleName =
+    typeof (user as any)?.role === "string"
+      ? String((user as any).role)
+      : String((user as any)?.role?.name || "");
+  const isDriver =
+    roleName.toLowerCase() === "driver" ||
+    (hasPermission("delivery.routes.read") &&
+      !hasPermission("delivery.routes.update"));
+
+  const [isStackedLayout, setIsStackedLayout] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const media = window.matchMedia("(max-width: 1024px)");
+    const apply = () => setIsStackedLayout(!!media.matches);
+    apply();
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", apply);
+      return () => media.removeEventListener("change", apply);
+    }
+
+    // Safari fallback
+    media.addListener(apply);
+    return () => media.removeListener(apply);
+  }, []);
+
+  const RESIZER_HEIGHT = 10;
+  const MIN_STOPS_HEIGHT = 160;
+  const MIN_MAP_HEIGHT = 180;
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [stopsPanelHeight, setStopsPanelHeight] = useState<number>(() => {
+    if (typeof window === "undefined") return 280;
+    try {
+      const raw =
+        window.localStorage.getItem("levants:driverStopsHeight") ??
+        window.localStorage.getItem("levants:stopsHeight");
+      const num = raw ? Number(raw) : NaN;
+      return Number.isFinite(num) && num > 0 ? num : 280;
+    } catch {
+      return 280;
+    }
+  });
+  const stopsPanelHeightRef = useRef(stopsPanelHeight);
+  useEffect(() => {
+    stopsPanelHeightRef.current = stopsPanelHeight;
+  }, [stopsPanelHeight]);
+  const resizeDragRef = useRef<{
+    startY: number;
+    startStopsHeight: number;
+    containerHeight: number;
+  } | null>(null);
+
+  const isResizableStopsLayout = hideVanSelector && isStackedLayout;
+
+  const clampStopsHeight = (next: number) => {
+    const containerHeight =
+      containerRef.current?.getBoundingClientRect().height ?? 0;
+    const maxStopsHeight = containerHeight
+      ? Math.max(
+          MIN_STOPS_HEIGHT,
+          containerHeight - RESIZER_HEIGHT - MIN_MAP_HEIGHT,
+        )
+      : 520;
+    return Math.min(Math.max(next, MIN_STOPS_HEIGHT), maxStopsHeight);
+  };
+
+  const clampStopsHeightWithContainer = (
+    containerHeight: number,
+    next: number,
+  ) => {
+    const safeHeight = Number.isFinite(containerHeight) ? containerHeight : 0;
+    const maxStopsHeight = safeHeight
+      ? Math.max(MIN_STOPS_HEIGHT, safeHeight - RESIZER_HEIGHT - MIN_MAP_HEIGHT)
+      : 520;
+    return Math.min(Math.max(next, MIN_STOPS_HEIGHT), maxStopsHeight);
+  };
+
+  const persistStopsHeight = (value: number) => {
+    try {
+      window.localStorage.setItem(
+        "levants:driverStopsHeight",
+        String(Math.round(value)),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleResizerPointerDown: React.PointerEventHandler<HTMLDivElement> = (
+    e,
+  ) => {
+    if (!isResizableStopsLayout) return;
+    if (!containerRef.current) return;
+
+    // Prevent the page from scrolling while dragging (mobile/touch).
+    try {
+      e.preventDefault();
+    } catch {
+      // ignore
+    }
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+
+    const rect = containerRef.current.getBoundingClientRect();
+    resizeDragRef.current = {
+      startY: e.clientY,
+      startStopsHeight: stopsPanelHeight,
+      containerHeight: rect.height,
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      const drag = resizeDragRef.current;
+      if (!drag) return;
+      const deltaY = ev.clientY - drag.startY;
+      const nextStopsHeight = clampStopsHeightWithContainer(
+        drag.containerHeight,
+        drag.startStopsHeight - deltaY,
+      );
+      setStopsPanelHeight(nextStopsHeight);
+      setMapSizeNonce((n) => n + 1);
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      resizeDragRef.current = null;
+      persistStopsHeight(stopsPanelHeightRef.current);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
 
   const [statusResolveStopId, setStatusResolveStopId] = useState<string | null>(
     null,
@@ -260,6 +421,12 @@ export const MapView: React.FC<MapViewProps> = ({
     Record<string, string>
   >({});
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
+  const [mapSizeNonce, setMapSizeNonce] = useState(0);
+
+  useEffect(() => {
+    if (!isResizableStopsLayout) return;
+    setMapSizeNonce((n) => n + 1);
+  }, [isResizableStopsLayout, stopsPanelHeight]);
 
   const themePreference =
     (user as any)?.preferences?.theme === "light" ||
@@ -353,6 +520,16 @@ export const MapView: React.FC<MapViewProps> = ({
 
   const openStatusModalForStop = async (stop: VanRoute["stops"][0]) => {
     if (!hasPermission("orders.update")) return;
+
+    const current = getEffectiveDeliveryStatus(stop) || "ordered";
+    if (isDriver && String(current).toLowerCase() === "delivered") {
+      showToast({
+        type: "info",
+        title: "Delivered orders are locked",
+      });
+      return;
+    }
+
     setStatusResolveStopId(stop.stopId);
     try {
       const orderDbId = await resolveOrderIdForStop(stop);
@@ -364,7 +541,6 @@ export const MapView: React.FC<MapViewProps> = ({
         return;
       }
 
-      const current = getEffectiveDeliveryStatus(stop) || "ordered";
       setStatusStopId(stop.stopId);
       setSelectedOrderForStatus({
         id: orderDbId,
@@ -382,6 +558,19 @@ export const MapView: React.FC<MapViewProps> = ({
     nextStatus: string,
     deliveryProofFile?: File,
   ) => {
+    const prev = String(selectedOrderForStatus?.deliveryStatus || "");
+    if (
+      isDriver &&
+      prev.toLowerCase() === "delivered" &&
+      String(nextStatus).toLowerCase() !== "delivered"
+    ) {
+      showToast({
+        type: "error",
+        title: "Delivered orders are locked",
+      });
+      return;
+    }
+
     try {
       await updateOrderStatus(
         id,
@@ -466,30 +655,49 @@ export const MapView: React.FC<MapViewProps> = ({
     });
   }, [displayVans]);
 
+  const containerClass = hideVanSelector
+    ? styles.containerNoVanSelector
+    : styles.container;
+
+  const containerStyle: React.CSSProperties | undefined = hideVanSelector
+    ? isResizableStopsLayout
+      ? {
+          height: "100%",
+          minHeight: 0,
+          gridTemplateRows: `minmax(${MIN_MAP_HEIGHT}px, 1fr) ${RESIZER_HEIGHT}px ${clampStopsHeight(stopsPanelHeight)}px`,
+        }
+      : {
+          height: "100%",
+          minHeight: 0,
+        }
+    : undefined;
+
   return (
-    <div className={styles.container}>
+    <div ref={containerRef} className={containerClass} style={containerStyle}>
       {/* Van selector */}
-      <div className={styles.vanSelector}>
-        <div className={styles.vanSelectorTitle}>Select Van</div>
-        <button
-          className={`${styles.vanButton} ${selectedVan === "all" ? styles.active : ""}`}
-          onClick={() => onSelectVan("all")}
-        >
-          All Vans
-        </button>
-        {vans.map((van) => (
+      {!hideVanSelector && (
+        <div className={styles.vanSelector}>
+          <div className={styles.vanSelectorTitle}>Select Van</div>
           <button
-            key={van.vanId}
-            className={`${styles.vanButton} ${selectedVan === van.vanId ? styles.active : ""}`}
-            onClick={() => onSelectVan(van.vanId)}
+            className={`${styles.vanButton} ${selectedVan === "all" ? styles.active : ""}`}
+            onClick={() => onSelectVan("all")}
           >
-            <span
-              className={`${styles.vanDot} ${styles[getVanStyleKey(van.vanId)]}`}
-            />
-            {van.name}
+            All Vans
           </button>
-        ))}
-      </div>
+          {vans.map((van) => (
+            <button
+              key={van.vanId}
+              className={`${styles.vanButton} ${selectedVan === van.vanId ? styles.active : ""}`}
+              onClick={() => onSelectVan(van.vanId)}
+            >
+              <span
+                className={`${styles.vanDot} ${styles[getVanStyleKey(van.vanId)]}`}
+              />
+              {van.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Map */}
       <div className={styles.mapContainer}>
@@ -504,6 +712,8 @@ export const MapView: React.FC<MapViewProps> = ({
             attribution={TILES_ATTRIBUTION}
             url={isDark ? DARK_TILES_URL : LIGHT_TILES_URL}
           />
+
+          <InvalidateMapSize nonce={mapSizeNonce} />
 
           {/* Fit bounds when data changes */}
           {bounds && <FitBounds bounds={bounds} />}
@@ -582,8 +792,21 @@ export const MapView: React.FC<MapViewProps> = ({
         </MapContainer>
       </div>
 
+      {isResizableStopsLayout && (
+        <div
+          className={styles.stopsResizer}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize stops list"
+          onPointerDown={handleResizerPointerDown}
+        />
+      )}
+
       {/* Stops list */}
-      <div className={styles.stopsList}>
+      <div
+        className={styles.stopsList}
+        style={isResizableStopsLayout ? { maxHeight: "none" } : undefined}
+      >
         <div className={styles.stopsHeader}>Stops ({displayStops.length})</div>
         <div className={styles.stopsScroll}>
           {displayStops.length === 0 ? (
@@ -596,6 +819,9 @@ export const MapView: React.FC<MapViewProps> = ({
               const effectiveStatus =
                 getEffectiveDeliveryStatus(stop) ||
                 stopStatusLabel(stop, runStatus);
+              const isStatusLocked =
+                isDriver &&
+                isDeliveredStop(stop, String(effectiveStatus).toLowerCase());
 
               return (
                 <div
@@ -620,8 +846,12 @@ export const MapView: React.FC<MapViewProps> = ({
                               e.stopPropagation();
                               void openStatusModalForStop(stop);
                             }}
-                            disabled={isResolvingStatus}
-                            title="Edit delivery status"
+                            disabled={isResolvingStatus || isStatusLocked}
+                            title={
+                              isStatusLocked
+                                ? "Delivered orders are locked"
+                                : "Edit delivery status"
+                            }
                           >
                             {isResolvingStatus ? (
                               <Loader2

@@ -6,11 +6,13 @@ import { Button, Modal, ModalFooter, Select } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { listEligibleOrders } from "@/context/DeliveryRuns";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./DeliveryRunsPage.module.css";
 
 type QuickFilter = "next" | "week" | "all";
 
 export const DeliveryRunsPage: React.FC = () => {
+  const { hasPermission } = usePermissions();
   const {
     runs,
     loading,
@@ -150,18 +152,20 @@ export const DeliveryRunsPage: React.FC = () => {
     <div className={styles.page}>
       <div className={styles.header}>
         <h1 className={styles.title}>Delivery Runs</h1>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setNewRunDate(getDefaultDate());
-            setShowCreateModal(true);
-            // Load eligible orders for default date.
-            loadOrdersForDate(getDefaultDate());
-          }}
-        >
-          <Plus size={18} />
-          Create Delivery Run
-        </Button>
+        {hasPermission("delivery.routes.update") && (
+          <Button
+            variant="primary"
+            onClick={() => {
+              setNewRunDate(getDefaultDate());
+              setShowCreateModal(true);
+              // Load eligible orders for default date.
+              loadOrdersForDate(getDefaultDate());
+            }}
+          >
+            <Plus size={18} />
+            Create Delivery Run
+          </Button>
+        )}
       </div>
 
       <div className={styles.filters}>

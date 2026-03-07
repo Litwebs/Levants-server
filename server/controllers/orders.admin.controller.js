@@ -69,6 +69,8 @@ const UpdateOrderStatus = async (req, res) => {
     deliveryProofUrl: req.body.deliveryProofUrl,
     deliveryProofFile: req.file,
     actorUserId: req.user?._id || req.user?.id,
+    actorRoleName: req.user?.role?.name,
+    actorPermissions: req.user?.role?.permissions,
   });
 
   if (!result.success) {

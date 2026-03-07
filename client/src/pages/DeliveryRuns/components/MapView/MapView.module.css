@@ -6,7 +6,21 @@
   min-height: 520px;
   background: var(--color-white);
   border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-lg);
+  border-radius: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 0;
+}
+
+.containerNoVanSelector {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: var(--space-4);
+  height: 70vh;
+  min-height: 520px;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 0;
   overflow: hidden;
   position: relative;
   z-index: 0;
@@ -89,6 +103,28 @@
   min-height: 0;
 }
 
+.stopsResizer {
+  background: var(--color-gray-100);
+  border-top: 1px solid var(--color-gray-200);
+  border-bottom: 1px solid var(--color-gray-200);
+  cursor: row-resize;
+  position: relative;
+  touch-action: none;
+  user-select: none;
+}
+
+.stopsResizer::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-gray-300);
+}
+
 .stopsHeader {
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-gray-200);
@@ -100,6 +136,12 @@
 .stopsScroll {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge legacy */
+}
+
+.stopsScroll::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
 }
 
 .stopItem {
@@ -294,6 +336,13 @@
     grid-template-rows: auto 400px auto;
     height: auto;
   }
+
+  .containerNoVanSelector {
+    grid-template-columns: 1fr;
+    grid-template-rows: 400px auto;
+    height: 100%;
+    min-height: 0;
+  }
   
   .vanSelector {
     flex-direction: row;
@@ -310,6 +359,10 @@
     border-left: none;
     border-top: 1px solid var(--color-gray-200);
     max-height: 300px;
+  }
+
+  .stopsResizer {
+    border-left: none;
   }
 }
 
