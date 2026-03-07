@@ -156,7 +156,11 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
     }
   };
 
-  const handleUpdateOrderStatus = async (id: string, nextStatus: string) => {
+  const handleUpdateOrderStatus = async (
+    id: string,
+    nextStatus: string,
+    deliveryProofFile?: File,
+  ) => {
     try {
       await updateOrderStatus(
         id,
@@ -166,6 +170,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
           | "in_transit"
           | "delivered"
           | "returned",
+        deliveryProofFile,
       );
       showToast({ type: "success", title: "Order status updated" });
 

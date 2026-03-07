@@ -22,8 +22,8 @@
   top: 0;
   left: 0;
   bottom: 0;
-  /* Leaflet controls/popups can reach z-index ~800; keep sidebar above them */
-  z-index: calc(var(--z-toast) + 1);
+  /* Keep sidebar above Leaflet, but below modals/toasts */
+  z-index: calc(var(--z-modal-backdrop) - 1);
   transition: width var(--transition-smooth), transform var(--transition-smooth);
 }
 

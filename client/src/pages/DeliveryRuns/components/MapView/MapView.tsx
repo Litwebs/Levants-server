@@ -377,7 +377,11 @@ export const MapView: React.FC<MapViewProps> = ({
     }
   };
 
-  const handleUpdateOrderStatus = async (id: string, nextStatus: string) => {
+  const handleUpdateOrderStatus = async (
+    id: string,
+    nextStatus: string,
+    deliveryProofFile?: File,
+  ) => {
     try {
       await updateOrderStatus(
         id,
@@ -387,6 +391,7 @@ export const MapView: React.FC<MapViewProps> = ({
           | "in_transit"
           | "delivered"
           | "returned",
+        deliveryProofFile,
       );
       showToast({ type: "success", title: "Order status updated" });
 

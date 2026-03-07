@@ -71,6 +71,7 @@ type OrdersContextType = {
   updateOrderStatus: (
     orderId: string,
     status: "ordered" | "dispatched" | "in_transit" | "delivered" | "returned",
+    deliveryProofFile?: File,
   ) => Promise<AdminOrder>;
 
   refundOrder: (
@@ -180,6 +181,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         | "in_transit"
         | "delivered"
         | "returned",
+      deliveryProofFile?: File,
     ) => {
       dispatch({ type: ORDERS_REQUEST });
       try {
@@ -189,9 +191,25 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
           "to deliveryStatus",
           deliveryStatus,
         );
-        const res = await api.put(`/admin/orders/${orderId}/status`, {
-          deliveryStatus,
-        });
+
+        const url = `/admin/orders/${orderId}/status`;
+        const res = deliveryProofFile
+          ? await api.put(
+              url,
+              (() => {
+                const fd = new FormData();
+                fd.append("deliveryStatus", deliveryStatus);
+                fd.append("deliveryProof", deliveryProofFile);
+                return fd;
+              })(),
+              {
+                headers: { "Content-Type": "multipart/form-data" },
+              },
+            )
+          : await api.put(url, {
+              deliveryStatus,
+            });
+
         const order = unwrapData<AdminOrder>(res.data);
         if (!order?._id) throw new Error("Failed to update order status");
 

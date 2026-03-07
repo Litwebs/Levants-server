@@ -371,7 +371,11 @@ const refresh = useCallback(
     );
   };
 
-  const updateOrderStatus = async (id: string, deliveryStatus: string) => {
+  const updateOrderStatus = async (
+    id: string,
+    deliveryStatus: string,
+    deliveryProofFile?: File,
+  ) => {
     // Backend currently supports: ordered | dispatched | in_transit | delivered | returned
     if (
       deliveryStatus !== "ordered" &&
@@ -385,7 +389,7 @@ const refresh = useCallback(
     }
 
     try {
-      await updateOrderStatusApi(id, deliveryStatus);
+      await updateOrderStatusApi(id, deliveryStatus, deliveryProofFile);
       showToast({ title: "Order status updated", type: "success" });
       setIsStatusModalOpen(false);
     } catch {
