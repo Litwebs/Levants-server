@@ -6,6 +6,7 @@ const login2FA = require("./login2FA");
 const lowStockAlert = require("./lowStockAlert");
 const newOrderAlert = require("./newOrderAlert");
 const orderConfirmation = require("./orderConfirmation");
+const deliveryProof = require("./deliveryProof");
 const outOfStockAlert = require("./outOfStockAlert");
 const refundConfirmation = require("./refundConfirmation");
 const userInvitation = require("./userInvitation");
@@ -19,6 +20,7 @@ const emailTemplates = {
   newOrderAlert,
   outOfStockAlert,
   orderConfirmation,
+  deliveryProof,
   refundConfirmation,
   userInvitation,
 };

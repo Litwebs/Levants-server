@@ -34,6 +34,10 @@ const updateOrderStatusSchema = Joi.object({
   deliveryStatus: Joi.string()
     .valid("ordered", "dispatched", "in_transit", "delivered", "returned")
     .required(),
+
+  // Optional proof photo URL to include in the delivered email
+  // Stored under order.metadata.deliveryProofUrl
+  deliveryProofUrl: Joi.string().uri().max(2048).allow(null, "").optional(),
 }).unknown(false);
 
 const bulkUpdateDeliveryStatusSchema = Joi.object({

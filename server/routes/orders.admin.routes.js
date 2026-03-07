@@ -1,4 +1,5 @@
 const express = require("express");
+const multer = require("multer");
 
 const asyncHandler = require("../utils/asyncHandler.util");
 const { requireAuth } = require("../middleware/auth.middleware");
@@ -19,6 +20,22 @@ const { refundOrderSchema } = require("../validators/orderRefund.validator");
 const { orderIdParamSchema } = require("../validators/common.validators");
 
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024, // up to 8MB proof images
+  },
+  fileFilter: (req, file, cb) => {
+    if (file && typeof file.mimetype === "string") {
+      if (file.mimetype.startsWith("image/")) return cb(null, true);
+    }
+    const err = new Error("deliveryProof must be an image");
+    // @ts-ignore
+    err.statusCode = 400;
+    return cb(err);
+  },
+});
 
 router.use(requireAuth);
 router.use(requirePermission("orders.read"));
@@ -42,6 +59,7 @@ router.put(
   "/:orderId/status",
   requirePermission("orders.update"),
   validateParams(orderIdParamSchema),
+  upload.single("deliveryProof"),
   validateBody(updateOrderStatusSchema),
   asyncHandler(controller.UpdateOrderStatus),
 );

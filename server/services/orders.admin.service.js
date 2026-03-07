@@ -1,5 +1,13 @@
 const Order = require("../models/order.model");
+const Customer = require("../models/customer.model");
 const mongoose = require("mongoose");
+const fs = require("fs/promises");
+const path = require("path");
+const crypto = require("crypto");
+
+const { uploadAndCreateFile } = require("./files.service");
+
+const sendEmail = require("../Integration/Email.service");
 
 async function ListOrders({
   filters = {},
@@ -227,15 +235,141 @@ async function GetOrderById({ orderId }) {
   return { success: true, data: order };
 }
 
-async function UpdateOrderStatus({ orderId, deliveryStatus }) {
+async function UpdateOrderStatus({
+  orderId,
+  deliveryStatus,
+  deliveryProofUrl,
+  deliveryProofFile,
+  actorUserId,
+}) {
   const order = await Order.findById(orderId);
 
   if (!order) {
-    return { success: false, message: "Order not found" };
+    return { success: false, statusCode: 404, message: "Order not found" };
   }
 
+  const prevDeliveryStatus = order.deliveryStatus;
+
   order.deliveryStatus = deliveryStatus;
+
+  if (deliveryProofUrl !== undefined) {
+    const cleaned = String(deliveryProofUrl || "").trim();
+    if (!order.metadata || typeof order.metadata !== "object")
+      order.metadata = {};
+    if (cleaned) order.metadata.deliveryProofUrl = cleaned;
+    else delete order.metadata.deliveryProofUrl;
+    order.markModified("metadata");
+  }
+
+  if (deliveryProofFile) {
+    try {
+      const uploadedBy = actorUserId;
+      if (!uploadedBy) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: "actorUserId is required to upload delivery proof",
+        };
+      }
+
+      const mimeType = String(deliveryProofFile.mimetype || "");
+      if (!mimeType.startsWith("image/")) {
+        return {
+          success: false,
+          statusCode: 400,
+          message: "deliveryProof must be an image",
+        };
+      }
+
+      const ext = mimeType.split("/")[1] || "jpg";
+      const filename = `${crypto.randomUUID()}.${ext}`;
+      const localPath = path.join("/tmp", filename);
+      const buffer = deliveryProofFile.buffer;
+      await fs.writeFile(localPath, buffer);
+
+      const uploadRes = await uploadAndCreateFile({
+        localPath,
+        originalName: String(deliveryProofFile.originalname || filename),
+        mimeType,
+        sizeBytes: Number(deliveryProofFile.size || buffer?.length || 0),
+        uploadedBy,
+        folder: "levants/delivery-proofs",
+      });
+
+      if (!uploadRes?.success || !uploadRes?.data?.url) {
+        return {
+          success: false,
+          statusCode: 500,
+          message: uploadRes?.message || "Failed to upload delivery proof",
+        };
+      }
+
+      if (!order.metadata || typeof order.metadata !== "object")
+        order.metadata = {};
+
+      order.metadata.deliveryProofUrl = uploadRes.data.url;
+      order.metadata.deliveryProofFileId = uploadRes.data._id;
+      order.markModified("metadata");
+    } catch (e) {
+      return {
+        success: false,
+        statusCode: 500,
+        message: "Failed to upload delivery proof",
+      };
+    }
+  }
+
   await order.save();
+
+  // Send delivered email only on a true transition to delivered,
+  // and only if we haven't already sent it.
+  const isDeliveredTransition =
+    deliveryStatus === "delivered" && prevDeliveryStatus !== "delivered";
+
+  const alreadySent = Boolean(order.metadata?.deliveredEmailSentAt);
+
+  if (isDeliveredTransition && !alreadySent) {
+    try {
+      const customerId = order.customer;
+      const customer = customerId
+        ? await Customer.findById(customerId).select("firstName lastName email")
+        : null;
+
+      const to = String(customer?.email || "").trim();
+      if (to) {
+        const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
+        const subject = `Your order ${order.orderId || ""} was delivered`;
+        console.log(
+          `Sending delivery proof email to ${to} with proof URL: ${proofUrl}`,
+        );
+        const emailRes = await sendEmail(
+          to,
+          subject,
+          "deliveryProof",
+          {
+            name: customer?.firstName || "there",
+            orderId: order.orderId,
+            proofUrl,
+            deliveredAt: new Date().toLocaleString("en-GB"),
+          },
+          {
+            fromName: "Levants",
+          },
+        );
+
+        if (emailRes?.success) {
+          // Persist marker to prevent duplicates.
+          if (!order.metadata || typeof order.metadata !== "object")
+            order.metadata = {};
+          order.metadata.deliveredEmailSentAt = new Date();
+          order.markModified("metadata");
+          await order.save();
+        }
+      }
+    } catch (_) {
+      // Best-effort email: do not fail status update
+    }
+  }
 
   return { success: true, data: order };
 }
@@ -253,6 +387,18 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
     };
   }
 
+  // If we're marking orders as delivered in bulk, also notify customers.
+  // This is best-effort and will not fail the bulk update if sending fails.
+  const shouldEmailDelivered = deliveryStatus === "delivered";
+
+  // Pre-fetch candidates (before update) so we can detect transitions.
+  const candidates = shouldEmailDelivered
+    ? await Order.find({
+        _id: { $in: ids },
+        deliveryStatus: { $ne: "delivered" },
+      }).select("_id orderId customer metadata")
+    : [];
+
   const result = await Order.updateMany(
     { _id: { $in: ids } },
     {
@@ -262,6 +408,61 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
       },
     },
   );
+
+  if (shouldEmailDelivered && Array.isArray(candidates) && candidates.length) {
+    try {
+      const eligible = candidates.filter(
+        (o) => !o?.metadata?.deliveredEmailSentAt,
+      );
+
+      const customerIds = Array.from(
+        new Set(
+          eligible
+            .map((o) => String(o.customer || ""))
+            .filter((id) => mongoose.Types.ObjectId.isValid(id)),
+        ),
+      ).map((id) => new mongoose.Types.ObjectId(id));
+
+      const customers = customerIds.length
+        ? await Customer.find({ _id: { $in: customerIds } }).select(
+            "firstName lastName email",
+          )
+        : [];
+
+      const customerById = new Map(customers.map((c) => [String(c._id), c]));
+
+      for (const order of eligible) {
+        const customer = customerById.get(String(order.customer));
+        const to = String(customer?.email || "").trim();
+        if (!to) continue;
+
+        const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
+        const subject = `Your order ${order.orderId || ""} was delivered`;
+
+        const emailRes = await sendEmail(
+          to,
+          subject,
+          "deliveryProof",
+          {
+            name: customer?.firstName || "there",
+            orderId: order.orderId,
+            proofUrl,
+            deliveredAt: new Date().toLocaleString("en-GB"),
+          },
+          { fromName: "Levants" },
+        );
+
+        if (emailRes?.success) {
+          await Order.updateOne(
+            { _id: order._id },
+            { $set: { "metadata.deliveredEmailSentAt": new Date() } },
+          );
+        }
+      }
+    } catch (_) {
+      // Best-effort email sending
+    }
+  }
 
   return {
     success: true,

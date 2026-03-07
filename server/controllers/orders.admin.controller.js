@@ -66,10 +66,16 @@ const UpdateOrderStatus = async (req, res) => {
   const result = await service.UpdateOrderStatus({
     orderId: req.params.orderId,
     deliveryStatus: req.body.deliveryStatus,
+    deliveryProofUrl: req.body.deliveryProofUrl,
+    deliveryProofFile: req.file,
+    actorUserId: req.user?._id || req.user?.id,
   });
 
   if (!result.success) {
-    return sendErr(res, { statusCode: 404, message: result.message });
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Failed to update order status",
+    });
   }
 
   return sendOk(res, result.data);
