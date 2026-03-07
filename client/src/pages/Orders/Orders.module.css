@@ -619,6 +619,33 @@
   margin: 0;
 }
 
+.deliveryProofLink {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-decoration: none;
+  align-items: center;
+  width: 100%;
+}
+
+.deliveryProofImage {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  max-height: 220px;
+  margin-left: auto;
+  margin-right: auto;
+  object-fit: contain;
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+}
+
+.deliveryProofLinkText {
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+  text-align: center;
+}
+
 /* Items Table */
 .itemsSection {
   display: flex;
@@ -767,6 +794,27 @@
   gap: var(--space-4);
 }
 
+.updatingRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .statusModalText {
   font-size: var(--text-sm);
   color: var(--color-gray-600);
@@ -780,6 +828,14 @@
   font-size: var(--text-sm);
   color: var(--color-gray-600);
   margin: 0;
+}
+
+.statusOptionsLabel {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .statusOptions {
@@ -815,6 +871,12 @@
   color: var(--color-primary);
 }
 
+.statusOption.selected {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
 .statusOption:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -836,10 +898,41 @@
   letter-spacing: 0.03em;
 }
 
-.proofInput {
-  width: 100%;
+
+.proofActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.proofActionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3);
   font-size: var(--text-sm);
+  font-weight: var(--font-medium);
   color: var(--color-gray-700);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.proofActionBtn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary-bg);
+}
+
+.proofActionBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.hiddenInput {
+  display: none;
 }
 
 .proofHint {

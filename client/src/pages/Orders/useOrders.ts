@@ -36,6 +36,8 @@ export type Order = {
   customerNotes?: string;
   internalNotes?: string;
   history: { status: string; timestamp: string; user: string }[];
+  deliveryProofUrl?: string;
+  deliveredAt?: string | null;
   createdAt: string;
   updatedAt: string;
   
@@ -94,6 +96,25 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
       customer.email
     : "-";
 
+  const metadata =
+    (order as any)?.metadata && typeof (order as any).metadata === "object"
+      ? ((order as any).metadata as Record<string, unknown>)
+      : null;
+
+  const deliveryProofUrl =
+    typeof metadata?.deliveryProofUrl === "string"
+      ? String(metadata.deliveryProofUrl).trim() || undefined
+      : undefined;
+
+  const deliveredAtRaw =
+    (metadata as any)?.deliveredAt ?? (metadata as any)?.deliveredEmailSentAt;
+  const deliveredAt =
+    typeof deliveredAtRaw === "string"
+      ? deliveredAtRaw
+      : deliveredAtRaw instanceof Date
+        ? deliveredAtRaw.toISOString()
+        : null;
+
   return {
     id: order._id,
     orderNumber: order.orderId,
@@ -134,6 +155,9 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     paymentStatus: order.status,
 
     history: [],
+
+  deliveryProofUrl,
+  deliveredAt,
 
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,

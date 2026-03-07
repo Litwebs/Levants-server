@@ -22,6 +22,22 @@ const OrderDetailModal = ({
   const canRefund =
     canRefundPermission && Boolean(selectedOrder?.id) && !isAlreadyRefunded;
 
+  const proofUrl =
+    typeof selectedOrder?.deliveryProofUrl === "string"
+      ? selectedOrder.deliveryProofUrl
+      : undefined;
+
+  const deliveredAtIso =
+    typeof selectedOrder?.deliveredAt === "string"
+      ? selectedOrder.deliveredAt
+      : selectedOrder?.deliveryStatus === "delivered"
+        ? selectedOrder?.updatedAt
+        : null;
+
+  const deliveredAtLabel = deliveredAtIso
+    ? new Date(deliveredAtIso).toLocaleString("en-GB")
+    : "—";
+
   return (
     <>
       <Modal
@@ -166,6 +182,29 @@ const OrderDetailModal = ({
                   </div>
                 ))}
               </div>
+
+              {proofUrl ? (
+                <div className={styles.detailSection}>
+                  <h4 className={styles.detailTitle}>Delivered</h4>
+                  <p className={styles.detailText}>At: {deliveredAtLabel}</p>
+                  <a
+                    href={proofUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={styles.deliveryProofLink}
+                  >
+                    <img
+                      src={proofUrl}
+                      alt="Delivery proof"
+                      className={styles.deliveryProofImage}
+                      loading="lazy"
+                    />
+                    <span className={styles.deliveryProofLinkText}>
+                      Open full size
+                    </span>
+                  </a>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (

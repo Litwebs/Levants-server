@@ -252,6 +252,18 @@ async function UpdateOrderStatus({
 
   order.deliveryStatus = deliveryStatus;
 
+  const isDeliveredTransition =
+    deliveryStatus === "delivered" && prevDeliveryStatus !== "delivered";
+
+  if (isDeliveredTransition) {
+    if (!order.metadata || typeof order.metadata !== "object")
+      order.metadata = {};
+    if (!order.metadata.deliveredAt) {
+      order.metadata.deliveredAt = new Date();
+      order.markModified("metadata");
+    }
+  }
+
   if (deliveryProofUrl !== undefined) {
     const cleaned = String(deliveryProofUrl || "").trim();
     if (!order.metadata || typeof order.metadata !== "object")
@@ -323,9 +335,6 @@ async function UpdateOrderStatus({
 
   // Send delivered email only on a true transition to delivered,
   // and only if we haven't already sent it.
-  const isDeliveredTransition =
-    deliveryStatus === "delivered" && prevDeliveryStatus !== "delivered";
-
   const alreadySent = Boolean(order.metadata?.deliveredEmailSentAt);
 
   if (isDeliveredTransition && !alreadySent) {
@@ -398,6 +407,19 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
         deliveryStatus: { $ne: "delivered" },
       }).select("_id orderId customer metadata")
     : [];
+
+  // Preserve existing behavior (update all IDs), but additionally stamp a stable
+  // deliveredAt timestamp for true transitions to delivered.
+  if (deliveryStatus === "delivered") {
+    await Order.updateMany(
+      { _id: { $in: ids }, deliveryStatus: { $ne: "delivered" } },
+      {
+        $set: {
+          "metadata.deliveredAt": new Date(),
+        },
+      },
+    );
+  }
 
   const result = await Order.updateMany(
     { _id: { $in: ids } },
