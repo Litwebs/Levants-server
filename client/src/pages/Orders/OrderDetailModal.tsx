@@ -27,6 +27,11 @@ const OrderDetailModal = ({
       ? selectedOrder.deliveryProofUrl
       : undefined;
 
+  const deliveryNote =
+    typeof selectedOrder?.deliveryNote === "string"
+      ? selectedOrder.deliveryNote.trim()
+      : "";
+
   const deliveredAtIso =
     typeof selectedOrder?.deliveredAt === "string"
       ? selectedOrder.deliveredAt
@@ -147,8 +152,16 @@ const OrderDetailModal = ({
               </div>
             </div>
 
-            {(selectedOrder.customerNotes || selectedOrder.internalNotes) && (
+            {(selectedOrder.customerNotes ||
+              selectedOrder.internalNotes ||
+              deliveryNote) && (
               <div className={styles.notesSection}>
+                {deliveryNote && (
+                  <div className={styles.noteBox}>
+                    <h5>Delivery Note</h5>
+                    <p>{deliveryNote}</p>
+                  </div>
+                )}
                 {selectedOrder.customerNotes && (
                   <div className={styles.noteBox}>
                     <h5>Customer Notes</h5>

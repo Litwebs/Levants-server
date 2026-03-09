@@ -6,7 +6,9 @@
 }
 
 .driverPage {
-  height: 100dvh;
+  /* Render within AdminLayout's content area */
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   gap: 0;
 }
@@ -21,9 +23,10 @@
   border-right: none;
   border-top: none;
   border-bottom: none;
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  min-width: 0;
 }
 
 .driverPage .tabsList {

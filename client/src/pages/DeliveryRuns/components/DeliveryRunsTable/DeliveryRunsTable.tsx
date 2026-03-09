@@ -142,7 +142,11 @@ export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
           </thead>
           <tbody>
             {pageRuns.map((run) => (
-              <tr key={run.id} className={styles.row}>
+              <tr
+                key={run.id}
+                className={styles.row}
+                onClick={() => navigate(`/delivery-runs/${run.id}`)}
+              >
                 <td className={`${styles.cell} ${styles.dateCell}`}>
                   {formatDate(run.deliveryDate)}
                 </td>

@@ -177,6 +177,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
     id: string,
     nextStatus: string,
     deliveryProofFile?: File,
+    deliveryNote?: string,
   ) => {
     try {
       await updateOrderStatus(
@@ -188,6 +189,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
           | "delivered"
           | "returned",
         deliveryProofFile,
+        deliveryNote,
       );
       showToast({ type: "success", title: "Order status updated" });
 

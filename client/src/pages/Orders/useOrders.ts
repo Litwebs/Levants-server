@@ -38,6 +38,7 @@ export type Order = {
   history: { status: string; timestamp: string; user: string }[];
   deliveryProofUrl?: string;
   deliveredAt?: string | null;
+  deliveryNote?: string;
   createdAt: string;
   updatedAt: string;
   
@@ -115,6 +116,11 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
         ? deliveredAtRaw.toISOString()
         : null;
 
+  const deliveryNote =
+    typeof metadata?.deliveryNote === "string"
+      ? String(metadata.deliveryNote).trim() || undefined
+      : undefined;
+
   return {
     id: order._id,
     orderNumber: order.orderId,
@@ -158,6 +164,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
 
   deliveryProofUrl,
   deliveredAt,
+  deliveryNote,
 
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,

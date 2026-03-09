@@ -182,6 +182,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         | "delivered"
         | "returned",
       deliveryProofFile?: File,
+      deliveryNote?: string,
     ) => {
       dispatch({ type: ORDERS_REQUEST });
       try {
@@ -193,6 +194,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         );
 
         const url = `/admin/orders/${orderId}/status`;
+        const cleanedNote =
+          typeof deliveryNote === "string" ? deliveryNote.trim() : "";
         const res = deliveryProofFile
           ? await api.put(
               url,
@@ -200,6 +203,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
                 const fd = new FormData();
                 fd.append("deliveryStatus", deliveryStatus);
                 fd.append("deliveryProof", deliveryProofFile);
+                if (cleanedNote) fd.append("deliveryNote", cleanedNote);
                 return fd;
               })(),
               {
@@ -208,6 +212,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
             )
           : await api.put(url, {
               deliveryStatus,
+              ...(cleanedNote ? { deliveryNote: cleanedNote } : {}),
             });
 
         const order = unwrapData<AdminOrder>(res.data);

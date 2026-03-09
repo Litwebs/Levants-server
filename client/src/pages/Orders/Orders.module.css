@@ -939,3 +939,21 @@
   font-size: var(--text-xs);
   color: var(--color-gray-500);
 }
+
+.notesTextarea {
+  width: 100%;
+  resize: vertical;
+  padding: var(--space-3);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-family: var(--font-body);
+  color: var(--color-gray-800);
+  background: var(--color-white);
+}
+
+.notesTextarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-bg);
+}

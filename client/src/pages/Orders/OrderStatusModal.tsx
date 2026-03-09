@@ -50,16 +50,21 @@ const OrderStatusModal = ({
 
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [deliveryNote, setDeliveryNote] = useState<string>("");
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     if (!isStatusModalOpen) return;
     setSelectedStatus(null);
     setProofFile(null);
+    setDeliveryNote("");
   }, [isStatusModalOpen, selectedOrder?.id]);
 
   useEffect(() => {
-    if (selectedStatus !== "delivered") setProofFile(null);
+    if (selectedStatus !== "delivered") {
+      setProofFile(null);
+      setDeliveryNote("");
+    }
   }, [selectedStatus]);
 
   if (!hasPermission("orders.update")) return null;
@@ -98,6 +103,7 @@ const OrderStatusModal = ({
         selectedOrder.id,
         selectedStatus,
         deliveryProofFile,
+        deliveryNote,
       );
     } finally {
       if (mountedRef.current) {
@@ -216,6 +222,24 @@ const OrderStatusModal = ({
                 : "Optional (included when marking as delivered)"}
           </div>
         </div>
+
+        {selectedStatus === "delivered" && (
+          <div className={styles.proofSection}>
+            <div className={styles.proofLabel}>Delivery note (optional)</div>
+            <textarea
+              className={styles.notesTextarea}
+              value={deliveryNote}
+              onChange={(e) => setDeliveryNote(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="Add a note for the customer (e.g. left with neighbor, behind bin, etc.)"
+              disabled={isUpdating}
+            />
+            <div className={styles.proofHint}>
+              This will be included in the delivery proof email.
+            </div>
+          </div>
+        )}
       </div>
 
       <ModalFooter>

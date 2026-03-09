@@ -239,6 +239,7 @@ async function UpdateOrderStatus({
   orderId,
   deliveryStatus,
   deliveryProofUrl,
+  deliveryNote,
   deliveryProofFile,
   actorUserId,
   actorRoleName,
@@ -307,6 +308,15 @@ async function UpdateOrderStatus({
       order.metadata = {};
     if (cleaned) order.metadata.deliveryProofUrl = cleaned;
     else delete order.metadata.deliveryProofUrl;
+    order.markModified("metadata");
+  }
+
+  if (deliveryNote !== undefined) {
+    const cleaned = String(deliveryNote || "").trim();
+    if (!order.metadata || typeof order.metadata !== "object")
+      order.metadata = {};
+    if (cleaned) order.metadata.deliveryNote = cleaned;
+    else delete order.metadata.deliveryNote;
     order.markModified("metadata");
   }
 
@@ -384,6 +394,7 @@ async function UpdateOrderStatus({
       const to = String(customer?.email || "").trim();
       if (to) {
         const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
+        const note = String(order.metadata?.deliveryNote || "").trim();
         const subject = `Your order ${order.orderId || ""} was delivered`;
         console.log(
           `Sending delivery proof email to ${to} with proof URL: ${proofUrl}`,
@@ -396,6 +407,7 @@ async function UpdateOrderStatus({
             name: customer?.firstName || "there",
             orderId: order.orderId,
             proofUrl,
+            deliveryNote: note,
             deliveredAt: new Date().toLocaleString("en-GB"),
           },
           {
@@ -496,6 +508,7 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
         if (!to) continue;
 
         const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
+        const note = String(order.metadata?.deliveryNote || "").trim();
         const subject = `Your order ${order.orderId || ""} was delivered`;
 
         const emailRes = await sendEmail(
@@ -506,6 +519,7 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
             name: customer?.firstName || "there",
             orderId: order.orderId,
             proofUrl,
+            deliveryNote: note,
             deliveredAt: new Date().toLocaleString("en-GB"),
           },
           { fromName: "Levants" },

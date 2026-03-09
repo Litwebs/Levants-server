@@ -67,6 +67,7 @@ const UpdateOrderStatus = async (req, res) => {
     orderId: req.params.orderId,
     deliveryStatus: req.body.deliveryStatus,
     deliveryProofUrl: req.body.deliveryProofUrl,
+    deliveryNote: req.body.deliveryNote,
     deliveryProofFile: req.file,
     actorUserId: req.user?._id || req.user?.id,
     actorRoleName: req.user?.role?.name,

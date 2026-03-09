@@ -557,6 +557,7 @@ export const MapView: React.FC<MapViewProps> = ({
     id: string,
     nextStatus: string,
     deliveryProofFile?: File,
+    deliveryNote?: string,
   ) => {
     const prev = String(selectedOrderForStatus?.deliveryStatus || "");
     if (
@@ -581,6 +582,7 @@ export const MapView: React.FC<MapViewProps> = ({
           | "delivered"
           | "returned",
         deliveryProofFile,
+        deliveryNote,
       );
       showToast({ type: "success", title: "Order status updated" });
 

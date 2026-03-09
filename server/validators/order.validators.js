@@ -38,6 +38,9 @@ const updateOrderStatusSchema = Joi.object({
   // Optional proof photo URL to include in the delivered email
   // Stored under order.metadata.deliveryProofUrl
   deliveryProofUrl: Joi.string().uri().max(2048).allow(null, "").optional(),
+
+  // Optional note left by delivery users; stored under order.metadata.deliveryNote
+  deliveryNote: Joi.string().trim().max(500).allow(null, "").optional(),
 }).unknown(false);
 
 const bulkUpdateDeliveryStatusSchema = Joi.object({

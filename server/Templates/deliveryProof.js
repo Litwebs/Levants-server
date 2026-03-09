@@ -2,10 +2,23 @@ module.exports = ({
   name = "there",
   orderId,
   proofUrl,
+  deliveryNote,
   deliveredAt,
   logoSrc = "./assets/logo.png",
 }) => {
   const safeProofUrl = String(proofUrl || "").trim();
+  const safeNoteRaw = String(deliveryNote || "").trim();
+
+  const escapeHtml = (value) =>
+    String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const formatMultiline = (value) =>
+    escapeHtml(value).replace(/\r?\n/g, "<br/>");
 
   return `
 <!doctype html>
@@ -93,6 +106,20 @@ No delivery photo was attached for this order.
 `
 }
 </div>
+
+${
+  safeNoteRaw
+    ? `
+<!-- Note -->
+<div style="margin:0 0 18px 0;">
+  <div style="font-size:13px;font-weight:600;color:#2b2b2b;margin-bottom:8px;">Delivery note</div>
+  <div style="font-size:13px;color:#444;line-height:1.6;border:1px solid #ece6dc;border-radius:10px;padding:12px;background:#f6f2ec;">
+    ${formatMultiline(safeNoteRaw)}
+  </div>
+</div>
+`
+    : ""
+}
 
 </td>
 </tr>
