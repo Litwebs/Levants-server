@@ -48,6 +48,64 @@ const formatUkDate = (date) => {
   });
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getEmailErrorStatus = (emailRes) => {
+  const err = emailRes?.error;
+  if (!err) return null;
+  const status =
+    err?.statusCode ?? err?.status ?? err?.code ?? emailRes?.statusCode;
+  const n = Number(status);
+  return Number.isFinite(n) ? n : null;
+};
+
+const getEmailErrorMessage = (emailRes) => {
+  const err = emailRes?.error;
+  if (!err) return "";
+  if (typeof err === "string") return err;
+  return String(err?.message || err?.name || "Email send failed");
+};
+
+const shouldRetryEmail = (status) => {
+  // 429: rate limit; 5xx: transient provider errors
+  if (status === 429) return true;
+  if (typeof status === "number" && status >= 500 && status <= 599) return true;
+  return false;
+};
+
+const sendEmailWithRetry = async ({
+  to,
+  subject,
+  template,
+  params,
+  options,
+  maxAttempts = 3,
+  minDelayMs = 600,
+} = {}) => {
+  let lastResult = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    // Pace requests to respect provider rate limits (e.g. Resend free tier).
+    if (attempt > 1) {
+      await sleep(minDelayMs * Math.pow(2, attempt - 2));
+    } else if (minDelayMs > 0) {
+      await sleep(minDelayMs);
+    }
+
+    const res = await sendEmail(to, subject, template, params, options);
+    lastResult = res;
+
+    if (res?.success) return res;
+
+    const status = getEmailErrorStatus(res);
+    if (!shouldRetryEmail(status)) return res;
+  }
+
+  return (
+    lastResult || { success: false, error: new Error("Email send failed") }
+  );
+};
+
 const getUserId = (user) => {
   const id = user?._id || user?.id;
   return id ? String(id) : null;
@@ -1056,6 +1114,11 @@ async function dispatchBatch({ batchId } = {}) {
   let emailsSent = 0;
   let emailsSkipped = 0;
   let emailsFailed = 0;
+  let emailsAttempted = 0;
+
+  const sentDetails = [];
+  const skippedDetails = [];
+  const failedDetails = [];
 
   if (orderIds.length > 0) {
     const orders = await Order.find({ _id: { $in: orderIds } })
@@ -1066,11 +1129,21 @@ async function dispatchBatch({ batchId } = {}) {
       try {
         if (["delivered", "returned"].includes(String(order?.deliveryStatus))) {
           emailsSkipped += 1;
+          skippedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            reason: "already_delivered_or_returned",
+          });
           continue;
         }
 
         if (order?.metadata?.dispatchedEmailSentAt) {
           emailsSkipped += 1;
+          skippedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            reason: "already_sent",
+          });
           continue;
         }
 
@@ -1078,6 +1151,11 @@ async function dispatchBatch({ batchId } = {}) {
         const to = String(customer?.email || "").trim();
         if (!to) {
           emailsSkipped += 1;
+          skippedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            reason: "missing_customer_email",
+          });
           continue;
         }
 
@@ -1109,33 +1187,96 @@ async function dispatchBatch({ batchId } = {}) {
 
         const subject = `Your order ${order.orderId || ""} has been dispatched`;
 
-        const emailRes = await sendEmail(
+        emailsAttempted += 1;
+        const emailRes = await sendEmailWithRetry({
           to,
           subject,
-          "orderDispatched",
-          {
+          template: "orderDispatched",
+          params: {
             name: customer?.firstName || "there",
             orderId: order.orderId,
             deliveryDate: deliveryDate ? formatUkDate(deliveryDate) : "",
             etaWindowStart,
             etaWindowEnd,
           },
-          {
+          options: {
             fromName: "Levants",
           },
-        );
+          // Resend free-tier rate limit is low; keep below it.
+          maxAttempts: 3,
+          minDelayMs: 600,
+        });
 
         if (emailRes?.success) {
           emailsSent += 1;
           await Order.updateOne(
             { _id: order._id },
-            { $set: { "metadata.dispatchedEmailSentAt": new Date() } },
+            {
+              $set: {
+                "metadata.dispatchedEmailSentAt": new Date(),
+              },
+              $unset: {
+                "metadata.dispatchedEmailLastError": "",
+              },
+            },
           );
+
+          sentDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            to,
+          });
         } else {
           emailsFailed += 1;
+
+          const status = getEmailErrorStatus(emailRes);
+          const message = getEmailErrorMessage(emailRes);
+          await Order.updateOne(
+            { _id: order._id },
+            {
+              $set: {
+                "metadata.dispatchedEmailLastError": {
+                  at: new Date(),
+                  status,
+                  message,
+                },
+              },
+            },
+          );
+
+          failedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            to,
+            status,
+            message,
+          });
         }
       } catch (_) {
         emailsFailed += 1;
+
+        try {
+          await Order.updateOne(
+            { _id: order._id },
+            {
+              $set: {
+                "metadata.dispatchedEmailLastError": {
+                  at: new Date(),
+                  status: null,
+                  message: "Email send failed",
+                },
+              },
+            },
+          );
+        } catch (_) {}
+
+        failedDetails.push({
+          orderId: order.orderId,
+          orderDbId: String(order._id),
+          to: String(order?.customer?.email || ""),
+          status: null,
+          message: "Email send failed",
+        });
       }
     }
   }
@@ -1150,6 +1291,13 @@ async function dispatchBatch({ batchId } = {}) {
         sent: emailsSent,
         skipped: emailsSkipped,
         failed: emailsFailed,
+        attempted: emailsAttempted,
+        // Keep response size bounded
+        details: {
+          sent: sentDetails.slice(0, 50),
+          skipped: skippedDetails.slice(0, 50),
+          failed: failedDetails.slice(0, 50),
+        },
       },
     },
   };

@@ -222,6 +222,13 @@ const sendEmail = async (
     }
 
     const response = await resend.emails.send(payload);
+
+    // Resend SDK typically returns `{ data, error }` (and may not throw).
+    // Only treat as success when no error is present.
+    if (response && typeof response === "object" && response.error) {
+      return { success: false, error: response.error, response };
+    }
+
     return { success: true, response };
   } catch (error) {
     console.error("[email] send failed", {

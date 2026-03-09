@@ -189,7 +189,11 @@ export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => navigate(`/delivery-runs/${run.id}`)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        navigate(`/delivery-runs/${run.id}`);
+                      }}
                     >
                       <Eye size={16} />
                       View
@@ -198,7 +202,11 @@ export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setConfirmRun(run)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setConfirmRun(run);
+                      }}
                       disabled={!onDeleteRun}
                     >
                       <Trash2 size={16} />
