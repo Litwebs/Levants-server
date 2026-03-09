@@ -9,6 +9,8 @@ const Role = require("../models/role.model");
 const Route = require("../models/route.model");
 const Stop = require("../models/stop.model");
 
+const sendEmail = require("../Integration/Email.service");
+
 const { generateRoutesForBatch } = require("./route.service");
 const { getRouteStockAggregation } = require("./warehouse.service");
 const { generateGoogleMapsLink } = require("../utils/navigation.util");
@@ -16,6 +18,35 @@ const { normalizeKey } = require("../utils/ordersSpreadsheet.util");
 const { geocodeAddress } = require("../Integration/google.geocode");
 
 const isDriverUser = (user) => String(user?.role?.name || "") === "driver";
+
+const LONDON_TZ = "Europe/London";
+
+const roundToNearestMinutes = (date, minutes) => {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return null;
+  const stepMs = Number(minutes) * 60 * 1000;
+  if (!Number.isFinite(stepMs) || stepMs <= 0) return null;
+  return new Date(Math.round(date.getTime() / stepMs) * stepMs);
+};
+
+const formatUkTime = (date) => {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
+  return date.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: LONDON_TZ,
+  });
+};
+
+const formatUkDate = (date) => {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: LONDON_TZ,
+  });
+};
 
 const getUserId = (user) => {
   const id = user?._id || user?.id;
@@ -966,10 +997,162 @@ async function dispatchBatch({ batchId } = {}) {
   const batch = await DeliveryBatch.findById(batchId);
   if (!batch)
     return { success: false, statusCode: 404, message: "Batch not found" };
+
+  // Mark batch as dispatched (idempotent)
+  const now = new Date();
   batch.status = "dispatched";
-  batch.dispatchedAt = new Date();
+  if (!batch.dispatchedAt) batch.dispatchedAt = now;
   await batch.save();
-  return { success: true, data: { batchId: batch._id, status: batch.status } };
+
+  const orderIds = (Array.isArray(batch.orders) ? batch.orders : [])
+    .map((id) => String(id))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  let ordersUpdatedCount = 0;
+
+  if (orderIds.length > 0) {
+    // Mark all orders in this run as dispatched (do not downgrade delivered/returned).
+    const updateRes = await Order.updateMany(
+      {
+        _id: { $in: orderIds },
+        deliveryStatus: { $nin: ["delivered", "returned"] },
+      },
+      { $set: { deliveryStatus: "dispatched" } },
+    );
+
+    ordersUpdatedCount =
+      typeof updateRes?.modifiedCount === "number"
+        ? updateRes.modifiedCount
+        : typeof updateRes?.nModified === "number"
+          ? updateRes.nModified
+          : 0;
+  }
+
+  // Best-effort customer dispatch emails.
+  // Computes a ±1 hour window around ETA and rounds endpoints to nearest 30 minutes.
+  const routeIds = (Array.isArray(batch.routes) ? batch.routes : [])
+    .map((id) => String(id))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  const etaByOrderId = new Map();
+  if (routeIds.length > 0) {
+    const stops = await Stop.find({ route: { $in: routeIds } })
+      .select("order estimatedArrival")
+      .lean();
+
+    for (const stop of stops) {
+      const oid = String(stop?.order || "");
+      if (!oid) continue;
+      const eta = stop?.estimatedArrival
+        ? new Date(stop.estimatedArrival)
+        : null;
+      if (!(eta instanceof Date) || !Number.isFinite(eta.getTime())) continue;
+      if (!etaByOrderId.has(oid)) etaByOrderId.set(oid, eta);
+    }
+  }
+
+  let emailsSent = 0;
+  let emailsSkipped = 0;
+  let emailsFailed = 0;
+
+  if (orderIds.length > 0) {
+    const orders = await Order.find({ _id: { $in: orderIds } })
+      .select("_id orderId customer metadata deliveryDate deliveryStatus")
+      .populate("customer", "firstName email");
+
+    for (const order of orders) {
+      try {
+        if (["delivered", "returned"].includes(String(order?.deliveryStatus))) {
+          emailsSkipped += 1;
+          continue;
+        }
+
+        if (order?.metadata?.dispatchedEmailSentAt) {
+          emailsSkipped += 1;
+          continue;
+        }
+
+        const customer = order?.customer;
+        const to = String(customer?.email || "").trim();
+        if (!to) {
+          emailsSkipped += 1;
+          continue;
+        }
+
+        const eta = etaByOrderId.get(String(order._id));
+
+        let etaWindowStart = "";
+        let etaWindowEnd = "";
+
+        if (eta) {
+          const start = roundToNearestMinutes(
+            new Date(eta.getTime() - 60 * 60 * 1000),
+            30,
+          );
+          const end = roundToNearestMinutes(
+            new Date(eta.getTime() + 60 * 60 * 1000),
+            30,
+          );
+
+          etaWindowStart = formatUkTime(start);
+          etaWindowEnd = formatUkTime(end);
+        }
+
+        const deliveryDate =
+          order.deliveryDate instanceof Date
+            ? order.deliveryDate
+            : batch.deliveryDate instanceof Date
+              ? batch.deliveryDate
+              : null;
+
+        const subject = `Your order ${order.orderId || ""} has been dispatched`;
+
+        const emailRes = await sendEmail(
+          to,
+          subject,
+          "orderDispatched",
+          {
+            name: customer?.firstName || "there",
+            orderId: order.orderId,
+            deliveryDate: deliveryDate ? formatUkDate(deliveryDate) : "",
+            etaWindowStart,
+            etaWindowEnd,
+          },
+          {
+            fromName: "Levants",
+          },
+        );
+
+        if (emailRes?.success) {
+          emailsSent += 1;
+          await Order.updateOne(
+            { _id: order._id },
+            { $set: { "metadata.dispatchedEmailSentAt": new Date() } },
+          );
+        } else {
+          emailsFailed += 1;
+        }
+      } catch (_) {
+        emailsFailed += 1;
+      }
+    }
+  }
+
+  return {
+    success: true,
+    data: {
+      batchId: batch._id,
+      status: batch.status,
+      ordersUpdatedCount,
+      emails: {
+        sent: emailsSent,
+        skipped: emailsSkipped,
+        failed: emailsFailed,
+      },
+    },
+  };
 }
 
 async function generateRoutes({ batchId, driverIds, startTime, endTime } = {}) {

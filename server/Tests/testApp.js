@@ -15,6 +15,7 @@ const publicCustomerRoutes = require("../routes/customers.public.routes");
 const publicDiscountRoutes = require("../routes/discounts.public.routes");
 const publicOrderRoutes = require("../routes/orders.public.routes");
 const publicDeliveryRoutes = require("../routes/delivery.public.routes");
+const adminDeliveryRoutes = require("../routes/delivery.routes");
 const adminOrderRoutes = require("../routes/orders.admin.routes");
 const adminDiscountRoutes = require("../routes/discounts.admin.routes");
 const stripeWebhookRoutes = require("../routes/stripe.webhook.routes");
@@ -48,6 +49,7 @@ app.use("/api/admin/products", adminProductRoutes);
 app.use("/api/admin/products", adminVariantRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/discounts", adminDiscountRoutes);
+app.use("/api/admin/delivery", adminDeliveryRoutes);
 
 // Backward-compatible admin variants routes (older tests/clients)
 app.use("/api/admin/variants", adminVariantRoutes);
