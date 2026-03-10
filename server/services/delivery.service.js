@@ -257,6 +257,7 @@ const buildManualRow = (obj) => {
   if (!obj || typeof obj !== "object") {
     return {
       name: "",
+      email: "",
       address: "",
       postcode: "",
       contact: "",
@@ -282,6 +283,16 @@ const buildManualRow = (obj) => {
     typeof v === "string" || typeof v === "number" ? String(v).trim() : "";
 
   const name = str(pick(["name", "customer", "customername"]));
+  const email = str(
+    pick([
+      "email",
+      "e-mail",
+      "emailaddress",
+      "email address",
+      "customeremail",
+      "customer email",
+    ]),
+  );
   const address = str(
     pick([
       "address",
@@ -313,6 +324,7 @@ const buildManualRow = (obj) => {
 
   return {
     name,
+    email,
     address: address || inferAddressFromRow(obj),
     postcode: postcode || inferPostcodeFromRow(obj),
     contact,
@@ -599,8 +611,12 @@ async function createDeliveryBatch({
         }
 
         const { firstName, lastName } = splitName(row.name);
+        const providedEmail = String(row.email || "")
+          .trim()
+          .toLowerCase();
+
         const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const email = `manual-${unique}@import.local`;
+        const email = providedEmail || `manual-${unique}@import.local`;
 
         const [customer] = await Customer.create(
           [
