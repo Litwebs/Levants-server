@@ -53,6 +53,11 @@ const OrderStatusModal = ({
   const [deliveryNote, setDeliveryNote] = useState<string>("");
   const [isUpdating, setIsUpdating] = useState(false);
 
+  const customerInstructions =
+    typeof selectedOrder?.customerInstructions === "string"
+      ? selectedOrder.customerInstructions.trim()
+      : "";
+
   useEffect(() => {
     if (!isStatusModalOpen) return;
     setSelectedStatus(null);
@@ -165,6 +170,18 @@ const OrderStatusModal = ({
             </button>
           ))}
         </div>
+
+        {customerInstructions && (
+          <div className={styles.proofSection}>
+            <div className={styles.proofLabel}>Customer instructions</div>
+            <textarea
+              className={styles.notesTextarea}
+              value={customerInstructions}
+              readOnly
+              rows={3}
+            />
+          </div>
+        )}
 
         <div className={styles.proofSection}>
           <div className={styles.proofLabel}>Delivery proof (photo)</div>

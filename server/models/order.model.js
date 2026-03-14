@@ -107,6 +107,13 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    customerInstructions: {
+      type: String,
+      trim: true,
+      maxlength: 1000,
+      default: "",
+    },
+
     location: {
       lat: { type: Number, required: true },
       lng: { type: Number, required: true },
@@ -150,6 +157,7 @@ const orderSchema = new mongoose.Schema(
         "failed",
         "cancelled",
         "refund_pending",
+        "partially_refunded",
         "refunded",
         "refund_failed",
       ],
@@ -217,6 +225,77 @@ const orderSchema = new mongoose.Schema(
         type: String,
         index: true,
       },
+    },
+
+    refunds: {
+      type: [
+        new mongoose.Schema(
+          {
+            stripeRefundId: {
+              type: String,
+              index: true,
+            },
+
+            paymentIntentId: {
+              type: String,
+              index: true,
+            },
+
+            currency: {
+              type: String,
+              default: "GBP",
+            },
+
+            // Store both for safety: Stripe uses minor units; UI prefers major.
+            amount: {
+              type: Number,
+              min: 0,
+            },
+
+            amountMinor: {
+              type: Number,
+              min: 0,
+            },
+
+            status: {
+              type: String,
+              enum: ["pending", "succeeded", "failed"],
+              default: "pending",
+              index: true,
+            },
+
+            refundedAt: {
+              type: Date,
+            },
+
+            failedAt: {
+              type: Date,
+            },
+
+            refundedBy: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: "User",
+            },
+
+            reason: {
+              type: String,
+              maxlength: 500,
+            },
+
+            restock: {
+              type: Boolean,
+              default: false,
+            },
+
+            createdAt: {
+              type: Date,
+              default: Date.now,
+            },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
     },
 
     metadata: {

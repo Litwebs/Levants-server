@@ -21,8 +21,18 @@ async function ListOrders({
     typeof filters.search === "string" ? filters.search.trim() : "";
 
   // 🔒 Payment status is restricted (always)
-  const ALLOWED_PAYMENT = new Set(["paid", "refunded", "refund_pending"]);
-  const DEFAULT_PAYMENT = ["paid", "refunded", "refund_pending"];
+  const ALLOWED_PAYMENT = new Set([
+    "paid",
+    "refund_pending",
+    "partially_refunded",
+    "refunded",
+  ]);
+  const DEFAULT_PAYMENT = [
+    "paid",
+    "refund_pending",
+    "partially_refunded",
+    "refunded",
+  ];
 
   // ✅ Delivery status is filterable
   const ALLOWED_DELIVERY = new Set([
@@ -103,13 +113,25 @@ async function ListOrders({
   }
 
   if (filters.refundedOnly) {
-    query["refund.refundedAt"] = { $ne: null };
+    query.$and = Array.isArray(query.$and) ? query.$and : [];
+    query.$and.push({
+      $or: [
+        { "refund.refundedAt": { $ne: null } },
+        { "refunds.status": "succeeded" },
+        { status: "partially_refunded" },
+        { status: "refunded" },
+      ],
+    });
     // Optional: enforce status = refunded when refundedOnly is true:
     // query.status = "refunded";
   }
 
   if (filters.restock !== undefined) {
-    query["refund.restock"] = filters.restock === true;
+    const want = filters.restock === true;
+    query.$and = Array.isArray(query.$and) ? query.$and : [];
+    query.$and.push({
+      $or: [{ "refund.restock": want }, { "refunds.restock": want }],
+    });
   }
 
   if (filters.expiredOnly) {

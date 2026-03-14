@@ -182,6 +182,11 @@ const mapStops = (stops: any[]): RouteStop[] => {
       lng: Number(order?.location?.lng ?? 0),
       navigationUrl:
         typeof s?.navigationUrl === "string" ? s.navigationUrl : undefined,
+      notes:
+        typeof order?.customerInstructions === "string" &&
+        order.customerInstructions.trim().length > 0
+          ? order.customerInstructions.trim()
+          : undefined,
       eta: s.estimatedArrival
         ? new Date(s.estimatedArrival).toISOString()
         : undefined,

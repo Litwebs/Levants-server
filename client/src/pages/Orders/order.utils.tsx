@@ -6,6 +6,7 @@ type FulfillmentStatus =
   | "failed"
   | "cancelled"
   | "refund_pending"
+  | "partially_refunded"
   | "refunded"
   | "refund_failed"
   | (string & {});
@@ -35,6 +36,7 @@ export const getPaymentBadge = (status: PaymentStatus) => {
     failed: { variant: "error", label: "Failed" },
     cancelled: { variant: "error", label: "Cancelled" },
     refund_pending: { variant: "warning", label: "Refund Pending" },
+    partially_refunded: { variant: "info", label: "Partially Refunded" },
     refunded: { variant: "info", label: "Refunded" },
     refund_failed: { variant: "error", label: "Refund Failed" },
   };

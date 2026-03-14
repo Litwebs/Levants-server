@@ -21,6 +21,8 @@ function getStripe() {
 const {
   finalizeRefundForOrderByPaymentIntent,
   markRefundFailedByPaymentIntent,
+  applyStripeRefundSucceeded,
+  applyStripeRefundFailed,
 } = require("./orders.refund.service");
 
 async function HandlePaymentSuccess(session) {
@@ -66,7 +68,7 @@ async function HandlePaymentSuccess(session) {
     const alreadyRefunding =
       refreshed.status === "refund_pending" ||
       refreshed.status === "refunded" ||
-      Boolean(refreshed.refund?.stripeRefundId);
+      Boolean(refreshed.refunds?.some?.((r) => r?.status === "pending"));
 
     if (alreadyRefunding) return;
 
@@ -86,12 +88,44 @@ async function HandlePaymentSuccess(session) {
         },
       );
 
-      refreshed.status = "refund_pending";
+      const stripeStatus = String(refund.status || "").toLowerCase();
+      const mappedStatus =
+        stripeStatus === "succeeded"
+          ? "succeeded"
+          : stripeStatus === "failed"
+            ? "failed"
+            : "pending";
+
+      refreshed.refunds = Array.isArray(refreshed.refunds)
+        ? refreshed.refunds
+        : [];
+      refreshed.refunds.push({
+        stripeRefundId: refund.id,
+        paymentIntentId,
+        currency: refund.currency || refreshed.currency || "GBP",
+        amountMinor:
+          typeof refund.amount === "number" ? refund.amount : undefined,
+        amount:
+          typeof refund.amount === "number" ? refund.amount / 100 : undefined,
+        status: mappedStatus,
+        refundedAt: mappedStatus === "succeeded" ? new Date() : undefined,
+        failedAt: mappedStatus === "failed" ? new Date() : undefined,
+        reason: "Order expired before payment completed",
+        restock: false,
+        createdAt: new Date(),
+      });
+
+      refreshed.status =
+        mappedStatus === "pending" ? "refund_pending" : refreshed.status;
       refreshed.refund = {
         ...(refreshed.refund || {}),
         reason: "Order expired before payment completed",
         restock: false,
         stripeRefundId: refund.id,
+        refundedAt:
+          mappedStatus === "succeeded"
+            ? new Date()
+            : refreshed.refund?.refundedAt,
       };
 
       await refreshed.save();
@@ -153,9 +187,16 @@ async function HandlePaymentFailed(paymentIntent) {
 
 async function HandleRefundSucceeded(refund) {
   if (!refund.payment_intent) return;
-  const refundedOrderId = await finalizeRefundForOrderByPaymentIntent(
-    refund.payment_intent,
-  );
+
+  // Prefer the partial-refund-aware path when refund.id is present.
+  const refundedOrderId = refund.id
+    ? await applyStripeRefundSucceeded({
+        paymentIntentId: refund.payment_intent,
+        stripeRefundId: refund.id,
+        amountMinor: refund.amount,
+        currency: refund.currency,
+      })
+    : await finalizeRefundForOrderByPaymentIntent(refund.payment_intent);
 
   if (!refundedOrderId) return;
 
@@ -168,6 +209,17 @@ async function HandleRefundSucceeded(refund) {
 
 async function HandleRefundFailed(refund) {
   if (!refund.payment_intent) return;
+
+  if (refund.id) {
+    await applyStripeRefundFailed({
+      paymentIntentId: refund.payment_intent,
+      stripeRefundId: refund.id,
+      amountMinor: refund.amount,
+      currency: refund.currency,
+    });
+    return;
+  }
+
   await markRefundFailedByPaymentIntent(refund.payment_intent);
 }
 

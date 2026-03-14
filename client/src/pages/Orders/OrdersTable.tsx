@@ -111,6 +111,12 @@ const OrdersTable = ({
                             },
                           )}
                         </span>
+                        {typeof order.customerInstructions === "string" &&
+                        order.customerInstructions.trim() ? (
+                          <span className={styles.orderInstructions}>
+                            {order.customerInstructions.trim()}
+                          </span>
+                        ) : null}
                       </div>
                     </td>
 

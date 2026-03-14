@@ -33,6 +33,7 @@ export type Order = {
   total: number;
   // fulfillmentStatus: FulfillmentStatus;
   paymentStatus: FulfillmentStatus;
+  customerInstructions?: string;
   customerNotes?: string;
   internalNotes?: string;
   history: { status: string; timestamp: string; user: string }[];
@@ -121,6 +122,11 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
       ? String(metadata.deliveryNote).trim() || undefined
       : undefined;
 
+  const customerInstructions =
+    typeof (order as any)?.customerInstructions === "string"
+      ? String((order as any).customerInstructions).trim() || undefined
+      : undefined;
+
   return {
     id: order._id,
     orderNumber: order.orderId,
@@ -159,6 +165,8 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
 
     deliveryStatus: order.deliveryStatus,
     paymentStatus: order.status,
+
+    customerInstructions,
 
     history: [],
 

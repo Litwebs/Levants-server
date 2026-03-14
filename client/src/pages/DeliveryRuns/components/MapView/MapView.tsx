@@ -546,6 +546,7 @@ export const MapView: React.FC<MapViewProps> = ({
         id: orderDbId,
         orderNumber: stop.orderId,
         deliveryStatus: current,
+        customerInstructions: stop.notes,
       });
       setIsStatusModalOpen(true);
     } finally {
@@ -760,6 +761,9 @@ export const MapView: React.FC<MapViewProps> = ({
                   <div className={styles.popupDetail}>
                     Order: {stop.orderId}
                   </div>
+                  {stop.notes && (
+                    <div className={styles.popupDetail}>📝 {stop.notes}</div>
+                  )}
                   <div className={styles.popupDetail}>
                     Delivery status:{" "}
                     {getStatusBadge(
@@ -883,6 +887,9 @@ export const MapView: React.FC<MapViewProps> = ({
                     )}
                   </div>
                   <div className={styles.stopPostcode}>{stop.postcode}</div>
+                  {stop.notes && (
+                    <div className={styles.stopPostcode}>📝 {stop.notes}</div>
+                  )}
                   <div className={styles.stopMetaRow}>
                     <span className={styles.stopMetaLabel}>Status</span>
                     {getStatusBadge(

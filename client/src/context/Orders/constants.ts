@@ -46,12 +46,28 @@ export type OrderRefund = {
   refundedAt?: string;
 };
 
+export type OrderRefundRecord = {
+  stripeRefundId?: string;
+  paymentIntentId?: string;
+  currency?: string;
+  amount?: number;
+  amountMinor?: number;
+  status?: "pending" | "succeeded" | "failed" | (string & {});
+  createdAt?: string;
+  refundedAt?: string;
+  failedAt?: string;
+  refundedBy?: string;
+  reason?: string;
+  restock?: boolean;
+};
+
 export type OrderStatus =
   | "pending"
   | "paid"
   | "failed"
   | "cancelled"
   | "refund_pending"
+  | "partially_refunded"
   | "refunded"
   | "refund_failed"
   | (string & {});
@@ -83,7 +99,10 @@ export type AdminOrder = {
   expiresAt?: string;
 
   refund?: OrderRefund;
+  refunds?: OrderRefundRecord[];
   metadata?: Record<string, unknown>;
+
+  customerInstructions?: string;
 
   createdAt: string;
   updatedAt: string;

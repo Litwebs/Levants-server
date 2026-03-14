@@ -15,6 +15,14 @@ const createCustomerSchema = Joi.object({
   lastName: Joi.string().trim().min(1).max(100).required(),
   phone: Joi.string().optional(),
   address: addressSchema.required(),
+
+  // Checkout payloads may include order-scoped instructions; accept and ignore.
+  customerInstructions: Joi.string()
+    .trim()
+    .max(1000)
+    .allow(null, "")
+    .optional(),
+  instructions: Joi.string().trim().max(1000).allow(null, "").optional(),
 }).unknown(false);
 
 const createGuestCustomerSchema = Joi.object({
@@ -23,6 +31,14 @@ const createGuestCustomerSchema = Joi.object({
   lastName: Joi.string().trim().min(1).max(100).optional(),
   phone: Joi.string().optional(),
   address: addressSchema.optional(),
+
+  // Checkout payloads may include order-scoped instructions; accept and ignore.
+  customerInstructions: Joi.string()
+    .trim()
+    .max(1000)
+    .allow(null, "")
+    .optional(),
+  instructions: Joi.string().trim().max(1000).allow(null, "").optional(),
 }).unknown(false);
 
 const updateCustomerSchema = Joi.object({

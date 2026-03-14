@@ -17,6 +17,12 @@ const createOrderSchema = Joi.object({
 
   deliveryAddress: deliveryAddressSchema.required(),
 
+  customerInstructions: Joi.string()
+    .trim()
+    .max(1000)
+    .allow(null, "")
+    .optional(),
+
   deliveryDate: Joi.date().iso().greater("now").optional(),
 
   items: Joi.array()

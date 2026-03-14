@@ -8,6 +8,7 @@ const CreateOrder = async (req, res) => {
     discountCode: req.body.discountCode,
     deliveryAddress: req.body.deliveryAddress,
     deliveryDate: req.body.deliveryDate,
+    customerInstructions: req.body.customerInstructions,
   });
 
   if (!result.success) {

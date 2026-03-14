@@ -455,6 +455,15 @@
   color: var(--color-gray-500);
 }
 
+.orderInstructions {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .customerCell {
   display: flex;
   flex-direction: column;

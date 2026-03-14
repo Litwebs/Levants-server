@@ -17,10 +17,15 @@ const OrderDetailModal = ({
 
   const [isRefundConfirmOpen, setIsRefundConfirmOpen] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
+  const [refundAmount, setRefundAmount] = useState<string>("");
 
   const isAlreadyRefunded = selectedOrder?.paymentStatus === "refunded";
+  const isRefundPending = selectedOrder?.paymentStatus === "refund_pending";
   const canRefund =
-    canRefundPermission && Boolean(selectedOrder?.id) && !isAlreadyRefunded;
+    canRefundPermission &&
+    Boolean(selectedOrder?.id) &&
+    !isAlreadyRefunded &&
+    !isRefundPending;
 
   const proofUrl =
     typeof selectedOrder?.deliveryProofUrl === "string"
@@ -30,6 +35,11 @@ const OrderDetailModal = ({
   const deliveryNote =
     typeof selectedOrder?.deliveryNote === "string"
       ? selectedOrder.deliveryNote.trim()
+      : "";
+
+  const customerInstructions =
+    typeof selectedOrder?.customerInstructions === "string"
+      ? selectedOrder.customerInstructions.trim()
       : "";
 
   const deliveredAtIso =
@@ -154,8 +164,15 @@ const OrderDetailModal = ({
 
             {(selectedOrder.customerNotes ||
               selectedOrder.internalNotes ||
+              customerInstructions ||
               deliveryNote) && (
               <div className={styles.notesSection}>
+                {customerInstructions && (
+                  <div className={styles.noteBox}>
+                    <h5>Customer Instructions</h5>
+                    <p>{customerInstructions}</p>
+                  </div>
+                )}
                 {deliveryNote && (
                   <div className={styles.noteBox}>
                     <h5>Delivery Note</h5>
@@ -234,6 +251,7 @@ const OrderDetailModal = ({
               disabled={!canRefund}
               onClick={() => {
                 if (!canRefund) return;
+                setRefundAmount("");
                 setIsRefundConfirmOpen(true);
               }}
             >
@@ -268,6 +286,44 @@ const OrderDetailModal = ({
             be undone.
           </p>
 
+          <div
+            className={styles.filterGroup}
+            style={{ marginTop: "var(--space-3)" }}
+          >
+            <label className={styles.filterLabel} htmlFor="refundAmount">
+              Refund amount (optional)
+            </label>
+            <input
+              id="refundAmount"
+              className={styles.filterInput}
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.01}
+              placeholder={
+                typeof selectedOrder?.refundableRemaining === "number"
+                  ? `Leave blank for full (£${selectedOrder.refundableRemaining.toFixed(2)})`
+                  : "Leave blank for full refund"
+              }
+              value={refundAmount}
+              onChange={(e) => setRefundAmount(e.target.value)}
+              disabled={isRefunding}
+            />
+          </div>
+
+          {typeof selectedOrder?.refundedTotal === "number" &&
+          typeof selectedOrder?.refundableRemaining === "number" ? (
+            <p
+              style={{
+                marginTop: "var(--space-2)",
+                color: "var(--color-gray-700)",
+              }}
+            >
+              Refunded so far: £{selectedOrder.refundedTotal.toFixed(2)} •
+              Remaining: £{selectedOrder.refundableRemaining.toFixed(2)}
+            </p>
+          ) : null}
+
           <ModalFooter>
             <Button
               variant="outline"
@@ -283,7 +339,16 @@ const OrderDetailModal = ({
                 if (!selectedOrder?.id) return;
                 setIsRefunding(true);
                 try {
-                  await refundOrder?.(selectedOrder.id);
+                  const raw = String(refundAmount || "").trim();
+                  const parsed = raw ? Number(raw) : undefined;
+                  const amountToRefund =
+                    typeof parsed === "number" &&
+                    Number.isFinite(parsed) &&
+                    parsed > 0
+                      ? parsed
+                      : undefined;
+
+                  await refundOrder?.(selectedOrder.id, amountToRefund);
                   setIsRefundConfirmOpen(false);
                   setIsDetailModalOpen(false);
                 } finally {

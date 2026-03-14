@@ -4,7 +4,12 @@ const Order = require("../models/order.model");
 const Product = require("../models/product.model");
 const ProductVariant = require("../models/variant.model");
 
-const COUNTABLE_ORDER_STATUSES = ["paid", "refund_pending", "refunded"];
+const COUNTABLE_ORDER_STATUSES = [
+  "paid",
+  "refund_pending",
+  "partially_refunded",
+  "refunded",
+];
 
 const clampToStartOfDay = (d) => {
   const date = new Date(d);
@@ -663,7 +668,15 @@ async function GetRecentOrders({ range, from, to, limit = 5 } = {}) {
 
   const orders = await Order.find({
     ...createdAtMatch,
-    status: { $in: ["pending", "paid", "refund_pending", "refunded"] },
+    status: {
+      $in: [
+        "pending",
+        "paid",
+        "refund_pending",
+        "partially_refunded",
+        "refunded",
+      ],
+    },
   })
     .populate({ path: "customer", select: "firstName lastName email phone" })
     .sort({ createdAt: -1 })

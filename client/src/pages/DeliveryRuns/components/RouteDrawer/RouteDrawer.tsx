@@ -166,6 +166,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
         id: orderDbId,
         orderNumber: stop.orderId,
         deliveryStatus: current,
+        customerInstructions: stop.notes,
       });
       setIsStatusModalOpen(true);
     } finally {
