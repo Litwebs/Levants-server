@@ -65,6 +65,21 @@ describe("GET /api/products (PUBLIC)", () => {
     expect(Array.isArray(res.body.data.items)).toBe(true);
   });
 
+  test("returns all categories in meta", async () => {
+    const p = await createProduct({ name: "Category Product" });
+    await createVariant({
+      productId: p._id,
+      status: "active",
+      sku: `C-${Date.now()}`,
+    });
+
+    const res = await request(app).get("/api/products");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.meta.categories)).toBe(true);
+    expect(res.body.meta.categories).toContain("Dairy");
+  });
+
   test("does not return archived products or products without active variants", async () => {
     const activeWithActiveVariant = await createProduct({
       name: "Active With Active",
@@ -119,5 +134,60 @@ describe("GET /api/products (PUBLIC)", () => {
     const res = await request(app).get("/api/products");
 
     expect(JSON.stringify(res.body)).not.toContain("stripe");
+  });
+
+  test("supports comma-separated category filter", async () => {
+    const dairy = await createProduct({ name: "MultiCat Dairy" });
+    await createVariant({
+      productId: dairy._id,
+      status: "active",
+      sku: `MD-${Date.now()}`,
+    });
+
+    const bakeryThumb = await createFile();
+    const bakeryName = `MultiCat Bakery ${Date.now()}`;
+    const bakery = await Product.create({
+      name: bakeryName,
+      slug: slugify(bakeryName, { lower: true, strict: true }),
+      category: "Bakery",
+      description: "Test",
+      status: "active",
+      thumbnailImage: bakeryThumb._id,
+      galleryImages: [],
+      allergens: [],
+      storageNotes: null,
+    });
+    await createVariant({
+      productId: bakery._id,
+      status: "active",
+      sku: `MB-${Date.now()}`,
+    });
+
+    const meatThumb = await createFile();
+    const meatName = `MultiCat Meat ${Date.now()}`;
+    const meat = await Product.create({
+      name: meatName,
+      slug: slugify(meatName, { lower: true, strict: true }),
+      category: "Meat",
+      description: "Test",
+      status: "active",
+      thumbnailImage: meatThumb._id,
+      galleryImages: [],
+      allergens: [],
+      storageNotes: null,
+    });
+    await createVariant({
+      productId: meat._id,
+      status: "active",
+      sku: `MM-${Date.now()}`,
+    });
+
+    const res = await request(app).get("/api/products?category=Dairy,Bakery");
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data.items || []).map((p) => String(p.id));
+    expect(ids).toContain(String(dairy._id));
+    expect(ids).toContain(String(bakery._id));
+    expect(ids).not.toContain(String(meat._id));
   });
 });

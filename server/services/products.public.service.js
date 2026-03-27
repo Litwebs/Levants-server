@@ -1,6 +1,20 @@
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
 
+function parseCommaSeparatedList(value) {
+  if (!value) return null;
+
+  // Support both `?category=a,b` and repeated params like `?category=a&category=b`
+  const raw = Array.isArray(value) ? value.join(",") : String(value);
+
+  const items = raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  return items.length ? items : null;
+}
+
 async function listProducts({
   page = 1,
   pageSize = 12,
@@ -13,7 +27,11 @@ async function listProducts({
 }) {
   const productFilter = { status: "active" };
 
-  if (category) productFilter.category = category;
+  const categoryList = parseCommaSeparatedList(category);
+  if (categoryList) {
+    productFilter.category =
+      categoryList.length === 1 ? categoryList[0] : { $in: categoryList };
+  }
 
   if (search) {
     productFilter.$or = [

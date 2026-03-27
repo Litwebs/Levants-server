@@ -56,6 +56,46 @@ describe("GET /api/admin/products (E2E)", () => {
     expect(Array.isArray(res.body.data.products)).toBe(true);
   });
 
+  test("returns all categories in meta", async () => {
+    const admin = await createUser({ role: "admin" });
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    await createProductInDb({
+      userId: admin._id,
+      overrides: { name: "Dairy Product", category: "Dairy", status: "active" },
+    });
+    await createProductInDb({
+      userId: admin._id,
+      overrides: {
+        name: "Bakery Product",
+        category: "Bakery",
+        status: "draft",
+      },
+    });
+    await createProductInDb({
+      userId: admin._id,
+      overrides: {
+        name: "Archived Product",
+        category: "Meat",
+        status: "archived",
+      },
+    });
+
+    const res = await request(app)
+      .get("/api/admin/products")
+      .set("Cookie", getSetCookieHeader(login));
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.meta.categories)).toBe(true);
+    expect(res.body.meta.categories).toContain("Dairy");
+    expect(res.body.meta.categories).toContain("Bakery");
+    expect(res.body.meta.categories).not.toContain("Meat");
+  });
+
   test("does not return archived products", async () => {
     const admin = await createUser({ role: "admin" });
 
@@ -148,5 +188,40 @@ describe("GET /api/admin/products (E2E)", () => {
     expect(statuses).toContain("active");
     expect(statuses).toContain("inactive");
     expect(statuses).not.toContain("archived");
+  });
+
+  test("supports comma-separated category filter", async () => {
+    const admin = await createUser({ role: "admin" });
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const dairy = await createProductInDb({
+      userId: admin._id,
+      overrides: { name: "Dairy P", category: "Dairy", status: "active" },
+    });
+
+    const bakery = await createProductInDb({
+      userId: admin._id,
+      overrides: { name: "Bakery P", category: "Bakery", status: "draft" },
+    });
+
+    const meat = await createProductInDb({
+      userId: admin._id,
+      overrides: { name: "Meat P", category: "Meat", status: "active" },
+    });
+
+    const res = await request(app)
+      .get("/api/admin/products?category=Dairy,Bakery")
+      .set("Cookie", getSetCookieHeader(login));
+
+    expect(res.status).toBe(200);
+
+    const ids = (res.body.data.products || []).map((p) => String(p._id));
+    expect(ids).toContain(String(dairy._id));
+    expect(ids).toContain(String(bakery._id));
+    expect(ids).not.toContain(String(meat._id));
   });
 });

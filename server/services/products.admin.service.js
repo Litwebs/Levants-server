@@ -11,6 +11,20 @@ const {
   deleteFileIfOrphaned,
 } = require("./files.service");
 
+function parseCommaSeparatedList(value) {
+  if (!value) return null;
+
+  // Support both `?category=a,b` and repeated params like `?category=a&category=b`
+  const raw = Array.isArray(value) ? value.join(",") : String(value);
+
+  const items = raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  return items.length ? items : null;
+}
+
 const isObjectIdLike = (value) => {
   if (!value) return false;
   if (typeof value !== "string") return false;
@@ -132,7 +146,11 @@ async function ListProducts({
 
   if (filters.status && filters.status !== "archived")
     query.status = filters.status;
-  if (filters.category) query.category = filters.category;
+  const categoryList = parseCommaSeparatedList(filters.category);
+  if (categoryList) {
+    query.category =
+      categoryList.length === 1 ? categoryList[0] : { $in: categoryList };
+  }
 
   if (search) {
     const rx = new RegExp(search, "i");
