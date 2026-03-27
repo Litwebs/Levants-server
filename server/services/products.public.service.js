@@ -26,19 +26,34 @@ async function listProducts({
   if (sort === "name_asc") productSort = { name: 1 };
   if (sort === "name_desc") productSort = { name: -1 };
 
-  const products = await Product.find(productFilter)
-    .populate("thumbnailImage")
-    .populate("galleryImages")
-    .select(
-      "name slug category description thumbnailImage galleryImages createdAt",
-    )
-    .sort(productSort)
-    .lean();
+  const [categories, products] = await Promise.all([
+    // Return all categories for active products (not limited by current
+    // `category` filter/search/pagination).
+    Product.distinct("category", { status: "active" }),
+    Product.find(productFilter)
+      .populate("thumbnailImage")
+      .populate("galleryImages")
+      .select(
+        "name slug category description thumbnailImage galleryImages createdAt",
+      )
+      .sort(productSort)
+      .lean(),
+  ]);
+
+  const allCategories = Array.isArray(categories)
+    ? categories.filter(Boolean).sort()
+    : [];
 
   if (products.length === 0) {
     return {
       items: [],
-      meta: { page, pageSize, total: 0, totalPages: 0 },
+      meta: {
+        page,
+        pageSize,
+        total: 0,
+        totalPages: 0,
+        categories: allCategories,
+      },
     };
   }
 
@@ -113,6 +128,7 @@ async function listProducts({
       pageSize,
       total,
       totalPages: Math.ceil(total / pageSize),
+      categories: allCategories,
     },
   };
 }

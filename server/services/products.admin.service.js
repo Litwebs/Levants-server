@@ -126,6 +126,10 @@ async function ListProducts({
 } = {}) {
   const query = { status: { $ne: "archived" } };
 
+  // For UI filter dropdowns, return all categories (not limited by current
+  // `category` filter or search query), but still respect status scope.
+  const categoriesQuery = { status: query.status };
+
   if (filters.status && filters.status !== "archived")
     query.status = filters.status;
   if (filters.category) query.category = filters.category;
@@ -137,7 +141,7 @@ async function ListProducts({
 
   const skip = (page - 1) * pageSize;
 
-  const [total, products] = await Promise.all([
+  const [total, products, categories] = await Promise.all([
     Product.countDocuments(query),
     Product.find(query)
       .sort({ createdAt: -1 })
@@ -146,7 +150,12 @@ async function ListProducts({
       .populate("thumbnailImage")
       .populate("galleryImages")
       .lean(),
+    Product.distinct("category", categoriesQuery),
   ]);
+
+  const allCategories = Array.isArray(categories)
+    ? categories.filter(Boolean).sort()
+    : [];
 
   if (!products.length) {
     return {
@@ -157,6 +166,7 @@ async function ListProducts({
         pageSize,
         total,
         totalPages: Math.ceil(total / pageSize),
+        categories: allCategories,
       },
     };
   }
@@ -187,6 +197,7 @@ async function ListProducts({
       pageSize,
       total,
       totalPages: Math.ceil(total / pageSize),
+      categories: allCategories,
     },
   };
 }
