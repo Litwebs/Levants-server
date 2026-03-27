@@ -52,7 +52,7 @@ async function listProducts({
       .populate("thumbnailImage")
       .populate("galleryImages")
       .select(
-        "name slug category description thumbnailImage galleryImages createdAt",
+        "name slug category description allergens storageNotes thumbnailImage galleryImages createdAt",
       )
       .sort(productSort)
       .lean(),
@@ -120,6 +120,8 @@ async function listProducts({
         slug: product.slug,
         category: product.category,
         description: product.description,
+        allergens: product.allergens,
+        storageNotes: product.storageNotes,
         thumbnailImage: product.thumbnailImage,
         galleryImages: product.galleryImages,
         variants: productVariants,
@@ -158,7 +160,9 @@ async function getProductById({ productId }) {
   })
     .populate("thumbnailImage")
     .populate("galleryImages")
-    .select("name slug category description thumbnailImage galleryImages")
+    .select(
+      "name slug category description allergens storageNotes thumbnailImage galleryImages",
+    )
     .lean();
 
   if (!product) return null;
@@ -179,6 +183,8 @@ async function getProductById({ productId }) {
     slug: product.slug,
     category: product.category,
     description: product.description,
+    allergens: product.allergens,
+    storageNotes: product.storageNotes,
     thumbnailImage: product.thumbnailImage,
     galleryImages: product.galleryImages,
     variants: variants.map((v) => ({
