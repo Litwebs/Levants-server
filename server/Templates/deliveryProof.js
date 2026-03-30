@@ -129,7 +129,7 @@ ${
 <td style="background:#f6f2ec;padding:20px;text-align:center;">
 <div style="font-size:13px;color:#5e5952;">
 If you have any questions, contact us at
-<a href="mailto:contact@levants.co.uk" style="color:#244233;text-decoration:none;font-weight:600;">contact@levants.co.uk</a>
+<a href="mailto:levantsdairy1@gmail.com" style="color:#244233;text-decoration:none;font-weight:600;">levantsdairy1@gmail.com</a>
 </div>
 
 <div style="margin-top:8px;font-size:12px;color:#9c968d;">© 2026 levants. All rights reserved.</div>

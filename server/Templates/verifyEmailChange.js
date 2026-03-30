@@ -116,9 +116,9 @@ module.exports = ({
 
                 <div style="font-size:13px; color:#5e5952;">
                   Need help?
-                  <a href="mailto:contact@levants.co.uk"
+                  <a href="mailto:levantsdairy1@gmail.com"
                      style="color:#244233; text-decoration:none; font-weight:600;">
-                    contact@levants.co.uk
+                    levantsdairy1@gmail.com
                   </a>
                 </div>
 

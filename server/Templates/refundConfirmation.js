@@ -115,9 +115,9 @@ module.exports = ({
               <td style="background:#f6f2ec; padding:24px;" align="center">
                 <div style="font-size:13px; color:#5e5952;">
                   If you have any questions, contact us at
-                  <a href="mailto:contact@levants.co.uk"
+                  <a href="mailto:levantsdairy1@gmail.com"
                      style="color:#244233; text-decoration:none; font-weight:600;">
-                    contact@levants.co.uk
+                    levantsdairy1@gmail.com
                   </a>
                 </div>
 

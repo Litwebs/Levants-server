@@ -111,9 +111,6 @@ Thank you for shopping with Levants.
 <!-- Footer -->
 <tr>
 <td style="padding:16px 20px;background:#ffffff;border-top:1px solid #ece6dc;">
-<p style="margin:0;font-size:12px;line-height:1.6;color:#9b948a;">
-If you have any questions, reply to this email.
-</p>
 </td>
 </tr>
 
