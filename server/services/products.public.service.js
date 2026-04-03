@@ -91,25 +91,32 @@ async function listProducts({
   }
 
   const variants = await Variant.find(variantFilter)
-    .select("product name price stockQuantity lowStockAlert")
+    .populate({
+      path: "thumbnailImage",
+      select:
+        "originalName filename mimeType sizeBytes url uploadedBy isArchived archivedAt createdAt updatedAt",
+    })
+    .select("product name price stockQuantity lowStockAlert thumbnailImage")
     .lean();
 
   const variantsByProduct = variants.reduce((acc, v) => {
-    acc[v.product] ??= [];
-    acc[v.product].push({
+    const productKey = String(v.product);
+    if (!acc[productKey]) acc[productKey] = [];
+    acc[productKey].push({
       id: v._id,
       name: v.name,
       price: v.price,
       currency: "gbp",
       stockQuantity: v.stockQuantity,
       lowStock: v.stockQuantity <= v.lowStockAlert,
+      thumbnailImage: v.thumbnailImage,
     });
     return acc;
   }, {});
 
   let items = products
     .map((product) => {
-      const productVariants = variantsByProduct[product._id] || [];
+      const productVariants = variantsByProduct[String(product._id)] || [];
       if (productVariants.length === 0) return null;
 
       const prices = productVariants.map((v) => v.price);
@@ -153,7 +160,7 @@ async function listProducts({
   };
 }
 
-async function getProductById({ productId }) {
+async function getProductById({ productId, variantId }) {
   const product = await Product.findOne({
     _id: productId,
     status: "active",
@@ -171,11 +178,38 @@ async function getProductById({ productId }) {
     product: productId,
     status: "active",
   })
-    .populate("thumbnailImage")
-    .select("name price stockQuantity lowStockAlert")
+    .populate({
+      path: "thumbnailImage",
+      select:
+        "originalName filename mimeType sizeBytes url uploadedBy isArchived archivedAt createdAt updatedAt",
+    })
+    .select("name price stockQuantity lowStockAlert thumbnailImage")
     .lean();
 
   if (variants.length === 0) return null;
+
+  const mappedVariants = variants.map((v) => ({
+    id: v._id,
+    name: v.name,
+    price: v.price,
+    currency: "gbp",
+    stockQuantity: v.stockQuantity,
+    lowStock: v.stockQuantity <= v.lowStockAlert,
+    thumbnailImage: v.thumbnailImage,
+  }));
+
+  const requestedVariantId = variantId ? String(variantId) : null;
+  const selectedVariant = requestedVariantId
+    ? mappedVariants.find((v) => String(v.id) === requestedVariantId)
+    : null;
+  const selectedVariantId = selectedVariant
+    ? String(selectedVariant.id)
+    : mappedVariants[0]
+      ? String(mappedVariants[0].id)
+      : null;
+
+  const selectedImage =
+    selectedVariant?.thumbnailImage || product.thumbnailImage || null;
 
   return {
     id: product._id,
@@ -187,15 +221,9 @@ async function getProductById({ productId }) {
     storageNotes: product.storageNotes,
     thumbnailImage: product.thumbnailImage,
     galleryImages: product.galleryImages,
-    variants: variants.map((v) => ({
-      id: v._id,
-      name: v.name,
-      price: v.price,
-      currency: "gbp",
-      stockQuantity: v.stockQuantity,
-      lowStock: v.stockQuantity <= v.lowStockAlert,
-      thumbnailImage: v.thumbnailImage,
-    })),
+    variants: mappedVariants,
+    selectedVariantId,
+    selectedImage,
   };
 }
 

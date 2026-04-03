@@ -31,6 +31,7 @@ async function optimizeRoutes(requestBody) {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
+      timeout: 60000,
     },
   );
 

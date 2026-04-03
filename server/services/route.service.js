@@ -10,8 +10,6 @@ const { optimizeRoutes } = require("./googleRoute.service");
 const WAREHOUSE_LAT = Number(process.env.WAREHOUSE_LAT);
 const WAREHOUSE_LNG = Number(process.env.WAREHOUSE_LNG);
 
-const DEFAULT_TRAVEL_SECONDS = Number(process.env.FORCED_TRAVEL_SECONDS ?? 600);
-
 const DELIVERY_TIME_ZONE =
   process.env.DELIVERY_TIME_ZONE ||
   process.env.BUSINESS_TIME_ZONE ||
@@ -38,10 +36,13 @@ function extractEncodedPolyline(routeData) {
 function isHHMM(value) {
   if (typeof value !== "string") return false;
   if (!/^\d{2}:\d{2}$/.test(value)) return false;
-  const [hh, mm] = value.split(":").map((x) => Number(x));
+
+  const [hh, mm] = value.split(":").map(Number);
+
   if (!Number.isInteger(hh) || !Number.isInteger(mm)) return false;
   if (hh < 0 || hh > 23) return false;
   if (mm < 0 || mm > 59) return false;
+
   return true;
 }
 
@@ -49,16 +50,19 @@ function parseDurationSeconds(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.round(value));
   }
+
   if (typeof value === "string" && value.trim()) {
     const trimmed = value.trim();
-    // Cloud Fleet Routing commonly returns durations like "123s".
+
     if (trimmed.endsWith("s")) {
       const n = Number.parseFloat(trimmed.slice(0, -1));
       return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
     }
+
     const n = Number.parseFloat(trimmed);
     return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0;
   }
+
   return 0;
 }
 
@@ -76,6 +80,7 @@ function getTimeZoneOffsetMs(date, timeZone) {
 
   const parts = dtf.formatToParts(date);
   const map = {};
+
   for (const p of parts) {
     if (p.type !== "literal") map[p.type] = p.value;
   }
@@ -97,19 +102,18 @@ function getTimeZoneOffsetMs(date, timeZone) {
 
 function toUtcIsoOnBatchDate(batchDeliveryDate, hhmm, timeZone) {
   if (!isHHMM(hhmm)) return null;
+
   const base = new Date(batchDeliveryDate);
   if (Number.isNaN(base.getTime())) return null;
 
-  const [hh, mm] = hhmm.split(":").map((x) => Number(x));
+  const [hh, mm] = hhmm.split(":").map(Number);
 
-  // Anchor the *calendar day* using the stored UTC deliveryDate.
   const year = base.getUTCFullYear();
   const month = base.getUTCMonth();
   const day = base.getUTCDate();
 
   const utcGuess = new Date(Date.UTC(year, month, day, hh, mm, 0, 0));
 
-  // Refine for DST using iterative offset correction.
   let corrected = utcGuess;
   for (let i = 0; i < 3; i++) {
     const offset = getTimeZoneOffsetMs(corrected, timeZone);
@@ -186,51 +190,15 @@ function resolveOptimizationWindow({ batch, startTime, endTime }) {
   };
 }
 
-async function generateRoutesForBatch({
-  batchId,
-  driverIds,
-  startTime,
-  endTime,
-} = {}) {
-  const batch = await DeliveryBatch.findById(batchId);
-  if (!batch) return { success: false, message: "Batch not found" };
+function computeServiceSeconds(orderCount) {
+  const base = 120;
+  const perExtraOrder = 60;
+  const max = 12 * 60;
 
-  const existingRoutes = await Route.find({ batch: batch._id })
-    .select("_id")
-    .lean();
-  const existingRouteIds = existingRoutes.map((r) => r._id);
+  return Math.min(max, base + Math.max(0, orderCount - 1) * perExtraOrder);
+}
 
-  if (!isValidLatLng(WAREHOUSE_LAT, WAREHOUSE_LNG)) {
-    return { success: false, message: "Invalid warehouse coordinates" };
-  }
-
-  const orders = await Order.find({ _id: { $in: batch.orders } }).lean();
-
-  const invalidGeoOrders = orders.filter(
-    (o) => !isValidLatLng(o?.location?.lat, o?.location?.lng),
-  );
-
-  if (invalidGeoOrders.length > 0) {
-    return {
-      success: false,
-      message: `Invalid coordinates for ${invalidGeoOrders.length} orders`,
-    };
-  }
-
-  const driverRole = await Role.findOne({ name: "driver" });
-  const filter = { role: driverRole?._id, status: "active" };
-
-  if (Array.isArray(driverIds) && driverIds.length > 0) {
-    filter._id = { $in: driverIds };
-  }
-
-  const drivers = await User.find(filter).lean();
-  if (!drivers.length)
-    return { success: false, message: "No active drivers found" };
-
-  // -------------------------
-  // Group Orders
-  // -------------------------
+function groupOrdersByLocation(orders) {
   const groupedOrders = [];
   const map = new Map();
 
@@ -240,21 +208,46 @@ async function generateRoutesForBatch({
     const key = `${lat.toFixed(5)}|${lng.toFixed(5)}`;
 
     if (!map.has(key)) {
-      const group = { lat, lng, orders: [] };
+      const group = {
+        lat,
+        lng,
+        orders: [],
+      };
       map.set(key, group);
       groupedOrders.push(group);
     }
+
     map.get(key).orders.push(order);
   }
 
-  const computeServiceSeconds = (count) => {
-    const base = 120;
-    const perOrder = 60;
-    const max = 12 * 60;
-    return Math.min(max, base + (count - 1) * perOrder);
-  };
+  return groupedOrders;
+}
 
-  const shipments = groupedOrders.map((group) => ({
+function splitGroupedOrdersEvenly(groupedOrders, drivers) {
+  const buckets = drivers.map((driver) => ({
+    driver,
+    groups: [],
+    totalOrders: 0,
+  }));
+
+  if (!drivers.length) return buckets;
+
+  const sortedGroups = [...groupedOrders].sort(
+    (a, b) => b.orders.length - a.orders.length,
+  );
+
+  for (const group of sortedGroups) {
+    buckets.sort((a, b) => a.totalOrders - b.totalOrders);
+    buckets[0].groups.push(group);
+    buckets[0].totalOrders += group.orders.length;
+  }
+
+  return buckets;
+}
+
+function buildShipmentsFromGroups(groups) {
+  return groups.map((group, index) => ({
+    label: `shipment-${index}`,
     deliveries: [
       {
         arrivalLocation: {
@@ -264,28 +257,183 @@ async function generateRoutesForBatch({
         duration: `${computeServiceSeconds(group.orders.length)}s`,
       },
     ],
-    loadDemands: {
-      weight: { amount: group.orders.length },
-    },
   }));
+}
 
-  // Equal distribution enforcement
-  const maxOrdersPerDriver = Math.ceil(orders.length / drivers.length);
+function buildShipmentLookup(groups) {
+  const byIndex = new Map();
+  const byLabel = new Map();
 
-  const vehicles = drivers.map((driver) => ({
-    startLocation: {
-      latitude: WAREHOUSE_LAT,
-      longitude: WAREHOUSE_LNG,
+  groups.forEach((group, index) => {
+    byIndex.set(index, group);
+    byLabel.set(`shipment-${index}`, { index, group });
+  });
+
+  return { byIndex, byLabel };
+}
+
+function resolveVisitShipment(visit, shipmentLookup) {
+  if (
+    visit?.shipmentIndex !== undefined &&
+    visit?.shipmentIndex !== null &&
+    Number.isInteger(Number(visit.shipmentIndex)) &&
+    shipmentLookup.byIndex.has(Number(visit.shipmentIndex))
+  ) {
+    const index = Number(visit.shipmentIndex);
+    return {
+      shipmentIndex: index,
+      group: shipmentLookup.byIndex.get(index),
+    };
+  }
+
+  if (
+    typeof visit?.shipmentLabel === "string" &&
+    shipmentLookup.byLabel.has(visit.shipmentLabel)
+  ) {
+    const resolved = shipmentLookup.byLabel.get(visit.shipmentLabel);
+    return {
+      shipmentIndex: resolved.index,
+      group: resolved.group,
+    };
+  }
+
+  return null;
+}
+
+async function optimizeSingleDriverRoute({
+  driver,
+  assignedGroups,
+  globalStartTime,
+  globalEndTime,
+}) {
+  if (!assignedGroups.length) {
+    return {
+      driver,
+      assignedGroups,
+      shipmentLookup: buildShipmentLookup([]),
+      optimized: { routes: [] },
+      routeData: null,
+    };
+  }
+
+  const shipments = buildShipmentsFromGroups(assignedGroups);
+  const shipmentLookup = buildShipmentLookup(assignedGroups);
+
+  const requestBody = {
+    populatePolylines: true,
+    populateTransitionPolylines: true,
+    allowLargeDeadlineDespiteInterruptionRisk: true,
+    model: {
+      globalStartTime,
+      globalEndTime,
+      shipments,
+      vehicles: [
+        {
+          label: driver._id.toString(),
+          startLocation: {
+            latitude: WAREHOUSE_LAT,
+            longitude: WAREHOUSE_LNG,
+          },
+          endLocation: {
+            latitude: WAREHOUSE_LAT,
+            longitude: WAREHOUSE_LNG,
+          },
+          costPerHour: 1,
+          costPerKilometer: 0.001,
+        },
+      ],
     },
-    endLocation: {
-      latitude: WAREHOUSE_LAT,
-      longitude: WAREHOUSE_LNG,
-    },
-    label: driver._id.toString(),
-    loadLimits: {
-      weight: { maxLoad: maxOrdersPerDriver },
-    },
-  }));
+  };
+
+  const optimized = await optimizeRoutes(requestBody);
+
+  // console.log(
+  //   `===== GOOGLE OPTIMIZATION RESPONSE FOR DRIVER ${driver._id} =====`,
+  // );
+  // console.dir(optimized, { depth: null });
+  // console.log(
+  //   `===== END GOOGLE OPTIMIZATION RESPONSE FOR DRIVER ${driver._id} =====`,
+  // );
+
+  return {
+    driver,
+    assignedGroups,
+    shipmentLookup,
+    optimized,
+    routeData:
+      Array.isArray(optimized?.routes) && optimized.routes.length > 0
+        ? optimized.routes[0]
+        : null,
+  };
+}
+
+async function generateRoutesForBatch({
+  batchId,
+  driverIds,
+  startTime,
+  endTime,
+} = {}) {
+  const batch = await DeliveryBatch.findById(batchId);
+  if (!batch) {
+    return { success: false, message: "Batch not found" };
+  }
+
+  if (!isValidLatLng(WAREHOUSE_LAT, WAREHOUSE_LNG)) {
+    return { success: false, message: "Invalid warehouse coordinates" };
+  }
+
+  const existingRoutes = await Route.find({ batch: batch._id })
+    .select("_id")
+    .lean();
+
+  const existingRouteIds = existingRoutes.map((r) => r._id);
+
+  const orders = await Order.find({ _id: { $in: batch.orders } }).lean();
+
+  if (!orders.length) {
+    return { success: false, message: "No orders found for this batch" };
+  }
+
+  const invalidGeoOrders = orders.filter(
+    (o) => !isValidLatLng(Number(o?.location?.lat), Number(o?.location?.lng)),
+  );
+
+  if (invalidGeoOrders.length > 0) {
+    return {
+      success: false,
+      message: `Invalid coordinates for ${invalidGeoOrders.length} orders`,
+      invalidOrderIds: invalidGeoOrders.map((o) => String(o._id)),
+    };
+  }
+
+  const driverRole = await Role.findOne({ name: "driver" }).lean();
+
+  const driverFilter = {
+    status: "active",
+  };
+
+  if (driverRole?._id) {
+    driverFilter.role = driverRole._id;
+  }
+
+  if (Array.isArray(driverIds) && driverIds.length > 0) {
+    driverFilter._id = { $in: driverIds };
+  }
+
+  const drivers = await User.find(driverFilter).lean();
+
+  if (!drivers.length) {
+    return { success: false, message: "No active drivers found" };
+  }
+
+  const groupedOrders = groupOrdersByLocation(orders);
+
+  if (groupedOrders.length < drivers.length) {
+    return {
+      success: false,
+      message: `Not enough grouped stops (${groupedOrders.length}) for ${drivers.length} drivers`,
+    };
+  }
 
   const { globalStartTime, globalEndTime } = resolveOptimizationWindow({
     batch,
@@ -293,63 +441,118 @@ async function generateRoutesForBatch({
     endTime,
   });
 
-  const requestBody = {
-    populatePolylines: true,
-    populateTransitionPolylines: true,
-    model: {
-      globalStartTime,
-      globalEndTime,
-      shipments,
-      vehicles,
-    },
-  };
-
-  let optimized;
-  try {
-    optimized = await optimizeRoutes(requestBody);
-  } catch (e) {
-    console.error("Route optimization error:", e);
-    return { success: false, message: "Optimization failed" };
-  }
-
-  if (!optimized) {
-    return { success: false, message: "Optimization failed" };
-  }
+  const driverBuckets = splitGroupedOrdersEvenly(groupedOrders, drivers);
 
   if (existingRouteIds.length > 0) {
     await Stop.deleteMany({ route: { $in: existingRouteIds } });
     await Route.deleteMany({ _id: { $in: existingRouteIds } });
   }
 
-  const createdRoutes = [];
-  const createdRouteIds = [];
-  const assignedIndexes = new Set();
+  const optimizationResults = [];
 
-  // -------------------------
-  // Create Routes
-  // -------------------------
-  for (const routeData of optimized.routes || []) {
+  for (const bucket of driverBuckets) {
+    try {
+      const result = await optimizeSingleDriverRoute({
+        driver: bucket.driver,
+        assignedGroups: bucket.groups,
+        globalStartTime,
+        globalEndTime,
+      });
+
+      if (result.optimized?.validationErrors?.length) {
+        return {
+          success: false,
+          message: `Optimization request has validation errors for driver ${bucket.driver._id}`,
+          validationErrors: result.optimized.validationErrors,
+        };
+      }
+
+      optimizationResults.push(result);
+    } catch (e) {
+      console.error(
+        `===== GOOGLE OPTIMIZATION ERROR FOR DRIVER ${bucket.driver._id} =====`,
+      );
+      console.error(
+        JSON.stringify(
+          {
+            message: e.message,
+            status: e.response?.status,
+            data: e.response?.data,
+          },
+          null,
+          2,
+        ),
+      );
+      console.error(
+        `===== END GOOGLE OPTIMIZATION ERROR FOR DRIVER ${bucket.driver._id} =====`,
+      );
+
+      return {
+        success: false,
+        message: `Optimization failed for driver ${bucket.driver._id}`,
+        error: e.response?.data || e.message,
+      };
+    }
+  }
+
+  const createdRouteIds = [];
+  const assignedOrderIds = new Set();
+  let totalAssignedGroups = 0;
+
+  for (const result of optimizationResults) {
+    const { driver, routeData, shipmentLookup, assignedGroups, optimized } =
+      result;
+
+    if (!assignedGroups.length) {
+      continue;
+    }
+
+    if (!routeData) {
+      return {
+        success: false,
+        message: `No optimized route returned for driver ${driver._id}`,
+        debug: {
+          optimized,
+          assignedGroupsCount: assignedGroups.length,
+        },
+      };
+    }
+
     const initialDurationSeconds = parseDurationSeconds(
       routeData.metrics?.totalDuration ?? routeData.metrics?.travelDuration,
     );
 
+    const totalDistanceMeters = Math.round(
+      Number(routeData.metrics?.travelDistanceMeters || 0),
+    );
+
     const route = await Route.create({
       batch: batch._id,
-      driver: routeData.vehicleLabel,
+      driver: driver._id,
       totalStops: 0,
-      totalDistanceMeters: routeData.metrics?.travelDistanceMeters || 0,
+      totalDistanceMeters,
       totalDurationSeconds: initialDurationSeconds,
       polyline: extractEncodedPolyline(routeData),
     });
 
     let sequence = 1;
+    let groupsAssignedToThisDriver = 0;
 
     for (const visit of routeData.visits || []) {
-      if (visit.shipmentIndex === undefined) continue;
+      const resolvedVisit = resolveVisitShipment(visit, shipmentLookup);
 
-      const idx = Number(visit.shipmentIndex);
-      assignedIndexes.add(idx);
-      const group = groupedOrders[idx];
+      if (!resolvedVisit) {
+        console.warn(
+          `Could not resolve shipment for driver ${driver._id}: ${JSON.stringify(
+            visit,
+          )}`,
+        );
+        continue;
+      }
+
+      const { group } = resolvedVisit;
+      groupsAssignedToThisDriver += 1;
+      totalAssignedGroups += 1;
 
       const serviceSeconds = computeServiceSeconds(group.orders.length);
       const arrival = visit.startTime ? new Date(visit.startTime) : null;
@@ -358,6 +561,8 @@ async function generateRoutesForBatch({
         : null;
 
       for (const order of group.orders) {
+        assignedOrderIds.add(String(order._id));
+
         await Stop.create({
           route: route._id,
           order: order._id,
@@ -365,91 +570,47 @@ async function generateRoutesForBatch({
           estimatedArrival: arrival,
           estimatedDeparture: departure,
         });
-        sequence++;
+
+        sequence += 1;
       }
     }
 
     await Route.updateOne(
       { _id: route._id },
-      { $set: { totalStops: sequence - 1 } },
+      {
+        $set: {
+          totalStops: sequence - 1,
+        },
+      },
     );
 
-    createdRoutes.push({
-      routeId: route._id,
-      stopsCount: sequence - 1,
-      durationSeconds: initialDurationSeconds,
-    });
+    if (groupsAssignedToThisDriver === 0) {
+      await Stop.deleteMany({ route: route._id });
+      await Route.deleteOne({ _id: route._id });
+
+      return {
+        success: false,
+        message: `Driver ${driver._id} was assigned grouped stops before optimization but ended up with no visits`,
+        debug: {
+          assignedGroupsCount: assignedGroups.length,
+          optimized,
+        },
+      };
+    }
 
     createdRouteIds.push(route._id);
   }
 
-  // -------------------------
-  // Force Equal Redistribution if Needed
-  // -------------------------
-  const skippedIndexes = groupedOrders
-    .map((_, i) => i)
-    .filter((i) => !assignedIndexes.has(i));
+  const unassignedOrders = orders.filter(
+    (order) => !assignedOrderIds.has(String(order._id)),
+  );
 
-  if (skippedIndexes.length > 0 && createdRoutes.length > 0) {
-    let routePointer = 0;
-
-    for (const idx of skippedIndexes) {
-      const routeInfo = createdRoutes[routePointer];
-      const group = groupedOrders[idx];
-
-      const lastStop = await Stop.findOne({
-        route: routeInfo.routeId,
-      })
-        .sort({ sequence: -1 })
-        .lean();
-
-      let baseTime = lastStop?.estimatedDeparture
-        ? new Date(lastStop.estimatedDeparture)
-        : lastStop?.estimatedArrival
-          ? new Date(lastStop.estimatedArrival)
-          : new Date(globalStartTime);
-
-      let sequence = routeInfo.stopsCount + 1;
-
-      for (const order of group.orders) {
-        const arrival = new Date(
-          baseTime.getTime() + DEFAULT_TRAVEL_SECONDS * 1000,
-        );
-        const serviceSeconds = computeServiceSeconds(1);
-        const departure = new Date(arrival.getTime() + serviceSeconds * 1000);
-
-        await Stop.create({
-          route: routeInfo.routeId,
-          order: order._id,
-          sequence,
-          estimatedArrival: arrival,
-          estimatedDeparture: departure,
-          forcedAssignment: true,
-        });
-
-        baseTime = departure;
-        routeInfo.durationSeconds =
-          Math.max(0, Number(routeInfo.durationSeconds) || 0) +
-          DEFAULT_TRAVEL_SECONDS +
-          serviceSeconds;
-        sequence++;
-      }
-
-      routeInfo.stopsCount += group.orders.length;
-      await Route.updateOne(
-        { _id: routeInfo.routeId },
-        {
-          $set: {
-            totalStops: routeInfo.stopsCount,
-            totalDurationSeconds: Math.max(
-              0,
-              Math.round(Number(routeInfo.durationSeconds) || 0),
-            ),
-          },
-        },
-      );
-      routePointer = (routePointer + 1) % createdRoutes.length;
-    }
+  if (unassignedOrders.length > 0) {
+    return {
+      success: false,
+      message: `${unassignedOrders.length} orders were not assigned to any route`,
+      unassignedOrderIds: unassignedOrders.map((o) => String(o._id)),
+    };
   }
 
   batch.routes = createdRouteIds;
@@ -459,16 +620,27 @@ async function generateRoutesForBatch({
   if (typeof startTime === "string" && isHHMM(startTime.trim())) {
     batch.deliveryWindowStart = startTime.trim();
   }
+
   if (typeof endTime === "string" && isHHMM(endTime.trim())) {
     batch.deliveryWindowEnd = endTime.trim();
   }
+
   await batch.save();
 
   return {
     success: true,
     data: {
       routesCreated: createdRouteIds.length,
-      forcedAssignments: skippedIndexes.length,
+      driversUsed: optimizationResults.length,
+      ordersCount: orders.length,
+      groupedStopsCount: groupedOrders.length,
+      assignedGroupedStopsCount: totalAssignedGroups,
+      unassignedOrdersCount: 0,
+      splitSummary: driverBuckets.map((bucket) => ({
+        driverId: String(bucket.driver._id),
+        groupedStopsAssignedBeforeOptimization: bucket.groups.length,
+        ordersAssignedBeforeOptimization: bucket.totalOrders,
+      })),
     },
   };
 }

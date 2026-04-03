@@ -1,7 +1,12 @@
 import React, { useMemo, useState } from "react";
 import { Truck, ChevronDown, ChevronUp } from "lucide-react";
-import type { VanRoute, VanId } from "@/context/DeliveryRuns";
-import { getVanStyleKey } from "@/context/DeliveryRuns";
+import {
+  type VanRoute,
+  type VanId,
+  getVanStyleKey,
+  formatManifestItemLabel,
+  formatProductNameWithSku,
+} from "@/context/DeliveryRuns";
 import styles from "./ManifestTables.module.css";
 
 interface ManifestTablesProps {
@@ -113,7 +118,7 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                     {item.skuId}
                   </td>
                   <td className={`${styles.cell} ${styles.nameCell}`}>
-                    {item.name}
+                    {formatProductNameWithSku(item.name, item.skuId)}
                   </td>
                   <td className={`${styles.cell} ${styles.ordersCell}`}>
                     {item.ordersCount ?? "—"}
@@ -179,7 +184,7 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                         {item.skuId}
                       </td>
                       <td className={`${styles.cell} ${styles.nameCell}`}>
-                        {item.name}
+                        {formatProductNameWithSku(item.name, item.skuId)}
                       </td>
                       <td className={`${styles.cell} ${styles.ordersCell}`}>
                         {item.ordersCount ?? "—"}
@@ -242,7 +247,7 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                             <div className={styles.stopItems}>
                               {stopItems.map((item, i) => (
                                 <span key={i}>
-                                  {item.qty}× {item.name}
+                                  {item.qty}× {formatManifestItemLabel(item)}
                                   {i < stopItems.length - 1 ? ", " : ""}
                                 </span>
                               ))}

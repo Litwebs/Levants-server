@@ -1,9 +1,14 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Truck, Printer, Pencil, Loader2 } from "lucide-react";
-import type { VanRoute, VanId } from "@/context/DeliveryRuns";
-import { DEPOT_LOCATION, getVanStyleKey } from "@/context/DeliveryRuns";
+import {
+  type VanRoute,
+  type VanId,
+  DEPOT_LOCATION,
+  getDepotLocation,
+  getVanStyleKey,
+  formatManifestItemLabel,
+} from "@/context/DeliveryRuns";
 import { Button } from "@/components/common";
-import { getDepotLocation } from "@/context/DeliveryRuns";
 import { useToast } from "@/components/common/Toast";
 import { useOrdersApi } from "@/context/Orders";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -317,7 +322,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                     <div className={styles.stopItems}>
                       {stop.items.map((item, i) => (
                         <span key={i}>
-                          {item.qty}× {item.name}
+                          {item.qty}× {formatManifestItemLabel(item)}
                           {i < stop.items.length - 1 ? ", " : ""}
                         </span>
                       ))}

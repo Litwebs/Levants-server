@@ -1,6 +1,11 @@
 import React, { useRef } from "react";
 import { Printer, X } from "lucide-react";
-import type { VanRoute, DeliveryRun } from "@/context/DeliveryRuns";
+import {
+  type VanRoute,
+  type DeliveryRun,
+  formatManifestItemLabel,
+  formatProductNameWithSku,
+} from "@/context/DeliveryRuns";
 import { Button, Modal, ModalFooter } from "@/components/common";
 import styles from "./PrintLayouts.module.css";
 
@@ -205,7 +210,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
                     <td>
                       {stop.items.map((item, i) => (
                         <div key={i} className={styles.printItems}>
-                          {item.qty}× {item.name}
+                          {item.qty}× {formatManifestItemLabel(item)}
                         </div>
                       ))}
                     </td>
@@ -229,7 +234,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
                     <td style={{ fontFamily: "monospace", fontSize: "11px" }}>
                       {item.skuId}
                     </td>
-                    <td>{item.name}</td>
+                    <td>{formatProductNameWithSku(item.name, item.skuId)}</td>
                     <td className={styles.qtyCell}>{item.qty}</td>
                     <td>{item.unit || "—"}</td>
                   </tr>
