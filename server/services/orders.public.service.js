@@ -184,7 +184,7 @@ async function CreateOrder({
         subtotal += lineSubtotal;
       }
 
-      const deliveryFee = 0;
+      const deliveryFee = 1;
       const totalBeforeDiscount = subtotal + deliveryFee;
 
       let appliedDiscount = null;
@@ -245,20 +245,32 @@ async function CreateOrder({
         // Ensures the customer cannot complete Checkout after the reservation expires.
         expires_at: Math.floor(reservationExpiresAt.getTime() / 1000),
         customer_email: customer.email ?? undefined,
-        line_items: resolvedItems.map((item) => ({
-          price_data: {
-            currency: "gbp",
-            ...(item.stripeProductId
-              ? { product: item.stripeProductId }
-              : {
-                  product_data: {
-                    name: item.name,
-                  },
-                }),
-            unit_amount: Math.round(item.price * 100),
+        line_items: [
+          ...resolvedItems.map((item) => ({
+            price_data: {
+              currency: "gbp",
+              ...(item.stripeProductId
+                ? { product: item.stripeProductId }
+                : {
+                    product_data: {
+                      name: item.name,
+                    },
+                  }),
+              unit_amount: Math.round(item.price * 100),
+            },
+            quantity: item.quantity,
+          })),
+          {
+            price_data: {
+              currency: "gbp",
+              product_data: {
+                name: "Delivery fee",
+              },
+              unit_amount: Math.round(deliveryFee * 100),
+            },
+            quantity: 1,
           },
-          quantity: item.quantity,
-        })),
+        ],
         ...(appliedDiscount?.stripePromotionCodeId
           ? {
               discounts: [

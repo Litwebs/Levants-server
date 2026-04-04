@@ -1,6 +1,8 @@
 const request = require("supertest");
 const app = require("../../testApp");
 
+const stripe = require("../../../utils/stripe.util");
+
 const {
   createCustomer,
   createProduct,
@@ -42,6 +44,24 @@ describe("POST /api/orders (Public)", () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.checkoutUrl).toBeDefined();
     expect(res.body.data.orderId).toBeDefined();
+
+    // Stripe checkout session should always include a fixed £1 delivery fee.
+    expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(1);
+    const stripeArgs = stripe.checkout.sessions.create.mock.calls[0][0];
+    expect(stripeArgs.line_items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          quantity: 1,
+          price_data: expect.objectContaining({
+            currency: "gbp",
+            unit_amount: 100,
+            product_data: expect.objectContaining({
+              name: "Delivery fee",
+            }),
+          }),
+        }),
+      ]),
+    );
 
     const updatedVariant = await variant.constructor.findById(variant._id);
     expect(updatedVariant.reservedQuantity).toBe(2);
