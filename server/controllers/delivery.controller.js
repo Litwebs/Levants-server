@@ -11,6 +11,7 @@ const {
   getBatch: getBatchService,
   getRoute: getRouteService,
   getRouteStock: getRouteStockService,
+  getOrdersStockRequirements: getOrdersStockRequirementsService,
   deleteBatch: deleteBatchService,
 } = require("../services/delivery.service");
 
@@ -127,6 +128,53 @@ async function createBatch(req, res) {
   }
 }
 
+/**
+ * Aggregate required stock across a set of orders.
+ * Supports either `orderIds` (JSON or comma/newline string) or an uploaded XLSX/CSV as `ordersFile`.
+ */
+async function getOrdersStockRequirements(req, res) {
+  try {
+    const orderIds = parseStringArrayField(req.body?.orderIds) || [];
+
+    const ordersSheet = req.file
+      ? (() => {
+          const { detectedType, rows, csvText } = spreadsheetUploadToRows({
+            buffer: req.file.buffer,
+            originalName: req.file.originalname,
+            mimeType: req.file.mimetype,
+          });
+
+          return {
+            originalName: req.file.originalname,
+            mimeType: req.file.mimetype,
+            sizeBytes: req.file.size,
+            detectedType,
+            rows,
+            csvText,
+            uploadedBy: req.user?._id,
+          };
+        })()
+      : undefined;
+
+    const result = await getOrdersStockRequirementsService({
+      orderIds,
+      ordersSheet,
+    });
+
+    if (!result.success) {
+      return res.status(result.statusCode || 400).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error("Get orders stock requirements error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to calculate stock requirements",
+    });
+  }
+}
+
 async function lockBatch(req, res) {
   const { batchId } = req.params;
   const result = await lockBatchService({ batchId });
@@ -233,6 +281,7 @@ module.exports = {
   lockBatch,
   unlockBatch,
   dispatchBatch,
+  getOrdersStockRequirements,
   generateRoutes,
   getBatch,
   getRoute,

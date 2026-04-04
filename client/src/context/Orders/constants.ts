@@ -118,6 +118,30 @@ export type ListOrdersResult = {
   meta: OrdersListMeta | null;
 };
 
+export type OrdersStockRequirementItem = {
+  variantId: string;
+  productId: string;
+  sku: string;
+  name: string;
+  unitPrice: number;
+  totalQuantity: number;
+};
+
+export type OrdersStockRequirements = {
+  totalUniqueProducts: number;
+  items: OrdersStockRequirementItem[];
+  sources?: {
+    orderIdsProvided?: number;
+    ordersFound?: number;
+    sheet?: {
+      originalName?: string;
+      detectedType?: string;
+      rows?: number;
+      usableRows?: number;
+    } | null;
+  };
+};
+
 export interface OrdersState {
   orders: AdminOrder[];
   meta: OrdersListMeta | null;

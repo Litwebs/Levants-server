@@ -22,6 +22,7 @@ import type {
   ListOrdersResult,
   OrdersListMeta,
   OrdersState,
+  OrdersStockRequirements,
   RefundOrderResult,
 } from "./constants";
 
@@ -93,6 +94,11 @@ type OrdersContextType = {
     orderIds: string[],
     deliveryDate: string,
   ) => Promise<{ matched: number; modified: number }>;
+
+  getOrdersStockRequirements: (params: {
+    orderIds?: string[];
+    ordersFile?: File;
+  }) => Promise<OrdersStockRequirements>;
 };
 
 const OrdersContext = createContext<OrdersContextType | null>(null);
@@ -341,6 +347,43 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const getOrdersStockRequirements = useCallback(
+    async (params: { orderIds?: string[]; ordersFile?: File }) => {
+      try {
+        const orderIds = Array.isArray(params?.orderIds) ? params.orderIds : [];
+        const file = params?.ordersFile;
+
+        const res = file
+          ? await api.post(
+              "/admin/delivery/orders/stock",
+              (() => {
+                const fd = new FormData();
+                if (orderIds.length)
+                  fd.append("orderIds", JSON.stringify(orderIds));
+                fd.append("ordersFile", file);
+                return fd;
+              })(),
+              {
+                headers: { "Content-Type": "multipart/form-data" },
+              },
+            )
+          : await api.post("/admin/delivery/orders/stock", { orderIds });
+
+        const data = unwrapData<OrdersStockRequirements>(res.data);
+        if (!data || !Array.isArray((data as any).items)) {
+          throw new Error("Invalid stock requirements response");
+        }
+        return data;
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message ||
+          "Failed to calculate stock requirements";
+        throw new Error(msg);
+      }
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       orders: state.orders,
@@ -354,6 +397,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       refundOrder,
       bulkUpdateDeliveryStatus,
       bulkAssignDeliveryDate,
+      getOrdersStockRequirements,
     }),
     [
       state,
@@ -363,6 +407,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       refundOrder,
       bulkUpdateDeliveryStatus,
       bulkAssignDeliveryDate,
+      getOrdersStockRequirements,
     ],
   );
 

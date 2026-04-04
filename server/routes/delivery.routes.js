@@ -11,6 +11,7 @@ const {
   lockBatch,
   unlockBatch,
   dispatchBatch,
+  getOrdersStockRequirements,
   generateRoutes,
   getBatch,
   getRoute,
@@ -110,6 +111,19 @@ router.patch(
   requireAuth,
   requirePermission("delivery.routes.update"),
   dispatchBatch,
+);
+
+/**
+ * POST /api/admin/delivery/orders/stock
+ * Aggregate required stock across a list of orders.
+ * Accepts either `orderIds` or an uploaded `ordersFile` (xlsx/csv).
+ */
+router.post(
+  "/orders/stock",
+  requireAuth,
+  requirePermission("delivery.routes.read"),
+  upload.single("ordersFile"),
+  getOrdersStockRequirements,
 );
 
 /**

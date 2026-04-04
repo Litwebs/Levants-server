@@ -9,13 +9,186 @@ const Role = require("../models/role.model");
 const Route = require("../models/route.model");
 const Stop = require("../models/stop.model");
 
-const sendEmail = require("../Integration/Email.service");
+const { sendBatchEmails } = require("../Integration/Email.service");
 
 const { generateRoutesForBatch } = require("./route.service");
 const { getRouteStockAggregation } = require("./warehouse.service");
 const { generateGoogleMapsLink } = require("../utils/navigation.util");
 const { normalizeKey } = require("../utils/ordersSpreadsheet.util");
 const { geocodeAddress } = require("../Integration/google.geocode");
+
+const chunkArray = (arr, size) => {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+};
+
+const buildDispatchEmailSubject = (order) =>
+  `Your order ${order?.orderId || ""} has been dispatched`;
+
+const buildDispatchEmailJob = ({ order, batch, eta }) => {
+  const customer = order?.customer;
+  const to = String(customer?.email || "").trim();
+
+  if (!to) {
+    return {
+      ok: false,
+      reason: "missing_customer_email",
+    };
+  }
+
+  let etaWindowStart = "";
+  let etaWindowEnd = "";
+
+  if (eta instanceof Date && Number.isFinite(eta.getTime())) {
+    const start = roundToNearestMinutes(
+      new Date(eta.getTime() - 60 * 60 * 1000),
+      30,
+    );
+    const end = roundToNearestMinutes(
+      new Date(eta.getTime() + 60 * 60 * 1000),
+      30,
+    );
+
+    etaWindowStart = formatUkTime(start);
+    etaWindowEnd = formatUkTime(end);
+  }
+
+  const deliveryDate =
+    order?.deliveryDate instanceof Date
+      ? order.deliveryDate
+      : batch?.deliveryDate instanceof Date
+        ? batch.deliveryDate
+        : null;
+
+  return {
+    ok: true,
+    job: {
+      orderDbId: String(order._id),
+      orderId: order.orderId,
+      to,
+      subject: buildDispatchEmailSubject(order),
+      template: "orderDispatched",
+      templateParams: {
+        name: customer?.firstName || "there",
+        orderId: order.orderId,
+        deliveryDate: deliveryDate ? formatUkDate(deliveryDate) : "",
+        etaWindowStart,
+        etaWindowEnd,
+      },
+      options: {
+        fromName: "Levants",
+      },
+      tags: [
+        { name: "type", value: "order-dispatched" },
+        { name: "orderId", value: String(order.orderId || "") },
+      ],
+    },
+  };
+};
+
+async function claimOrdersForDispatchEmail(orderIds = []) {
+  if (!Array.isArray(orderIds) || orderIds.length === 0) return new Set();
+
+  const claimedIds = new Set();
+
+  for (const orderId of orderIds) {
+    const claimed = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        deliveryStatus: { $nin: ["delivered", "returned"] },
+        "metadata.dispatchedEmailSentAt": { $exists: false },
+        "metadata.dispatchEmailClaimedAt": { $exists: false },
+      },
+      {
+        $set: {
+          "metadata.dispatchEmailClaimedAt": new Date(),
+        },
+      },
+      {
+        new: true,
+      },
+    )
+      .select("_id")
+      .lean();
+
+    if (claimed?._id) {
+      claimedIds.add(String(claimed._id));
+    }
+  }
+
+  return claimedIds;
+}
+
+async function persistDispatchEmailResults(results = []) {
+  if (!Array.isArray(results) || results.length === 0) {
+    return {
+      sent: 0,
+      failed: 0,
+      bulkResult: null,
+    };
+  }
+
+  const now = new Date();
+  const ops = [];
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const result of results) {
+    if (!result?.orderDbId) continue;
+
+    if (result.success) {
+      sent += 1;
+
+      ops.push({
+        updateOne: {
+          filter: { _id: result.orderDbId },
+          update: {
+            $set: {
+              "metadata.dispatchedEmailSentAt": now,
+              "metadata.dispatchedEmailProviderId": result.providerId || null,
+            },
+            $unset: {
+              "metadata.dispatchEmailClaimedAt": "",
+              "metadata.dispatchedEmailLastError": "",
+            },
+          },
+        },
+      });
+    } else {
+      failed += 1;
+
+      ops.push({
+        updateOne: {
+          filter: { _id: result.orderDbId },
+          update: {
+            $set: {
+              "metadata.dispatchedEmailLastError": {
+                at: now,
+                status: result?.error?.status ?? null,
+                message: String(result?.error?.message || "Email send failed"),
+              },
+            },
+            $unset: {
+              "metadata.dispatchEmailClaimedAt": "",
+            },
+          },
+        },
+      });
+    }
+  }
+
+  const bulkResult = ops.length ? await Order.bulkWrite(ops) : null;
+
+  return {
+    sent,
+    failed,
+    bulkResult,
+  };
+}
 
 const isDriverUser = (user) => String(user?.role?.name || "") === "driver";
 
@@ -1066,11 +1239,22 @@ async function unlockBatch({ batchId } = {}) {
 }
 
 async function dispatchBatch({ batchId } = {}) {
-  if (!batchId)
-    return { success: false, statusCode: 400, message: "batchId is required" };
+  if (!batchId) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "batchId is required",
+    };
+  }
+
   const batch = await DeliveryBatch.findById(batchId);
-  if (!batch)
-    return { success: false, statusCode: 404, message: "Batch not found" };
+  if (!batch) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "Batch not found",
+    };
+  }
 
   // Mark batch as dispatched (idempotent)
   const now = new Date();
@@ -1086,13 +1270,16 @@ async function dispatchBatch({ batchId } = {}) {
   let ordersUpdatedCount = 0;
 
   if (orderIds.length > 0) {
-    // Mark all orders in this run as dispatched (do not downgrade delivered/returned).
     const updateRes = await Order.updateMany(
       {
         _id: { $in: orderIds },
         deliveryStatus: { $nin: ["delivered", "returned"] },
       },
-      { $set: { deliveryStatus: "dispatched" } },
+      {
+        $set: {
+          deliveryStatus: "dispatched",
+        },
+      },
     );
 
     ordersUpdatedCount =
@@ -1103,14 +1290,13 @@ async function dispatchBatch({ batchId } = {}) {
           : 0;
   }
 
-  // Best-effort customer dispatch emails.
-  // Computes a ±1 hour window around ETA and rounds endpoints to nearest 30 minutes.
   const routeIds = (Array.isArray(batch.routes) ? batch.routes : [])
     .map((id) => String(id))
     .filter((id) => mongoose.Types.ObjectId.isValid(id))
     .map((id) => new mongoose.Types.ObjectId(id));
 
   const etaByOrderId = new Map();
+
   if (routeIds.length > 0) {
     const stops = await Stop.find({ route: { $in: routeIds } })
       .select("order estimatedArrival")
@@ -1119,11 +1305,16 @@ async function dispatchBatch({ batchId } = {}) {
     for (const stop of stops) {
       const oid = String(stop?.order || "");
       if (!oid) continue;
+
       const eta = stop?.estimatedArrival
         ? new Date(stop.estimatedArrival)
         : null;
+
       if (!(eta instanceof Date) || !Number.isFinite(eta.getTime())) continue;
-      if (!etaByOrderId.has(oid)) etaByOrderId.set(oid, eta);
+
+      if (!etaByOrderId.has(oid)) {
+        etaByOrderId.set(oid, eta);
+      }
     }
   }
 
@@ -1139,7 +1330,14 @@ async function dispatchBatch({ batchId } = {}) {
   if (orderIds.length > 0) {
     const orders = await Order.find({ _id: { $in: orderIds } })
       .select("_id orderId customer metadata deliveryDate deliveryStatus")
-      .populate("customer", "firstName email");
+      .populate("customer", "firstName email")
+      .lean();
+
+    const claimedIds = await claimOrdersForDispatchEmail(
+      orders.map((o) => o._id),
+    );
+
+    const jobs = [];
 
     for (const order of orders) {
       try {
@@ -1163,136 +1361,105 @@ async function dispatchBatch({ batchId } = {}) {
           continue;
         }
 
-        const customer = order?.customer;
-        const to = String(customer?.email || "").trim();
-        if (!to) {
+        if (!claimedIds.has(String(order._id))) {
           emailsSkipped += 1;
           skippedDetails.push({
             orderId: order.orderId,
             orderDbId: String(order._id),
-            reason: "missing_customer_email",
+            reason: "already_claimed_or_sent",
           });
           continue;
         }
 
-        const eta = etaByOrderId.get(String(order._id));
-
-        let etaWindowStart = "";
-        let etaWindowEnd = "";
-
-        if (eta) {
-          const start = roundToNearestMinutes(
-            new Date(eta.getTime() - 60 * 60 * 1000),
-            30,
-          );
-          const end = roundToNearestMinutes(
-            new Date(eta.getTime() + 60 * 60 * 1000),
-            30,
-          );
-
-          etaWindowStart = formatUkTime(start);
-          etaWindowEnd = formatUkTime(end);
-        }
-
-        const deliveryDate =
-          order.deliveryDate instanceof Date
-            ? order.deliveryDate
-            : batch.deliveryDate instanceof Date
-              ? batch.deliveryDate
-              : null;
-
-        const subject = `Your order ${order.orderId || ""} has been dispatched`;
-
-        emailsAttempted += 1;
-        const emailRes = await sendEmailWithRetry({
-          to,
-          subject,
-          template: "orderDispatched",
-          params: {
-            name: customer?.firstName || "there",
-            orderId: order.orderId,
-            deliveryDate: deliveryDate ? formatUkDate(deliveryDate) : "",
-            etaWindowStart,
-            etaWindowEnd,
-          },
-          options: {
-            fromName: "Levants",
-          },
-          // Resend free-tier rate limit is low; keep below it.
-          maxAttempts: 3,
-          minDelayMs: 600,
+        const built = buildDispatchEmailJob({
+          order,
+          batch,
+          eta: etaByOrderId.get(String(order._id)),
         });
 
-        if (emailRes?.success) {
-          emailsSent += 1;
+        if (!built.ok) {
+          emailsSkipped += 1;
+
           await Order.updateOne(
             { _id: order._id },
             {
-              $set: {
-                "metadata.dispatchedEmailSentAt": new Date(),
-              },
               $unset: {
-                "metadata.dispatchedEmailLastError": "",
+                "metadata.dispatchEmailClaimedAt": "",
               },
             },
           );
 
-          sentDetails.push({
+          skippedDetails.push({
             orderId: order.orderId,
             orderDbId: String(order._id),
-            to,
+            reason: built.reason || "not_eligible",
           });
-        } else {
-          emailsFailed += 1;
-
-          const status = getEmailErrorStatus(emailRes);
-          const message = getEmailErrorMessage(emailRes);
-          await Order.updateOne(
-            { _id: order._id },
-            {
-              $set: {
-                "metadata.dispatchedEmailLastError": {
-                  at: new Date(),
-                  status,
-                  message,
-                },
-              },
-            },
-          );
-
-          failedDetails.push({
-            orderId: order.orderId,
-            orderDbId: String(order._id),
-            to,
-            status,
-            message,
-          });
+          continue;
         }
-      } catch (_) {
+
+        jobs.push(built.job);
+      } catch (err) {
         emailsFailed += 1;
 
-        try {
-          await Order.updateOne(
-            { _id: order._id },
-            {
-              $set: {
-                "metadata.dispatchedEmailLastError": {
-                  at: new Date(),
-                  status: null,
-                  message: "Email send failed",
-                },
+        await Order.updateOne(
+          { _id: order._id },
+          {
+            $set: {
+              "metadata.dispatchedEmailLastError": {
+                at: new Date(),
+                status: null,
+                message: "Failed to prepare dispatch email",
               },
             },
-          );
-        } catch (_) {}
+            $unset: {
+              "metadata.dispatchEmailClaimedAt": "",
+            },
+          },
+        );
 
         failedDetails.push({
           orderId: order.orderId,
           orderDbId: String(order._id),
           to: String(order?.customer?.email || ""),
           status: null,
-          message: "Email send failed",
+          message: "Failed to prepare dispatch email",
         });
+      }
+    }
+
+    emailsAttempted = jobs.length;
+
+    if (jobs.length > 0) {
+      const batchRes = await sendBatchEmails(jobs, {
+        chunkSize: 100,
+        maxAttempts: 3,
+        baseDelayMs: 750,
+      });
+
+      const results = Array.isArray(batchRes?.results) ? batchRes.results : [];
+
+      const persisted = await persistDispatchEmailResults(results);
+
+      emailsSent += persisted.sent;
+      emailsFailed += persisted.failed;
+
+      for (const result of results) {
+        if (result.success) {
+          sentDetails.push({
+            orderId: result.orderId,
+            orderDbId: result.orderDbId,
+            to: result.to,
+            providerId: result.providerId || null,
+          });
+        } else {
+          failedDetails.push({
+            orderId: result.orderId,
+            orderDbId: result.orderDbId,
+            to: result.to,
+            status: result?.error?.status ?? null,
+            message: result?.error?.message || "Email send failed",
+          });
+        }
       }
     }
   }
@@ -1308,7 +1475,6 @@ async function dispatchBatch({ batchId } = {}) {
         skipped: emailsSkipped,
         failed: emailsFailed,
         attempted: emailsAttempted,
-        // Keep response size bounded
         details: {
           sent: sentDetails.slice(0, 50),
           skipped: skippedDetails.slice(0, 50),
@@ -1610,6 +1776,209 @@ async function getRouteStock({ routeId, user } = {}) {
   }
 }
 
+async function getOrdersStockRequirements({ orderIds, ordersSheet } = {}) {
+  try {
+    const ids = Array.isArray(orderIds)
+      ? Array.from(new Set(orderIds.map((id) => String(id))))
+          .filter((id) => mongoose.Types.ObjectId.isValid(id))
+          .map((id) => new mongoose.Types.ObjectId(id))
+      : [];
+
+    const sheetRows = Array.isArray(ordersSheet?.rows) ? ordersSheet.rows : [];
+    const hasSheet = sheetRows.length > 0;
+
+    if (!ids.length && !hasSheet) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Provide orderIds or upload an ordersFile (xlsx/csv)",
+      };
+    }
+
+    const aggregationMap = new Map();
+
+    const upsert = ({
+      variantId,
+      productId,
+      sku,
+      name,
+      unitPrice,
+      quantity,
+      orderRef,
+    }) => {
+      const key = String(variantId || "");
+      if (!key) return;
+
+      if (!aggregationMap.has(key)) {
+        aggregationMap.set(key, {
+          variantId,
+          productId,
+          sku,
+          name,
+          unitPrice,
+          totalQuantity: 0,
+          orders: [],
+        });
+      }
+
+      const entry = aggregationMap.get(key);
+      const qty = Number(quantity);
+      if (Number.isFinite(qty) && qty > 0) entry.totalQuantity += qty;
+      if (orderRef) {
+        entry.orders.push({
+          orderId: orderRef.orderId,
+          orderDbId: orderRef.orderDbId,
+          row: orderRef.row,
+          quantity: qty,
+        });
+      }
+    };
+
+    let ordersFound = 0;
+    if (ids.length) {
+      const orders = await Order.find({ _id: { $in: ids } })
+        .select("_id orderId items")
+        .lean();
+
+      ordersFound = Array.isArray(orders) ? orders.length : 0;
+
+      for (const order of orders || []) {
+        const items = Array.isArray(order?.items) ? order.items : [];
+        for (const item of items) {
+          upsert({
+            variantId: item.variant,
+            productId: item.product,
+            sku: item.sku,
+            name: item.name,
+            unitPrice: item.price,
+            quantity: item.quantity,
+            orderRef: {
+              orderId: order.orderId,
+              orderDbId: String(order._id),
+            },
+          });
+        }
+      }
+    }
+
+    let sheetUsableRows = 0;
+    let sheetMissingSkus = [];
+
+    if (hasSheet) {
+      const manualRows = sheetRows
+        .map(buildManualRow)
+        .filter((r) => r && (r.orderCell || r.name || r.postcode || r.address));
+
+      const usable = manualRows.filter((r) => r && r.orderCell);
+      sheetUsableRows = usable.length;
+
+      if (usable.length) {
+        const allSkuLower = Array.from(
+          new Set(
+            usable
+              .flatMap((r) =>
+                parseSkuQtyList(r.orderCell).map((x) =>
+                  String(x.sku).toLowerCase(),
+                ),
+              )
+              .filter(Boolean),
+          ),
+        );
+
+        const variantRows = allSkuLower.length
+          ? await ProductVariant.aggregate([
+              {
+                $project: {
+                  _id: 1,
+                  product: 1,
+                  name: 1,
+                  sku: 1,
+                  price: 1,
+                  status: 1,
+                  lowerSku: { $toLower: "$sku" },
+                },
+              },
+              {
+                $match: { status: "active", lowerSku: { $in: allSkuLower } },
+              },
+            ])
+          : [];
+
+        const variantsByLowerSku = new Map(
+          (variantRows || []).map((v) => [String(v.lowerSku), v]),
+        );
+
+        sheetMissingSkus = allSkuLower.filter(
+          (skuLower) => !variantsByLowerSku.has(String(skuLower)),
+        );
+
+        if (sheetMissingSkus.length) {
+          return {
+            success: false,
+            statusCode: 400,
+            message: `Some SKUs from the uploaded sheet do not exist or are inactive: ${sheetMissingSkus
+              .slice(0, 10)
+              .join(", ")}`,
+          };
+        }
+
+        for (let i = 0; i < usable.length; i++) {
+          const row = usable[i];
+          const skuQty = parseSkuQtyList(row.orderCell);
+          for (const it of skuQty) {
+            const v = variantsByLowerSku.get(String(it.sku).toLowerCase());
+            if (!v) continue;
+            upsert({
+              variantId: v._id,
+              productId: v.product,
+              sku: v.sku,
+              name: v.name,
+              unitPrice: Number(v.price) || 0,
+              quantity: it.qty,
+              orderRef: {
+                row: i + 2,
+                orderId: row.name ? String(row.name) : `row_${i + 2}`,
+                orderDbId: null,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    const aggregatedItems = Array.from(aggregationMap.values())
+      .filter((x) => Number(x.totalQuantity) > 0)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+
+    return {
+      success: true,
+      data: {
+        sources: {
+          orderIdsProvided: ids.length,
+          ordersFound,
+          sheet: hasSheet
+            ? {
+                originalName: ordersSheet?.originalName,
+                detectedType: ordersSheet?.detectedType,
+                rows: sheetRows.length,
+                usableRows: sheetUsableRows,
+              }
+            : null,
+        },
+        totalUniqueProducts: aggregatedItems.length,
+        items: aggregatedItems,
+      },
+    };
+  } catch (err) {
+    console.error("Orders stock requirements error:", err);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Failed to calculate stock requirements",
+    };
+  }
+}
+
 module.exports = {
   createDeliveryBatch,
   listBatches,
@@ -1623,5 +1992,6 @@ module.exports = {
   getBatch,
   getRoute,
   getRouteStock,
+  getOrdersStockRequirements,
   deleteBatch,
 };

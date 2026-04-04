@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useToast } from "../../components/common/Toast";
-import { useOrdersApi, type AdminOrder } from "../../context/Orders";
+import {
+  useOrdersApi,
+  type AdminOrder,
+  type OrdersStockRequirements,
+} from "../../context/Orders";
 
 type FulfillmentStatus =
   | "pending"
@@ -192,6 +196,7 @@ export const useOrders = () => {
     refundOrder: refundOrderApi,
     bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
     bulkAssignDeliveryDate: bulkAssignDeliveryDateApi,
+    getOrdersStockRequirements: getOrdersStockRequirementsApi,
   } = useOrdersApi();
 
   // Backend filters
@@ -519,6 +524,28 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     }
   };
 
+  const getOrdersStockRequirements = async (params?: {
+    orderIds?: string[];
+    ordersFile?: File;
+  }): Promise<OrdersStockRequirements | null> => {
+    try {
+      const data = await getOrdersStockRequirementsApi({
+        orderIds: params?.orderIds,
+        ordersFile: params?.ordersFile,
+      });
+      return data;
+    } catch (err: any) {
+      showToast({
+        title:
+          err?.message ||
+          err?.response?.data?.message ||
+          "Failed to calculate stock requirements",
+        type: "error",
+      });
+      return null;
+    }
+  };
+
 
   const exportToCSV = () => {
     const rows = filteredOrders.map(
@@ -603,6 +630,7 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     refundOrder,
     bulkUpdateStatus,
     bulkAssignDeliveryDate,
+    getOrdersStockRequirements,
     exportToCSV,
     openOrderDetails,
   };

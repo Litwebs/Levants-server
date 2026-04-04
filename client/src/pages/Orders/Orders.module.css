@@ -270,6 +270,53 @@
   flex-wrap: wrap;
 }
 
+.bulkSections {
+  margin-top: var(--space-3);
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.bulkSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 280px;
+}
+
+.bulkSectionTitle {
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.bulkSectionRow {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.bulkFileInput {
+  display: none;
+}
+
+.bulkFileName {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--color-gray-700);
+}
+
+.bulkStockResults {
+  margin-top: var(--space-3);
+}
+
 /* Table */
 .tableCard {
   flex: 1;

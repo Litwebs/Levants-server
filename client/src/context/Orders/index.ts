@@ -10,4 +10,6 @@ export type {
   OrdersState,
   ListOrdersResult,
   RefundOrderResult,
+  OrdersStockRequirementItem,
+  OrdersStockRequirements,
 } from "./constants";

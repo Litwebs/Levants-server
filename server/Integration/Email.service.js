@@ -4,69 +4,16 @@ const { RESEND_EMAIL_KEY } = require("../config/env");
 const {
   LOGO_CONTENT_ID,
   getInlineLogoAttachment,
-  getLogoCidSrc,
   getLogoDataUri,
 } = require("../Templates/logoAttachment");
 
-const resend = new Resend(RESEND_EMAIL_KEY || "");
+const resend = new Resend(RESEND_EMAIL_KEY);
 
 const FALLBACK_LOGO_URL =
   "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png";
 
 const DEFAULT_FROM = "no-reply@levantsdairy.co.uk";
 const DEFAULT_FALLBACK_FROM = "contact@levantsdairy.co.uk";
-
-function isValidEmail(raw) {
-  const email = String(raw || "").trim();
-  if (!email) return false;
-  if (email.length > 254) return false;
-
-  // Basic, practical validation (avoid rejecting valid-but-rare RFC cases).
-  // Ensures we don't send obviously broken addresses to the provider.
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function extractEmailAddress(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "";
-
-  // Support common forms: "Name <user@example.com>"
-  const match = value.match(/<([^>]+)>/);
-  return (match ? match[1] : value).trim();
-}
-
-function normalizeEmailRecipients(input) {
-  const parts = [];
-
-  if (Array.isArray(input)) {
-    for (const v of input) parts.push(String(v || ""));
-  } else if (typeof input === "string") {
-    // Allow comma/semicolon separated lists.
-    parts.push(...input.split(/[;,]/g));
-  } else if (input != null) {
-    parts.push(String(input));
-  }
-
-  const cleaned = parts
-    .map((p) => extractEmailAddress(p))
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const valid = [];
-  const invalid = [];
-  const seen = new Set();
-
-  for (const email of cleaned) {
-    const normalized = email.toLowerCase();
-    if (seen.has(normalized)) continue;
-    seen.add(normalized);
-
-    if (isValidEmail(email)) valid.push(email);
-    else invalid.push(email);
-  }
-
-  return { valid, invalid };
-}
 
 function canUseFromEmail(email) {
   const e = String(email || "")
@@ -76,47 +23,27 @@ function canUseFromEmail(email) {
   return e.endsWith("@levantsdairy.co.uk");
 }
 
-const ensureArray = (v) => (Array.isArray(v) ? v : []);
+function ensureArray(v) {
+  return Array.isArray(v) ? v : [];
+}
 
-const hasLogoAttachment = (atts) =>
-  ensureArray(atts).some((a) => a && a.contentId === LOGO_CONTENT_ID);
+function hasLogoAttachment(atts) {
+  return ensureArray(atts).some((a) => a && a.contentId === LOGO_CONTENT_ID);
+}
 
-const sendEmail = async (
-  to,
-  subject,
-  TempName = "welcomeEmail",
-  templateParams = {},
-  options = null,
-) => {
-  if (!RESEND_EMAIL_KEY) {
-    const error = new Error(
-      "Email sending is not configured (missing RESEND_EMAIL_KEY)",
-    );
-    // Log once per call to make misconfig obvious.
-    console.error("[email] misconfigured: missing RESEND_EMAIL_KEY", {
-      to,
-      subject,
-      template: TempName,
-    });
-    return { success: false, error };
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function chunkArray(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
   }
+  return out;
+}
 
-  const templateFunction = emailTemplates[TempName];
-  if (!templateFunction) {
-    const error = new Error(`Email template "${TempName}" not found.`);
-    console.error("[email] template not found", {
-      template: TempName,
-      to,
-      subject,
-    });
-    return { success: false, error };
-  }
-
-  // Compute template + payload inside the try block so logo failures never
-  // prevent email sending.
-  let htmlContent = "";
-  let resolvedLogoSrc = "";
-
+function buildFrom(options = null) {
   let from = DEFAULT_FROM;
 
   if (options && typeof options === "object") {
@@ -133,112 +60,237 @@ const sendEmail = async (
     from = fromName ? `${fromName} <${chosenFromEmail}>` : chosenFromEmail;
   }
 
+  return from;
+}
+
+function resolveLogoSrc(templateParams = {}) {
+  let resolvedLogoSrc = String(templateParams.logoSrc || "").trim();
+
+  if (!resolvedLogoSrc) {
+    const envLogoUrl = String(process.env.EMAIL_LOGO_URL || "").trim();
+    if (envLogoUrl) {
+      resolvedLogoSrc = envLogoUrl;
+    } else if (
+      String(process.env.EMAIL_LOGO_MODE || "").toLowerCase() === "data-uri"
+    ) {
+      resolvedLogoSrc = getLogoDataUri();
+    }
+  }
+
+  if (!resolvedLogoSrc) {
+    resolvedLogoSrc = FALLBACK_LOGO_URL;
+  }
+
+  return resolvedLogoSrc;
+}
+
+function buildAttachments(options = null, resolvedLogoSrc = "") {
+  const extra =
+    options && typeof options === "object"
+      ? ensureArray(options.attachments)
+      : [];
+
+  const needsCidLogo = /^cid:/i.test(resolvedLogoSrc);
+  if (!needsCidLogo) return extra;
+
+  if (hasLogoAttachment(extra)) return extra;
+  return [getInlineLogoAttachment(), ...extra];
+}
+
+function renderEmailTemplate(
+  TempName = "welcomeEmail",
+  templateParams = {},
+  options = null,
+) {
+  const templateFunction = emailTemplates[TempName];
+  if (!templateFunction) {
+    throw new Error(`Email template "${TempName}" not found.`);
+  }
+
+  const resolvedLogoSrc = resolveLogoSrc(templateParams);
+
+  const html = templateFunction(
+    resolvedLogoSrc
+      ? { ...templateParams, logoSrc: resolvedLogoSrc }
+      : { ...templateParams },
+  );
+
+  const attachments = buildAttachments(options, resolvedLogoSrc);
+
+  return {
+    html,
+    attachments,
+    resolvedLogoSrc,
+  };
+}
+
+function buildBasePayload({ to, subject, html, attachments, options = null }) {
+  const payload = {
+    from: buildFrom(options),
+    to,
+    subject,
+    html,
+  };
+
+  if (attachments && attachments.length > 0) {
+    payload.attachments = attachments;
+  }
+
+  if (options && typeof options === "object") {
+    if (options.replyTo) payload.reply_to = options.replyTo;
+    if (options.cc) payload.cc = options.cc;
+    if (options.bcc) payload.bcc = options.bcc;
+  }
+
+  return payload;
+}
+
+async function sendEmail(
+  to,
+  subject,
+  TempName = "welcomeEmail",
+  templateParams = {},
+  options = null,
+) {
   try {
-    const toList = normalizeEmailRecipients(to);
-    if (toList.invalid.length > 0) {
-      console.warn("[email] skipping invalid recipients", {
-        invalid: toList.invalid,
-        template: TempName,
-        subject,
-      });
-    }
-
-    if (toList.valid.length === 0) {
-      return {
-        success: false,
-        error: new Error("No valid recipient email addresses"),
-      };
-    }
-
-    resolvedLogoSrc = String(templateParams.logoSrc || "").trim();
-
-    if (!resolvedLogoSrc) {
-      const envLogoUrl = String(process.env.EMAIL_LOGO_URL || "").trim();
-      if (envLogoUrl) {
-        resolvedLogoSrc = envLogoUrl;
-      } else if (
-        String(process.env.EMAIL_LOGO_MODE || "").toLowerCase() === "data-uri"
-      ) {
-        resolvedLogoSrc = getLogoDataUri();
-      }
-    }
-
-    if (!resolvedLogoSrc) resolvedLogoSrc = FALLBACK_LOGO_URL;
-
-    htmlContent = templateFunction(
-      resolvedLogoSrc
-        ? { ...templateParams, logoSrc: resolvedLogoSrc }
-        : { ...templateParams },
+    const { html, attachments } = renderEmailTemplate(
+      TempName,
+      templateParams,
+      options,
     );
 
-    const payload = {
-      from,
-      to: toList.valid.length === 1 ? toList.valid[0] : toList.valid,
-      subject,
-      html: htmlContent,
-    };
-
-    // Attachments are optional; however, if the logo is referenced via CID,
-    // we must include it.
-    const extra =
-      options && typeof options === "object"
-        ? ensureArray(options.attachments)
-        : [];
-    const needsCidLogo = /^cid:/i.test(resolvedLogoSrc);
-    const mergedAttachments = needsCidLogo
-      ? hasLogoAttachment(extra)
-        ? extra
-        : [getInlineLogoAttachment(), ...extra]
-      : extra;
-    if (mergedAttachments.length > 0) payload.attachments = mergedAttachments;
-
-    if (options && typeof options === "object") {
-      if (options.replyTo) payload.reply_to = options.replyTo;
-
-      const ccList = normalizeEmailRecipients(options.cc);
-      if (ccList.invalid.length > 0) {
-        console.warn("[email] skipping invalid cc recipients", {
-          invalid: ccList.invalid,
-          template: TempName,
-          subject,
-        });
-      }
-      if (ccList.valid.length > 0) {
-        payload.cc = ccList.valid.length === 1 ? ccList.valid[0] : ccList.valid;
-      }
-
-      const bccList = normalizeEmailRecipients(options.bcc);
-      if (bccList.invalid.length > 0) {
-        console.warn("[email] skipping invalid bcc recipients", {
-          invalid: bccList.invalid,
-          template: TempName,
-          subject,
-        });
-      }
-      if (bccList.valid.length > 0) {
-        payload.bcc =
-          bccList.valid.length === 1 ? bccList.valid[0] : bccList.valid;
-      }
-    }
-
-    const response = await resend.emails.send(payload);
-
-    // Resend SDK typically returns `{ data, error }` (and may not throw).
-    // Only treat as success when no error is present.
-    if (response && typeof response === "object" && response.error) {
-      return { success: false, error: response.error, response };
-    }
-
-    return { success: true, response };
-  } catch (error) {
-    console.error("[email] send failed", {
+    const payload = buildBasePayload({
       to,
       subject,
-      template: TempName,
-      error: error?.message || String(error),
+      html,
+      attachments,
+      options,
     });
+
+    const response = await resend.emails.send(payload);
+    return { success: true, response };
+  } catch (error) {
     return { success: false, error };
   }
-};
+}
+
+function getErrorStatus(error) {
+  const status = error?.statusCode ?? error?.status ?? error?.code ?? null;
+  const n = Number(status);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getErrorMessage(error) {
+  if (!error) return "Email send failed";
+  if (typeof error === "string") return error;
+  return String(error.message || error.name || "Email send failed");
+}
+
+function shouldRetryStatus(status) {
+  if (status === 429) return true;
+  if (typeof status === "number" && status >= 500 && status <= 599) return true;
+  return false;
+}
+
+async function sendBatchEmails(
+  jobs = [],
+  { chunkSize = 100, maxAttempts = 3, baseDelayMs = 750 } = {},
+) {
+  const chunks = chunkArray(jobs, chunkSize);
+  const allResults = [];
+
+  for (const group of chunks) {
+    let attempt = 0;
+    let sent = false;
+    let lastError = null;
+
+    while (attempt < maxAttempts && !sent) {
+      attempt += 1;
+
+      try {
+        const payload = group.map((job) => {
+          const { html, attachments } = renderEmailTemplate(
+            job.template,
+            job.templateParams,
+            job.options,
+          );
+
+          const item = buildBasePayload({
+            to: job.to,
+            subject: job.subject,
+            html,
+            attachments,
+            options: job.options,
+          });
+
+          if (job.tags) item.tags = job.tags;
+          if (job.headers) item.headers = job.headers;
+
+          return item;
+        });
+
+        // Depending on SDK version this is commonly resend.batch.send(...)
+        const response = await resend.batch.send(payload);
+
+        if (response?.error) {
+          throw response.error;
+        }
+
+        const data = Array.isArray(response?.data) ? response.data : [];
+
+        for (let i = 0; i < group.length; i += 1) {
+          allResults.push({
+            success: true,
+            orderDbId: group[i].orderDbId,
+            orderId: group[i].orderId,
+            to: group[i].to,
+            providerId: data[i]?.id || null,
+            error: null,
+          });
+        }
+
+        sent = true;
+      } catch (error) {
+        lastError = error;
+        const status = getErrorStatus(error);
+
+        if (!shouldRetryStatus(status) || attempt >= maxAttempts) {
+          for (const job of group) {
+            allResults.push({
+              success: false,
+              orderDbId: job.orderDbId,
+              orderId: job.orderId,
+              to: job.to,
+              providerId: null,
+              error: {
+                status,
+                message: getErrorMessage(error),
+              },
+            });
+          }
+          break;
+        }
+
+        const jitter = Math.floor(Math.random() * 250);
+        await sleep(baseDelayMs * Math.pow(2, attempt - 1) + jitter);
+      }
+    }
+
+    if (!sent && lastError && allResults.length === 0) {
+      // no-op; defensive
+    }
+  }
+
+  return {
+    success: true,
+    results: allResults,
+  };
+}
 
 module.exports = sendEmail;
+module.exports.sendEmail = sendEmail;
+module.exports.sendBatchEmails = sendBatchEmails;
+module.exports.renderEmailTemplate = renderEmailTemplate;
+module.exports.getEmailErrorStatus = getErrorStatus;
+module.exports.getEmailErrorMessage = getErrorMessage;
+module.exports.shouldRetryEmailStatus = shouldRetryStatus;
