@@ -4,7 +4,7 @@ import {
   type VanRoute,
   type VanId,
   getVanStyleKey,
-  formatManifestItemLabel,
+  formatManifestItemSku,
   formatProductNameWithSku,
 } from "@/context/DeliveryRuns";
 import styles from "./ManifestTables.module.css";
@@ -247,7 +247,7 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                             <div className={styles.stopItems}>
                               {stopItems.map((item, i) => (
                                 <span key={i}>
-                                  {item.qty}× {formatManifestItemLabel(item)}
+                                  {item.qty}× {formatManifestItemSku(item)}
                                   {i < stopItems.length - 1 ? ", " : ""}
                                 </span>
                               ))}

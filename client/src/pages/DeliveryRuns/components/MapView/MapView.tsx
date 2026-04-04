@@ -16,7 +16,7 @@ import {
   getDepotLocation,
   getVanColor,
   getVanStyleKey,
-  formatManifestItemLabel,
+  formatManifestItemSku,
 } from "@/context/DeliveryRuns";
 import { getStatusBadge } from "@/pages/Orders/order.utils";
 import styles from "./MapView.module.css";
@@ -785,7 +785,7 @@ export const MapView: React.FC<MapViewProps> = ({
                   <div className={styles.popupItems}>
                     {stop.items.slice(0, 3).map((item, i) => (
                       <div key={i}>
-                        {item.qty}x {formatManifestItemLabel(item)}
+                        {item.qty}x {formatManifestItemSku(item)}
                       </div>
                     ))}
                     {stop.items.length > 3 && (

@@ -3,7 +3,7 @@ import { Printer, X } from "lucide-react";
 import {
   type VanRoute,
   type DeliveryRun,
-  formatManifestItemLabel,
+  formatManifestItemSku,
   formatProductNameWithSku,
 } from "@/context/DeliveryRuns";
 import { Button, Modal, ModalFooter } from "@/components/common";
@@ -210,7 +210,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
                     <td>
                       {stop.items.map((item, i) => (
                         <div key={i} className={styles.printItems}>
-                          {item.qty}× {formatManifestItemLabel(item)}
+                          {item.qty}× {formatManifestItemSku(item)}
                         </div>
                       ))}
                     </td>

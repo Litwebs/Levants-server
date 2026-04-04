@@ -6,7 +6,7 @@ import {
   DEPOT_LOCATION,
   getDepotLocation,
   getVanStyleKey,
-  formatManifestItemLabel,
+  formatManifestItemSku,
 } from "@/context/DeliveryRuns";
 import { Button } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
@@ -322,7 +322,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                     <div className={styles.stopItems}>
                       {stop.items.map((item, i) => (
                         <span key={i}>
-                          {item.qty}× {formatManifestItemLabel(item)}
+                          {item.qty}× {formatManifestItemSku(item)}
                           {i < stop.items.length - 1 ? ", " : ""}
                         </span>
                       ))}
