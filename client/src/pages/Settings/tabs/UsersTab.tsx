@@ -50,6 +50,12 @@ const getRoleName = (user: any) => {
   return undefined;
 };
 
+const shouldHideEmail = (value: any) => {
+  if (!value) return false;
+  const email = String(value).trim().toLowerCase();
+  return email.endsWith("litwebs.co.uk");
+};
+
 const formatDateTime = (value: any) => {
   if (!value) return "—";
   const date = value instanceof Date ? value : new Date(value);
@@ -113,6 +119,10 @@ const UsersTab = ({
   const [confirmUser, setConfirmUser] = useState<any>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const visibleUsers = (Array.isArray(users) ? users : []).filter(
+    (user: any) => !shouldHideEmail(user?.email)
+  );
+
   const closeConfirm = () => {
     if (deleteLoading) return;
     setConfirmUser(null);
@@ -159,7 +169,7 @@ const UsersTab = ({
             </TableHeader>
 
             <TableBody>
-              {users.map((user: any) => (
+              {visibleUsers.map((user: any) => (
                 <TableRow
                   key={getUserId(user)}
                   onClick={() => handleOpenUserModal("edit", user)}
