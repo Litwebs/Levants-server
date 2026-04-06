@@ -11,13 +11,6 @@ const {
   sendRefundConfirmationEmailToCustomer,
 } = require("./orders.notifications.service");
 
-let _stripe;
-function getStripe() {
-  if (_stripe) return _stripe;
-  _stripe = require("../utils/stripe.util");
-  return _stripe;
-}
-
 const {
   finalizeRefundForOrderByPaymentIntent,
   markRefundFailedByPaymentIntent,
@@ -49,90 +42,40 @@ async function HandlePaymentSuccess(session) {
     await order.save();
   }
 
-  const now = new Date();
-  const isExpired =
-    order.reservationExpiresAt && order.reservationExpiresAt.getTime() <= now;
+  // Already finalized or in refund flow: do nothing.
+  if (
+    order.status === "paid" ||
+    order.status === "refund_pending" ||
+    order.status === "refunded" ||
+    order.status === "partially_refunded"
+  ) {
+    return;
+  }
 
-  // If the order is expired or already cancelled/failed, do NOT finalize stock.
-  // Instead, ensure the order is cancelled and refund the payment.
-  if (order.status !== "pending" || isExpired) {
-    if (order.status === "pending") {
-      await releaseReservedStock(orderId, "cancelled");
-    }
-
-    if (!paymentIntentId) return;
-
-    const refreshed = await Order.findById(orderId);
-    if (!refreshed) return;
-
-    const alreadyRefunding =
-      refreshed.status === "refund_pending" ||
-      refreshed.status === "refunded" ||
-      Boolean(refreshed.refunds?.some?.((r) => r?.status === "pending"));
-
-    if (alreadyRefunding) return;
-
-    try {
-      const stripe = getStripe();
-
-      const refund = await stripe.refunds.create(
-        {
-          payment_intent: paymentIntentId,
-          metadata: {
-            orderId: refreshed._id.toString(),
-            reason: "order_expired",
-          },
-        },
-        {
-          idempotencyKey: `auto_refund_expired_order_${refreshed._id}_${paymentIntentId}`,
-        },
-      );
-
-      const stripeStatus = String(refund.status || "").toLowerCase();
-      const mappedStatus =
-        stripeStatus === "succeeded"
-          ? "succeeded"
-          : stripeStatus === "failed"
-            ? "failed"
-            : "pending";
-
-      refreshed.refunds = Array.isArray(refreshed.refunds)
-        ? refreshed.refunds
-        : [];
-      refreshed.refunds.push({
-        stripeRefundId: refund.id,
+  // No auto-refund.
+  // If the order was already cancelled/failed by another process,
+  // just record the Stripe references above and exit safely.
+  if (order.status === "cancelled" || order.status === "failed") {
+    console.warn(
+      "Payment completed for non-pending order; skipping auto-refund/finalization",
+      {
+        orderId: String(order._id),
+        status: order.status,
+        stripeCheckoutSessionId,
         paymentIntentId,
-        currency: refund.currency || refreshed.currency || "GBP",
-        amountMinor:
-          typeof refund.amount === "number" ? refund.amount : undefined,
-        amount:
-          typeof refund.amount === "number" ? refund.amount / 100 : undefined,
-        status: mappedStatus,
-        refundedAt: mappedStatus === "succeeded" ? new Date() : undefined,
-        failedAt: mappedStatus === "failed" ? new Date() : undefined,
-        reason: "Order expired before payment completed",
-        restock: false,
-        createdAt: new Date(),
-      });
+      },
+    );
+    return;
+  }
 
-      refreshed.status =
-        mappedStatus === "pending" ? "refund_pending" : refreshed.status;
-      refreshed.refund = {
-        ...(refreshed.refund || {}),
-        reason: "Order expired before payment completed",
-        restock: false,
-        stripeRefundId: refund.id,
-        refundedAt:
-          mappedStatus === "succeeded"
-            ? new Date()
-            : refreshed.refund?.refundedAt,
-      };
-
-      await refreshed.save();
-    } catch (err) {
-      console.error("Auto-refund failed for expired order", orderId);
-    }
-
+  // Only pending orders should be finalized.
+  if (order.status !== "pending") {
+    console.warn("Payment completed for unexpected order status; skipping", {
+      orderId: String(order._id),
+      status: order.status,
+      stripeCheckoutSessionId,
+      paymentIntentId,
+    });
     return;
   }
 
