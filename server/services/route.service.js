@@ -332,13 +332,6 @@ async function optimizeAllDriversRoutes({
     },
     costPerHour: 1,
     costPerKilometer: 0.001,
-    // This helps if you ever need a fallback by numeric index
-    // and makes debugging easier.
-    // Google generally returns vehicleLabel if label is set.
-    metadata: {
-      driverId: String(driver._id),
-      vehicleIndex: index,
-    },
   }));
 
   const requestBody = {
