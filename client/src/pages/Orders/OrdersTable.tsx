@@ -1,8 +1,22 @@
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
-import { Card, Button, Select, CardFooter } from "../../components/common";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  AlertTriangle,
+  Trash2,
+} from "lucide-react";
+import {
+  Card,
+  Button,
+  Select,
+  CardFooter,
+  Modal,
+  ModalFooter,
+} from "../../components/common";
 import { getStatusBadge, getPaymentBadge } from "./order.utils";
 import styles from "./Orders.module.css";
 import { useEffect, useState } from "react";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const OrdersTable = ({
   filteredOrders,
@@ -17,7 +31,10 @@ const OrdersTable = ({
   pageSize,
   setPageSize,
   meta,
+  deleteOrder,
 }: any) => {
+  const { hasPermission } = usePermissions();
+  const canDeleteOrders = hasPermission("orders.delete");
   const total = meta?.total ?? filteredOrders?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -26,9 +43,30 @@ const OrdersTable = ({
   const [paginationAction, setPaginationAction] = useState<
     "prev" | "next" | null
   >(null);
+  const [confirmOrder, setConfirmOrder] = useState<any | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   useEffect(() => {
     if (!loading) setPaginationAction(null);
   }, [loading]);
+
+  const closeConfirm = () => {
+    if (deleteLoading) return;
+    setConfirmOrder(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmOrder || !deleteOrder) return;
+    setDeleteLoading(true);
+    try {
+      const result = await deleteOrder(confirmOrder.id);
+      if (result?.deleted) {
+        setConfirmOrder(null);
+      }
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   return (
     <Card className={styles.tableCard}>
@@ -55,13 +93,14 @@ const OrdersTable = ({
                 <th>Delivery Status</th>
                 <th>Payment</th>
                 <th>Delivery Date</th>
+                <th></th>
               </tr>
             </thead>
 
             <tbody>
               {(filteredOrders?.length ?? 0) === 0 ? (
                 <tr>
-                  <td className={styles.emptyTableCell} colSpan={8}>
+                  <td className={styles.emptyTableCell} colSpan={9}>
                     {loading ? "Loading orders…" : "No orders found."}
                   </td>
                 </tr>
@@ -172,6 +211,23 @@ const OrdersTable = ({
                         </span>
                       </div>
                     </td>
+
+                    <td className={styles.rowActionsCell}>
+                      {canDeleteOrders ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setConfirmOrder(order);
+                          }}
+                        >
+                          <Trash2 size={16} />
+                          Delete
+                        </Button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))
               )}
@@ -188,6 +244,46 @@ const OrdersTable = ({
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={!!confirmOrder}
+        onClose={closeConfirm}
+        title="Delete Order"
+        size="sm"
+      >
+        <div className={styles.deleteConfirmContent}>
+          <div className={styles.deleteConfirmIcon}>
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <p className={styles.deleteConfirmTitle}>Delete this order?</p>
+            <p className={styles.deleteConfirmText}>
+              {confirmOrder?.orderNumber
+                ? `This will permanently delete ${confirmOrder.orderNumber}.`
+                : "This will permanently delete the selected order."}
+            </p>
+          </div>
+        </div>
+
+        <ModalFooter>
+          <Button
+            variant="outline"
+            onClick={closeConfirm}
+            disabled={deleteLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={confirmDelete}
+            disabled={deleteLoading || !deleteOrder}
+            isLoading={deleteLoading}
+          >
+            <Trash2 size={16} />
+            Delete
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       <CardFooter className={styles.paginationFooter}>
         <div className={styles.paginationInfo}>

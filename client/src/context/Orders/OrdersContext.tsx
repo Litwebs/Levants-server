@@ -80,6 +80,17 @@ type OrdersContextType = {
     paid: boolean,
   ) => Promise<AdminOrder>;
 
+  updateOrderItems: (
+    orderId: string,
+    items: { variantId: string; quantity: number }[],
+  ) => Promise<AdminOrder>;
+
+  deleteOrder: (orderId: string) => Promise<{ deleted: true; orderId: string }>;
+
+  bulkDeleteOrders: (
+    orderIds: string[],
+  ) => Promise<{ matched: number; deleted: number }>;
+
   refundOrder: (
     orderId: string,
     body?: { reason?: string; restock?: boolean },
@@ -264,6 +275,64 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const updateOrderItems = useCallback(
+    async (
+      orderId: string,
+      items: { variantId: string; quantity: number }[],
+    ) => {
+      dispatch({ type: ORDERS_REQUEST });
+      try {
+        const res = await api.patch(`/admin/orders/${orderId}/items`, {
+          items,
+        });
+
+        const order = unwrapData<AdminOrder>(res.data);
+        if (!order?._id) throw new Error("Failed to update order items");
+
+        dispatch({ type: ORDERS_UPDATE_SUCCESS, payload: { order } });
+        return order;
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message || "Failed to update order items";
+        dispatch({ type: ORDERS_FAILURE, payload: msg });
+        throw err;
+      }
+    },
+    [],
+  );
+
+  const deleteOrder = useCallback(async (orderId: string) => {
+    dispatch({ type: ORDERS_REQUEST });
+    try {
+      const res = await api.delete(`/admin/orders/${orderId}`);
+      const data = unwrapData<{ deleted: true; orderId: string }>(res.data);
+      if (!data?.deleted) throw new Error("Failed to delete order");
+      return data;
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || "Failed to delete order";
+      dispatch({ type: ORDERS_FAILURE, payload: msg });
+      throw err;
+    }
+  }, []);
+
+  const bulkDeleteOrders = useCallback(async (orderIds: string[]) => {
+    dispatch({ type: ORDERS_REQUEST });
+    try {
+      const res = await api.delete("/admin/orders/bulk", {
+        data: { orderIds },
+      });
+      const data = unwrapData<{ matched: number; deleted: number }>(res.data);
+      if (!data || typeof data.deleted !== "number") {
+        throw new Error("Failed to delete orders");
+      }
+      return data;
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || "Failed to delete orders";
+      dispatch({ type: ORDERS_FAILURE, payload: msg });
+      throw err;
+    }
+  }, []);
+
   const bulkUpdateDeliveryStatus = useCallback(
     async (
       orderIds: string[],
@@ -423,6 +492,9 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       getOrderById,
       updateOrderStatus,
       updateOrderPaymentStatus,
+      updateOrderItems,
+      deleteOrder,
+      bulkDeleteOrders,
       refundOrder,
       bulkUpdateDeliveryStatus,
       bulkAssignDeliveryDate,
@@ -434,6 +506,9 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       getOrderById,
       updateOrderStatus,
       updateOrderPaymentStatus,
+      updateOrderItems,
+      deleteOrder,
+      bulkDeleteOrders,
       refundOrder,
       bulkUpdateDeliveryStatus,
       bulkAssignDeliveryDate,

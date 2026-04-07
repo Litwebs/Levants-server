@@ -1,5 +1,10 @@
 const Order = require("../models/order.model");
 const Customer = require("../models/customer.model");
+const ProductVariant = require("../models/variant.model");
+const DeliveryBatch = require("../models/deliveryBatch.model");
+const Stop = require("../models/stop.model");
+const Route = require("../models/route.model");
+const DiscountRedemption = require("../models/discountRedemption.model");
 const mongoose = require("mongoose");
 const fs = require("fs/promises");
 const path = require("path");
@@ -688,11 +693,190 @@ async function bulkAssignDeliveryDate({ orderIds, deliveryDate }) {
   };
 }
 
+async function UpdateOrderItems({ orderId, items, actorUserId } = {}) {
+  if (!orderId) {
+    return { success: false, statusCode: 400, message: "orderId is required" };
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return { success: false, statusCode: 400, message: "items is required" };
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    return { success: false, statusCode: 404, message: "Order not found" };
+  }
+
+  const resolvedItems = [];
+  let subtotal = 0;
+
+  for (const item of items) {
+    const quantity = Number(item?.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return { success: false, statusCode: 400, message: "Invalid quantity" };
+    }
+
+    const variantId = String(item?.variantId || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(variantId)) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Invalid variantId",
+      };
+    }
+
+    const variant = await ProductVariant.findOne({
+      _id: variantId,
+      status: "active",
+    }).select("_id product name sku price status");
+
+    if (!variant) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Variant not found or inactive",
+      };
+    }
+
+    const price = Number(variant.price) || 0;
+    const lineSubtotal = price * quantity;
+
+    resolvedItems.push({
+      product: variant.product,
+      variant: variant._id,
+      name: variant.name,
+      sku: variant.sku,
+      price,
+      quantity,
+      subtotal: lineSubtotal,
+    });
+
+    subtotal += lineSubtotal;
+  }
+
+  if (!resolvedItems.length) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Order must contain at least one item",
+    };
+  }
+
+  const deliveryFee = Number(order.deliveryFee || 0);
+  const discountAmount = Math.max(0, Number(order.discountAmount || 0));
+  const totalBeforeDiscount = Math.max(0, subtotal + deliveryFee);
+  const total = Math.max(0, totalBeforeDiscount - discountAmount);
+
+  order.items = resolvedItems;
+  order.subtotal = subtotal;
+  order.totalBeforeDiscount = totalBeforeDiscount;
+  order.total = total;
+  order.isDiscounted = discountAmount > 0;
+
+  const now = new Date();
+  if (!order.metadata || typeof order.metadata !== "object")
+    order.metadata = {};
+  order.metadata.itemsUpdatedAt = now;
+  if (actorUserId) order.metadata.itemsUpdatedBy = String(actorUserId);
+  order.markModified("metadata");
+
+  await order.save();
+
+  return { success: true, data: order };
+}
+
+async function deleteOrderDocument(order) {
+  const stops = await Stop.find({ order: order._id }).select("route").lean();
+  const routeIds = Array.from(
+    new Set(
+      stops
+        .map((stop) => String(stop.route || ""))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id)),
+    ),
+  ).map((id) => new mongoose.Types.ObjectId(id));
+
+  await Promise.all([
+    DeliveryBatch.updateMany(
+      { orders: order._id },
+      { $pull: { orders: order._id } },
+    ),
+    Stop.deleteMany({ order: order._id }),
+    DiscountRedemption.deleteMany({ order: order._id }),
+    Order.deleteOne({ _id: order._id }),
+  ]);
+
+  if (routeIds.length > 0) {
+    await Promise.all(
+      routeIds.map(async (routeId) => {
+        const totalStops = await Stop.countDocuments({ route: routeId });
+        await Route.updateOne({ _id: routeId }, { $set: { totalStops } });
+      }),
+    );
+  }
+}
+
+async function DeleteOrder({ orderId } = {}) {
+  if (!orderId) {
+    return { success: false, statusCode: 400, message: "orderId is required" };
+  }
+
+  const order = await Order.findById(orderId).select("_id");
+  if (!order) {
+    return { success: false, statusCode: 404, message: "Order not found" };
+  }
+
+  await deleteOrderDocument(order);
+
+  return {
+    success: true,
+    data: {
+      deleted: true,
+      orderId: String(order._id),
+    },
+  };
+}
+
+async function BulkDeleteOrders({ orderIds } = {}) {
+  if (!Array.isArray(orderIds) || orderIds.length === 0) {
+    return { success: false, statusCode: 400, message: "orderIds required" };
+  }
+
+  const ids = orderIds
+    .map((id) => String(id))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  if (!ids.length) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "No valid orderIds provided",
+    };
+  }
+
+  const orders = await Order.find({ _id: { $in: ids } }).select("_id");
+
+  for (const order of orders) {
+    await deleteOrderDocument(order);
+  }
+
+  return {
+    success: true,
+    data: {
+      matched: ids.length,
+      deleted: orders.length,
+    },
+  };
+}
+
 module.exports = {
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,
   UpdateOrderPaymentStatus,
+  UpdateOrderItems,
+  DeleteOrder,
+  BulkDeleteOrders,
   BulkUpdateDeliveryStatus,
   bulkAssignDeliveryDate,
 };

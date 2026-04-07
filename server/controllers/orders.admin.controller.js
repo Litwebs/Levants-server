@@ -145,6 +145,57 @@ const BulkUpdateDeliveryStatus = async (req, res) => {
   });
 };
 
+const BulkDeleteOrders = async (req, res) => {
+  const { orderIds } = req.body || {};
+
+  const result = await service.BulkDeleteOrders({ orderIds });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Bulk delete failed",
+    });
+  }
+
+  return sendOk(res, result.data, {
+    message: "Orders deleted successfully",
+  });
+};
+
+const UpdateOrderItems = async (req, res) => {
+  const result = await service.UpdateOrderItems({
+    orderId: req.params.orderId,
+    items: req.body.items,
+    actorUserId: req.user?._id || req.user?.id,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Failed to update order items",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const DeleteOrder = async (req, res) => {
+  const result = await service.DeleteOrder({
+    orderId: req.params.orderId,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Failed to delete order",
+    });
+  }
+
+  return sendOk(res, result.data, {
+    message: "Order deleted successfully",
+  });
+};
+
 async function bulkAssignDeliveryDate(req, res) {
   try {
     const { orderIds, deliveryDate } = req.body;
@@ -172,7 +223,10 @@ module.exports = {
   GetOrderById,
   UpdateOrderStatus,
   UpdateOrderPaymentStatus,
+  UpdateOrderItems,
+  DeleteOrder,
   RefundOrder,
+  BulkDeleteOrders,
   BulkUpdateDeliveryStatus,
   bulkAssignDeliveryDate,
 };

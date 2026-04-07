@@ -4,6 +4,7 @@ export type VariantSearchItem = {
   _id: string;
   name: string;
   sku: string;
+  price?: number;
   status?: "active" | "inactive" | string;
   product?: { name: string } | null;
 };

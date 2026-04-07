@@ -10,6 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/common";
+import { AlertTriangle, Trash2 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
 import { useRef, useState } from "react";
@@ -17,6 +18,9 @@ import type { OrdersStockRequirements } from "../../context/Orders";
 
 interface Props {
   selectedOrders: string[];
+  bulkDeleteOrders: (
+    orderIds: string[],
+  ) => Promise<{ matched: number; deleted: number } | null>;
   bulkUpdateStatus: (status: string) => void | Promise<void>;
   bulkAssignDeliveryDate: (dateInput: string) => void | Promise<void>;
   getOrdersStockRequirements: (params?: {
@@ -28,6 +32,7 @@ interface Props {
 
 const OrdersBulkActions = ({
   selectedOrders,
+  bulkDeleteOrders,
   bulkUpdateStatus,
   bulkAssignDeliveryDate,
   getOrdersStockRequirements,
@@ -35,6 +40,7 @@ const OrdersBulkActions = ({
 }: Props) => {
   const { hasPermission } = usePermissions();
   const canUpdateOrders = hasPermission("orders.update");
+  const canDeleteOrders = hasPermission("orders.delete");
   const canReadDelivery = hasPermission("delivery.routes.read");
 
   const today = (() => {
@@ -52,8 +58,10 @@ const OrdersBulkActions = ({
   const [stockResult, setStockResult] =
     useState<OrdersStockRequirements | null>(null);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  if (!canUpdateOrders && !canReadDelivery) return null;
+  if (!canUpdateOrders && !canReadDelivery && !canDeleteOrders) return null;
   if (!selectedOrders.length) return null;
 
   return (
@@ -65,6 +73,16 @@ const OrdersBulkActions = ({
           </span>
 
           <div className={styles.bulkButtons}>
+            {canDeleteOrders ? (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setIsDeleteConfirmOpen(true)}
+              >
+                <Trash2 size={16} />
+                Delete Selected
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="sm"
@@ -271,6 +289,61 @@ const OrdersBulkActions = ({
           </ModalFooter>
         </Modal>
       )}
+
+      {canDeleteOrders ? (
+        <Modal
+          isOpen={isDeleteConfirmOpen}
+          onClose={() => {
+            if (!isDeleting) setIsDeleteConfirmOpen(false);
+          }}
+          title="Delete Selected Orders"
+          size="sm"
+        >
+          <div className={styles.deleteConfirmContent}>
+            <div className={styles.deleteConfirmIcon}>
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <p className={styles.deleteConfirmTitle}>
+                Delete {selectedOrders.length} selected orders?
+              </p>
+              <p className={styles.deleteConfirmText}>
+                This will permanently delete the selected orders. This cannot be
+                undone.
+              </p>
+            </div>
+          </div>
+
+          <ModalFooter>
+            <Button
+              variant="outline"
+              disabled={isDeleting}
+              onClick={() => setIsDeleteConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              isLoading={isDeleting}
+              disabled={isDeleting || selectedOrders.length === 0}
+              onClick={async () => {
+                setIsDeleting(true);
+                try {
+                  const result = await bulkDeleteOrders(selectedOrders);
+                  if (result?.deleted) {
+                    setIsDeleteConfirmOpen(false);
+                  }
+                } finally {
+                  setIsDeleting(false);
+                }
+              }}
+            >
+              <Trash2 size={16} />
+              Delete Selected
+            </Button>
+          </ModalFooter>
+        </Modal>
+      ) : null}
     </>
   );
 };

@@ -320,7 +320,7 @@ async function SearchVariants({ q, limit = 10 } = {}) {
     ],
     status: { $ne: "archived" },
   })
-    .select("name sku product status")
+    .select("name sku price product status")
     .populate({ path: "product", select: "name" })
     .sort({ createdAt: -1 })
     .limit(safeLimit)
@@ -330,6 +330,7 @@ async function SearchVariants({ q, limit = 10 } = {}) {
     _id: String(v._id),
     name: v.name,
     sku: v.sku,
+    price: typeof v.price === "number" ? v.price : undefined,
     status: v.status,
     product:
       v.product && typeof v.product === "object"

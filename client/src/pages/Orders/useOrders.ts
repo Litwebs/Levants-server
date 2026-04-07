@@ -20,6 +20,7 @@ type FulfillmentStatus =
 export type OrderItem = {
   name: string;
   variant?: string;
+  variantId?: string;
   quantity: number;
   unitPrice: number;
 };
@@ -161,6 +162,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     items: (order.items ?? []).map((i) => ({
       name: i.name,
       variant: i.sku,
+      variantId: i.variant,
       quantity: i.quantity,
       unitPrice: i.price,
     })),
@@ -205,6 +207,9 @@ export const useOrders = () => {
     getOrderById,
     updateOrderStatus: updateOrderStatusApi,
     updateOrderPaymentStatus: updateOrderPaymentStatusApi,
+    updateOrderItems: updateOrderItemsApi,
+    deleteOrder: deleteOrderApi,
+    bulkDeleteOrders: bulkDeleteOrdersApi,
     refundOrder: refundOrderApi,
     bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
     bulkAssignDeliveryDate: bulkAssignDeliveryDateApi,
@@ -473,6 +478,25 @@ const refresh = useCallback(
     }
   };
 
+  const updateOrderItems = async (
+    orderId: string,
+    items: { variantId: string; quantity: number }[],
+  ) => {
+    try {
+      const adminOrder = await updateOrderItemsApi(orderId, items);
+      const uiOrder = mapAdminOrderToUi(adminOrder);
+      setSelectedOrder(uiOrder);
+      showToast({ title: "Order items updated", type: "success" });
+      return uiOrder;
+    } catch (err: any) {
+      showToast({
+        title: err?.response?.data?.message || "Failed to update order items",
+        type: "error",
+      });
+      return null;
+    }
+  };
+
   const refundOrder = async (id: string) => {
     try {
       await refundOrderApi(id);
@@ -481,6 +505,50 @@ const refresh = useCallback(
     } catch {
       showToast({ title: "Refund failed", type: "error" });
       throw new Error("Refund failed");
+    }
+  };
+
+  const deleteOrder = async (orderId: string) => {
+    try {
+      const result = await deleteOrderApi(orderId);
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(null);
+        setIsDetailModalOpen(false);
+      }
+      setSelectedOrders((prev) => prev.filter((id) => id !== orderId));
+      showToast({ title: "Order deleted", type: "success" });
+      await refresh();
+      return result;
+    } catch (err: any) {
+      showToast({
+        title: err?.response?.data?.message || "Failed to delete order",
+        type: "error",
+      });
+      return null;
+    }
+  };
+
+  const bulkDeleteOrders = async (orderIds: string[]) => {
+    if (!orderIds.length) return null;
+    try {
+      const result = await bulkDeleteOrdersApi(orderIds);
+      setSelectedOrders([]);
+      if (selectedOrder && orderIds.includes(selectedOrder.id)) {
+        setSelectedOrder(null);
+        setIsDetailModalOpen(false);
+      }
+      showToast({
+        title: `${result.deleted} orders deleted`,
+        type: "success",
+      });
+      await refresh();
+      return result;
+    } catch (err: any) {
+      showToast({
+        title: err?.response?.data?.message || "Failed to delete orders",
+        type: "error",
+      });
+      return null;
     }
   };
 
@@ -660,6 +728,9 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     toggleSelectAll,
     updateOrderStatus,
     updateOrderPaymentStatus,
+    updateOrderItems,
+    deleteOrder,
+    bulkDeleteOrders,
     refundOrder,
     bulkUpdateStatus,
     bulkAssignDeliveryDate,

@@ -73,10 +73,31 @@ const bulkAssignDeliveryDateSchema = Joi.object({
   deliveryDate: Joi.date().iso().required(),
 }).unknown(false);
 
+const updateOrderItemsSchema = Joi.object({
+  items: Joi.array()
+    .items(
+      Joi.object({
+        variantId: objectId.required(),
+        quantity: Joi.number().integer().min(1).required(),
+      }),
+    )
+    .min(1)
+    .required(),
+}).unknown(false);
+
+const bulkDeleteOrdersSchema = Joi.object({
+  orderIds: Joi.array()
+    .items(Joi.string().trim().length(24).hex().required())
+    .min(1)
+    .required(),
+}).unknown(false);
+
 module.exports = {
   createOrderSchema,
   updateOrderStatusSchema,
   updateOrderPaymentSchema,
   bulkUpdateDeliveryStatusSchema,
   bulkAssignDeliveryDateSchema,
+  updateOrderItemsSchema,
+  bulkDeleteOrdersSchema,
 };

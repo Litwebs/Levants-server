@@ -1,8 +1,9 @@
 import { Button, Modal, ModalFooter } from "../../components/common";
 import { getStatusBadge, getPaymentBadge } from "./order.utils";
 import styles from "./Orders.module.css";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useVariantSearch } from "../Discounts/useVariantSearch";
 
 const OrderDetailModal = ({
   selectedOrder,
@@ -10,6 +11,7 @@ const OrderDetailModal = ({
   setIsDetailModalOpen,
   setIsStatusModalOpen,
   updateOrderPaymentStatus,
+  updateOrderItems,
   refundOrder,
 }: any) => {
   const { hasPermission } = usePermissions();
@@ -24,6 +26,20 @@ const OrderDetailModal = ({
   const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
   const [isPaymentConfirmOpen, setIsPaymentConfirmOpen] = useState(false);
   const [nextPaidValue, setNextPaidValue] = useState<boolean | null>(null);
+
+  const [isEditingItems, setIsEditingItems] = useState(false);
+  const [isSavingItems, setIsSavingItems] = useState(false);
+  const [draftItems, setDraftItems] = useState<
+    {
+      variantId: string;
+      name: string;
+      sku?: string;
+      unitPrice: number;
+      quantity: number;
+    }[]
+  >([]);
+
+  const variantSearch = useVariantSearch();
 
   const isAlreadyRefunded = selectedOrder?.paymentStatus === "refunded";
   const isRefundPending = selectedOrder?.paymentStatus === "refund_pending";
@@ -44,6 +60,54 @@ const OrderDetailModal = ({
     Boolean(selectedOrder?.id) &&
     !isAlreadyRefunded &&
     !isRefundPending;
+
+  const itemEditBlockedReason = useMemo(() => {
+    if (!canUpdatePermission) return "";
+    if (!selectedOrder?.id) return "Order is not loaded";
+    return "";
+  }, [canUpdatePermission, selectedOrder?.id]);
+
+  const canEditItems = canUpdatePermission && !itemEditBlockedReason;
+
+  const hasVariantIds = useMemo(() => {
+    const items = Array.isArray(selectedOrder?.items)
+      ? selectedOrder.items
+      : [];
+    return items.every(
+      (i: any) => typeof i?.variantId === "string" && i.variantId.trim(),
+    );
+  }, [selectedOrder?.items]);
+
+  useEffect(() => {
+    if (!isDetailModalOpen) {
+      setIsEditingItems(false);
+      setIsSavingItems(false);
+      setDraftItems([]);
+      variantSearch.setQuery("");
+      return;
+    }
+
+    // If modal is open but the order changes, reset edit state.
+    setIsEditingItems(false);
+    setIsSavingItems(false);
+    setDraftItems([]);
+    variantSearch.setQuery("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDetailModalOpen, selectedOrder?.id]);
+
+  const draftSubtotal = useMemo(() => {
+    return draftItems.reduce(
+      (sum, it) =>
+        sum + (Number(it.unitPrice) || 0) * (Number(it.quantity) || 0),
+      0,
+    );
+  }, [draftItems]);
+
+  const draftTotal = useMemo(() => {
+    const deliveryFee = Number(selectedOrder?.deliveryFee || 0);
+    const discount = Number(selectedOrder?.discount || 0);
+    return Math.max(0, draftSubtotal + deliveryFee - Math.max(0, discount));
+  }, [draftSubtotal, selectedOrder?.deliveryFee, selectedOrder?.discount]);
 
   const proofUrl =
     typeof selectedOrder?.deliveryProofUrl === "string"
@@ -132,7 +196,9 @@ const OrderDetailModal = ({
             </div>
 
             <div className={styles.itemsSection}>
-              <h4 className={styles.detailTitle}>Order Items</h4>
+              <div className={styles.itemsHeaderRow}>
+                <h4 className={styles.detailTitle}>Order Items</h4>
+              </div>
               <table className={styles.itemsTable}>
                 <thead>
                   <tr>
@@ -141,26 +207,267 @@ const OrderDetailModal = ({
                     <th>Qty</th>
                     <th>Unit Price</th>
                     <th>Total</th>
+                    {isEditingItems ? <th /> : null}
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedOrder.items.map((item: any, index: number) => (
-                    <tr key={index}>
-                      <td>{item.name}</td>
-                      <td>{item.variant || "-"}</td>
-                      <td>{item.quantity}</td>
-                      <td>£{item.unitPrice.toFixed(2)}</td>
-                      <td>£{(item.quantity * item.unitPrice).toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {(isEditingItems ? draftItems : selectedOrder.items).map(
+                    (item: any, index: number) => (
+                      <tr key={item?.variantId || index}>
+                        <td>{item.name}</td>
+                        <td>{item.variant || item.sku || "-"}</td>
+                        <td>
+                          {isEditingItems ? (
+                            <input
+                              className={styles.itemQtyInput}
+                              type="number"
+                              inputMode="numeric"
+                              min={1}
+                              value={String(item.quantity ?? "")}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const qty = Math.max(
+                                  1,
+                                  Math.floor(Number(raw || 1)),
+                                );
+                                setDraftItems((prev) =>
+                                  prev.map((it, idx) =>
+                                    idx === index
+                                      ? { ...it, quantity: qty }
+                                      : it,
+                                  ),
+                                );
+                              }}
+                            />
+                          ) : (
+                            item.quantity
+                          )}
+                        </td>
+                        <td>£{Number(item.unitPrice || 0).toFixed(2)}</td>
+                        <td>
+                          £
+                          {(
+                            (Number(item.quantity) || 0) *
+                            (Number(item.unitPrice) || 0)
+                          ).toFixed(2)}
+                        </td>
+                        {isEditingItems ? (
+                          <td className={styles.itemActionsCell}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={draftItems.length <= 1}
+                              onClick={() => {
+                                setDraftItems((prev) =>
+                                  prev.filter((_, idx) => idx !== index),
+                                );
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </td>
+                        ) : null}
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
+
+              {isEditingItems ? (
+                <div className={styles.itemEditPanel}>
+                  <div className={styles.filterGroup}>
+                    <label
+                      className={styles.filterLabel}
+                      htmlFor="variantSearch"
+                    >
+                      Add item (search by name / SKU)
+                    </label>
+                    <input
+                      id="variantSearch"
+                      className={styles.filterInput}
+                      value={variantSearch.query}
+                      onChange={(e) => variantSearch.setQuery(e.target.value)}
+                      placeholder="Search variants…"
+                      disabled={isSavingItems}
+                    />
+                  </div>
+
+                  {variantSearch.hasQuery ? (
+                    <div className={styles.variantResults}>
+                      {variantSearch.loading ? (
+                        <div className={styles.variantResultEmpty}>
+                          Searching…
+                        </div>
+                      ) : variantSearch.error ? (
+                        <div className={styles.variantResultEmpty}>
+                          {variantSearch.error}
+                        </div>
+                      ) : variantSearch.results.length ? (
+                        variantSearch.results.map((v) => (
+                          <div key={v._id} className={styles.variantResultRow}>
+                            <div className={styles.variantResultText}>
+                              <div className={styles.variantResultName}>
+                                {v.product?.name ? `${v.product.name} • ` : ""}
+                                {v.name}
+                              </div>
+                              <div className={styles.variantResultMeta}>
+                                {v.sku}
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={
+                                String(v.status || "active") !== "active"
+                              }
+                              onClick={() => {
+                                setDraftItems((prev) => {
+                                  const idx = prev.findIndex(
+                                    (x) =>
+                                      String(x.variantId) === String(v._id),
+                                  );
+
+                                  if (idx >= 0) {
+                                    const next = [...prev];
+                                    next[idx] = {
+                                      ...next[idx],
+                                      quantity: Math.max(
+                                        1,
+                                        (next[idx].quantity || 0) + 1,
+                                      ),
+                                    };
+                                    return next;
+                                  }
+
+                                  return [
+                                    ...prev,
+                                    {
+                                      variantId: v._id,
+                                      name: v.name,
+                                      sku: v.sku,
+                                      unitPrice: Number(v.price || 0),
+                                      quantity: 1,
+                                    },
+                                  ];
+                                });
+                                variantSearch.setQuery("");
+                              }}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className={styles.variantResultEmpty}>
+                          No results
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {canUpdatePermission ? (
+                <div className={styles.itemsFooterActions}>
+                  {!canEditItems || !hasVariantIds ? (
+                    <span className={styles.itemsEditHint}>
+                      {itemEditBlockedReason || "Missing item variant IDs"}
+                    </span>
+                  ) : !isEditingItems ? (
+                    <span className={styles.itemsEditHint}>
+                      Change quantities, remove lines, or add new items.
+                    </span>
+                  ) : null}
+
+                  <div className={styles.itemsActionButtons}>
+                    <Button
+                      variant={isEditingItems ? "ghost" : "outline"}
+                      size="sm"
+                      disabled={!canEditItems || !hasVariantIds}
+                      onClick={() => {
+                        if (!canEditItems || !hasVariantIds) return;
+
+                        if (isEditingItems) {
+                          setIsEditingItems(false);
+                          setDraftItems([]);
+                          variantSearch.setQuery("");
+                          return;
+                        }
+
+                        const items = Array.isArray(selectedOrder?.items)
+                          ? selectedOrder.items
+                          : [];
+
+                        setDraftItems(
+                          items
+                            .filter(
+                              (i: any) => typeof i?.variantId === "string",
+                            )
+                            .map((i: any) => ({
+                              variantId: String(i.variantId),
+                              name: String(i.name || ""),
+                              sku:
+                                typeof i.variant === "string"
+                                  ? i.variant
+                                  : undefined,
+                              unitPrice: Number(i.unitPrice || 0),
+                              quantity: Number(i.quantity || 1),
+                            })),
+                        );
+                        setIsEditingItems(true);
+                      }}
+                    >
+                      {isEditingItems ? "Cancel edit" : "Edit items"}
+                    </Button>
+
+                    {isEditingItems ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        isLoading={isSavingItems}
+                        disabled={isSavingItems || draftItems.length === 0}
+                        onClick={async () => {
+                          if (!selectedOrder?.id) return;
+                          if (!draftItems.length) return;
+                          setIsSavingItems(true);
+                          try {
+                            const payload = draftItems.map((i) => ({
+                              variantId: String(i.variantId),
+                              quantity: Number(i.quantity) || 1,
+                            }));
+
+                            const updated = await updateOrderItems?.(
+                              selectedOrder.id,
+                              payload,
+                            );
+                            if (updated) {
+                              setIsEditingItems(false);
+                              setDraftItems([]);
+                              variantSearch.setQuery("");
+                            }
+                          } finally {
+                            setIsSavingItems(false);
+                          }
+                        }}
+                      >
+                        Save items
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className={styles.totalsSection}>
               <div className={styles.totalRow}>
                 <span>Subtotal</span>
-                <span>£{selectedOrder.subtotal.toFixed(2)}</span>
+                <span>
+                  £
+                  {(isEditingItems
+                    ? draftSubtotal
+                    : selectedOrder.subtotal
+                  ).toFixed(2)}
+                </span>
               </div>
               <div className={styles.totalRow}>
                 <span>Delivery Fee</span>
@@ -176,7 +483,12 @@ const OrderDetailModal = ({
               )}
               <div className={`${styles.totalRow} ${styles.grandTotal}`}>
                 <span>Total</span>
-                <span>£{selectedOrder.total.toFixed(2)}</span>
+                <span>
+                  £
+                  {(isEditingItems ? draftTotal : selectedOrder.total).toFixed(
+                    2,
+                  )}
+                </span>
               </div>
             </div>
 

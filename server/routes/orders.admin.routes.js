@@ -15,6 +15,8 @@ const {
   updateOrderPaymentSchema,
   bulkUpdateDeliveryStatusSchema,
   bulkAssignDeliveryDateSchema,
+  updateOrderItemsSchema,
+  bulkDeleteOrdersSchema,
 } = require("../validators/order.validators");
 
 const { refundOrderSchema } = require("../validators/orderRefund.validator");
@@ -56,6 +58,13 @@ router.put(
   asyncHandler(controller.BulkUpdateDeliveryStatus),
 );
 
+router.delete(
+  "/bulk",
+  requirePermission("orders.delete"),
+  validateBody(bulkDeleteOrdersSchema),
+  asyncHandler(controller.BulkDeleteOrders),
+);
+
 router.put(
   "/:orderId/status",
   requirePermission("orders.update"),
@@ -71,6 +80,21 @@ router.patch(
   validateParams(orderIdParamSchema),
   validateBody(updateOrderPaymentSchema),
   asyncHandler(controller.UpdateOrderPaymentStatus),
+);
+
+router.patch(
+  "/:orderId/items",
+  requirePermission("orders.update"),
+  validateParams(orderIdParamSchema),
+  validateBody(updateOrderItemsSchema),
+  asyncHandler(controller.UpdateOrderItems),
+);
+
+router.delete(
+  "/:orderId",
+  requirePermission("orders.delete"),
+  validateParams(orderIdParamSchema),
+  asyncHandler(controller.DeleteOrder),
 );
 
 router.post(
