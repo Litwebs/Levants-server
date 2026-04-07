@@ -139,6 +139,7 @@ async function CreateDiscount({ body, userId }) {
   const discount = await Discount.create({
     name: body.name,
     code,
+    isCodeVisibleOnWebsite: Boolean(body.isCodeVisibleOnWebsite),
     kind: body.kind,
     percentOff: body.kind === "percent" ? body.percentOff : undefined,
     amountOff: body.kind === "amount" ? body.amountOff : undefined,
@@ -324,9 +325,22 @@ async function DeactivateDiscount({ discountId }) {
   return { success: true, data: { discount } };
 }
 
+async function UpdateDiscount({ discountId, body } = {}) {
+  const discount = await Discount.findById(discountId);
+  if (!discount) {
+    return { success: false, statusCode: 404, message: "Discount not found" };
+  }
+
+  discount.isCodeVisibleOnWebsite = Boolean(body?.isCodeVisibleOnWebsite);
+  await discount.save();
+
+  return { success: true, data: { discount } };
+}
+
 module.exports = {
   CreateDiscount,
   ListDiscounts,
   GetDiscountDetails,
   DeactivateDiscount,
+  UpdateDiscount,
 };

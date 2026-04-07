@@ -75,6 +75,11 @@ type OrdersContextType = {
     deliveryProofFile?: File,
   ) => Promise<AdminOrder>;
 
+  updateOrderPaymentStatus: (
+    orderId: string,
+    paid: boolean,
+  ) => Promise<AdminOrder>;
+
   refundOrder: (
     orderId: string,
     body?: { reason?: string; restock?: boolean },
@@ -229,6 +234,29 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       } catch (err: any) {
         const msg =
           err?.response?.data?.message || "Failed to update order status";
+        dispatch({ type: ORDERS_FAILURE, payload: msg });
+        throw err;
+      }
+    },
+    [],
+  );
+
+  const updateOrderPaymentStatus = useCallback(
+    async (orderId: string, paid: boolean) => {
+      dispatch({ type: ORDERS_REQUEST });
+      try {
+        const res = await api.patch(`/admin/orders/${orderId}/payment`, {
+          paid,
+        });
+
+        const order = unwrapData<AdminOrder>(res.data);
+        if (!order?._id) throw new Error("Failed to update payment status");
+
+        dispatch({ type: ORDERS_UPDATE_SUCCESS, payload: { order } });
+        return order;
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message || "Failed to update payment status";
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -394,6 +422,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       listOrders,
       getOrderById,
       updateOrderStatus,
+      updateOrderPaymentStatus,
       refundOrder,
       bulkUpdateDeliveryStatus,
       bulkAssignDeliveryDate,
@@ -404,6 +433,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       listOrders,
       getOrderById,
       updateOrderStatus,
+      updateOrderPaymentStatus,
       refundOrder,
       bulkUpdateDeliveryStatus,
       bulkAssignDeliveryDate,

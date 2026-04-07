@@ -20,8 +20,10 @@ import {
 } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import { getDiscountDetails } from "@/context/Discounts";
+import { updateDiscount } from "@/context/Discounts";
 import { useDiscountsAdmin } from "./useDiscountsAdmin";
 import { useVariantSearch } from "./useVariantSearch";
 import type {
@@ -43,6 +45,7 @@ const formatDateTime = (value?: string) => {
 const emptyDraft: CreateDiscountBody = {
   name: "",
   code: "",
+  isCodeVisibleOnWebsite: false,
   kind: "percent",
   percentOff: 10,
   scope: "global",
@@ -63,6 +66,7 @@ export const DiscountsPage = () => {
 
   const canCreate = hasPermission("promotions.create");
   const canDelete = hasPermission("promotions.delete");
+  const canUpdate = hasPermission("promotions.update");
 
   const {
     discounts,
@@ -70,6 +74,7 @@ export const DiscountsPage = () => {
     error,
     creating,
     deletingId,
+    refetch,
     meta,
     page,
     pageSize,
@@ -98,6 +103,9 @@ export const DiscountsPage = () => {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsPage, setDetailsPage] = useState(1);
   const [detailsTotalPages, setDetailsTotalPages] = useState(1);
+  const [visibilityUpdatingId, setVisibilityUpdatingId] = useState<
+    string | null
+  >(null);
 
   const {
     query: variantQuery,
@@ -117,6 +125,8 @@ export const DiscountsPage = () => {
       kind: kind,
       scope: scope,
     };
+
+    body.isCodeVisibleOnWebsite = Boolean(draft.isCodeVisibleOnWebsite);
 
     const code = String(draft.code || "").trim();
     if (code) body.code = code.toUpperCase();
@@ -203,6 +213,33 @@ export const DiscountsPage = () => {
     setDetails(null);
     setDetailsPage(1);
     setDetailsTotalPages(1);
+  };
+
+  const onToggleWebsiteVisibilityFromTable = async (
+    discountId: string,
+    next: boolean,
+  ) => {
+    if (!discountId) return;
+    if (visibilityUpdatingId) return;
+    setVisibilityUpdatingId(discountId);
+    try {
+      await updateDiscount(discountId, { isCodeVisibleOnWebsite: next });
+      await refetch();
+      showToast({
+        type: "success",
+        title: next ? "Code is now visible" : "Code is now hidden",
+      });
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title:
+          err?.response?.data?.message ||
+          err?.message ||
+          "Failed to update discount",
+      });
+    } finally {
+      setVisibilityUpdatingId(null);
+    }
   };
 
   const onSave = async () => {
@@ -333,6 +370,7 @@ export const DiscountsPage = () => {
                 <TableHead>Starts</TableHead>
                 <TableHead>Ends</TableHead>
                 <TableHead>Limits</TableHead>
+                <TableHead>Website</TableHead>
                 <TableHead align="right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -340,13 +378,13 @@ export const DiscountsPage = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={10}>
                     <span className={styles.muted}>Loading…</span>
                   </TableCell>
                 </TableRow>
               ) : discounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={10}>
                     <span className={styles.muted}>No discounts yet</span>
                   </TableCell>
                 </TableRow>
@@ -393,6 +431,39 @@ export const DiscountsPage = () => {
                       <TableCell>
                         {limits ? (
                           <span>{limits}</span>
+                        ) : (
+                          <span className={styles.muted}>—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {canUpdate ? (
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            }}
+                          >
+                            <Select
+                              value={
+                                Boolean((d as any)?.isCodeVisibleOnWebsite)
+                                  ? "visible"
+                                  : "hidden"
+                              }
+                              disabled={
+                                loading || visibilityUpdatingId === d._id
+                              }
+                              onChange={(value) => {
+                                const next = value === "visible";
+                                void onToggleWebsiteVisibilityFromTable(
+                                  d._id,
+                                  next,
+                                );
+                              }}
+                              options={[
+                                { value: "hidden", label: "Hidden" },
+                                { value: "visible", label: "Visible" },
+                              ]}
+                            />
+                          </div>
                         ) : (
                           <span className={styles.muted}>—</span>
                         )}
@@ -640,6 +711,28 @@ export const DiscountsPage = () => {
             <div className={styles.formHelp}>
               Leave empty to auto-generate a code.
             </div>
+          </FormRow>
+
+          <FormRow label="Show code on website">
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                color: "var(--color-gray-700)",
+              }}
+            >
+              <Checkbox
+                checked={Boolean(draft.isCodeVisibleOnWebsite)}
+                onCheckedChange={(val) => {
+                  const checked = val === true;
+                  setDraft((p) => ({ ...p, isCodeVisibleOnWebsite: checked }));
+                }}
+              />
+              <span style={{ fontSize: "var(--text-sm)" }}>
+                Show this discount code in the public website list
+              </span>
+            </label>
           </FormRow>
 
           <FormRow label="Kind">

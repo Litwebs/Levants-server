@@ -102,6 +102,7 @@ export const useSettings = () => {
   }, [user]);
 
   const isAdmin = roleName === "admin";
+  const isDriver = roleName === "driver";
 
   const hasPermission = useMemo(() => {
     return (perm: string) => permissions.includes("*") || permissions.includes(perm);
@@ -125,7 +126,7 @@ export const useSettings = () => {
     // Tabs that are always available to authenticated users
     const base: Array<"preferences" | "notifications" | "security"> = [
       "preferences",
-      "notifications",
+      ...(isDriver ? [] : ["notifications"]),
       "security",
     ];
 
@@ -146,7 +147,7 @@ export const useSettings = () => {
     if (isAdmin) tabs.push("roles");
     tabs.push(...base);
     return tabs;
-  }, [hasPermission, isAdmin]);
+  }, [hasPermission, isAdmin, isDriver]);
 
   /* -------------------- PREFERENCES -------------------- */
   type ThemePreference = "light" | "dark" | "system";

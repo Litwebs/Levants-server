@@ -55,6 +55,7 @@ const PERMISSIONS = [
   "orders.create",
   "orders.read",
   "orders.update",
+  "orders.payment.update",
   "orders.delete",
   "orders.refund",
 

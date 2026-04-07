@@ -11,7 +11,10 @@ const {
 } = require("../middleware/validate.middleware");
 
 const controller = require("../controllers/discounts.admin.controller");
-const { createDiscountSchema } = require("../validators/discount.validators");
+const {
+  createDiscountSchema,
+  updateDiscountSchema,
+} = require("../validators/discount.validators");
 const { objectIdParamSchema } = require("../validators/common.validators");
 
 const router = express.Router();
@@ -61,6 +64,14 @@ router.delete(
   requirePermission("promotions.delete"),
   validateParams(objectIdParamSchema("discountId")),
   asyncHandler(controller.DeactivateDiscount),
+);
+
+router.patch(
+  "/:discountId",
+  requirePermission("promotions.update"),
+  validateParams(objectIdParamSchema("discountId")),
+  validateBody(updateDiscountSchema),
+  asyncHandler(controller.UpdateDiscount),
 );
 
 module.exports = router;

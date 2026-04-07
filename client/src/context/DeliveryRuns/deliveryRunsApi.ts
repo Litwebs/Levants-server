@@ -169,6 +169,11 @@ const mapStops = (stops: any[]): RouteStop[] => {
         }))
       : [];
 
+    const orderIsManualImport = Boolean(order?.metadata?.manualImport);
+    const orderIsStripeBacked = Boolean(
+      order?.stripeCheckoutSessionId || order?.stripePaymentIntentId,
+    );
+
     return {
       stopId: String(s._id),
       sequence: Number(s.sequence ?? 0),
@@ -180,6 +185,13 @@ const mapStops = (stops: any[]): RouteStop[] => {
       postcode: String(order?.deliveryAddress?.postcode ?? ""),
       lat: Number(order?.location?.lat ?? 0),
       lng: Number(order?.location?.lng ?? 0),
+      orderTotal:
+        typeof order?.total === "number" && Number.isFinite(order.total)
+          ? order.total
+          : undefined,
+      orderPaymentStatus: typeof order?.status === "string" ? order.status : undefined,
+      orderIsManualImport,
+      orderIsStripeBacked,
       navigationUrl:
         typeof s?.navigationUrl === "string" ? s.navigationUrl : undefined,
       notes:

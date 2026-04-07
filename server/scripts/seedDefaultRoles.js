@@ -32,6 +32,7 @@ const DEFAULT_ROLES = [
     permissions: [
       "orders.read",
       "orders.update",
+      "orders.payment.update",
       "products.read",
       "customers.read",
       "delivery.routes.read",
@@ -44,8 +45,8 @@ const DEFAULT_ROLES = [
     description: "Delivery access only",
     permissions: [
       "orders.read",
+      "orders.payment.update",
       "delivery.routes.read",
-      "delivery.routes.update",
     ],
     isSystem: true,
   },

@@ -60,9 +60,26 @@ const DeactivateDiscount = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const UpdateDiscount = async (req, res) => {
+  const result = await service.UpdateDiscount({
+    discountId: req.params.discountId,
+    body: req.body,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Failed to update discount",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 module.exports = {
   CreateDiscount,
   ListDiscounts,
   GetDiscountDetails,
   DeactivateDiscount,
+  UpdateDiscount,
 };

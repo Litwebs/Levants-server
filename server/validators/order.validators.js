@@ -49,6 +49,10 @@ const updateOrderStatusSchema = Joi.object({
   deliveryNote: Joi.string().trim().max(500).allow(null, "").optional(),
 }).unknown(false);
 
+const updateOrderPaymentSchema = Joi.object({
+  paid: Joi.boolean().required(),
+}).unknown(false);
+
 const bulkUpdateDeliveryStatusSchema = Joi.object({
   orderIds: Joi.array()
     .items(Joi.string().trim().length(24).hex().required())
@@ -72,6 +76,7 @@ const bulkAssignDeliveryDateSchema = Joi.object({
 module.exports = {
   createOrderSchema,
   updateOrderStatusSchema,
+  updateOrderPaymentSchema,
   bulkUpdateDeliveryStatusSchema,
   bulkAssignDeliveryDateSchema,
 };

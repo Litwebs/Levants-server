@@ -9,18 +9,36 @@ const OrderDetailModal = ({
   isDetailModalOpen,
   setIsDetailModalOpen,
   setIsStatusModalOpen,
+  updateOrderPaymentStatus,
   refundOrder,
 }: any) => {
   const { hasPermission } = usePermissions();
   const canRefundPermission = hasPermission("orders.refund");
   const canUpdatePermission = hasPermission("orders.update");
+  const canUpdatePaymentPermission =
+    canUpdatePermission || hasPermission("orders.payment.update");
 
   const [isRefundConfirmOpen, setIsRefundConfirmOpen] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
   const [refundAmount, setRefundAmount] = useState<string>("");
+  const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
+  const [isPaymentConfirmOpen, setIsPaymentConfirmOpen] = useState(false);
+  const [nextPaidValue, setNextPaidValue] = useState<boolean | null>(null);
 
   const isAlreadyRefunded = selectedOrder?.paymentStatus === "refunded";
   const isRefundPending = selectedOrder?.paymentStatus === "refund_pending";
+  const isPartiallyRefunded =
+    selectedOrder?.paymentStatus === "partially_refunded";
+  const isRefundRelated =
+    isAlreadyRefunded || isRefundPending || isPartiallyRefunded;
+
+  const isPaid = selectedOrder?.paymentStatus === "paid";
+  const canTogglePaymentStatus =
+    canUpdatePaymentPermission &&
+    Boolean(selectedOrder?.id) &&
+    Boolean(selectedOrder?.isManualImport) &&
+    !selectedOrder?.isStripeBacked &&
+    !isRefundRelated;
   const canRefund =
     canRefundPermission &&
     Boolean(selectedOrder?.id) &&
@@ -245,6 +263,20 @@ const OrderDetailModal = ({
           <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>
             Close
           </Button>
+          {canUpdatePaymentPermission ? (
+            <Button
+              variant="outline"
+              disabled={!canTogglePaymentStatus || isUpdatingPayment}
+              isLoading={isUpdatingPayment}
+              onClick={async () => {
+                if (!canTogglePaymentStatus) return;
+                setNextPaidValue(!isPaid);
+                setIsPaymentConfirmOpen(true);
+              }}
+            >
+              {isPaid ? "Mark Unpaid" : "Mark Paid"}
+            </Button>
+          ) : null}
           {canRefundPermission ? (
             <Button
               variant="danger"
@@ -357,6 +389,60 @@ const OrderDetailModal = ({
               }}
             >
               Refund
+            </Button>
+          </ModalFooter>
+        </Modal>
+      ) : null}
+
+      {canUpdatePaymentPermission ? (
+        <Modal
+          isOpen={isPaymentConfirmOpen}
+          onClose={() => {
+            if (!isUpdatingPayment) setIsPaymentConfirmOpen(false);
+          }}
+          title="Confirm payment status"
+          size="sm"
+        >
+          <p>
+            {nextPaidValue
+              ? `Mark order ${selectedOrder?.orderNumber || ""} as paid?`
+              : `Mark order ${selectedOrder?.orderNumber || ""} as unpaid?`}
+          </p>
+
+          <ModalFooter>
+            <Button
+              variant="outline"
+              disabled={isUpdatingPayment}
+              onClick={() => setIsPaymentConfirmOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              isLoading={isUpdatingPayment}
+              disabled={
+                isUpdatingPayment ||
+                !canTogglePaymentStatus ||
+                !selectedOrder?.id ||
+                typeof nextPaidValue !== "boolean"
+              }
+              onClick={async () => {
+                if (!selectedOrder?.id) return;
+                if (typeof nextPaidValue !== "boolean") return;
+                if (!canTogglePaymentStatus) return;
+
+                setIsUpdatingPayment(true);
+                try {
+                  await updateOrderPaymentStatus?.(
+                    selectedOrder.id,
+                    nextPaidValue,
+                  );
+                  setIsPaymentConfirmOpen(false);
+                } finally {
+                  setIsUpdatingPayment(false);
+                }
+              }}
+            >
+              Confirm
             </Button>
           </ModalFooter>
         </Modal>

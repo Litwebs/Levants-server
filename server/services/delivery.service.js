@@ -334,6 +334,22 @@ const parseMoney = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const parsePaidFlag = (v) => {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return v > 0;
+
+  const s = String(v || "")
+    .trim()
+    .toLowerCase();
+
+  if (!s) return null;
+
+  if (["1", "y", "yes", "true", "paid"].includes(s)) return true;
+  if (["0", "n", "no", "false", "unpaid", "pending"].includes(s)) return false;
+
+  return null;
+};
+
 const generateOrderId = () => {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const random = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -437,6 +453,7 @@ const buildManualRow = (obj) => {
       orderCell: "",
       deliveryFee: "",
       total: "",
+      paid: "",
       _raw: obj,
     };
   }
@@ -493,7 +510,19 @@ const buildManualRow = (obj) => {
   const deliveryFee = str(
     pick(["deliveryfee", "delivery fee", "shipping", "delivery"]),
   );
-  const total = str(pick(["total", "amount", "ordertotal"]));
+  const total = str(
+    pick(["total", "totalamount", "total amount", "amount", "ordertotal"]),
+  );
+  const paid = str(
+    pick([
+      "paid",
+      "ispaid",
+      "payment",
+      "paymentstatus",
+      "payment status",
+      "paidstatus",
+    ]),
+  );
 
   return {
     name,
@@ -504,6 +533,7 @@ const buildManualRow = (obj) => {
     orderCell: orderCell || inferOrderCellFromRow(obj),
     deliveryFee,
     total,
+    paid,
     _raw: obj,
   };
 };
@@ -819,6 +849,9 @@ async function createDeliveryBatch({
         const providedTotal = parseMoney(row.total);
         const total = providedTotal > 0 ? providedTotal : computedTotal;
 
+        const paidFlag = parsePaidFlag(row.paid);
+        const isPaid = paidFlag === null ? true : paidFlag;
+
         const [order] = await Order.create(
           [
             {
@@ -832,8 +865,8 @@ async function createDeliveryBatch({
               totalBeforeDiscount: computedTotal,
               discountAmount: 0,
               isDiscounted: false,
-              status: "paid",
-              paidAt: now,
+              status: isPaid ? "paid" : "unpaid",
+              paidAt: isPaid ? now : undefined,
               reservationExpiresAt,
               deliveryDate: startOfDay,
               deliveryAddress: geo.deliveryAddress,

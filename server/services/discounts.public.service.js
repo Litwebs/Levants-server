@@ -325,6 +325,7 @@ async function listActiveDiscounts({ page = 1, pageSize = 50 } = {}) {
   const now = new Date();
   const filter = {
     isActive: true,
+    isCodeVisibleOnWebsite: true,
     $and: [
       { $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
       { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] },

@@ -17,6 +17,17 @@ const {
 
 const { spreadsheetUploadToRows } = require("../utils/ordersSpreadsheet.util");
 
+const getRoleName = (user) => {
+  const role = user?.role;
+  if (!role) return "";
+  if (typeof role === "string") return role.toLowerCase();
+  if (typeof role === "object" && role?.name)
+    return String(role.name).toLowerCase();
+  return "";
+};
+
+const isDriverUser = (user) => getRoleName(user) === "driver";
+
 const parseStringArrayField = (value) => {
   if (Array.isArray(value)) return value.map((x) => String(x));
   if (typeof value !== "string") return undefined;
@@ -83,6 +94,13 @@ async function getDepot(req, res) {
  */
 async function createBatch(req, res) {
   try {
+    if (isDriverUser(req.user)) {
+      return res.status(403).json({
+        success: false,
+        message: "Drivers cannot create delivery runs",
+      });
+    }
+
     const { deliveryDate, startTime, endTime } = req.body;
     const orderIds = parseStringArrayField(req.body?.orderIds);
 
@@ -176,6 +194,12 @@ async function getOrdersStockRequirements(req, res) {
 }
 
 async function lockBatch(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
   const { batchId } = req.params;
   const result = await lockBatchService({ batchId });
   if (!result.success) {
@@ -185,6 +209,12 @@ async function lockBatch(req, res) {
 }
 
 async function unlockBatch(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
   const { batchId } = req.params;
   const result = await unlockBatchService({ batchId });
   if (!result.success) {
@@ -194,6 +224,12 @@ async function unlockBatch(req, res) {
 }
 
 async function dispatchBatch(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
   const { batchId } = req.params;
   const result = await dispatchBatchService({ batchId });
   if (!result.success) {
@@ -205,6 +241,12 @@ async function dispatchBatch(req, res) {
  * Generate routes
  */
 async function generateRoutes(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
   const { batchId } = req.params;
   const driverIds = Array.isArray(req.body?.driverIds)
     ? req.body.driverIds
@@ -264,6 +306,12 @@ async function getRouteStock(req, res) {
  * Delete batch and associated routes/stops
  */
 async function deleteBatch(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
   const { batchId } = req.params;
   const result = await deleteBatchService({ batchId });
   if (!result.success) {

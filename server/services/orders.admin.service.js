@@ -22,12 +22,16 @@ async function ListOrders({
 
   // 🔒 Payment status is restricted (always)
   const ALLOWED_PAYMENT = new Set([
+    "pending",
+    "unpaid",
     "paid",
     "refund_pending",
     "partially_refunded",
     "refunded",
   ]);
   const DEFAULT_PAYMENT = [
+    "pending",
+    "unpaid",
     "paid",
     "refund_pending",
     "partially_refunded",
@@ -245,6 +249,68 @@ async function ListOrders({
       },
     },
   };
+}
+
+async function UpdateOrderPaymentStatus({ orderId, paid, actorUserId } = {}) {
+  if (!orderId) {
+    return { success: false, statusCode: 400, message: "orderId is required" };
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    return { success: false, statusCode: 404, message: "Order not found" };
+  }
+
+  const isStripeBacked = Boolean(
+    String(order.stripeCheckoutSessionId || "").trim() ||
+    String(order.stripePaymentIntentId || "").trim(),
+  );
+
+  // Only allow toggling payment for non-Stripe / file-imported orders.
+  const isManualImport = Boolean(order?.metadata?.manualImport);
+  if (isStripeBacked || !isManualImport) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Payment status can only be edited for file-imported orders",
+    };
+  }
+
+  const normalizedPaid = Boolean(paid);
+
+  // Do not allow toggling for refunded states.
+  const lockedStatuses = new Set([
+    "refund_pending",
+    "partially_refunded",
+    "refunded",
+  ]);
+  if (lockedStatuses.has(String(order.status))) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Payment status cannot be changed for refunded orders",
+    };
+  }
+
+  const now = new Date();
+
+  if (normalizedPaid) {
+    order.status = "paid";
+    order.paidAt = order.paidAt || now;
+  } else {
+    order.status = "unpaid";
+    order.paidAt = undefined;
+  }
+
+  if (!order.metadata || typeof order.metadata !== "object")
+    order.metadata = {};
+  order.metadata.paymentStatusUpdatedAt = now;
+  if (actorUserId) order.metadata.paymentStatusUpdatedBy = String(actorUserId);
+  order.markModified("metadata");
+
+  await order.save();
+
+  return { success: true, data: order };
 }
 
 async function GetOrderById({ orderId }) {
@@ -626,6 +692,7 @@ module.exports = {
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,
+  UpdateOrderPaymentStatus,
   BulkUpdateDeliveryStatus,
   bulkAssignDeliveryDate,
 };

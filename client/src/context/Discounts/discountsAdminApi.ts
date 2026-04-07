@@ -50,6 +50,16 @@ export async function deactivateDiscount(discountId: string) {
   return data.discount;
 }
 
+export async function updateDiscount(
+  discountId: string,
+  body: { isCodeVisibleOnWebsite: boolean },
+) {
+  const res = await api.patch(`/admin/discounts/${discountId}`, body);
+  const data = unwrapData<{ discount: Discount }>(res.data);
+  if (!data?.discount) throw new Error("Failed to update discount");
+  return data.discount;
+}
+
 export async function getDiscountDetails(
   discountId: string,
   params?: { page?: number; pageSize?: number },

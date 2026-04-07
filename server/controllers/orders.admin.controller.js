@@ -84,6 +84,23 @@ const UpdateOrderStatus = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const UpdateOrderPaymentStatus = async (req, res) => {
+  const result = await service.UpdateOrderPaymentStatus({
+    orderId: req.params.orderId,
+    paid: req.body.paid,
+    actorUserId: req.user?._id || req.user?.id,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Failed to update payment status",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const RefundOrder = async (req, res) => {
   const { orderId } = req.params;
   const { amount, reason, restock } = req.body || {};
@@ -154,6 +171,7 @@ module.exports = {
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,
+  UpdateOrderPaymentStatus,
   RefundOrder,
   BulkUpdateDeliveryStatus,
   bulkAssignDeliveryDate,

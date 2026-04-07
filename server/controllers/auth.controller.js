@@ -642,6 +642,20 @@ const GetUserById = async (req, res, next) => {
 // USED TO UPDATE SELF INFO (Authenticated)
 const UpdateSelf = async (req, res, next) => {
   try {
+    const role = req.user?.role;
+    const roleName =
+      typeof role === "string"
+        ? role.toLowerCase()
+        : typeof role === "object" && role?.name
+          ? String(role.name).toLowerCase()
+          : "";
+
+    if (roleName === "driver") {
+      if (req.body?.preferences?.notifications) {
+        delete req.body.preferences.notifications;
+      }
+    }
+
     const result = await authService.UpdateSelf({
       userId: req.user.id,
       updates: req.body,

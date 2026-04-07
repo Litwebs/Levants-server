@@ -26,6 +26,14 @@ export interface RouteStop {
   postcode: string;
   lat: number;
   lng: number;
+  /** Order total amount (used for driver stop list) */
+  orderTotal?: number;
+  /** Payment status for the order (e.g. paid/pending/refunded) */
+  orderPaymentStatus?: string;
+  /** Whether this order was created via spreadsheet/manual import */
+  orderIsManualImport?: boolean;
+  /** Whether this order is backed by Stripe (then payment status is locked) */
+  orderIsStripeBacked?: boolean;
   /** Optional server-provided navigation link */
   navigationUrl?: string;
   notes?: string;

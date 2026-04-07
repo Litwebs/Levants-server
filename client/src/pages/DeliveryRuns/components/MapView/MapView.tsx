@@ -8,6 +8,7 @@ import { useToast } from "@/components/common/Toast";
 import { useOrdersApi } from "@/context/Orders";
 import { usePermissions } from "@/hooks/usePermissions";
 import OrderStatusModal from "@/pages/Orders/OrderStatusModal";
+import { Button, Modal, ModalFooter } from "@/components/common";
 import {
   VanRoute,
   VanId,
@@ -18,7 +19,7 @@ import {
   getVanStyleKey,
   formatManifestItemSku,
 } from "@/context/DeliveryRuns";
-import { getStatusBadge } from "@/pages/Orders/order.utils";
+import { getPaymentBadge, getStatusBadge } from "@/pages/Orders/order.utils";
 import styles from "./MapView.module.css";
 
 const LIGHT_TILES_URL =
@@ -265,7 +266,8 @@ export const MapView: React.FC<MapViewProps> = ({
 }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { listOrders, updateOrderStatus } = useOrdersApi();
+  const { listOrders, updateOrderStatus, updateOrderPaymentStatus } =
+    useOrdersApi();
   const { hasPermission } = usePermissions();
 
   const roleName =
@@ -421,6 +423,18 @@ export const MapView: React.FC<MapViewProps> = ({
   const [deliveryStatusOverrides, setDeliveryStatusOverrides] = useState<
     Record<string, string>
   >({});
+  const [paymentStatusOverrides, setPaymentStatusOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [paymentUpdateStopId, setPaymentUpdateStopId] = useState<string | null>(
+    null,
+  );
+  const [paymentConfirmStop, setPaymentConfirmStop] = useState<
+    VanRoute["stops"][0] | null
+  >(null);
+  const [paymentConfirmNextPaid, setPaymentConfirmNextPaid] = useState<
+    boolean | null
+  >(null);
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [mapSizeNonce, setMapSizeNonce] = useState(0);
 
@@ -498,6 +512,92 @@ export const MapView: React.FC<MapViewProps> = ({
     if (typeof override === "string" && override.trim().length > 0)
       return override;
     return getOrderDeliveryStatus(stop);
+  };
+
+  const getEffectivePaymentStatus = (stop: VanRoute["stops"][0]) => {
+    const override = paymentStatusOverrides[stop.stopId];
+    if (typeof override === "string" && override.trim().length > 0)
+      return override;
+
+    const candidate =
+      (stop as any)?.orderPaymentStatus ??
+      (stop as any)?.paymentStatus ??
+      (stop as any)?.order?.status;
+
+    return typeof candidate === "string" && candidate.trim().length > 0
+      ? candidate
+      : undefined;
+  };
+
+  const canTogglePaymentForStop = (stop: VanRoute["stops"][0]) => {
+    const canUpdatePayment =
+      hasPermission("orders.update") || hasPermission("orders.payment.update");
+    if (!canUpdatePayment) return false;
+
+    const isManualImport = Boolean((stop as any)?.orderIsManualImport);
+    const isStripeBacked = Boolean((stop as any)?.orderIsStripeBacked);
+    if (!isManualImport || isStripeBacked) return false;
+
+    const status = String(getEffectivePaymentStatus(stop) ?? "").toLowerCase();
+    if (["refund_pending", "partially_refunded", "refunded"].includes(status))
+      return false;
+
+    return Boolean((stop as any)?.orderDbId || (stop as any)?.orderId);
+  };
+
+  const handleTogglePaymentForStop = async (
+    stop: VanRoute["stops"][0],
+    nextPaidOverride?: boolean,
+  ) => {
+    if (!canTogglePaymentForStop(stop)) return;
+    if (paymentUpdateStopId) return;
+
+    const current = String(
+      getEffectivePaymentStatus(stop) ?? "unpaid",
+    ).toLowerCase();
+    const nextPaid =
+      typeof nextPaidOverride === "boolean"
+        ? nextPaidOverride
+        : current !== "paid";
+
+    setPaymentUpdateStopId(stop.stopId);
+    try {
+      const orderDbId = await resolveOrderIdForStop(stop);
+      if (!orderDbId) {
+        showToast({
+          type: "error",
+          title: "Could not find order for this stop",
+        });
+        return;
+      }
+
+      await updateOrderPaymentStatus(orderDbId, nextPaid);
+      setPaymentStatusOverrides((prev) => ({
+        ...prev,
+        [stop.stopId]: nextPaid ? "paid" : "unpaid",
+      }));
+      showToast({
+        type: "success",
+        title: nextPaid ? "Marked as paid" : "Marked as unpaid",
+      });
+    } catch {
+      showToast({ type: "error", title: "Failed to update payment status" });
+    } finally {
+      setPaymentUpdateStopId(null);
+    }
+  };
+
+  const openPaymentConfirmForStop = (stop: VanRoute["stops"][0]) => {
+    if (!canTogglePaymentForStop(stop)) return;
+    if (paymentUpdateStopId) return;
+
+    const current = String(
+      getEffectivePaymentStatus(stop) ?? "unpaid",
+    ).toLowerCase();
+    const nextPaid = current !== "paid";
+
+    setPaymentConfirmStop(stop);
+    setPaymentConfirmNextPaid(nextPaid);
   };
 
   const resolveOrderIdForStop = async (stop: VanRoute["stops"][0]) => {
@@ -822,13 +922,19 @@ export const MapView: React.FC<MapViewProps> = ({
             displayStops.map(({ vanId, stop }) => {
               const navigationUrl = buildStopNavigationUrl(stop);
               const canUpdateOrders = hasPermission("orders.update");
+              const canUpdatePayment =
+                hasPermission("orders.update") ||
+                hasPermission("orders.payment.update");
               const isResolvingStatus = statusResolveStopId === stop.stopId;
+              const isUpdatingPayment = paymentUpdateStopId === stop.stopId;
               const effectiveStatus =
                 getEffectiveDeliveryStatus(stop) ||
                 stopStatusLabel(stop, runStatus);
+              const effectivePaymentStatus = getEffectivePaymentStatus(stop);
               const isStatusLocked =
                 isDriver &&
                 isDeliveredStop(stop, String(effectiveStatus).toLowerCase());
+              const canTogglePayment = canTogglePaymentForStop(stop);
 
               return (
                 <div
@@ -836,14 +942,45 @@ export const MapView: React.FC<MapViewProps> = ({
                   className={`${styles.stopItem} ${activeStop === stop.stopId ? styles.active : ""}`}
                   onClick={() => handleStopClick(stop.stopId)}
                 >
-                  <div className={styles.stopTopRow}>
+                  <div className={styles.stopHeaderRow}>
                     <span
                       className={`${styles.stopSequence} ${styles[vanId.replace("-", "")]}`}
                     >
                       {stop.sequence}
                     </span>
                     <span className={styles.stopName}>{stop.customerName}</span>
-                    {(canUpdateOrders || navigationUrl) && (
+                    <span className={styles.stopEtaTop}>
+                      {formatEtaTime(getStopEta(stop)) ?? "—"}
+                    </span>
+                  </div>
+                  <div className={styles.stopPostcode}>{stop.postcode}</div>
+                  {stop.notes && (
+                    <div className={styles.stopPostcode}>📝 {stop.notes}</div>
+                  )}
+                  <div className={styles.stopMetaRow}>
+                    <span className={styles.stopMetaLabel}>Total</span>
+                    <span className={styles.stopTotalValue}>
+                      {typeof (stop as any)?.orderTotal === "number" &&
+                      Number.isFinite((stop as any).orderTotal)
+                        ? `£${Number((stop as any).orderTotal).toFixed(2)}`
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className={styles.stopMetaRow}>
+                    <span className={styles.stopMetaLabel}>Status</span>
+                    {getStatusBadge(
+                      effectiveStatus.toLowerCase().replace(/\s+/g, " "),
+                    )}
+                  </div>
+                  <div className={styles.stopMetaRow}>
+                    <span className={styles.stopMetaLabel}>Payment</span>
+                    {getPaymentBadge(
+                      String(effectivePaymentStatus || "unpaid").toLowerCase(),
+                    )}
+                  </div>
+
+                  {(canUpdateOrders || canUpdatePayment || navigationUrl) && (
+                    <div className={styles.stopActionsRow}>
                       <div className={styles.stopActions}>
                         {canUpdateOrders && (
                           <button
@@ -871,6 +1008,30 @@ export const MapView: React.FC<MapViewProps> = ({
                             Status
                           </button>
                         )}
+                        {canUpdatePayment && (
+                          <button
+                            type="button"
+                            className={styles.statusBtn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openPaymentConfirmForStop(stop);
+                            }}
+                            disabled={!canTogglePayment || isUpdatingPayment}
+                            title="Toggle payment status"
+                          >
+                            {isUpdatingPayment ? (
+                              <Loader2
+                                size={14}
+                                className={styles.btnSpinner}
+                              />
+                            ) : null}
+                            {String(
+                              effectivePaymentStatus || "unpaid",
+                            ).toLowerCase() === "paid"
+                              ? "Mark Unpaid"
+                              : "Mark Paid"}
+                          </button>
+                        )}
                         {navigationUrl && (
                           <a
                             className={styles.directionsBtn}
@@ -885,22 +1046,8 @@ export const MapView: React.FC<MapViewProps> = ({
                           </a>
                         )}
                       </div>
-                    )}
-                  </div>
-                  <div className={styles.stopPostcode}>{stop.postcode}</div>
-                  {stop.notes && (
-                    <div className={styles.stopPostcode}>📝 {stop.notes}</div>
+                    </div>
                   )}
-                  <div className={styles.stopMetaRow}>
-                    <span className={styles.stopMetaLabel}>Status</span>
-                    {getStatusBadge(
-                      effectiveStatus.toLowerCase().replace(/\s+/g, " "),
-                    )}
-                  </div>
-                  <div className={styles.stopMetaRow}>
-                    <span className={styles.stopMetaLabel}>ETA</span>
-                    <span>{formatEtaTime(getStopEta(stop)) ?? "—"}</span>
-                  </div>
                 </div>
               );
             })
@@ -914,6 +1061,59 @@ export const MapView: React.FC<MapViewProps> = ({
         setIsStatusModalOpen={setIsStatusModalOpen}
         updateOrderStatus={handleUpdateOrderStatus}
       />
+
+      <Modal
+        isOpen={
+          Boolean(paymentConfirmStop) &&
+          typeof paymentConfirmNextPaid === "boolean"
+        }
+        onClose={() => {
+          if (!paymentUpdateStopId) {
+            setPaymentConfirmStop(null);
+            setPaymentConfirmNextPaid(null);
+          }
+        }}
+        title="Confirm payment status"
+        size="sm"
+      >
+        <p>
+          {paymentConfirmNextPaid
+            ? `Mark order ${(paymentConfirmStop as any)?.orderId || ""} as paid?`
+            : `Mark order ${(paymentConfirmStop as any)?.orderId || ""} as unpaid?`}
+        </p>
+
+        <ModalFooter>
+          <Button
+            variant="outline"
+            disabled={Boolean(paymentUpdateStopId)}
+            onClick={() => {
+              setPaymentConfirmStop(null);
+              setPaymentConfirmNextPaid(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            disabled={
+              Boolean(paymentUpdateStopId) ||
+              !paymentConfirmStop ||
+              typeof paymentConfirmNextPaid !== "boolean"
+            }
+            onClick={async () => {
+              if (!paymentConfirmStop) return;
+              if (typeof paymentConfirmNextPaid !== "boolean") return;
+              await handleTogglePaymentForStop(
+                paymentConfirmStop,
+                paymentConfirmNextPaid,
+              );
+              setPaymentConfirmStop(null);
+              setPaymentConfirmNextPaid(null);
+            }}
+          >
+            Confirm
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 };

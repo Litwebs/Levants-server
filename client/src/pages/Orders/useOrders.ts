@@ -8,6 +8,7 @@ import {
 
 type FulfillmentStatus =
   | "pending"
+  | "unpaid"
   | "paid"
   | "failed"
   | "cancelled"
@@ -37,6 +38,8 @@ export type Order = {
   total: number;
   // fulfillmentStatus: FulfillmentStatus;
   paymentStatus: FulfillmentStatus;
+  isManualImport?: boolean;
+  isStripeBacked?: boolean;
   customerInstructions?: string;
   customerNotes?: string;
   internalNotes?: string;
@@ -131,6 +134,11 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
       ? String((order as any).customerInstructions).trim() || undefined
       : undefined;
 
+  const isManualImport = Boolean((metadata as any)?.manualImport);
+  const isStripeBacked = Boolean(
+    (order as any)?.stripeCheckoutSessionId || (order as any)?.stripePaymentIntentId,
+  );
+
   return {
     id: order._id,
     orderNumber: order.orderId,
@@ -170,6 +178,9 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     deliveryStatus: order.deliveryStatus,
     paymentStatus: order.status,
 
+    isManualImport,
+    isStripeBacked,
+
     customerInstructions,
 
     history: [],
@@ -193,6 +204,7 @@ export const useOrders = () => {
     listOrders,
     getOrderById,
     updateOrderStatus: updateOrderStatusApi,
+    updateOrderPaymentStatus: updateOrderPaymentStatusApi,
     refundOrder: refundOrderApi,
     bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
     bulkAssignDeliveryDate: bulkAssignDeliveryDateApi,
@@ -328,7 +340,7 @@ const refresh = useCallback(
       // ✅ delivery status filter (optional)
       deliveryStatus: effectiveDeliveryStatus,
 
-      // ✅ payment status is not sent; backend locks it to pending/paid/refunded
+      // ✅ payment status is not sent; backend locks it to unpaid/paid/refund statuses
       search: searchQuery || undefined,
       minTotal: minTotal || undefined,
       maxTotal: maxTotal || undefined,
@@ -438,6 +450,26 @@ const refresh = useCallback(
       setIsStatusModalOpen(false);
     } catch {
       showToast({ title: "Failed to update status", type: "error" });
+    }
+  };
+
+  const updateOrderPaymentStatus = async (orderId: string, paid: boolean) => {
+    try {
+      const adminOrder = await updateOrderPaymentStatusApi(orderId, paid);
+      const uiOrder = mapAdminOrderToUi(adminOrder);
+      setSelectedOrder(uiOrder);
+      showToast({
+        title: paid ? "Marked as paid" : "Marked as unpaid",
+        type: "success",
+      });
+      return uiOrder;
+    } catch (err: any) {
+      showToast({
+        title:
+          err?.response?.data?.message || "Failed to update payment status",
+        type: "error",
+      });
+      return null;
     }
   };
 
@@ -627,6 +659,7 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     toggleOrderSelection,
     toggleSelectAll,
     updateOrderStatus,
+    updateOrderPaymentStatus,
     refundOrder,
     bulkUpdateStatus,
     bulkAssignDeliveryDate,

@@ -7,11 +7,13 @@ import { useToast } from "@/components/common/Toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { listEligibleOrders } from "@/context/DeliveryRuns";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/context/Auth/AuthContext";
 import styles from "./DeliveryRunsPage.module.css";
 
 type QuickFilter = "next" | "week" | "all";
 
 export const DeliveryRunsPage: React.FC = () => {
+  const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const {
     runs,
@@ -33,6 +35,17 @@ export const DeliveryRunsPage: React.FC = () => {
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
+
+  const roleName = useMemo(() => {
+    const role: any = (user as any)?.role;
+    if (!role) return "";
+    if (typeof role === "string") return role.toLowerCase();
+    if (typeof role === "object" && role?.name)
+      return String(role.name).toLowerCase();
+    return "";
+  }, [user]);
+
+  const isDriver = roleName === "driver";
 
   // Calculate quick filter dates
   const filterDates = useMemo(() => {
@@ -152,7 +165,7 @@ export const DeliveryRunsPage: React.FC = () => {
     <div className={styles.page}>
       <div className={styles.header}>
         <h1 className={styles.title}>Delivery Runs</h1>
-        {hasPermission("delivery.routes.update") && (
+        {hasPermission("delivery.routes.update") && !isDriver && (
           <Button
             variant="primary"
             onClick={() => {

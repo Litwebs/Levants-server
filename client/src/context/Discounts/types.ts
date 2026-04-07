@@ -5,6 +5,7 @@ export type Discount = {
   _id: string;
   name: string;
   code: string;
+  isCodeVisibleOnWebsite?: boolean;
   kind: DiscountKind;
 
   percentOff?: number;
@@ -33,6 +34,8 @@ export type Discount = {
 export type CreateDiscountBody = {
   name: string;
   code?: string;
+
+  isCodeVisibleOnWebsite?: boolean;
 
   kind: DiscountKind;
   percentOff?: number;

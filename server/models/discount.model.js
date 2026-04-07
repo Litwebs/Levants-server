@@ -20,6 +20,12 @@ const discountSchema = new mongoose.Schema(
       maxlength: 32,
     },
 
+    isCodeVisibleOnWebsite: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
     kind: {
       type: String,
       enum: ["percent", "amount"],

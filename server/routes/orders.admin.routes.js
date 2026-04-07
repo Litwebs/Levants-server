@@ -12,6 +12,7 @@ const {
 const controller = require("../controllers/orders.admin.controller");
 const {
   updateOrderStatusSchema,
+  updateOrderPaymentSchema,
   bulkUpdateDeliveryStatusSchema,
   bulkAssignDeliveryDateSchema,
 } = require("../validators/order.validators");
@@ -62,6 +63,14 @@ router.put(
   upload.single("deliveryProof"),
   validateBody(updateOrderStatusSchema),
   asyncHandler(controller.UpdateOrderStatus),
+);
+
+router.patch(
+  "/:orderId/payment",
+  requirePermission(["orders.update", "orders.payment.update"]),
+  validateParams(orderIdParamSchema),
+  validateBody(updateOrderPaymentSchema),
+  asyncHandler(controller.UpdateOrderPaymentStatus),
 );
 
 router.post(

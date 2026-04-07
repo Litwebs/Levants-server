@@ -98,6 +98,9 @@ export type AdminOrder = {
   paidAt?: string;
   expiresAt?: string;
 
+  stripeCheckoutSessionId?: string;
+  stripePaymentIntentId?: string;
+
   refund?: OrderRefund;
   refunds?: OrderRefundRecord[];
   metadata?: Record<string, unknown>;

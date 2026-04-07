@@ -62,12 +62,19 @@ const createDiscountSchema = Joi.object({
   startsAt: Joi.date().iso().optional(),
   endsAt: Joi.date().iso().optional(),
 
+  isCodeVisibleOnWebsite: Joi.boolean().default(false),
+
   maxRedemptions: Joi.number().integer().min(1).optional(),
   perCustomerLimit: Joi.number().integer().min(1).optional(),
 }).unknown(false);
 
+const updateDiscountSchema = Joi.object({
+  isCodeVisibleOnWebsite: Joi.boolean().required(),
+}).unknown(false);
+
 module.exports = {
   createDiscountSchema,
+  updateDiscountSchema,
   validateDiscountSchema,
   listActiveDiscountsQuerySchema,
 };

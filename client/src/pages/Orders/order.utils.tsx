@@ -2,6 +2,7 @@ import { Badge } from "../../components/common";
 
 type FulfillmentStatus =
   | "pending"
+  | "unpaid"
   | "paid"
   | "failed"
   | "cancelled"
@@ -31,7 +32,8 @@ export const getStatusBadge = (status: FulfillmentStatus) => {
 
 export const getPaymentBadge = (status: PaymentStatus) => {
   const map: Record<string, { variant: any; label: string }> = {
-    pending: { variant: "warning", label: "Pending" },
+    pending: { variant: "error", label: "Unpaid" },
+    unpaid: { variant: "error", label: "Unpaid" },
     paid: { variant: "success", label: "Paid" },
     failed: { variant: "error", label: "Failed" },
     cancelled: { variant: "error", label: "Cancelled" },

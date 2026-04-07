@@ -42,25 +42,36 @@ const requirePermission = (requiredPermission) => {
       });
     }
 
-    // ✅ Admin wildcard
-    if (permissions.includes("*")) {
-      return next();
-    }
+    const required = Array.isArray(requiredPermission)
+      ? requiredPermission
+      : [requiredPermission];
 
-    // ✅ Exact permission match
-    if (permissions.includes(requiredPermission)) {
-      return next();
-    }
+    const allows = (permName) => {
+      if (typeof permName !== "string" || !permName.trim()) return false;
 
-    // ✅ Wildcard namespace match (e.g. "orders.*" matches "orders.read")
-    for (const perm of permissions) {
-      if (typeof perm !== "string") continue;
-      if (!perm.endsWith(".*")) continue;
+      // ✅ Admin wildcard
+      if (permissions.includes("*")) return true;
 
-      const prefix = perm.slice(0, -1); // keep trailing dot
-      if (requiredPermission.startsWith(prefix)) {
-        return next();
+      // ✅ Exact permission match
+      if (permissions.includes(permName)) return true;
+
+      // ✅ Wildcard namespace match (e.g. "orders.*" matches "orders.read")
+      for (const perm of permissions) {
+        if (typeof perm !== "string") continue;
+        if (!perm.endsWith(".*")) continue;
+
+        const prefix = perm.slice(0, -1); // keep trailing dot
+        if (permName.startsWith(prefix)) {
+          return true;
+        }
       }
+
+      return false;
+    };
+
+    // ✅ Any-of required permissions
+    for (const permName of required) {
+      if (allows(permName)) return next();
     }
 
     // ❌ Permission denied
