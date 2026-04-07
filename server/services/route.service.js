@@ -223,28 +223,6 @@ function groupOrdersByLocation(orders) {
   return groupedOrders;
 }
 
-function splitGroupedOrdersEvenly(groupedOrders, drivers) {
-  const buckets = drivers.map((driver) => ({
-    driver,
-    groups: [],
-    totalOrders: 0,
-  }));
-
-  if (!drivers.length) return buckets;
-
-  const sortedGroups = [...groupedOrders].sort(
-    (a, b) => b.orders.length - a.orders.length,
-  );
-
-  for (const group of sortedGroups) {
-    buckets.sort((a, b) => a.totalOrders - b.totalOrders);
-    buckets[0].groups.push(group);
-    buckets[0].totalOrders += group.orders.length;
-  }
-
-  return buckets;
-}
-
 function buildShipmentsFromGroups(groups) {
   return groups.map((group, index) => ({
     label: `shipment-${index}`,
@@ -300,24 +278,68 @@ function resolveVisitShipment(visit, shipmentLookup) {
   return null;
 }
 
-async function optimizeSingleDriverRoute({
-  driver,
-  assignedGroups,
+function resolveRouteDriver(routeData, driversById, routeIndex) {
+  const possibleKeys = [
+    routeData?.vehicleLabel,
+    routeData?.vehicleIndex,
+    routeData?.vehicle,
+    routeData?.routeLabel,
+  ];
+
+  for (const key of possibleKeys) {
+    if (key === undefined || key === null) continue;
+
+    const asString = String(key);
+
+    if (driversById.has(asString)) {
+      return driversById.get(asString);
+    }
+
+    if (Number.isInteger(Number(key))) {
+      const indexKey = String(Number(key));
+      if (driversById.has(indexKey)) {
+        return driversById.get(indexKey);
+      }
+    }
+  }
+
+  // Fallback: if Google returns routes in same order as vehicles
+  if (driversById.has(String(routeIndex))) {
+    return driversById.get(String(routeIndex));
+  }
+
+  return null;
+}
+
+async function optimizeAllDriversRoutes({
+  drivers,
+  groupedOrders,
   globalStartTime,
   globalEndTime,
 }) {
-  if (!assignedGroups.length) {
-    return {
-      driver,
-      assignedGroups,
-      shipmentLookup: buildShipmentLookup([]),
-      optimized: { routes: [] },
-      routeData: null,
-    };
-  }
+  const shipments = buildShipmentsFromGroups(groupedOrders);
+  const shipmentLookup = buildShipmentLookup(groupedOrders);
 
-  const shipments = buildShipmentsFromGroups(assignedGroups);
-  const shipmentLookup = buildShipmentLookup(assignedGroups);
+  const vehicles = drivers.map((driver, index) => ({
+    label: String(driver._id),
+    startLocation: {
+      latitude: WAREHOUSE_LAT,
+      longitude: WAREHOUSE_LNG,
+    },
+    endLocation: {
+      latitude: WAREHOUSE_LAT,
+      longitude: WAREHOUSE_LNG,
+    },
+    costPerHour: 1,
+    costPerKilometer: 0.001,
+    // This helps if you ever need a fallback by numeric index
+    // and makes debugging easier.
+    // Google generally returns vehicleLabel if label is set.
+    metadata: {
+      driverId: String(driver._id),
+      vehicleIndex: index,
+    },
+  }));
 
   const requestBody = {
     populatePolylines: true,
@@ -327,43 +349,17 @@ async function optimizeSingleDriverRoute({
       globalStartTime,
       globalEndTime,
       shipments,
-      vehicles: [
-        {
-          label: driver._id.toString(),
-          startLocation: {
-            latitude: WAREHOUSE_LAT,
-            longitude: WAREHOUSE_LNG,
-          },
-          endLocation: {
-            latitude: WAREHOUSE_LAT,
-            longitude: WAREHOUSE_LNG,
-          },
-          costPerHour: 1,
-          costPerKilometer: 0.001,
-        },
-      ],
+      vehicles,
     },
   };
 
   const optimized = await optimizeRoutes(requestBody);
 
-  // console.log(
-  //   `===== GOOGLE OPTIMIZATION RESPONSE FOR DRIVER ${driver._id} =====`,
-  // );
-  // console.dir(optimized, { depth: null });
-  // console.log(
-  //   `===== END GOOGLE OPTIMIZATION RESPONSE FOR DRIVER ${driver._id} =====`,
-  // );
-
   return {
-    driver,
-    assignedGroups,
-    shipmentLookup,
     optimized,
-    routeData:
-      Array.isArray(optimized?.routes) && optimized.routes.length > 0
-        ? optimized.routes[0]
-        : null,
+    shipments,
+    shipmentLookup,
+    vehicles,
   };
 }
 
@@ -428,11 +424,8 @@ async function generateRoutesForBatch({
 
   const groupedOrders = groupOrdersByLocation(orders);
 
-  if (groupedOrders.length < drivers.length) {
-    return {
-      success: false,
-      message: `Not enough grouped stops (${groupedOrders.length}) for ${drivers.length} drivers`,
-    };
+  if (!groupedOrders.length) {
+    return { success: false, message: "No grouped stops found" };
   }
 
   const { globalStartTime, globalEndTime } = resolveOptimizationWindow({
@@ -441,81 +434,95 @@ async function generateRoutesForBatch({
     endTime,
   });
 
-  const driverBuckets = splitGroupedOrdersEvenly(groupedOrders, drivers);
-
   if (existingRouteIds.length > 0) {
     await Stop.deleteMany({ route: { $in: existingRouteIds } });
     await Route.deleteMany({ _id: { $in: existingRouteIds } });
   }
 
-  const optimizationResults = [];
+  let optimizedResult;
 
-  for (const bucket of driverBuckets) {
-    try {
-      const result = await optimizeSingleDriverRoute({
-        driver: bucket.driver,
-        assignedGroups: bucket.groups,
-        globalStartTime,
-        globalEndTime,
-      });
+  try {
+    optimizedResult = await optimizeAllDriversRoutes({
+      drivers,
+      groupedOrders,
+      globalStartTime,
+      globalEndTime,
+    });
+  } catch (e) {
+    console.error("===== GOOGLE OPTIMIZATION ERROR =====");
+    console.error(
+      JSON.stringify(
+        {
+          message: e.message,
+          status: e.response?.status,
+          data: e.response?.data,
+        },
+        null,
+        2,
+      ),
+    );
+    console.error("===== END GOOGLE OPTIMIZATION ERROR =====");
 
-      if (result.optimized?.validationErrors?.length) {
-        return {
-          success: false,
-          message: `Optimization request has validation errors for driver ${bucket.driver._id}`,
-          validationErrors: result.optimized.validationErrors,
-        };
-      }
-
-      optimizationResults.push(result);
-    } catch (e) {
-      console.error(
-        `===== GOOGLE OPTIMIZATION ERROR FOR DRIVER ${bucket.driver._id} =====`,
-      );
-      console.error(
-        JSON.stringify(
-          {
-            message: e.message,
-            status: e.response?.status,
-            data: e.response?.data,
-          },
-          null,
-          2,
-        ),
-      );
-      console.error(
-        `===== END GOOGLE OPTIMIZATION ERROR FOR DRIVER ${bucket.driver._id} =====`,
-      );
-
-      return {
-        success: false,
-        message: `Optimization failed for driver ${bucket.driver._id}`,
-        error: e.response?.data || e.message,
-      };
-    }
+    return {
+      success: false,
+      message: "Optimization failed",
+      error: e.response?.data || e.message,
+    };
   }
+
+  const { optimized, shipmentLookup } = optimizedResult;
+
+  if (optimized?.validationErrors?.length) {
+    return {
+      success: false,
+      message: "Optimization request has validation errors",
+      validationErrors: optimized.validationErrors,
+    };
+  }
+
+  if (!Array.isArray(optimized?.routes) || optimized.routes.length === 0) {
+    return {
+      success: false,
+      message: "No optimized routes returned",
+      debug: optimized,
+    };
+  }
+
+  const driversById = new Map();
+  const driversByIndex = new Map();
+
+  drivers.forEach((driver, index) => {
+    driversById.set(String(driver._id), driver);
+    driversById.set(String(index), driver);
+    driversByIndex.set(index, driver);
+  });
 
   const createdRouteIds = [];
   const assignedOrderIds = new Set();
+  const routeSummaries = [];
   let totalAssignedGroups = 0;
 
-  for (const result of optimizationResults) {
-    const { driver, routeData, shipmentLookup, assignedGroups, optimized } =
-      result;
+  for (let routeIndex = 0; routeIndex < optimized.routes.length; routeIndex++) {
+    const routeData = optimized.routes[routeIndex];
 
-    if (!assignedGroups.length) {
-      continue;
-    }
+    const driver =
+      resolveRouteDriver(routeData, driversById, routeIndex) ||
+      driversByIndex.get(routeIndex) ||
+      null;
 
-    if (!routeData) {
+    if (!driver) {
       return {
         success: false,
-        message: `No optimized route returned for driver ${driver._id}`,
-        debug: {
-          optimized,
-          assignedGroupsCount: assignedGroups.length,
-        },
+        message: `Could not resolve driver for optimized route ${routeIndex}`,
+        debug: routeData,
       };
+    }
+
+    const visits = Array.isArray(routeData.visits) ? routeData.visits : [];
+
+    // Ignore empty routes. Google may return unused vehicles.
+    if (!visits.length) {
+      continue;
     }
 
     const initialDurationSeconds = parseDurationSeconds(
@@ -536,14 +543,14 @@ async function generateRoutesForBatch({
     });
 
     let sequence = 1;
-    let groupsAssignedToThisDriver = 0;
+    let groupsAssignedToThisRoute = 0;
 
-    for (const visit of routeData.visits || []) {
+    for (const visit of visits) {
       const resolvedVisit = resolveVisitShipment(visit, shipmentLookup);
 
       if (!resolvedVisit) {
         console.warn(
-          `Could not resolve shipment for driver ${driver._id}: ${JSON.stringify(
+          `Could not resolve shipment for route ${route._id}: ${JSON.stringify(
             visit,
           )}`,
         );
@@ -551,7 +558,7 @@ async function generateRoutesForBatch({
       }
 
       const { group } = resolvedVisit;
-      groupsAssignedToThisDriver += 1;
+      groupsAssignedToThisRoute += 1;
       totalAssignedGroups += 1;
 
       const serviceSeconds = computeServiceSeconds(group.orders.length);
@@ -575,6 +582,12 @@ async function generateRoutesForBatch({
       }
     }
 
+    if (groupsAssignedToThisRoute === 0) {
+      await Stop.deleteMany({ route: route._id });
+      await Route.deleteOne({ _id: route._id });
+      continue;
+    }
+
     await Route.updateOne(
       { _id: route._id },
       {
@@ -584,21 +597,24 @@ async function generateRoutesForBatch({
       },
     );
 
-    if (groupsAssignedToThisDriver === 0) {
-      await Stop.deleteMany({ route: route._id });
-      await Route.deleteOne({ _id: route._id });
-
-      return {
-        success: false,
-        message: `Driver ${driver._id} was assigned grouped stops before optimization but ended up with no visits`,
-        debug: {
-          assignedGroupsCount: assignedGroups.length,
-          optimized,
-        },
-      };
-    }
-
     createdRouteIds.push(route._id);
+
+    routeSummaries.push({
+      driverId: String(driver._id),
+      routeId: String(route._id),
+      groupedStopsAssigned: groupsAssignedToThisRoute,
+      ordersAssigned: sequence - 1,
+      totalDistanceMeters,
+      totalDurationSeconds: initialDurationSeconds,
+    });
+  }
+
+  if (!createdRouteIds.length) {
+    return {
+      success: false,
+      message: "Optimization completed but no non-empty routes were created",
+      debug: optimized,
+    };
   }
 
   const unassignedOrders = orders.filter(
@@ -610,6 +626,7 @@ async function generateRoutesForBatch({
       success: false,
       message: `${unassignedOrders.length} orders were not assigned to any route`,
       unassignedOrderIds: unassignedOrders.map((o) => String(o._id)),
+      createdRouteIds: createdRouteIds.map(String),
     };
   }
 
@@ -631,16 +648,13 @@ async function generateRoutesForBatch({
     success: true,
     data: {
       routesCreated: createdRouteIds.length,
-      driversUsed: optimizationResults.length,
+      driversProvided: drivers.length,
+      driversUsed: routeSummaries.length,
       ordersCount: orders.length,
       groupedStopsCount: groupedOrders.length,
       assignedGroupedStopsCount: totalAssignedGroups,
       unassignedOrdersCount: 0,
-      splitSummary: driverBuckets.map((bucket) => ({
-        driverId: String(bucket.driver._id),
-        groupedStopsAssignedBeforeOptimization: bucket.groups.length,
-        ordersAssignedBeforeOptimization: bucket.totalOrders,
-      })),
+      routeSummary: routeSummaries,
     },
   };
 }
