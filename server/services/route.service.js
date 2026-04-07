@@ -28,8 +28,10 @@ function isValidLatLng(lat, lng) {
 
 function extractEncodedPolyline(routeData) {
   if (!routeData || typeof routeData !== "object") return null;
+
   const points =
     routeData.routePolyline?.points || routeData.polyline?.points || null;
+
   return typeof points === "string" && points.trim() ? points : null;
 }
 
@@ -284,38 +286,88 @@ function distanceSq(aLat, aLng, bLat, bLng) {
   return dLat * dLat + dLng * dLng;
 }
 
-function pickInitialCentroids(groups, k) {
-  const centroids = [];
+function totalOrdersInGroup(group) {
+  return Array.isArray(group.orders) ? group.orders.length : 0;
+}
 
-  const sorted = [...groups].sort((a, b) => b.orders.length - a.orders.length);
+function buildNearestNeighborGraph(groups, neighborCount = 6) {
+  const graph = groups.map(() => new Set());
 
-  centroids.push({
-    lat: sorted[0].lat,
-    lng: sorted[0].lng,
-  });
+  for (let i = 0; i < groups.length; i++) {
+    const distances = [];
 
-  while (centroids.length < k) {
-    let bestGroup = null;
-    let bestMinDist = -1;
+    for (let j = 0; j < groups.length; j++) {
+      if (i === j) continue;
 
-    for (const group of groups) {
-      const minDist = Math.min(
-        ...centroids.map((c) => distanceSq(group.lat, group.lng, c.lat, c.lng)),
+      distances.push({
+        index: j,
+        dist: distanceSq(
+          groups[i].lat,
+          groups[i].lng,
+          groups[j].lat,
+          groups[j].lng,
+        ),
+      });
+    }
+
+    distances.sort((a, b) => a.dist - b.dist);
+
+    for (const item of distances.slice(0, neighborCount)) {
+      graph[i].add(item.index);
+      graph[item.index].add(i);
+    }
+  }
+
+  return graph;
+}
+
+function pickTerritorySeeds(groups, k) {
+  const seeds = [];
+  const sorted = [...groups]
+    .map((group, index) => ({
+      index,
+      orders: totalOrdersInGroup(group),
+      lat: group.lat,
+      lng: group.lng,
+    }))
+    .sort((a, b) => b.orders - a.orders);
+
+  if (!sorted.length) return seeds;
+
+  seeds.push(sorted[0].index);
+
+  while (seeds.length < k && seeds.length < groups.length) {
+    let bestIndex = null;
+    let bestScore = -1;
+
+    for (let i = 0; i < groups.length; i++) {
+      if (seeds.includes(i)) continue;
+
+      const minDistToSeed = Math.min(
+        ...seeds.map((seedIndex) =>
+          distanceSq(
+            groups[i].lat,
+            groups[i].lng,
+            groups[seedIndex].lat,
+            groups[seedIndex].lng,
+          ),
+        ),
       );
 
-      if (minDist > bestMinDist) {
-        bestMinDist = minDist;
-        bestGroup = group;
+      const weightedScore =
+        minDistToSeed * Math.max(1, totalOrdersInGroup(groups[i]));
+
+      if (weightedScore > bestScore) {
+        bestScore = weightedScore;
+        bestIndex = i;
       }
     }
 
-    centroids.push({
-      lat: bestGroup.lat,
-      lng: bestGroup.lng,
-    });
+    if (bestIndex === null) break;
+    seeds.push(bestIndex);
   }
 
-  return centroids;
+  return seeds;
 }
 
 function clusterGroupedOrdersGeographically(groupedOrders, drivers) {
@@ -326,7 +378,10 @@ function clusterGroupedOrdersGeographically(groupedOrders, drivers) {
       {
         driver: drivers[0],
         groups: groupedOrders,
-        totalOrders: groupedOrders.reduce((sum, g) => sum + g.orders.length, 0),
+        totalOrders: groupedOrders.reduce(
+          (sum, group) => sum + totalOrdersInGroup(group),
+          0,
+        ),
       },
     ];
   }
@@ -336,116 +391,274 @@ function clusterGroupedOrdersGeographically(groupedOrders, drivers) {
       driver,
       groups: groupedOrders[index] ? [groupedOrders[index]] : [],
       totalOrders: groupedOrders[index]
-        ? groupedOrders[index].orders.length
+        ? totalOrdersInGroup(groupedOrders[index])
         : 0,
     }));
   }
 
-  let centroids = pickInitialCentroids(groupedOrders, k);
-  let assignments = new Array(groupedOrders.length).fill(-1);
+  const graph = buildNearestNeighborGraph(groupedOrders, 6);
+  const seeds = pickTerritorySeeds(groupedOrders, k);
 
-  for (let iter = 0; iter < 20; iter++) {
-    const buckets = Array.from({ length: k }, () => ({
-      groups: [],
-      weightedLatSum: 0,
-      weightedLngSum: 0,
-      totalWeight: 0,
-      totalOrders: 0,
-    }));
+  const assignments = new Array(groupedOrders.length).fill(-1);
 
-    for (let i = 0; i < groupedOrders.length; i++) {
-      const group = groupedOrders[i];
-      const weight = Math.max(1, group.orders.length);
+  const buckets = drivers.map((driver, bucketIndex) => ({
+    driver,
+    bucketIndex,
+    groups: [],
+    totalOrders: 0,
+    frontier: [],
+  }));
 
-      let bestIndex = 0;
+  const totalOrdersAll = groupedOrders.reduce(
+    (sum, group) => sum + totalOrdersInGroup(group),
+    0,
+  );
+
+  const targetOrdersPerDriver = totalOrdersAll / k;
+
+  for (let bucketIndex = 0; bucketIndex < seeds.length; bucketIndex++) {
+    const seedIndex = seeds[bucketIndex];
+    assignments[seedIndex] = bucketIndex;
+    buckets[bucketIndex].groups.push(groupedOrders[seedIndex]);
+    buckets[bucketIndex].totalOrders += totalOrdersInGroup(
+      groupedOrders[seedIndex],
+    );
+    buckets[bucketIndex].frontier.push(seedIndex);
+  }
+
+  const unassigned = new Set(
+    groupedOrders
+      .map((_, index) => index)
+      .filter((index) => assignments[index] === -1),
+  );
+
+  function addNeighborsToFrontier(bucketIndex, fromIndex) {
+    for (const neighborIndex of graph[fromIndex]) {
+      if (assignments[neighborIndex] === -1) {
+        buckets[bucketIndex].frontier.push(neighborIndex);
+      }
+    }
+  }
+
+  for (let bucketIndex = 0; bucketIndex < buckets.length; bucketIndex++) {
+    const seedIndex = seeds[bucketIndex];
+    if (seedIndex !== undefined) {
+      addNeighborsToFrontier(bucketIndex, seedIndex);
+    }
+  }
+
+  while (unassigned.size > 0) {
+    let progress = false;
+
+    const bucketOrder = [...buckets].sort(
+      (a, b) => a.totalOrders - b.totalOrders,
+    );
+
+    for (const bucket of bucketOrder) {
+      let bestIndex = null;
       let bestScore = Number.POSITIVE_INFINITY;
 
-      for (let c = 0; c < centroids.length; c++) {
-        const centroid = centroids[c];
-        const geoScore = distanceSq(
-          group.lat,
-          group.lng,
-          centroid.lat,
-          centroid.lng,
-        );
+      const seen = new Set();
 
-        // light balancing penalty so clusters stay geographic but not wildly uneven
-        const balancePenalty = buckets[c].totalOrders * 0.0005;
+      for (const candidateIndex of bucket.frontier) {
+        if (seen.has(candidateIndex)) continue;
+        seen.add(candidateIndex);
 
-        const score = geoScore + balancePenalty;
+        if (assignments[candidateIndex] !== -1) continue;
+
+        const candidateGroup = groupedOrders[candidateIndex];
+
+        const nearestAssignedDist = bucket.groups.length
+          ? Math.min(
+              ...bucket.groups.map((assignedGroup) =>
+                distanceSq(
+                  candidateGroup.lat,
+                  candidateGroup.lng,
+                  assignedGroup.lat,
+                  assignedGroup.lng,
+                ),
+              ),
+            )
+          : 0;
+
+        const overloadPenalty =
+          Math.max(
+            0,
+            bucket.totalOrders +
+              totalOrdersInGroup(candidateGroup) -
+              targetOrdersPerDriver,
+          ) * 0.0008;
+
+        const score = nearestAssignedDist + overloadPenalty;
 
         if (score < bestScore) {
           bestScore = score;
-          bestIndex = c;
+          bestIndex = candidateIndex;
         }
       }
 
-      assignments[i] = bestIndex;
-      buckets[bestIndex].groups.push(group);
-      buckets[bestIndex].weightedLatSum += group.lat * weight;
-      buckets[bestIndex].weightedLngSum += group.lng * weight;
-      buckets[bestIndex].totalWeight += weight;
-      buckets[bestIndex].totalOrders += group.orders.length;
-    }
+      if (bestIndex === null) {
+        for (const candidateIndex of unassigned) {
+          const candidateGroup = groupedOrders[candidateIndex];
 
-    let changed = false;
+          const nearestAssignedDist = bucket.groups.length
+            ? Math.min(
+                ...bucket.groups.map((assignedGroup) =>
+                  distanceSq(
+                    candidateGroup.lat,
+                    candidateGroup.lng,
+                    assignedGroup.lat,
+                    assignedGroup.lng,
+                  ),
+                ),
+              )
+            : 0;
 
-    for (let c = 0; c < k; c++) {
-      if (buckets[c].groups.length === 0) continue;
+          const overloadPenalty =
+            Math.max(
+              0,
+              bucket.totalOrders +
+                totalOrdersInGroup(candidateGroup) -
+                targetOrdersPerDriver,
+            ) * 0.0008;
 
-      const nextLat = buckets[c].weightedLatSum / buckets[c].totalWeight;
-      const nextLng = buckets[c].weightedLngSum / buckets[c].totalWeight;
+          const score = nearestAssignedDist + overloadPenalty;
 
-      if (
-        Math.abs(nextLat - centroids[c].lat) > 1e-7 ||
-        Math.abs(nextLng - centroids[c].lng) > 1e-7
-      ) {
-        changed = true;
+          if (score < bestScore) {
+            bestScore = score;
+            bestIndex = candidateIndex;
+          }
+        }
       }
 
-      centroids[c] = {
-        lat: nextLat,
-        lng: nextLng,
-      };
+      if (bestIndex !== null) {
+        assignments[bestIndex] = bucket.bucketIndex;
+        bucket.groups.push(groupedOrders[bestIndex]);
+        bucket.totalOrders += totalOrdersInGroup(groupedOrders[bestIndex]);
+        unassigned.delete(bestIndex);
+        addNeighborsToFrontier(bucket.bucketIndex, bestIndex);
+        progress = true;
+      }
     }
 
-    if (!changed) break;
+    if (!progress) break;
   }
 
-  const rawBuckets = drivers.map((driver) => ({
-    driver,
-    groups: [],
-    totalOrders: 0,
+  for (const index of unassigned) {
+    const group = groupedOrders[index];
+
+    let bestBucketIndex = 0;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (const bucket of buckets) {
+      const nearestAssignedDist = bucket.groups.length
+        ? Math.min(
+            ...bucket.groups.map((assignedGroup) =>
+              distanceSq(
+                group.lat,
+                group.lng,
+                assignedGroup.lat,
+                assignedGroup.lng,
+              ),
+            ),
+          )
+        : 0;
+
+      const overloadPenalty =
+        Math.max(
+          0,
+          bucket.totalOrders +
+            totalOrdersInGroup(group) -
+            targetOrdersPerDriver,
+        ) * 0.0008;
+
+      const score = nearestAssignedDist + overloadPenalty;
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestBucketIndex = bucket.bucketIndex;
+      }
+    }
+
+    buckets[bestBucketIndex].groups.push(group);
+    buckets[bestBucketIndex].totalOrders += totalOrdersInGroup(group);
+  }
+
+  return buckets.map((bucket, index) => ({
+    driver: drivers[index],
+    groups: bucket.groups,
+    totalOrders: bucket.totalOrders,
   }));
+}
 
-  for (let i = 0; i < groupedOrders.length; i++) {
-    const bucketIndex = assignments[i];
-    const group = groupedOrders[i];
-    rawBuckets[bucketIndex].groups.push(group);
-    rawBuckets[bucketIndex].totalOrders += group.orders.length;
-  }
+function improveClusterBoundaries(buckets, iterations = 4) {
+  const allGroups = [];
+  const ownership = new Map();
 
-  // Ensure no driver is empty if number of groups >= drivers
-  const empties = rawBuckets.filter((b) => b.groups.length === 0);
-  if (empties.length > 0) {
-    const donors = rawBuckets
-      .filter((b) => b.groups.length > 1)
-      .sort((a, b) => b.groups.length - a.groups.length);
+  buckets.forEach((bucket, bucketIndex) => {
+    bucket.groups.forEach((group) => {
+      allGroups.push(group);
+      ownership.set(group, bucketIndex);
+    });
+  });
 
-    for (const emptyBucket of empties) {
-      const donor = donors.find((d) => d.groups.length > 1);
-      if (!donor) break;
+  for (let iter = 0; iter < iterations; iter++) {
+    let movedAny = false;
 
-      donor.groups.sort((a, b) => a.orders.length - b.orders.length);
-      const moved = donor.groups.shift();
+    for (const group of allGroups) {
+      const currentBucketIndex = ownership.get(group);
 
-      donor.totalOrders -= moved.orders.length;
-      emptyBucket.groups.push(moved);
-      emptyBucket.totalOrders += moved.orders.length;
+      const neighbors = allGroups
+        .filter((other) => other !== group)
+        .map((other) => ({
+          group: other,
+          bucketIndex: ownership.get(other),
+          dist: distanceSq(group.lat, group.lng, other.lat, other.lng),
+        }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 6);
+
+      const votes = new Map();
+
+      for (const neighbor of neighbors) {
+        votes.set(
+          neighbor.bucketIndex,
+          (votes.get(neighbor.bucketIndex) || 0) + 1,
+        );
+      }
+
+      let bestBucketIndex = currentBucketIndex;
+      let bestVotes = votes.get(currentBucketIndex) || 0;
+
+      for (const [bucketIndex, count] of votes.entries()) {
+        if (count > bestVotes) {
+          bestVotes = count;
+          bestBucketIndex = bucketIndex;
+        }
+      }
+
+      if (bestBucketIndex !== currentBucketIndex) {
+        const fromBucket = buckets[currentBucketIndex];
+        const toBucket = buckets[bestBucketIndex];
+
+        if (!fromBucket || !toBucket) continue;
+        if (fromBucket.groups.length <= 1) continue;
+
+        fromBucket.groups = fromBucket.groups.filter((g) => g !== group);
+        fromBucket.totalOrders -= totalOrdersInGroup(group);
+
+        toBucket.groups.push(group);
+        toBucket.totalOrders += totalOrdersInGroup(group);
+
+        ownership.set(group, bestBucketIndex);
+        movedAny = true;
+      }
     }
+
+    if (!movedAny) break;
   }
 
-  return rawBuckets;
+  return buckets;
 }
 
 async function optimizeSingleDriverRoute({
@@ -586,10 +799,11 @@ async function generateRoutesForBatch({
     await Route.deleteMany({ _id: { $in: existingRouteIds } });
   }
 
-  const driverBuckets = clusterGroupedOrdersGeographically(
+  let driverBuckets = clusterGroupedOrdersGeographically(
     groupedOrders,
     drivers,
   );
+  driverBuckets = improveClusterBoundaries(driverBuckets, 4);
 
   const optimizationResults = [];
 
