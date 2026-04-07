@@ -56,6 +56,7 @@ export const DeliveryRunDetailsPage: React.FC = () => {
     loading,
     error,
     actionLoading,
+    refetch,
     lock,
     unlock,
     optimize,
@@ -426,6 +427,7 @@ export const DeliveryRunDetailsPage: React.FC = () => {
               van={selectedVanData}
               isOpen={!!routeDrawerVan}
               onClose={() => setRouteDrawerVan(null)}
+              onRunUpdated={refetch}
               onPrint={() => {
                 setPrintVan({ vanId: selectedVanData.vanId, type: "stops" });
               }}

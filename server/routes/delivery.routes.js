@@ -17,6 +17,7 @@ const {
   getRoute,
   getRouteStock,
   deleteBatch,
+  reassignStopDriver,
 } = require("../controllers/delivery.controller");
 
 // Replace with your real auth middleware
@@ -172,6 +173,13 @@ router.get(
   requireAuth,
   requirePermission("delivery.routes.read"),
   getRouteStock,
+);
+
+router.patch(
+  "/stops/:stopId/driver",
+  requireAuth,
+  requirePermission("delivery.routes.update"),
+  reassignStopDriver,
 );
 
 module.exports = router;

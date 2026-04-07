@@ -144,8 +144,14 @@
   margin-bottom: var(--space-2);
 }
 
-.statusBtn {
+.stopActions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.statusBtn {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
@@ -254,6 +260,24 @@
 .emptySearch {
   padding: var(--space-8);
   text-align: center;
+  color: var(--color-gray-500);
+}
+
+.reassignModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.reassignModalText {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.reassignCurrentDriver {
+  margin: 0;
+  font-size: var(--text-xs);
   color: var(--color-gray-500);
 }
 

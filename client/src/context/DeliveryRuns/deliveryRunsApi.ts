@@ -503,6 +503,23 @@ export const listDrivers = async (): Promise<Driver[]> => {
   return data?.drivers ?? [];
 };
 
+export const reassignStopDriver = async (
+  stopId: string,
+  driverId: string,
+): Promise<void> => {
+  try {
+    await api.patch(`/admin/delivery/stops/${stopId}/driver`, { driverId });
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const message = (err.response?.data as any)?.message;
+      if (typeof message === "string" && message.trim()) {
+        throw new Error(message);
+      }
+    }
+    throw err;
+  }
+};
+
 export const getDepotLocation = async (): Promise<DepotLocation | null> => {
   const res = await api.get("/admin/delivery/depot");
   const data = unwrap<DepotLocation>(res.data);

@@ -13,6 +13,7 @@ const {
   getRouteStock: getRouteStockService,
   getOrdersStockRequirements: getOrdersStockRequirementsService,
   deleteBatch: deleteBatchService,
+  reassignStopDriver: reassignStopDriverService,
 } = require("../services/delivery.service");
 
 const { spreadsheetUploadToRows } = require("../utils/ordersSpreadsheet.util");
@@ -320,6 +321,25 @@ async function deleteBatch(req, res) {
   return res.status(200).json(result);
 }
 
+async function reassignStopDriver(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
+
+  const { stopId } = req.params;
+  const driverId =
+    typeof req.body?.driverId === "string" ? req.body.driverId.trim() : "";
+
+  const result = await reassignStopDriverService({ stopId, driverId });
+  if (!result.success) {
+    return res.status(result.statusCode || 400).json(result);
+  }
+  return res.status(200).json(result);
+}
+
 module.exports = {
   listBatches,
   listEligibleOrders,
@@ -335,4 +355,5 @@ module.exports = {
   getRoute,
   getRouteStock,
   deleteBatch,
+  reassignStopDriver,
 };

@@ -1599,6 +1599,256 @@ async function deleteBatch({ batchId } = {}) {
   }
 }
 
+async function resequenceRouteStops(routeId, session) {
+  const stops = await Stop.find({ route: routeId })
+    .sort({ sequence: 1, createdAt: 1, _id: 1 })
+    .select("_id sequence")
+    .session(session);
+
+  if (!stops.length) return 0;
+
+  const ops = [];
+  for (let index = 0; index < stops.length; index += 1) {
+    const nextSequence = index + 1;
+    if (Number(stops[index].sequence) === nextSequence) continue;
+
+    ops.push({
+      updateOne: {
+        filter: { _id: stops[index]._id },
+        update: { $set: { sequence: nextSequence } },
+      },
+    });
+  }
+
+  if (ops.length) {
+    await Stop.bulkWrite(ops, { session });
+  }
+
+  return stops.length;
+}
+
+async function reassignStopDriver({ stopId, driverId } = {}) {
+  const normalizedStopId = String(stopId || "").trim();
+  const normalizedDriverId = String(driverId || "").trim();
+
+  if (!normalizedStopId) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "stopId is required",
+    };
+  }
+
+  if (!normalizedDriverId) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "driverId is required",
+    };
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(normalizedStopId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid stopId",
+    };
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(normalizedDriverId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid driverId",
+    };
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const stop = await Stop.findById(normalizedStopId)
+      .select("_id route order sequence")
+      .session(session);
+
+    if (!stop) {
+      await session.abortTransaction();
+      session.endSession();
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Stop not found",
+      };
+    }
+
+    const sourceRoute = await Route.findById(stop.route)
+      .select("_id batch driver totalStops")
+      .session(session);
+
+    if (!sourceRoute) {
+      await session.abortTransaction();
+      session.endSession();
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Source route not found",
+      };
+    }
+
+    const driverRole = await Role.findOne({ name: "driver" })
+      .select("_id")
+      .session(session);
+
+    const targetDriver = await User.findById(normalizedDriverId)
+      .select("_id name email status role")
+      .session(session);
+
+    if (!targetDriver || String(targetDriver.status) !== "active") {
+      await session.abortTransaction();
+      session.endSession();
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Driver not found",
+      };
+    }
+
+    if (
+      !driverRole ||
+      String(targetDriver.role || "") !== String(driverRole._id || "")
+    ) {
+      await session.abortTransaction();
+      session.endSession();
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Selected user is not a driver",
+      };
+    }
+
+    const sourceDriverId = String(sourceRoute.driver || "");
+    if (sourceDriverId && sourceDriverId === normalizedDriverId) {
+      await session.abortTransaction();
+      session.endSession();
+      return {
+        success: true,
+        data: {
+          stopId: String(stop._id),
+          routeId: String(sourceRoute._id),
+          driverId: normalizedDriverId,
+          createdRoute: false,
+          removedEmptyRoute: false,
+        },
+      };
+    }
+
+    const batch = await DeliveryBatch.findById(sourceRoute.batch)
+      .select("_id routes")
+      .session(session);
+
+    if (!batch) {
+      await session.abortTransaction();
+      session.endSession();
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Batch not found",
+      };
+    }
+
+    let targetRoute = await Route.findOne({
+      batch: batch._id,
+      driver: targetDriver._id,
+    })
+      .select("_id batch driver totalStops")
+      .session(session);
+
+    let createdRoute = false;
+    if (!targetRoute) {
+      [targetRoute] = await Route.create(
+        [
+          {
+            batch: batch._id,
+            driver: targetDriver._id,
+            totalStops: 0,
+            totalDistanceMeters: 0,
+            totalDurationSeconds: 0,
+            polyline: "",
+            status: "planned",
+          },
+        ],
+        { session },
+      );
+
+      createdRoute = true;
+
+      await DeliveryBatch.updateOne(
+        { _id: batch._id },
+        { $addToSet: { routes: targetRoute._id } },
+        { session },
+      );
+    }
+
+    const targetStopCount = await Stop.countDocuments({ route: targetRoute._id }).session(
+      session,
+    );
+
+    stop.route = targetRoute._id;
+    stop.sequence = targetStopCount + 1;
+    await stop.save({ session });
+
+    const sourceCount = await resequenceRouteStops(sourceRoute._id, session);
+    const targetCount = await resequenceRouteStops(targetRoute._id, session);
+
+    let removedEmptyRoute = false;
+
+    if (sourceCount === 0) {
+      await Route.deleteOne({ _id: sourceRoute._id }).session(session);
+      await DeliveryBatch.updateOne(
+        { _id: batch._id },
+        { $pull: { routes: sourceRoute._id } },
+        { session },
+      );
+      removedEmptyRoute = true;
+    } else {
+      await Route.updateOne(
+        { _id: sourceRoute._id },
+        { $set: { totalStops: sourceCount } },
+        { session },
+      );
+    }
+
+    await Route.updateOne(
+      { _id: targetRoute._id },
+      { $set: { totalStops: targetCount } },
+      { session },
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return {
+      success: true,
+      data: {
+        stopId: String(stop._id),
+        routeId: String(targetRoute._id),
+        driverId: String(targetDriver._id),
+        createdRoute,
+        removedEmptyRoute,
+      },
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error("Reassign stop driver error:", err);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Failed to reassign stop driver",
+    };
+  }
+}
+
 async function getBatch({ batchId, user } = {}) {
   try {
     if (!batchId) {
@@ -2027,4 +2277,5 @@ module.exports = {
   getRouteStock,
   getOrdersStockRequirements,
   deleteBatch,
+  reassignStopDriver,
 };

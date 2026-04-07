@@ -1,5 +1,12 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { X, Truck, Printer, Pencil, Loader2 } from "lucide-react";
+import {
+  X,
+  Truck,
+  Printer,
+  Pencil,
+  Loader2,
+  ArrowRightLeft,
+} from "lucide-react";
 import {
   type VanRoute,
   type VanId,
@@ -7,8 +14,10 @@ import {
   getDepotLocation,
   getVanStyleKey,
   formatManifestItemSku,
+  listDrivers as listDeliveryDrivers,
+  reassignStopDriver as reassignDeliveryStopDriver,
 } from "@/context/DeliveryRuns";
-import { Button } from "@/components/common";
+import { Button, Modal, ModalFooter, Select } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
 import { useOrdersApi } from "@/context/Orders";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -21,6 +30,7 @@ interface RouteDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onPrint: () => void;
+  onRunUpdated: () => Promise<void>;
 }
 
 const KM_TO_MI = 0.621371;
@@ -52,6 +62,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
   isOpen,
   onClose,
   onPrint,
+  onRunUpdated,
 }) => {
   const [search, setSearch] = useState("");
   const { showToast } = useToast();
@@ -85,6 +96,18 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
     lng: number;
     label: string;
   } | null>(null);
+  const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
+  const [selectedStopForReassign, setSelectedStopForReassign] = useState<
+    VanRoute["stops"][0] | null
+  >(null);
+  const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [driverOptions, setDriverOptions] = useState<
+    Array<{ value: string; label: string }>
+  >([]);
+  const [driversLoading, setDriversLoading] = useState(false);
+  const [reassigningStopId, setReassigningStopId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -100,6 +123,48 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isReassignModalOpen || !hasPermission("delivery.routes.update")) {
+      return;
+    }
+
+    let active = true;
+
+    (async () => {
+      setDriversLoading(true);
+      try {
+        const drivers = await listDeliveryDrivers();
+        if (!active) return;
+
+        const options = drivers.map((driver) => ({
+          value: driver.id,
+          label:
+            driver.id === van.driverId
+              ? `${driver.name} (${driver.email}) - current`
+              : `${driver.name} (${driver.email})`,
+        }));
+
+        setDriverOptions(options);
+
+        const firstAlternative =
+          options.find((option) => option.value !== van.driverId)?.value ||
+          options[0]?.value ||
+          "";
+        setSelectedDriverId((current) => current || firstAlternative);
+      } catch {
+        if (!active) return;
+        setDriverOptions([]);
+        showToast({ type: "error", title: "Failed to load drivers" });
+      } finally {
+        if (active) setDriversLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [isReassignModalOpen, hasPermission, showToast, van.driverId]);
 
   const filteredStops = useMemo(() => {
     if (!search.trim()) return van.stops;
@@ -221,6 +286,48 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
     }
   };
 
+  const openReassignModalForStop = (stop: VanRoute["stops"][0]) => {
+    if (!hasPermission("delivery.routes.update")) return;
+
+    setSelectedStopForReassign(stop);
+    setSelectedDriverId("");
+    setIsReassignModalOpen(true);
+  };
+
+  const closeReassignModal = () => {
+    if (reassigningStopId) return;
+    setIsReassignModalOpen(false);
+    setSelectedStopForReassign(null);
+    setSelectedDriverId("");
+  };
+
+  const handleReassignStop = async () => {
+    if (!selectedStopForReassign || !selectedDriverId) return;
+
+    setReassigningStopId(selectedStopForReassign.stopId);
+    try {
+      await reassignDeliveryStopDriver(
+        selectedStopForReassign.stopId,
+        selectedDriverId,
+      );
+      await onRunUpdated();
+      showToast({ type: "success", title: "Stop reassigned" });
+      setIsReassignModalOpen(false);
+      setSelectedStopForReassign(null);
+      setSelectedDriverId("");
+    } catch (err) {
+      showToast({
+        type: "error",
+        title:
+          err instanceof Error && err.message
+            ? err.message
+            : "Failed to reassign stop",
+      });
+    } finally {
+      setReassigningStopId(null);
+    }
+  };
+
   // Build Google Maps directions URL
   const buildMapsUrl = () => {
     const originLat = depot?.lat ?? DEPOT_LOCATION.lat;
@@ -329,7 +436,8 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                     </div>
                   </div>
 
-                  {hasPermission("orders.update") &&
+                  {((hasPermission("orders.update") ||
+                    hasPermission("delivery.routes.update")) &&
                     (() => {
                       const effectiveStatus =
                         getEffectiveDeliveryStatus(stop) || "ordered";
@@ -338,28 +446,54 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                         String(effectiveStatus).toLowerCase() === "delivered";
 
                       return (
-                        <button
-                          type="button"
-                          className={styles.statusBtn}
-                          onClick={() => void openStatusModalForStop(stop)}
-                          disabled={
-                            statusResolveStopId === stop.stopId ||
-                            isStatusLocked
-                          }
-                          title={
-                            isStatusLocked
-                              ? "Delivered orders are locked"
-                              : "Edit delivery status"
-                          }
-                        >
-                          {statusResolveStopId === stop.stopId ? (
-                            <Loader2 size={16} className={styles.btnSpinner} />
-                          ) : (
-                            <Pencil size={16} />
+                        <div className={styles.stopActions}>
+                          {hasPermission("delivery.routes.update") && (
+                            <button
+                              type="button"
+                              className={styles.statusBtn}
+                              onClick={() => openReassignModalForStop(stop)}
+                              disabled={reassigningStopId === stop.stopId}
+                              title="Assign stop to a different driver"
+                            >
+                              {reassigningStopId === stop.stopId ? (
+                                <Loader2
+                                  size={16}
+                                  className={styles.btnSpinner}
+                                />
+                              ) : (
+                                <ArrowRightLeft size={16} />
+                              )}
+                            </button>
                           )}
-                        </button>
+
+                          {hasPermission("orders.update") && (
+                            <button
+                              type="button"
+                              className={styles.statusBtn}
+                              onClick={() => void openStatusModalForStop(stop)}
+                              disabled={
+                                statusResolveStopId === stop.stopId ||
+                                isStatusLocked
+                              }
+                              title={
+                                isStatusLocked
+                                  ? "Delivered orders are locked"
+                                  : "Edit delivery status"
+                              }
+                            >
+                              {statusResolveStopId === stop.stopId ? (
+                                <Loader2
+                                  size={16}
+                                  className={styles.btnSpinner}
+                                />
+                              ) : (
+                                <Pencil size={16} />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       );
-                    })()}
+                    })())}
                 </div>
               </div>
             ))
@@ -380,6 +514,59 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
         setIsStatusModalOpen={setIsStatusModalOpen}
         updateOrderStatus={handleUpdateOrderStatus}
       />
+
+      <Modal
+        isOpen={isReassignModalOpen}
+        onClose={closeReassignModal}
+        title="Assign Stop To Driver"
+        size="sm"
+      >
+        <div className={styles.reassignModalBody}>
+          <p className={styles.reassignModalText}>
+            {selectedStopForReassign
+              ? `Move order ${selectedStopForReassign.orderId} to another driver.`
+              : "Move this stop to another driver."}
+          </p>
+
+          <Select
+            label="Driver"
+            value={selectedDriverId}
+            onChange={setSelectedDriverId}
+            options={driverOptions}
+            placeholder="Select a driver"
+            fullWidth
+            disabled={driversLoading || reassigningStopId !== null}
+          />
+
+          {van.driverName && (
+            <p className={styles.reassignCurrentDriver}>
+              Current driver: {van.driverName}
+            </p>
+          )}
+        </div>
+
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            onClick={closeReassignModal}
+            disabled={reassigningStopId !== null}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => void handleReassignStop()}
+            disabled={
+              driversLoading ||
+              !selectedDriverId ||
+              selectedDriverId === van.driverId ||
+              reassigningStopId !== null
+            }
+          >
+            {reassigningStopId ? "Reassigning..." : "Move Stop"}
+          </Button>
+        </ModalFooter>
+      </Modal>
     </>
   );
 };
