@@ -883,14 +883,11 @@ export const MapView: React.FC<MapViewProps> = ({
                     ETA: {formatEtaTime(getStopEta(stop)) ?? "—"}
                   </div>
                   <div className={styles.popupItems}>
-                    {stop.items.slice(0, 3).map((item, i) => (
+                    {stop.items.map((item, i) => (
                       <div key={i}>
                         {item.qty}x {formatManifestItemSku(item)}
                       </div>
                     ))}
-                    {stop.items.length > 3 && (
-                      <div>+{stop.items.length - 3} more items</div>
-                    )}
                   </div>
                 </Popup>
               </Marker>
