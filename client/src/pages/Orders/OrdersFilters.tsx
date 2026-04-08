@@ -11,6 +11,8 @@ const OrdersFilters = ({
   // rename these in parent if you can:
   deliveryStatusFilter,
   setDeliveryStatusFilter,
+  orderSourceFilter,
+  setOrderSourceFilter,
 
   dateFilter,
   setDateFilter,
@@ -109,6 +111,19 @@ const OrdersFilters = ({
           </div>
 
           <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Order Source</label>
+            <Select
+              value={orderSourceFilter}
+              onChange={setOrderSourceFilter}
+              options={[
+                { value: "all", label: "All Sources" },
+                { value: "website", label: "Website" },
+                { value: "imported", label: "Imported" },
+              ]}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
             <label className={styles.filterLabel}>Date From</label>
             <input
               type="date"
@@ -178,6 +193,7 @@ const OrdersFilters = ({
             variant="ghost"
             onClick={() => {
               setDeliveryStatusFilter("all");
+              setOrderSourceFilter("all");
               setDateFilter("all");
               setSearchQuery("");
               setMinTotal("");

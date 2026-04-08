@@ -52,6 +52,11 @@ async function ListOrders({
     "returned",
   ]);
 
+  const normalizedOrderSource =
+    typeof filters.orderSource === "string"
+      ? filters.orderSource.trim().toLowerCase()
+      : "";
+
   /* ==============================
      PAYMENT STATUS (LOCKED)
      Always constrain results to pending/paid/refunded/refund_pending
@@ -75,6 +80,12 @@ async function ListOrders({
       query.deliveryStatus = { $in: cleaned };
     }
     // If cleaned is empty, we simply do NOT apply a deliveryStatus filter.
+  }
+
+  if (normalizedOrderSource === "imported") {
+    query["metadata.manualImport"] = true;
+  } else if (normalizedOrderSource === "website") {
+    query["metadata.manualImport"] = { $ne: true };
   }
 
   /* ==============================

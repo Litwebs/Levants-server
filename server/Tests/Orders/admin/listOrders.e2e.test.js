@@ -107,6 +107,85 @@ describe("GET /api/admin/orders (Admin)", () => {
     expect(res.body.data.orders).toEqual([]);
   });
 
+  test("filters orders by source for imported vs website orders", async () => {
+    const adminCookie = await loginAsAdmin(app);
+
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+
+    await Order.create([
+      {
+        customer: customer._id,
+        items: [
+          {
+            product: product._id,
+            variant: variant._id,
+            name: variant.name,
+            sku: variant.sku,
+            price: variant.price,
+            quantity: 1,
+            subtotal: variant.price,
+          },
+        ],
+        subtotal: variant.price,
+        deliveryAddress: getValidDeliveryAddress(),
+        location: getValidLocation(),
+        deliveryFee: 0,
+        total: variant.price,
+        status: "paid",
+        paidAt: new Date(),
+        reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        metadata: {
+          manualImport: true,
+          importSource: "spreadsheet",
+        },
+      },
+      {
+        customer: customer._id,
+        items: [
+          {
+            product: product._id,
+            variant: variant._id,
+            name: variant.name,
+            sku: variant.sku,
+            price: variant.price,
+            quantity: 1,
+            subtotal: variant.price,
+          },
+        ],
+        subtotal: variant.price,
+        deliveryAddress: getValidDeliveryAddress(),
+        location: getValidLocation(),
+        deliveryFee: 0,
+        total: variant.price,
+        status: "paid",
+        paidAt: new Date(),
+        reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    ]);
+
+    const importedRes = await request(app)
+      .get("/api/admin/orders")
+      .query({ orderSource: "imported" })
+      .set("Cookie", adminCookie);
+
+    expect(importedRes.status).toBe(200);
+    expect(importedRes.body.success).toBe(true);
+    expect(importedRes.body.data.orders).toHaveLength(1);
+    expect(importedRes.body.data.orders[0].metadata?.manualImport).toBe(true);
+
+    const websiteRes = await request(app)
+      .get("/api/admin/orders")
+      .query({ orderSource: "website" })
+      .set("Cookie", adminCookie);
+
+    expect(websiteRes.status).toBe(200);
+    expect(websiteRes.body.success).toBe(true);
+    expect(websiteRes.body.data.orders).toHaveLength(1);
+    expect(websiteRes.body.data.orders[0].metadata?.manualImport).not.toBe(true);
+  });
+
   test("fails when not authenticated", async () => {
     const res = await request(app).get("/api/admin/orders");
 

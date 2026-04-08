@@ -219,6 +219,7 @@ export const useOrders = () => {
   // Backend filters
   const [searchQuery, setSearchQuery] = useState(""); // free-text server-side search
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<string>("all");
+  const [orderSourceFilter, setOrderSourceFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [minTotal, setMinTotal] = useState("");
@@ -334,6 +335,8 @@ const refresh = useCallback(
 
     const effectiveDeliveryStatus =
       deliveryStatusFilter !== "all" ? deliveryStatusFilter : undefined;
+    const effectiveOrderSource =
+      orderSourceFilter !== "all" ? orderSourceFilter : undefined;
 
     const apiDateFrom = dateFrom ? toStartOfDayIso(dateFrom) : undefined;
     const apiDateTo = dateTo ? toEndOfDayIso(dateTo) : undefined;
@@ -344,6 +347,7 @@ const refresh = useCallback(
 
       // ✅ delivery status filter (optional)
       deliveryStatus: effectiveDeliveryStatus,
+      orderSource: effectiveOrderSource,
 
       // ✅ payment status is not sent; backend locks it to unpaid/paid/refund statuses
       search: searchQuery || undefined,
@@ -364,6 +368,7 @@ const refresh = useCallback(
     pageSize,
     sortBy,
     deliveryStatusFilter,
+    orderSourceFilter,
     minTotal,
     maxTotal,
     dateFrom,
@@ -392,6 +397,7 @@ const refresh = useCallback(
   }, [
     searchQuery,
     deliveryStatusFilter,
+    orderSourceFilter,
     dateFilter,
     minTotal,
     maxTotal,
@@ -691,6 +697,8 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     setSearchQuery,
     deliveryStatusFilter,
     setDeliveryStatusFilter,
+    orderSourceFilter,
+    setOrderSourceFilter,
     dateFilter,
     setDateFilter,
     sortBy,

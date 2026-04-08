@@ -54,6 +54,7 @@ type OrdersContextType = {
 
     // filters
     deliveryStatus?: string | string[];
+    orderSource?: "all" | "imported" | "website" | (string & {});
     search?: string;
     minTotal?: number | string;
     maxTotal?: number | string;
@@ -128,6 +129,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       pageSize?: number;
 
       deliveryStatus?: string | string[];
+      orderSource?: "all" | "imported" | "website" | (string & {});
       search?: string;
       minTotal?: number | string;
       maxTotal?: number | string;
@@ -147,6 +149,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
             pageSize: params?.pageSize,
 
             deliveryStatus: params?.deliveryStatus,
+            orderSource: params?.orderSource,
             search: params?.search,
             minTotal: params?.minTotal,
             maxTotal: params?.maxTotal,
