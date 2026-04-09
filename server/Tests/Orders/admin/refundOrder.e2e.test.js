@@ -28,6 +28,19 @@ jest.mock("../../../utils/stripe.util", () => ({
 }));
 
 describe("POST /api/admin/orders/:id/refund (Admin)", () => {
+  beforeEach(() => {
+    const stripe = require("../../../utils/stripe.util");
+    stripe.refunds.create.mockReset();
+    stripe.refunds.create.mockResolvedValue({
+      id: "re_test_123",
+      status: "pending",
+    });
+    stripe.checkout.sessions.retrieve.mockReset();
+    stripe.checkout.sessions.retrieve.mockResolvedValue({
+      payment_intent: "pi_test_123",
+    });
+  });
+
   const getValidDeliveryAddress = () => ({
     line1: "10 Downing Street",
     line2: "",
@@ -88,6 +101,65 @@ describe("POST /api/admin/orders/:id/refund (Admin)", () => {
     expect(updated.status).toBe("refund_pending");
     expect(updated.refund.stripeRefundId).toBe("re_test_123");
     expect(updated.refund.restock).toBe(false);
+  });
+
+  test("sends the requested partial amount to Stripe", async () => {
+    const stripe = require("../../../utils/stripe.util");
+    const adminCookie = await loginAsAdmin(app);
+
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({
+      product,
+      price: 10,
+    });
+
+    const order = await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: variant.price,
+          quantity: 2,
+          subtotal: variant.price * 2,
+        },
+      ],
+      subtotal: variant.price * 2,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 0,
+      total: variant.price * 2,
+      status: "paid",
+      stripePaymentIntentId: "pi_test_123",
+      reservationExpiresAt: new Date(),
+      paidAt: new Date(),
+    });
+
+    const res = await request(app)
+      .post(`/api/admin/orders/${order._id}/refund`)
+      .set("Cookie", adminCookie)
+      .send({
+        amount: 6.5,
+        reason: "Partial goodwill refund",
+        restock: false,
+      });
+
+    expect(res.status).toBe(200);
+    expect(stripe.refunds.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment_intent: "pi_test_123",
+        amount: 650,
+      }),
+      expect.any(Object),
+    );
+
+    const updated = await Order.findById(order._id);
+    expect(updated.refunds).toHaveLength(1);
+    expect(updated.refunds[0].amountMinor).toBe(650);
+    expect(updated.refunds[0].amount).toBe(6.5);
   });
 
   test("successfully initiates refund with restock flag", async () => {

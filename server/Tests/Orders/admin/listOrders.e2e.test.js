@@ -183,7 +183,9 @@ describe("GET /api/admin/orders (Admin)", () => {
     expect(websiteRes.status).toBe(200);
     expect(websiteRes.body.success).toBe(true);
     expect(websiteRes.body.data.orders).toHaveLength(1);
-    expect(websiteRes.body.data.orders[0].metadata?.manualImport).not.toBe(true);
+    expect(websiteRes.body.data.orders[0].metadata?.manualImport).not.toBe(
+      true,
+    );
   });
 
   test("fails when not authenticated", async () => {

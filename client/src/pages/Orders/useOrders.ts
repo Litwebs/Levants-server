@@ -503,9 +503,14 @@ const refresh = useCallback(
     }
   };
 
-  const refundOrder = async (id: string) => {
+  const refundOrder = async (id: string, amount?: number) => {
     try {
-      await refundOrderApi(id);
+      await refundOrderApi(
+        id,
+        typeof amount === "number" && Number.isFinite(amount)
+          ? { amount }
+          : undefined,
+      );
       showToast({ title: "Order refunded", type: "success" });
       await refresh();
     } catch {

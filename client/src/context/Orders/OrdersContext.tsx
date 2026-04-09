@@ -94,7 +94,7 @@ type OrdersContextType = {
 
   refundOrder: (
     orderId: string,
-    body?: { reason?: string; restock?: boolean },
+    body?: { amount?: number; reason?: string; restock?: boolean },
   ) => Promise<RefundOrderResult>;
 
   bulkUpdateDeliveryStatus: (
@@ -413,10 +413,14 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const refundOrder = useCallback(
-    async (orderId: string, body?: { reason?: string; restock?: boolean }) => {
+    async (
+      orderId: string,
+      body?: { amount?: number; reason?: string; restock?: boolean },
+    ) => {
       dispatch({ type: ORDERS_REQUEST });
       try {
         const res = await api.post(`/admin/orders/${orderId}/refund`, {
+          amount: body?.amount,
           reason: body?.reason,
           restock: body?.restock,
         });
