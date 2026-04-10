@@ -70,15 +70,6 @@ async function CreateDiscount({ body, userId }) {
     .trim()
     .toUpperCase();
 
-  const existing = await Discount.findOne({ code }).select("_id").lean();
-  if (existing) {
-    return {
-      success: false,
-      statusCode: 409,
-      message: "Discount code already exists",
-    };
-  }
-
   const scope = body.scope || "global";
 
   const resolved = await resolveStripeProductIdsForScope({
@@ -120,22 +111,6 @@ async function CreateDiscount({ body, userId }) {
 
   const coupon = await stripe.coupons.create(couponPayload);
 
-  const promoPayload = {
-    coupon: coupon.id,
-    code,
-    active: true,
-    ...(endsAtUnix ? { expires_at: endsAtUnix } : {}),
-    ...(Number.isFinite(body.maxRedemptions)
-      ? { max_redemptions: body.maxRedemptions }
-      : {}),
-    metadata: {
-      code,
-      discountName: body.name,
-    },
-  };
-
-  const promotionCode = await stripe.promotionCodes.create(promoPayload);
-
   const discount = await Discount.create({
     name: body.name,
     code,
@@ -152,7 +127,6 @@ async function CreateDiscount({ body, userId }) {
     maxRedemptions: body.maxRedemptions,
     perCustomerLimit: body.perCustomerLimit,
     stripeCouponId: coupon.id,
-    stripePromotionCodeId: promotionCode.id,
     createdBy: userId,
   });
 

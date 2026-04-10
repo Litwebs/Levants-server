@@ -17,7 +17,10 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
   const [expandedVans, setExpandedVans] = useState<Set<VanId>>(new Set());
 
   const allStock = useMemo(() => {
-    const bySku = new Map<string, { skuId: string; name: string; qty: number }>();
+    const bySku = new Map<
+      string,
+      { skuId: string; name: string; qty: number }
+    >();
 
     for (const van of vans) {
       for (const item of van.manifest?.items ?? []) {

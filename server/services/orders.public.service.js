@@ -271,10 +271,13 @@ async function CreateOrder({
             quantity: 1,
           },
         ],
-        ...(appliedDiscount?.stripePromotionCodeId
+        ...(appliedDiscount?.stripePromotionCodeId ||
+        appliedDiscount?.stripeCouponId
           ? {
               discounts: [
-                { promotion_code: appliedDiscount.stripePromotionCodeId },
+                appliedDiscount?.stripePromotionCodeId
+                  ? { promotion_code: appliedDiscount.stripePromotionCodeId }
+                  : { coupon: appliedDiscount.stripeCouponId },
               ],
             }
           : {}),

@@ -1,6 +1,22 @@
 const mongoose = require("mongoose");
 const { mongoUri, env } = require("./env");
 
+async function ensureDiscountCodeIndex() {
+  const collection = mongoose.connection?.db?.collection("discounts");
+  if (!collection) return;
+
+  const indexes = await collection.indexes();
+  const codeIndex = indexes.find((index) => index?.key && index.key.code === 1);
+
+  if (codeIndex?.unique) {
+    await collection.dropIndex(codeIndex.name);
+  }
+
+  if (!codeIndex || codeIndex.unique) {
+    await collection.createIndex({ code: 1 }, { name: "code_1" });
+  }
+}
+
 mongoose.set("strictQuery", true);
 
 const connectDb = async () => {
@@ -13,6 +29,8 @@ const connectDb = async () => {
       // options for newer mongoose are mostly auto-handled
       autoIndex: env !== "production",
     });
+
+    await ensureDiscountCodeIndex();
 
     if (env !== "test") {
       // eslint-disable-next-line no-console

@@ -14,7 +14,6 @@ const discountSchema = new mongoose.Schema(
       required: true,
       trim: true,
       uppercase: true,
-      unique: true,
       index: true,
       minlength: 3,
       maxlength: 32,

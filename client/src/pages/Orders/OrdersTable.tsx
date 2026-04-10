@@ -164,7 +164,10 @@ const OrdersTable = ({
                       </div>
                     </td>
 
-                    <td className={styles.customerInfoCol} data-label="Customer">
+                    <td
+                      className={styles.customerInfoCol}
+                      data-label="Customer"
+                    >
                       <div className={styles.customerCell}>
                         <span className={styles.customerName}>
                           {order.customer.name}
@@ -205,7 +208,10 @@ const OrdersTable = ({
                       {getPaymentBadge(order.paymentStatus)}
                     </td>
 
-                    <td className={styles.deliveryInfoCol} data-label="Delivery Date">
+                    <td
+                      className={styles.deliveryInfoCol}
+                      data-label="Delivery Date"
+                    >
                       <div className={styles.deliveryCell}>
                         <span className={styles.deliveryDate}>
                           {formatDeliveryDate(order.deliverySlot.date)}

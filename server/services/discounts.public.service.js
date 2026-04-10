@@ -9,11 +9,11 @@ function normalizeCode(code) {
     .toUpperCase();
 }
 
-async function findDiscountByCode(code) {
+async function findDiscountsByCode(code) {
   const normalized = normalizeCode(code);
-  if (!normalized) return null;
+  if (!normalized) return [];
 
-  return Discount.findOne({ code: normalized }).lean();
+  return Discount.find({ code: normalized }).sort({ createdAt: -1 }).lean();
 }
 
 async function validateDiscountForOrder({ code, customerId, resolvedItems }) {
@@ -22,30 +22,53 @@ async function validateDiscountForOrder({ code, customerId, resolvedItems }) {
     return { success: false, message: "discountCode is required" };
   }
 
-  const discount = await findDiscountByCode(normalized);
-  if (!discount || !discount.isActive) {
+  const candidates = await findDiscountsByCode(normalized);
+  if (candidates.length === 0) {
     return { success: false, message: "Invalid discount code" };
   }
 
   const now = Date.now();
-  if (discount.startsAt && new Date(discount.startsAt).getTime() > now) {
-    return { success: false, message: "Discount is not active yet" };
-  }
-  if (discount.endsAt && new Date(discount.endsAt).getTime() < now) {
-    // Keep DB state in sync with expiration.
-    try {
-      await Discount.updateOne(
-        { _id: discount._id, isActive: true },
-        { $set: { isActive: false } },
-      );
-    } catch {
-      // ignore
+  let discount = null;
+  let firstFailure = null;
+
+  for (const candidate of candidates) {
+    if (!candidate.isActive) {
+      firstFailure ||= "Invalid discount code";
+      continue;
     }
-    return { success: false, message: "Discount has expired" };
+
+    if (candidate.startsAt && new Date(candidate.startsAt).getTime() > now) {
+      firstFailure ||= "Discount is not active yet";
+      continue;
+    }
+
+    if (candidate.endsAt && new Date(candidate.endsAt).getTime() < now) {
+      firstFailure ||= "Discount has expired";
+      try {
+        await Discount.updateOne(
+          { _id: candidate._id, isActive: true },
+          { $set: { isActive: false } },
+        );
+      } catch {
+        // ignore
+      }
+      continue;
+    }
+
+    if (!candidate.stripePromotionCodeId && !candidate.stripeCouponId) {
+      firstFailure ||= "Discount is not configured in Stripe";
+      continue;
+    }
+
+    discount = candidate;
+    break;
   }
 
-  if (!discount.stripePromotionCodeId && !discount.stripeCouponId) {
-    return { success: false, message: "Discount is not configured in Stripe" };
+  if (!discount) {
+    return {
+      success: false,
+      message: firstFailure || "Invalid discount code",
+    };
   }
 
   const orderItems = Array.isArray(resolvedItems) ? resolvedItems : [];
