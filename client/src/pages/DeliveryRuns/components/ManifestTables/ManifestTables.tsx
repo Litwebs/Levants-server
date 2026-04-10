@@ -17,10 +17,7 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
   const [expandedVans, setExpandedVans] = useState<Set<VanId>>(new Set());
 
   const allStock = useMemo(() => {
-    const bySku = new Map<
-      string,
-      { skuId: string; name: string; qty: number; ordersCount?: number }
-    >();
+    const bySku = new Map<string, { skuId: string; name: string; qty: number }>();
 
     for (const van of vans) {
       for (const item of van.manifest?.items ?? []) {
@@ -31,26 +28,17 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
 
         const prev = bySku.get(key);
         const qty = Number((item as any)?.qty ?? 0) || 0;
-        const ordersCountRaw = (item as any)?.ordersCount;
-        const ordersCount =
-          typeof ordersCountRaw === "number" && Number.isFinite(ordersCountRaw)
-            ? ordersCountRaw
-            : undefined;
 
         if (!prev) {
           bySku.set(key, {
             skuId: skuId || "—",
             name: name || "—",
             qty,
-            ...(ordersCount !== undefined ? { ordersCount } : {}),
           });
           continue;
         }
 
         prev.qty += qty;
-        if (ordersCount !== undefined) {
-          prev.ordersCount = (prev.ordersCount ?? 0) + ordersCount;
-        }
       }
     }
 
@@ -103,9 +91,6 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
               <tr>
                 <th className={styles.headerCell}>SKU</th>
                 <th className={styles.headerCell}>Product</th>
-                <th className={`${styles.headerCell} ${styles.ordersCell}`}>
-                  Orders
-                </th>
                 <th className={`${styles.headerCell} ${styles.qtyCell}`}>
                   Qty
                 </th>
@@ -120,9 +105,6 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                   <td className={`${styles.cell} ${styles.nameCell}`}>
                     {formatProductNameWithSku(item.name, item.skuId)}
                   </td>
-                  <td className={`${styles.cell} ${styles.ordersCell}`}>
-                    {item.ordersCount ?? "—"}
-                  </td>
                   <td className={`${styles.cell} ${styles.qtyCell}`}>
                     {item.qty}
                   </td>
@@ -131,7 +113,6 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
               <tr className={styles.totalRow}>
                 <td className={styles.cell}></td>
                 <td className={styles.cell}>Total</td>
-                <td className={`${styles.cell} ${styles.ordersCell}`}></td>
                 <td className={`${styles.cell} ${styles.qtyCell}`}>
                   {allStockTotalQty}
                 </td>
@@ -168,9 +149,6 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                   <tr>
                     <th className={styles.headerCell}>SKU</th>
                     <th className={styles.headerCell}>Product</th>
-                    <th className={`${styles.headerCell} ${styles.ordersCell}`}>
-                      Orders
-                    </th>
                     <th className={`${styles.headerCell} ${styles.qtyCell}`}>
                       Qty
                     </th>
@@ -186,9 +164,6 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                       <td className={`${styles.cell} ${styles.nameCell}`}>
                         {formatProductNameWithSku(item.name, item.skuId)}
                       </td>
-                      <td className={`${styles.cell} ${styles.ordersCell}`}>
-                        {item.ordersCount ?? "—"}
-                      </td>
                       <td className={`${styles.cell} ${styles.qtyCell}`}>
                         {item.qty}
                       </td>
@@ -200,7 +175,6 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
                   <tr className={styles.totalRow}>
                     <td className={styles.cell}></td>
                     <td className={styles.cell}>Total</td>
-                    <td className={`${styles.cell} ${styles.ordersCell}`}></td>
                     <td className={`${styles.cell} ${styles.qtyCell}`}>
                       {totalQty}
                     </td>

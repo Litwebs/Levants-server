@@ -55,6 +55,25 @@ const OrdersTable = ({
     setConfirmOrder(null);
   };
 
+  const formatOrderCreatedAt = (value: string) => {
+    const date = new Date(value);
+    return `${date.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+    })}, ${date.toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+  };
+
+  const formatDeliveryDate = (value: string) => {
+    return new Date(value).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
   const confirmDelete = async () => {
     if (!confirmOrder || !deleteOrder) return;
     setDeleteLoading(true);
@@ -99,7 +118,7 @@ const OrdersTable = ({
 
             <tbody>
               {(filteredOrders?.length ?? 0) === 0 ? (
-                <tr>
+                <tr className={styles.emptyStateRow}>
                   <td className={styles.emptyTableCell} colSpan={9}>
                     {loading ? "Loading orders…" : "No orders found."}
                   </td>
@@ -118,7 +137,7 @@ const OrdersTable = ({
                       openOrderDetails?.(order.id);
                     }}
                   >
-                    <td className={styles.checkboxCol}>
+                    <td className={styles.checkboxCol} data-label="Select">
                       <input
                         type="checkbox"
                         checked={selectedOrders.includes(order.id)}
@@ -128,27 +147,13 @@ const OrdersTable = ({
                       />
                     </td>
 
-                    <td>
+                    <td className={styles.orderInfoCol} data-label="Order">
                       <div className={styles.orderCell}>
                         <span className={styles.orderNumber}>
                           {order.orderNumber}
                         </span>
                         <span className={styles.orderDate}>
-                          {new Date(order.createdAt).toLocaleDateString(
-                            "en-GB",
-                            {
-                              day: "numeric",
-                              month: "short",
-                            },
-                          )}
-                          ,{" "}
-                          {new Date(order.createdAt).toLocaleTimeString(
-                            "en-GB",
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}
+                          {formatOrderCreatedAt(order.createdAt)}
                         </span>
                         {typeof order.customerInstructions === "string" &&
                         order.customerInstructions.trim() ? (
@@ -159,7 +164,7 @@ const OrdersTable = ({
                       </div>
                     </td>
 
-                    <td>
+                    <td className={styles.customerInfoCol} data-label="Customer">
                       <div className={styles.customerCell}>
                         <span className={styles.customerName}>
                           {order.customer.name}
@@ -170,7 +175,7 @@ const OrdersTable = ({
                       </div>
                     </td>
 
-                    <td>
+                    <td data-label="Items">
                       <span className={styles.itemCount}>
                         {order.items.reduce(
                           (sum: number, item: any) => sum + item.quantity,
@@ -180,7 +185,7 @@ const OrdersTable = ({
                       </span>
                     </td>
 
-                    <td>
+                    <td data-label="Total">
                       <div className={styles.totalCell}>
                         <span className={styles.total}>
                           £{order.total.toFixed(2)}
@@ -193,18 +198,17 @@ const OrdersTable = ({
                       </div>
                     </td>
 
-                    <td>
+                    <td data-label="Delivery Status">
                       {getStatusBadge(order.deliveryStatus?.replace(/_/g, " "))}
                     </td>
-                    <td>{getPaymentBadge(order.paymentStatus)}</td>
+                    <td data-label="Payment">
+                      {getPaymentBadge(order.paymentStatus)}
+                    </td>
 
-                    <td>
+                    <td className={styles.deliveryInfoCol} data-label="Delivery Date">
                       <div className={styles.deliveryCell}>
                         <span className={styles.deliveryDate}>
-                          {new Date(order.deliverySlot.date).toLocaleDateString(
-                            "en-GB",
-                            { day: "numeric", month: "short", year: "numeric" },
-                          )}
+                          {formatDeliveryDate(order.deliverySlot.date)}
                         </span>
                         <span className={styles.deliveryTime}>
                           {order.deliverySlot.timeWindow}
@@ -212,7 +216,7 @@ const OrdersTable = ({
                       </div>
                     </td>
 
-                    <td className={styles.rowActionsCell}>
+                    <td className={styles.rowActionsCell} data-label="Actions">
                       {canDeleteOrders ? (
                         <Button
                           variant="ghost"

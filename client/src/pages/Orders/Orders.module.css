@@ -372,6 +372,14 @@
   padding: var(--space-6) !important;
 }
 
+.emptyStateRow {
+  cursor: default !important;
+}
+
+.emptyStateRow:hover {
+  background-color: transparent !important;
+}
+
 .tableLoadingOverlay {
   position: absolute;
   inset: 0;
@@ -483,6 +491,12 @@
 .checkboxCol {
   width: 40px;
   text-align: center !important;
+}
+
+.orderInfoCol,
+.customerInfoCol,
+.deliveryInfoCol {
+  min-width: 0;
 }
 
 .checkbox {
@@ -612,6 +626,104 @@
 .actionBtn:hover {
   color: var(--color-gray-900);
   background-color: var(--color-gray-100);
+}
+
+@media (max-width: 768px) {
+  .page {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .tableArea {
+    overflow: visible;
+  }
+
+  .tableWrapper {
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    padding: 0;
+  }
+
+  .table {
+    min-width: 920px;
+  }
+
+  .table th,
+  .table td {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .table th {
+    font-size: 10px;
+  }
+
+  .table td {
+    font-size: 13px;
+  }
+
+  .checkboxCol {
+    width: 36px;
+  }
+
+  .orderCell,
+  .customerCell,
+  .deliveryCell,
+  .totalCell {
+    min-width: 0;
+  }
+
+  .orderNumber,
+  .customerName,
+  .deliveryDate,
+  .total {
+    font-size: 13px;
+  }
+
+  .orderDate,
+  .orderInstructions,
+  .customerEmail,
+  .discountNote,
+  .deliveryTime {
+    font-size: 11px;
+  }
+
+  .orderInstructions,
+  .customerEmail {
+    max-width: 220px;
+  }
+
+  .rowActionsCell {
+    white-space: nowrap;
+  }
+
+  .rowActionsCell button {
+    padding-inline: var(--space-2);
+  }
+
+  .paginationFooter {
+    align-items: stretch;
+  }
+
+  .paginationControls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pageSizeSelect {
+    width: 100%;
+  }
+
+  .pageButtons {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pageLabel {
+    flex: 1;
+    text-align: center;
+  }
 }
 
 /* Empty State */
