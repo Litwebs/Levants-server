@@ -4,6 +4,16 @@ const Role = require("../models/role.model");
 const User = require("../models/user.model");
 const { PERMISSIONS } = require("../constants/Auth.constants");
 
+const DRIVER_NOTIFICATION_DEFAULTS = Object.freeze({
+  newOrders: false,
+  orderUpdates: false,
+  lowStockAlerts: false,
+  outOfStock: false,
+  deliveryUpdates: false,
+  customerMessages: false,
+  paymentReceived: false,
+});
+
 /**
  * ===== ROLES =====
  */
@@ -92,6 +102,11 @@ const AssignRoleToUser = async ({ userId, roleId }) => {
   }
 
   user.role = role._id;
+  if (String(role.name || "") === "driver") {
+    user.set("preferences.notifications", {
+      ...DRIVER_NOTIFICATION_DEFAULTS,
+    });
+  }
   await user.save();
 
   return { success: true };

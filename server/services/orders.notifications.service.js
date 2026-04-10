@@ -40,7 +40,7 @@ async function findRecipientUsersForNewOrders() {
 
   const roles = await Role.find({
     permissions: { $in: permissions },
-    status: "active",
+    name: { $ne: "driver" },
   })
     .select("_id")
     .lean();

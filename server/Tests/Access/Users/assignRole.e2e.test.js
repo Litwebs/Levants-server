@@ -160,6 +160,37 @@ describe("PUT /api/access/users/:userId/role (E2E)", () => {
     expect(updatedUser.role.toString()).toBe(role._id.toString());
   });
 
+  test("assigning driver role disables all notification preferences", async () => {
+    const admin = await createUser({ role: "admin" });
+    const user = await createUser({ role: "staff" });
+
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const driverRole = await Role.create({
+      name: "driver",
+      permissions: ["delivery.read"],
+    });
+
+    const res = await request(app)
+      .put(`/api/access/users/${user._id}/role`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({ roleId: driverRole._id });
+
+    expect(res.status).toBe(200);
+
+    const updatedUser = await User.findById(user._id).lean();
+    expect(updatedUser.preferences.notifications.newOrders).toBe(false);
+    expect(updatedUser.preferences.notifications.orderUpdates).toBe(false);
+    expect(updatedUser.preferences.notifications.lowStockAlerts).toBe(false);
+    expect(updatedUser.preferences.notifications.outOfStock).toBe(false);
+    expect(updatedUser.preferences.notifications.deliveryUpdates).toBe(false);
+    expect(updatedUser.preferences.notifications.customerMessages).toBe(false);
+    expect(updatedUser.preferences.notifications.paymentReceived).toBe(false);
+  });
+
   // check that 401 is returned if admin user was deleted after login
   test("401 when admin user was deleted after login", async () => {
     const admin = await createUser({ role: "admin" });

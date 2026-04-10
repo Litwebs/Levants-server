@@ -24,7 +24,10 @@ function buildDashboardUrl() {
 async function findRecipientUsersForInventoryAlerts() {
   const permissions = ["*", "products.read", "products.*"];
 
-  const roles = await Role.find({ permissions: { $in: permissions } })
+  const roles = await Role.find({
+    permissions: { $in: permissions },
+    name: { $ne: "driver" },
+  })
     .select("_id")
     .lean();
 

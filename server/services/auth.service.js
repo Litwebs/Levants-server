@@ -42,6 +42,24 @@ const {
 
 const { Response } = require("../utils/response.util");
 
+const DRIVER_NOTIFICATION_DEFAULTS = Object.freeze({
+  newOrders: false,
+  orderUpdates: false,
+  lowStockAlerts: false,
+  outOfStock: false,
+  deliveryUpdates: false,
+  customerMessages: false,
+  paymentReceived: false,
+});
+
+function isDriverRole(role) {
+  return String(role?.name || "") === "driver";
+}
+
+function getDriverNotificationDefaults() {
+  return { ...DRIVER_NOTIFICATION_DEFAULTS };
+}
+
 const Login = async ({
   email,
   password,
@@ -800,6 +818,9 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
       };
     }
     user.role = role._id;
+    if (isDriverRole(role)) {
+      user.set("preferences.notifications", getDriverNotificationDefaults());
+    }
   }
 
   // Password change
@@ -1280,6 +1301,13 @@ const CreateUser = async ({ body, actorUserId }) => {
     email: normalizedEmail,
     passwordHash,
     role: role._id,
+    ...(isDriverRole(role)
+      ? {
+          preferences: {
+            notifications: getDriverNotificationDefaults(),
+          },
+        }
+      : {}),
     // New users must accept the invitation to verify email.
     status: "disabled",
     createdBy: actorUserId,
