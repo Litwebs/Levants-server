@@ -9,6 +9,12 @@
   box-sizing: border-box;
 }
 
+.pageWithFilters {
+  height: auto;
+  min-height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
+  overflow: auto;
+}
+
 .header {
   display: flex;
   align-items: flex-start;
@@ -324,6 +330,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.pageWithFilters .tableCard {
+  min-height: 24rem;
 }
 
 .tableArea {

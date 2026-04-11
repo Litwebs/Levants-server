@@ -13,7 +13,9 @@ const Orders = () => {
   const ordersState = useOrders();
 
   return (
-    <div className={styles.page}>
+    <div
+      className={`${styles.page} ${ordersState.showFilters ? styles.pageWithFilters : ""}`}
+    >
       <OrdersHeader {...ordersState} />
       {/* <OrdersStatusTabs {...ordersState} /> */}
       <OrdersFilters {...ordersState} />
