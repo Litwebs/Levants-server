@@ -13,6 +13,7 @@
     "seed-business-info": "node scripts/seedBusinessInfo.js",
     "seed-products": "node scripts/seedProducts.js",
     "seed-customers": "node scripts/seedCustomers.js",
+    "seed-orders:bradford": "node scripts/generateBradfordOrders.js",
     "stripe:recreate-products": "node scripts/recreateStripeProducts.js"
   },
   "keywords": [],

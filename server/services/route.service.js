@@ -6,6 +6,11 @@ const User = require("../models/user.model");
 const Role = require("../models/role.model");
 
 const { optimizeRoutes } = require("./googleRoute.service");
+const {
+  normalizeDriverRouting,
+  parseUkPostcode,
+  matchesRoutingArea,
+} = require("../utils/driverRouting.util");
 
 const WAREHOUSE_LAT = Number(process.env.WAREHOUSE_LAT);
 const WAREHOUSE_LNG = Number(process.env.WAREHOUSE_LNG);
@@ -664,8 +669,8 @@ function improveClusterBoundaries(buckets, iterations = 4) {
 async function optimizeSingleDriverRoute({
   driver,
   assignedGroups,
-  globalStartTime,
-  globalEndTime,
+  startTime,
+  endTime,
 }) {
   if (!assignedGroups.length) {
     return {
@@ -685,8 +690,8 @@ async function optimizeSingleDriverRoute({
     populateTransitionPolylines: true,
     allowLargeDeadlineDespiteInterruptionRisk: true,
     model: {
-      globalStartTime,
-      globalEndTime,
+      globalStartTime: startTime,
+      globalEndTime: endTime,
       shipments,
       vehicles: [
         {
@@ -720,9 +725,258 @@ async function optimizeSingleDriverRoute({
   };
 }
 
+function normalizeDriverSelection({ driverIds, driverConfigs }) {
+  const idSet = new Set();
+
+  if (Array.isArray(driverIds)) {
+    for (const driverId of driverIds) {
+      const next = String(driverId || "").trim();
+      if (next) idSet.add(next);
+    }
+  }
+
+  if (Array.isArray(driverConfigs)) {
+    for (const config of driverConfigs) {
+      const next = String(config?.driverId || "").trim();
+      if (next) idSet.add(next);
+    }
+  }
+
+  return Array.from(idSet);
+}
+
+function buildRequestedDriverConfigMap(driverConfigs) {
+  const byDriverId = new Map();
+
+  for (const config of Array.isArray(driverConfigs) ? driverConfigs : []) {
+    const driverId = String(config?.driverId || "").trim();
+    if (!driverId) continue;
+
+    byDriverId.set(driverId, normalizeDriverRouting(config));
+  }
+
+  return byDriverId;
+}
+
+function buildManualAssignmentMap(manualAssignments) {
+  const byOrderId = new Map();
+
+  for (const assignment of Array.isArray(manualAssignments)
+    ? manualAssignments
+    : []) {
+    const orderDbId = String(assignment?.orderDbId || "").trim();
+    const driverId = String(assignment?.driverId || "").trim();
+
+    if (!orderDbId || !driverId) continue;
+    byOrderId.set(orderDbId, driverId);
+  }
+
+  return byOrderId;
+}
+
+function countManualAssignmentsByDriver(manualAssignmentMap) {
+  const counts = new Map();
+
+  for (const driverId of manualAssignmentMap.values()) {
+    counts.set(driverId, (counts.get(driverId) || 0) + 1);
+  }
+
+  return counts;
+}
+
+function buildEffectiveDriverConfigs({
+  drivers,
+  requestedConfigs,
+  fallbackStartTime,
+}) {
+  return drivers.map((driver) => {
+    const driverId = String(driver._id);
+    const persisted = normalizeDriverRouting(driver.driverRouting || {});
+    const override = requestedConfigs.get(driverId);
+    const merged = normalizeDriverRouting({
+      postcodeAreas:
+        Array.isArray(override?.postcodeAreas) &&
+        override.postcodeAreas.length > 0
+          ? override.postcodeAreas
+          : persisted.postcodeAreas,
+      routeStartTime:
+        override?.routeStartTime ||
+        persisted.routeStartTime ||
+        (typeof fallbackStartTime === "string" &&
+        isHHMM(fallbackStartTime.trim())
+          ? fallbackStartTime.trim()
+          : null),
+    });
+
+    return {
+      driverId,
+      driver,
+      postcodeAreas: merged.postcodeAreas,
+      routeStartTime: merged.routeStartTime,
+    };
+  });
+}
+
+function validateDriverConfigs(
+  driverConfigs,
+  manualAssignmentCounts = new Map(),
+) {
+  const errors = [];
+
+  for (const config of driverConfigs) {
+    const manualAssignmentsCount = Number(
+      manualAssignmentCounts.get(config.driverId) || 0,
+    );
+
+    if (
+      !Array.isArray(config.postcodeAreas) ||
+      (config.postcodeAreas.length === 0 && manualAssignmentsCount === 0)
+    ) {
+      errors.push({
+        type: "DRIVER_POSTCODE_AREAS_MISSING",
+        driverId: config.driverId,
+        message:
+          manualAssignmentsCount > 0
+            ? `${config.driver.name} needs postcode areas for any auto-assigned stops`
+            : `${config.driver.name} has no assigned postcode areas`,
+      });
+    }
+
+    if (!config.routeStartTime || !isHHMM(config.routeStartTime)) {
+      errors.push({
+        type: "DRIVER_START_TIME_MISSING",
+        driverId: config.driverId,
+        message: `${config.driver.name} has no valid route start time`,
+      });
+    }
+  }
+
+  return errors;
+}
+
+function validateManualAssignments({
+  manualAssignmentMap,
+  driverConfigs,
+  orders,
+}) {
+  const errors = [];
+  const driverIds = new Set(driverConfigs.map((config) => config.driverId));
+  const orderIds = new Set(orders.map((order) => String(order._id)));
+
+  for (const [orderDbId, driverId] of manualAssignmentMap.entries()) {
+    if (!orderIds.has(orderDbId)) {
+      errors.push({
+        type: "MANUAL_ASSIGNMENT_ORDER_INVALID",
+        orderDbId,
+        driverId,
+        message: `Manual assignment references an order that is not in this batch: ${orderDbId}`,
+      });
+    }
+
+    if (!driverIds.has(driverId)) {
+      errors.push({
+        type: "MANUAL_ASSIGNMENT_DRIVER_INVALID",
+        orderDbId,
+        driverId,
+        message: `Manual assignment references a driver that is not selected: ${driverId}`,
+      });
+    }
+  }
+
+  return errors;
+}
+
+function allocateOrdersByDriverPostcode({
+  orders,
+  driverConfigs,
+  manualAssignmentMap,
+}) {
+  const buckets = new Map(driverConfigs.map((config) => [config.driverId, []]));
+  const warnings = [];
+  const assignedOrderIds = new Set();
+  const driverConfigById = new Map(
+    driverConfigs.map((config) => [config.driverId, config]),
+  );
+
+  for (const order of orders) {
+    const orderDbId = String(order._id);
+    const manuallyAssignedDriverId = manualAssignmentMap.get(orderDbId);
+
+    if (manuallyAssignedDriverId) {
+      const selectedDriver = driverConfigById.get(manuallyAssignedDriverId);
+      if (selectedDriver) {
+        buckets.get(selectedDriver.driverId).push(order);
+        assignedOrderIds.add(orderDbId);
+        continue;
+      }
+    }
+
+    const postcodeValue = String(order?.deliveryAddress?.postcode || "").trim();
+    const parsedPostcode = parseUkPostcode(postcodeValue);
+
+    if (!parsedPostcode.compact || !parsedPostcode.isValid) {
+      warnings.push({
+        type: "BAD_ADDRESS",
+        message: `Order ${order.orderId} has an invalid or missing delivery postcode`,
+        orderId: String(order.orderId || ""),
+        orderDbId: String(order._id),
+        postcode: postcodeValue,
+      });
+      continue;
+    }
+
+    const matches = driverConfigs.filter((config) =>
+      config.postcodeAreas.some((area) =>
+        matchesRoutingArea(parsedPostcode, area),
+      ),
+    );
+
+    if (matches.length === 0) {
+      warnings.push({
+        type: "NO_DRIVER_MATCH",
+        message: `Order ${order.orderId} postcode ${parsedPostcode.outward} does not match any selected driver`,
+        orderId: String(order.orderId || ""),
+        orderDbId: String(order._id),
+        postcode: postcodeValue,
+      });
+      continue;
+    }
+
+    if (matches.length > 1) {
+      warnings.push({
+        type: "MULTIPLE_DRIVER_MATCH",
+        message: `Order ${order.orderId} postcode ${parsedPostcode.outward} matches multiple drivers`,
+        orderId: String(order.orderId || ""),
+        orderDbId: String(order._id),
+        postcode: postcodeValue,
+        driverIds: matches.map((match) => match.driverId),
+      });
+      continue;
+    }
+
+    const selectedDriver = matches[0];
+    buckets.get(selectedDriver.driverId).push(order);
+    assignedOrderIds.add(String(order._id));
+  }
+
+  return {
+    buckets: driverConfigs.map((config) => ({
+      ...config,
+      orders: buckets.get(config.driverId) || [],
+    })),
+    warnings,
+    assignedOrderIds,
+    unassignedOrders: orders.filter(
+      (order) => !assignedOrderIds.has(String(order._id)),
+    ),
+  };
+}
+
 async function generateRoutesForBatch({
   batchId,
   driverIds,
+  driverConfigs,
+  manualAssignments,
   startTime,
   endTime,
 } = {}) {
@@ -769,8 +1023,13 @@ async function generateRoutesForBatch({
     driverFilter.role = driverRole._id;
   }
 
-  if (Array.isArray(driverIds) && driverIds.length > 0) {
-    driverFilter._id = { $in: driverIds };
+  const selectedDriverIds = normalizeDriverSelection({
+    driverIds,
+    driverConfigs,
+  });
+
+  if (selectedDriverIds.length > 0) {
+    driverFilter._id = { $in: selectedDriverIds };
   }
 
   const drivers = await User.find(driverFilter).lean();
@@ -779,41 +1038,95 @@ async function generateRoutesForBatch({
     return { success: false, message: "No active drivers found" };
   }
 
-  const groupedOrders = groupOrdersByLocation(orders);
+  const requestedConfigs = buildRequestedDriverConfigMap(driverConfigs);
+  const manualAssignmentMap = buildManualAssignmentMap(manualAssignments);
+  const effectiveDriverConfigs = buildEffectiveDriverConfigs({
+    drivers,
+    requestedConfigs,
+    fallbackStartTime: startTime,
+  });
 
-  if (groupedOrders.length < drivers.length) {
+  const manualAssignmentErrors = validateManualAssignments({
+    manualAssignmentMap,
+    driverConfigs: effectiveDriverConfigs,
+    orders,
+  });
+  if (manualAssignmentErrors.length > 0) {
     return {
       success: false,
-      message: `Not enough grouped stops (${groupedOrders.length}) for ${drivers.length} drivers`,
+      statusCode: 400,
+      message: manualAssignmentErrors.map((error) => error.message).join(". "),
+      validationErrors: manualAssignmentErrors,
     };
   }
 
-  const { globalStartTime, globalEndTime } = resolveOptimizationWindow({
-    batch,
-    startTime,
-    endTime,
+  const validationErrors = validateDriverConfigs(
+    effectiveDriverConfigs,
+    countManualAssignmentsByDriver(manualAssignmentMap),
+  );
+  if (validationErrors.length > 0) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: validationErrors.map((error) => error.message).join(". "),
+      validationErrors,
+    };
+  }
+
+  const allocation = allocateOrdersByDriverPostcode({
+    orders,
+    driverConfigs: effectiveDriverConfigs,
+    manualAssignmentMap,
   });
+
+  const assignedOrdersCount =
+    orders.length - allocation.unassignedOrders.length;
+  if (assignedOrdersCount === 0) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "No orders matched the selected drivers' postcode areas",
+      warnings: allocation.warnings,
+      unassignedOrderIds: allocation.unassignedOrders.map((order) =>
+        String(order._id),
+      ),
+    };
+  }
 
   if (existingRouteIds.length > 0) {
     await Stop.deleteMany({ route: { $in: existingRouteIds } });
     await Route.deleteMany({ _id: { $in: existingRouteIds } });
   }
 
-  let driverBuckets = clusterGroupedOrdersGeographically(
-    groupedOrders,
-    drivers,
-  );
-  driverBuckets = improveClusterBoundaries(driverBuckets, 4);
-
   const optimizationResults = [];
 
-  for (const bucket of driverBuckets) {
+  for (const bucket of allocation.buckets) {
+    const assignedGroups = groupOrdersByLocation(bucket.orders);
+
+    if (!assignedGroups.length) {
+      optimizationResults.push({
+        driver: bucket.driver,
+        assignedGroups: [],
+        shipmentLookup: buildShipmentLookup([]),
+        optimized: { routes: [] },
+        routeData: null,
+        routeStartTime: bucket.routeStartTime,
+      });
+      continue;
+    }
+
+    const { globalStartTime, globalEndTime } = resolveOptimizationWindow({
+      batch,
+      startTime: bucket.routeStartTime,
+      endTime,
+    });
+
     try {
       const result = await optimizeSingleDriverRoute({
         driver: bucket.driver,
-        assignedGroups: bucket.groups,
-        globalStartTime,
-        globalEndTime,
+        assignedGroups,
+        startTime: globalStartTime,
+        endTime: globalEndTime,
       });
 
       if (result.optimized?.validationErrors?.length) {
@@ -962,25 +1275,34 @@ async function generateRoutesForBatch({
     (order) => !assignedOrderIds.has(String(order._id)),
   );
 
-  if (unassignedOrders.length > 0) {
-    return {
-      success: false,
-      message: `${unassignedOrders.length} orders were not assigned to any route`,
-      unassignedOrderIds: unassignedOrders.map((o) => String(o._id)),
-    };
-  }
+  const routeWarnings = allocation.warnings;
 
   batch.routes = createdRouteIds;
   batch.status = "routes_generated";
   batch.generatedAt = new Date();
 
-  if (typeof startTime === "string" && isHHMM(startTime.trim())) {
-    batch.deliveryWindowStart = startTime.trim();
+  const sortedStartTimes = effectiveDriverConfigs
+    .map((config) => config.routeStartTime)
+    .filter((value) => typeof value === "string" && isHHMM(value))
+    .sort();
+
+  if (sortedStartTimes.length > 0) {
+    batch.deliveryWindowStart = sortedStartTimes[0];
   }
 
   if (typeof endTime === "string" && isHHMM(endTime.trim())) {
     batch.deliveryWindowEnd = endTime.trim();
   }
+
+  batch.routeGeneration = {
+    warnings: routeWarnings,
+    driverConfigs: effectiveDriverConfigs.map((config) => ({
+      driverId: config.driverId,
+      driverName: config.driver.name,
+      postcodeAreas: config.postcodeAreas,
+      routeStartTime: config.routeStartTime,
+    })),
+  };
 
   await batch.save();
 
@@ -990,13 +1312,21 @@ async function generateRoutesForBatch({
       routesCreated: createdRouteIds.length,
       driversUsed: optimizationResults.length,
       ordersCount: orders.length,
-      groupedStopsCount: groupedOrders.length,
+      groupedStopsCount: allocation.buckets.reduce(
+        (sum, bucket) => sum + groupOrdersByLocation(bucket.orders).length,
+        0,
+      ),
       assignedGroupedStopsCount: totalAssignedGroups,
-      unassignedOrdersCount: 0,
-      splitSummary: driverBuckets.map((bucket) => ({
+      unassignedOrdersCount: unassignedOrders.length,
+      warnings: routeWarnings,
+      splitSummary: allocation.buckets.map((bucket) => ({
         driverId: String(bucket.driver._id),
-        groupedStopsAssignedBeforeOptimization: bucket.groups.length,
-        ordersAssignedBeforeOptimization: bucket.totalOrders,
+        groupedStopsAssignedBeforeOptimization: groupOrdersByLocation(
+          bucket.orders,
+        ).length,
+        ordersAssignedBeforeOptimization: bucket.orders.length,
+        routeStartTime: bucket.routeStartTime,
+        postcodeAreas: bucket.postcodeAreas,
       })),
     },
   };

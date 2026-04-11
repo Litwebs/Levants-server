@@ -9,6 +9,7 @@ const Session = require("../models/session.model");
 const cryptoUtil = require("../utils/crypto.util");
 const sendEmail = require("../Integration/Email.service");
 const { FRONTEND_URL, CLIENT_FRONT_URL } = require("../config/env");
+const { normalizeDriverRouting } = require("../utils/driverRouting.util");
 const {
   INVALID_EMAIL_OR_PASSWORD,
   ACCOUNT_DISABLED,
@@ -58,6 +59,28 @@ function isDriverRole(role) {
 
 function getDriverNotificationDefaults() {
   return { ...DRIVER_NOTIFICATION_DEFAULTS };
+}
+
+function mergeDriverRouting(existingValue, nextValue) {
+  const existing = normalizeDriverRouting(existingValue || {});
+  const hasNext = nextValue && typeof nextValue === "object";
+
+  if (!hasNext) {
+    return existing;
+  }
+
+  const merged = {
+    postcodeAreas:
+      nextValue.postcodeAreas !== undefined
+        ? nextValue.postcodeAreas
+        : existing.postcodeAreas,
+    routeStartTime:
+      nextValue.routeStartTime !== undefined
+        ? nextValue.routeStartTime
+        : existing.routeStartTime,
+  };
+
+  return normalizeDriverRouting(merged);
 }
 
 const Login = async ({
@@ -722,7 +745,8 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
     };
   }
 
-  const { name, email, roleId, status, password, preferences } = updates;
+  const { name, email, roleId, status, password, preferences, driverRouting } =
+    updates;
 
   if (name !== undefined) user.name = name;
 
@@ -807,6 +831,10 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
     });
   }
 
+  if (driverRouting && typeof driverRouting === "object") {
+    user.driverRouting = mergeDriverRouting(user.driverRouting, driverRouting);
+  }
+
   // Role change
   if (roleId) {
     const role = await Role.findById(roleId);
@@ -820,6 +848,10 @@ const UpdateUser = async ({ targetUserId, updates, actorUserId }) => {
     user.role = role._id;
     if (isDriverRole(role)) {
       user.set("preferences.notifications", getDriverNotificationDefaults());
+      user.driverRouting = mergeDriverRouting(
+        user.driverRouting,
+        driverRouting,
+      );
     }
   }
 
@@ -1270,7 +1302,7 @@ const DeleteUser = async ({ targetUserId, actorUserId } = {}) => {
 
 // CREATE USER (Admin)
 const CreateUser = async ({ body, actorUserId }) => {
-  const { name, email, password, roleId, status } = body;
+  const { name, email, password, roleId, status, driverRouting } = body;
 
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -1301,6 +1333,7 @@ const CreateUser = async ({ body, actorUserId }) => {
     email: normalizedEmail,
     passwordHash,
     role: role._id,
+    driverRouting: mergeDriverRouting(undefined, driverRouting),
     ...(isDriverRole(role)
       ? {
           preferences: {

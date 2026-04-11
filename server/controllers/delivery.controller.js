@@ -252,6 +252,12 @@ async function generateRoutes(req, res) {
   const driverIds = Array.isArray(req.body?.driverIds)
     ? req.body.driverIds
     : undefined;
+  const driverConfigs = Array.isArray(req.body?.driverConfigs)
+    ? req.body.driverConfigs
+    : undefined;
+  const manualAssignments = Array.isArray(req.body?.manualAssignments)
+    ? req.body.manualAssignments
+    : undefined;
 
   const startTime =
     typeof req.body?.startTime === "string" ? req.body.startTime : undefined;
@@ -261,6 +267,8 @@ async function generateRoutes(req, res) {
   const result = await generateRoutesService({
     batchId,
     driverIds,
+    driverConfigs,
+    manualAssignments,
     startTime,
     endTime,
   });

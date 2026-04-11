@@ -16,6 +16,7 @@ const { getRouteStockAggregation } = require("./warehouse.service");
 const { generateGoogleMapsLink } = require("../utils/navigation.util");
 const { normalizeKey } = require("../utils/ordersSpreadsheet.util");
 const { geocodeAddress } = require("../Integration/google.geocode");
+const { normalizeDriverRouting } = require("../utils/driverRouting.util");
 
 const chunkArray = (arr, size) => {
   const out = [];
@@ -1194,7 +1195,7 @@ async function listDrivers() {
     }
 
     const drivers = await User.find({ role: driverRole._id, status: "active" })
-      .select("name email")
+      .select("name email driverRouting")
       .sort({ name: 1 })
       .lean();
 
@@ -1205,6 +1206,7 @@ async function listDrivers() {
           id: d._id,
           name: d.name,
           email: d.email,
+          driverRouting: normalizeDriverRouting(d.driverRouting || {}),
         })),
       },
     };
@@ -1518,11 +1520,20 @@ async function dispatchBatch({ batchId } = {}) {
   };
 }
 
-async function generateRoutes({ batchId, driverIds, startTime, endTime } = {}) {
+async function generateRoutes({
+  batchId,
+  driverIds,
+  driverConfigs,
+  manualAssignments,
+  startTime,
+  endTime,
+} = {}) {
   try {
     const result = await generateRoutesForBatch({
       batchId,
       driverIds,
+      driverConfigs,
+      manualAssignments,
       startTime,
       endTime,
     });
@@ -1789,9 +1800,9 @@ async function reassignStopDriver({ stopId, driverId } = {}) {
       );
     }
 
-    const targetStopCount = await Stop.countDocuments({ route: targetRoute._id }).session(
-      session,
-    );
+    const targetStopCount = await Stop.countDocuments({
+      route: targetRoute._id,
+    }).session(session);
 
     stop.route = targetRoute._id;
     stop.sequence = targetStopCount + 1;

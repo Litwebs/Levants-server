@@ -82,11 +82,25 @@ const updateUserStatusSchema = Joi.object({
   status: Joi.string().valid("active", "disabled").required(),
 }).unknown(false);
 
+const driverRoutingSchema = Joi.object({
+  postcodeAreas: Joi.array()
+    .items(Joi.string().trim().min(1).max(16))
+    .max(200)
+    .optional(),
+  routeStartTime: Joi.string()
+    .pattern(/^\d{2}:\d{2}$/)
+    .allow(null, "")
+    .optional(),
+})
+  .min(1)
+  .unknown(false);
+
 const updateUserSchema = Joi.object({
   name: Joi.string().trim().min(2).max(100).optional(),
   email: Joi.string().email().optional(),
   roleId: Joi.string().hex().length(24).optional(),
   status: Joi.string().valid("active", "disabled").optional(),
+  driverRouting: driverRoutingSchema.optional(),
 
   preferences: Joi.object({
     notifications: Joi.object({
@@ -155,6 +169,7 @@ const createUserSchema = Joi.object({
   password: Joi.string().min(8).required(),
   roleId: Joi.string().hex().length(24).required(),
   status: Joi.string().valid("active", "disabled").default("active"),
+  driverRouting: driverRoutingSchema.optional(),
 });
 
 module.exports = {

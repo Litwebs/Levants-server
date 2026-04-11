@@ -1,5 +1,42 @@
 const mongoose = require("mongoose");
 
+const routeGenerationWarningSchema = new mongoose.Schema(
+  {
+    type: { type: String, required: true },
+    message: { type: String, required: true },
+    orderId: { type: String },
+    orderDbId: { type: String },
+    driverId: { type: String },
+    driverIds: { type: [String], default: [] },
+    postcode: { type: String },
+  },
+  { _id: false },
+);
+
+const routeGenerationDriverConfigSchema = new mongoose.Schema(
+  {
+    driverId: { type: String, required: true },
+    driverName: { type: String },
+    postcodeAreas: { type: [String], default: [] },
+    routeStartTime: { type: String },
+  },
+  { _id: false },
+);
+
+const routeGenerationSchema = new mongoose.Schema(
+  {
+    warnings: {
+      type: [routeGenerationWarningSchema],
+      default: [],
+    },
+    driverConfigs: {
+      type: [routeGenerationDriverConfigSchema],
+      default: [],
+    },
+  },
+  { _id: false },
+);
+
 const deliveryBatchSchema = new mongoose.Schema(
   {
     deliveryDate: {
@@ -69,6 +106,11 @@ const deliveryBatchSchema = new mongoose.Schema(
       uploadedAt: { type: Date },
       rowsCount: { type: Number },
       createdOrdersCount: { type: Number },
+    },
+
+    routeGeneration: {
+      type: routeGenerationSchema,
+      default: () => ({ warnings: [], driverConfigs: [] }),
     },
   },
   { timestamps: true },

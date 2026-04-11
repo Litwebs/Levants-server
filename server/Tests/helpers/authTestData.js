@@ -30,6 +30,7 @@ async function createUser({
   role = "staff", // role NAME
   status = "active",
   twoFactorEnabled = false,
+  driverRouting,
 } = {}) {
   const passwordHash = await passwordUtil.hashPassword(password);
   const roleDoc = await resolveRole(role);
@@ -41,6 +42,7 @@ async function createUser({
     role: roleDoc._id,
     status,
     twoFactorEnabled,
+    ...(driverRouting ? { driverRouting } : {}),
   });
 
   return user;

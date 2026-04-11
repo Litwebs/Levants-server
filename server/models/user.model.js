@@ -17,6 +17,20 @@ const twoFactorLoginSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const driverRoutingSchema = new mongoose.Schema(
+  {
+    postcodeAreas: {
+      type: [String],
+      default: [],
+    },
+    routeStartTime: {
+      type: String,
+      default: null,
+    },
+  },
+  { _id: false },
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -164,6 +178,14 @@ const userSchema = new mongoose.Schema(
       type: twoFactorLoginSchema,
       default: undefined,
       select: false,
+    },
+
+    driverRouting: {
+      type: driverRoutingSchema,
+      default: () => ({
+        postcodeAreas: [],
+        routeStartTime: null,
+      }),
     },
 
     createdBy: {

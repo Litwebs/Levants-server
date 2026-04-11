@@ -94,6 +94,9 @@ beforeAll(async () => {
     require("../models/discount.model").init(),
     require("../models/discountRedemption.model").init(),
     require("../models/order.model").init(),
+    require("../models/deliveryBatch.model").init(),
+    require("../models/route.model").init(),
+    require("../models/stop.model").init(),
   ]);
 });
 
