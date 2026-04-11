@@ -50,3 +50,11 @@ export const getPaymentBadge = (status: PaymentStatus) => {
     </Badge>
   );
 };
+
+export const getOrderSourceBadge = (isManualImport?: boolean) => {
+  return (
+    <Badge variant={isManualImport ? "warning" : "info"} size="sm">
+      {isManualImport ? "Imported" : "Website"}
+    </Badge>
+  );
+};

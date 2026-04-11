@@ -56,13 +56,26 @@ async function ListOrders({
     typeof filters.orderSource === "string"
       ? filters.orderSource.trim().toLowerCase()
       : "";
+  const incomingPaymentStatuses = Array.isArray(filters.paymentStatus)
+    ? filters.paymentStatus
+    : filters.paymentStatus
+      ? [filters.paymentStatus]
+      : [];
 
   /* ==============================
      PAYMENT STATUS (LOCKED)
      Always constrain results to pending/paid/refunded/refund_pending
      Ignore whatever the client sends in filters.status
   ============================== */
-  query.status = { $in: DEFAULT_PAYMENT };
+  const cleanedPaymentStatuses = incomingPaymentStatuses
+    .map((status) => String(status).trim().toLowerCase())
+    .filter((status) => ALLOWED_PAYMENT.has(status));
+
+  query.status = {
+    $in: cleanedPaymentStatuses.length
+      ? cleanedPaymentStatuses
+      : DEFAULT_PAYMENT,
+  };
 
   /* ==============================
      DELIVERY STATUS (FILTERABLE)

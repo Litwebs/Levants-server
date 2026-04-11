@@ -13,7 +13,11 @@ import {
   Modal,
   ModalFooter,
 } from "../../components/common";
-import { getStatusBadge, getPaymentBadge } from "./order.utils";
+import {
+  getStatusBadge,
+  getPaymentBadge,
+  getOrderSourceBadge,
+} from "./order.utils";
 import styles from "./Orders.module.css";
 import { useEffect, useState } from "react";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -108,6 +112,7 @@ const OrdersTable = ({
                 <th>Order</th>
                 <th>Customer</th>
                 <th>Items</th>
+                <th>Source</th>
                 <th>Total</th>
                 <th>Delivery Status</th>
                 <th>Payment</th>
@@ -119,7 +124,7 @@ const OrdersTable = ({
             <tbody>
               {(filteredOrders?.length ?? 0) === 0 ? (
                 <tr className={styles.emptyStateRow}>
-                  <td className={styles.emptyTableCell} colSpan={9}>
+                  <td className={styles.emptyTableCell} colSpan={10}>
                     {loading ? "Loading orders…" : "No orders found."}
                   </td>
                 </tr>
@@ -186,6 +191,10 @@ const OrdersTable = ({
                         )}{" "}
                         items
                       </span>
+                    </td>
+
+                    <td data-label="Source">
+                      {getOrderSourceBadge(order.isManualImport)}
                     </td>
 
                     <td data-label="Total">

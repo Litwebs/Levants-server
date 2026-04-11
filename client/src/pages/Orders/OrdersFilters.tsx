@@ -11,6 +11,8 @@ const OrdersFilters = ({
   // rename these in parent if you can:
   deliveryStatusFilter,
   setDeliveryStatusFilter,
+  paymentStatusFilter,
+  setPaymentStatusFilter,
   orderSourceFilter,
   setOrderSourceFilter,
 
@@ -111,6 +113,22 @@ const OrdersFilters = ({
           </div>
 
           <div className={styles.filterGroup}>
+            <label className={styles.filterLabel}>Payment Status</label>
+            <Select
+              value={paymentStatusFilter}
+              onChange={setPaymentStatusFilter}
+              options={[
+                { value: "all", label: "All Payment Statuses" },
+                { value: "unpaid", label: "Unpaid" },
+                { value: "paid", label: "Paid" },
+                { value: "refund_pending", label: "Refund Pending" },
+                { value: "partially_refunded", label: "Partially Refunded" },
+                { value: "refunded", label: "Refunded" },
+              ]}
+            />
+          </div>
+
+          <div className={styles.filterGroup}>
             <label className={styles.filterLabel}>Order Source</label>
             <Select
               value={orderSourceFilter}
@@ -193,6 +211,7 @@ const OrdersFilters = ({
             variant="ghost"
             onClick={() => {
               setDeliveryStatusFilter("all");
+              setPaymentStatusFilter("all");
               setOrderSourceFilter("all");
               setDateFilter("all");
               setSearchQuery("");

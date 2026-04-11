@@ -126,9 +126,12 @@ export const useSettings = () => {
     // Tabs that are always available to authenticated users
     const base: Array<"preferences" | "notifications" | "security"> = [
       "preferences",
-      ...(isDriver ? [] : ["notifications"]),
       "security",
     ];
+
+    if (!isDriver) {
+      base.splice(1, 0, "notifications");
+    }
 
     // Business info requires permissions
     const canViewGeneral =
