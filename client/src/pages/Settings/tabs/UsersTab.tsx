@@ -120,7 +120,7 @@ const UsersTab = ({
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const visibleUsers = (Array.isArray(users) ? users : []).filter(
-    (user: any) => !shouldHideEmail(user?.email)
+    (user: any) => !shouldHideEmail(user?.email),
   );
 
   const closeConfirm = () => {

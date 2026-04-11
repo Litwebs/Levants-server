@@ -66,6 +66,10 @@ type UsersContextType = {
     password: string;
     roleId: string;
     status?: "active" | "disabled";
+    driverRouting?: {
+      postcodeAreas: string[];
+      routeStartTime?: string | null;
+    };
   }) => Promise<User>;
   deleteUser: (userId: string) => Promise<void>;
   updateUser: (userId: string, updates: Record<string, any>) => Promise<User>;
@@ -134,6 +138,10 @@ export const UsersProvider = ({ children }: { children: ReactNode }) => {
       password: string;
       roleId: string;
       status?: "active" | "disabled";
+      driverRouting?: {
+        postcodeAreas: string[];
+        routeStartTime?: string | null;
+      };
     }) => {
       setLoading(true);
       setError(null);

@@ -1,9 +1,13 @@
 import api from "@/context/api";
 import axios from "axios";
 import {
+  DeliveryDriver,
   DeliveryRun,
   DeliveryRunListItem,
+  GenerateRouteDriverConfig,
+  IssueType,
   ListRunsParams,
+  ManualOrderAssignment,
   CreateRunPayload,
   ManifestItem,
   OrderSummary,
@@ -27,8 +31,17 @@ type EligibleOrder = {
   totalItems: number;
 };
 
-type Driver = { id: string; name: string; email: string };
+type Driver = DeliveryDriver;
 type DepotLocation = { lat: number; lng: number; label: string };
+
+type OrdersStockRequirementsResponse = {
+  sources?: {
+    sheet?: {
+      rows?: number;
+      usableRows?: number;
+    } | null;
+  };
+};
 
 type BatchListItem = {
   id: string;
@@ -53,6 +66,17 @@ type BatchDetails = {
   createdAt: string;
   lockedAt?: string;
   generatedAt?: string;
+  routeGeneration?: {
+    warnings?: Array<{
+      type: string;
+      message: string;
+      orderId?: string;
+      orderDbId?: string;
+      driverId?: string;
+      driverIds?: string[];
+      postcode?: string;
+    }>;
+  };
 };
 
 type RouteDetails = {
@@ -119,6 +143,34 @@ const uiToBackendStatus = (status: ListRunsParams["status"]): string | undefined
 };
 
 const toVanId = (index: number): VanId => `van-${index + 1}` as VanId;
+
+const normalizeRoutingArea = (value: string) =>
+  String(value || "")
+    .replace(/\s+/g, "")
+    .trim()
+    .toUpperCase();
+
+const extractRoutingArea = (postcode: string) => {
+  const compact = normalizeRoutingArea(postcode);
+  if (!compact) return "";
+
+  const match = compact.match(/^([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})$/);
+  return match ? match[1] : compact;
+};
+
+const ISSUE_TYPES: IssueType[] = [
+  "MISSING_GEO",
+  "BAD_ADDRESS",
+  "OUT_OF_RANGE",
+  "CAPACITY_EXCEEDED",
+  "NO_DRIVER_MATCH",
+  "MULTIPLE_DRIVER_MATCH",
+  "DRIVER_POSTCODE_AREAS_MISSING",
+  "DRIVER_START_TIME_MISSING",
+];
+
+const isIssueType = (value: unknown): value is IssueType =>
+  typeof value === "string" && ISSUE_TYPES.includes(value as IssueType);
 
 const manifestFromStops = (stops: RouteStop[]): ManifestItem[] => {
   const map = new Map<string, ManifestItem>();
@@ -209,6 +261,33 @@ const mapStops = (stops: any[]): RouteStop[] => {
   });
 };
 
+const mapBatchOrderSummary = (order: any, issueTag?: IssueType): OrderSummary => {
+  const customer = order?.customer;
+  const customerName = customer && typeof customer === "object"
+    ? `${customer.firstName || ""} ${customer.lastName || ""}`.trim()
+    : "";
+
+  const totalItems = Array.isArray(order?.items)
+    ? order.items.reduce((sum: number, it: any) => sum + Number(it?.quantity ?? 0), 0)
+    : 0;
+
+  const postcode = String(order?.deliveryAddress?.postcode ?? "");
+  const hasGeo = order?.location?.lat != null && order?.location?.lng != null;
+
+  return {
+    orderDbId: order?._id ? String(order._id) : undefined,
+    orderId: String(order?.orderId ?? ""),
+    customerName,
+    addressLine1: String(order?.deliveryAddress?.line1 ?? ""),
+    postcode,
+    routingArea: extractRoutingArea(postcode),
+    totalItems,
+    lat: hasGeo ? order.location.lat : undefined,
+    lng: hasGeo ? order.location.lng : undefined,
+    issueTag,
+  };
+};
+
 async function buildRunFromBatch(batch: BatchDetails): Promise<DeliveryRun> {
   const routes = Array.isArray(batch.routes) ? batch.routes : [];
 
@@ -262,30 +341,29 @@ async function buildRunFromBatch(batch: BatchDetails): Promise<DeliveryRun> {
   }
 
   const orders = Array.isArray(batch.orders) ? batch.orders : [];
-  const unassignedOrders: OrderSummary[] = orders
-    .filter((o: any) => !assignedOrderIds.has(String(o?._id)))
-    .map((o: any) => {
-      const customer = o?.customer;
-      const customerName = customer && typeof customer === "object"
-        ? `${customer.firstName || ""} ${customer.lastName || ""}`.trim()
-        : "";
+  const warnings = Array.isArray(batch.routeGeneration?.warnings)
+    ? batch.routeGeneration.warnings
+    : [];
+  const warningByOrderDbId = new Map<string, IssueType>();
 
-      const totalItems = Array.isArray(o?.items)
-        ? o.items.reduce((sum: number, it: any) => sum + Number(it?.quantity ?? 0), 0)
-        : 0;
+  for (const warning of warnings) {
+    const key = typeof warning?.orderDbId === "string" ? warning.orderDbId : "";
+    if (!key || warningByOrderDbId.has(key)) continue;
+    if (isIssueType(warning?.type)) {
+      warningByOrderDbId.set(key, warning.type);
+    }
+  }
 
-      const hasGeo = o?.location?.lat != null && o?.location?.lng != null;
+  const allOrders: OrderSummary[] = orders.map((o: any) => {
+    const issueTag = warningByOrderDbId.get(String(o?._id || ""));
+    const hasGeo = o?.location?.lat != null && o?.location?.lng != null;
 
-      return {
-        orderId: String(o?.orderId ?? ""),
-        customerName,
-        postcode: String(o?.deliveryAddress?.postcode ?? ""),
-        totalItems,
-        lat: hasGeo ? o.location.lat : undefined,
-        lng: hasGeo ? o.location.lng : undefined,
-        issueTag: hasGeo ? undefined : "MISSING_GEO",
-      };
-    });
+    return mapBatchOrderSummary(o, issueTag || (hasGeo ? undefined : "MISSING_GEO"));
+  });
+
+  const unassignedOrders: OrderSummary[] = allOrders.filter(
+    (order) => !assignedOrderIds.has(String(order.orderDbId || "")),
+  );
 
   const totalDistanceKm = vans.reduce((sum, v) => sum + (v.stats.distanceKm || 0), 0);
   const totalDurationMin = vans.reduce((sum, v) => sum + (v.stats.durationMin || 0), 0);
@@ -310,8 +388,19 @@ async function buildRunFromBatch(batch: BatchDetails): Promise<DeliveryRun> {
       estimatedDurationMin: totalDurationMin,
     },
     vans,
+    allOrders,
     unassignedOrders,
-    issues: [],
+    issues: warnings
+      .filter((warning: any) => isIssueType(warning?.type))
+      .map((warning: any) => ({
+        type: warning.type,
+        message: String(warning.message || ""),
+        orderId: warning.orderId,
+        orderDbId: warning.orderDbId,
+        driverId: warning.driverId,
+        driverIds: Array.isArray(warning.driverIds) ? warning.driverIds : undefined,
+        postcode: warning.postcode,
+      })),
   };
 }
 
@@ -437,13 +526,14 @@ export const unlockRun = async (id: string): Promise<DeliveryRun | null> => {
  */
 export const optimizeRun = async (
   id: string,
-  driverIds: string[],
-  window?: { startTime: string },
+  driverConfigs: GenerateRouteDriverConfig[],
+  manualAssignments: ManualOrderAssignment[] = [],
 ): Promise<DeliveryRun | null> => {
   try {
     const payload = {
-      driverIds,
-      startTime: window?.startTime,
+      driverIds: driverConfigs.map((config) => config.driverId),
+      driverConfigs,
+      manualAssignments,
     };
 
     if (import.meta.env.DEV) {
@@ -501,6 +591,21 @@ export const listDrivers = async (): Promise<Driver[]> => {
   const res = await api.get("/admin/delivery/drivers");
   const data = unwrap<{ drivers: Driver[] }>(res.data);
   return data?.drivers ?? [];
+};
+
+export const getImportedOrdersCount = async (ordersFile: File): Promise<number> => {
+  const form = new FormData();
+  form.append("ordersFile", ordersFile);
+
+  const res = await api.post("/admin/delivery/orders/stock", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  const data = unwrap<OrdersStockRequirementsResponse>(res.data);
+  const usableRows = Number(data?.sources?.sheet?.usableRows ?? 0);
+  const rows = Number(data?.sources?.sheet?.rows ?? 0);
+
+  return Number.isFinite(usableRows) && usableRows > 0 ? usableRows : rows;
 };
 
 export const reassignStopDriver = async (

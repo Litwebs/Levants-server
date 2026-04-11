@@ -25,7 +25,7 @@
 .sm { width: 100%; max-width: 400px; }
 .md { width: 100%; max-width: 500px; }
 .lg { width: 100%; max-width: 700px; }
-.xl { width: 100%; max-width: 900px; }
+.xl { width: 100%; max-width: 980px; }
 .full { width: calc(100% - 2rem); max-width: none; height: calc(100vh - 2rem); }
 
 .header {

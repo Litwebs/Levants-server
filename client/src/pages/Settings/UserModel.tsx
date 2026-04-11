@@ -12,6 +12,14 @@ const UserModal = ({
   setUserForm,
   saveUser,
 }: any) => {
+  const selectedRole = (roles || []).find(
+    (role: any) => String(role?._id || role?.id) === userForm.roleId,
+  );
+  const isDriverRole =
+    String(selectedRole?.name || "")
+      .trim()
+      .toLowerCase() === "driver";
+
   return (
     <Modal
       isOpen={isOpen}
@@ -91,6 +99,45 @@ const UserModal = ({
                     confirmPassword: e.target.value,
                   })
                 }
+              />
+            </FormRow>
+          </>
+        )}
+
+        {isDriverRole && (
+          <>
+            <FormRow label="Route Start Time *">
+              <input
+                type="time"
+                value={userForm.routeStartTime}
+                onChange={(e) =>
+                  setUserForm({
+                    ...userForm,
+                    routeStartTime: e.target.value,
+                  })
+                }
+              />
+            </FormRow>
+
+            <FormRow label="Postcode Areas *">
+              <textarea
+                value={userForm.postcodeAreasText}
+                onChange={(e) =>
+                  setUserForm({
+                    ...userForm,
+                    postcodeAreasText: e.target.value,
+                  })
+                }
+                rows={4}
+                placeholder="E1, E2, E3"
+                style={{
+                  width: "100%",
+                  resize: "vertical",
+                  padding: "var(--space-2) var(--space-3)",
+                  border: "1px solid var(--color-gray-200)",
+                  borderRadius: "var(--radius-lg)",
+                  font: "inherit",
+                }}
               />
             </FormRow>
           </>

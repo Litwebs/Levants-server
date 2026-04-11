@@ -436,7 +436,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                     </div>
                   </div>
 
-                  {((hasPermission("orders.update") ||
+                  {(hasPermission("orders.update") ||
                     hasPermission("delivery.routes.update")) &&
                     (() => {
                       const effectiveStatus =
@@ -493,7 +493,7 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                           )}
                         </div>
                       );
-                    })())}
+                    })()}
                 </div>
               </div>
             ))

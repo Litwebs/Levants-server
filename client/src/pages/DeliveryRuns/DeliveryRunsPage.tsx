@@ -4,8 +4,10 @@ import { useDeliveryRuns } from "./useDeliveryRuns";
 import { DeliveryRunsTable } from "./components";
 import { Button, Modal, ModalFooter, Select } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
-import { Checkbox } from "@/components/ui/checkbox";
-import { listEligibleOrders } from "@/context/DeliveryRuns";
+import {
+  getImportedOrdersCount,
+  listEligibleOrders,
+} from "@/context/DeliveryRuns";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/context/Auth/AuthContext";
 import styles from "./DeliveryRunsPage.module.css";
@@ -30,11 +32,12 @@ export const DeliveryRunsPage: React.FC = () => {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRunDate, setNewRunDate] = useState("");
-  const [newRunStartTime, setNewRunStartTime] = useState("08:00");
   const [eligibleOrders, setEligibleOrders] = useState<Array<any>>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
+  const [importedOrdersCount, setImportedOrdersCount] = useState(0);
+  const [importCountLoading, setImportCountLoading] = useState(false);
 
   const roleName = useMemo(() => {
     const role: any = (user as any)?.role;
@@ -46,6 +49,7 @@ export const DeliveryRunsPage: React.FC = () => {
   }, [user]);
 
   const isDriver = roleName === "driver";
+  const totalOrdersToCreate = selectedOrderIds.length + importedOrdersCount;
 
   // Calculate quick filter dates
   const filterDates = useMemo(() => {
@@ -107,10 +111,6 @@ export const DeliveryRunsPage: React.FC = () => {
 
   const handleCreateRun = async () => {
     if (!newRunDate) return;
-    if (!newRunStartTime) {
-      showToast({ type: "error", title: "Select a start time" });
-      return;
-    }
     if (selectedOrderIds.length === 0 && !ordersFile) {
       showToast({
         type: "error",
@@ -119,20 +119,15 @@ export const DeliveryRunsPage: React.FC = () => {
       return;
     }
 
-    const result = await createRun(
-      newRunDate,
-      selectedOrderIds,
-      { startTime: newRunStartTime },
-      ordersFile,
-    );
+    const result = await createRun(newRunDate, selectedOrderIds, ordersFile);
     if (result.success) {
       showToast({ type: "success", title: "Delivery run created" });
       setShowCreateModal(false);
       setNewRunDate("");
-      setNewRunStartTime("08:00");
       setEligibleOrders([]);
       setSelectedOrderIds([]);
       setOrdersFile(null);
+      setImportedOrdersCount(0);
     } else {
       showToast({
         type: "error",
@@ -170,6 +165,8 @@ export const DeliveryRunsPage: React.FC = () => {
             variant="primary"
             onClick={() => {
               setNewRunDate(getDefaultDate());
+              setImportedOrdersCount(0);
+              setOrdersFile(null);
               setShowCreateModal(true);
               // Load eligible orders for default date.
               loadOrdersForDate(getDefaultDate());
@@ -286,21 +283,6 @@ export const DeliveryRunsPage: React.FC = () => {
         </div>
 
         <div className={styles.formField}>
-          <label className={styles.formLabel}>Delivery Window</label>
-          <div style={{ display: "flex", gap: "var(--space-3)" }}>
-            <input
-              type="time"
-              className={styles.formInput}
-              value={newRunStartTime}
-              onChange={(e) => setNewRunStartTime(e.target.value)}
-            />
-          </div>
-          <p className={styles.formHelp}>
-            Start time is required. ETAs are scheduled from this time.
-          </p>
-        </div>
-
-        <div className={styles.formField}>
           <label className={styles.formLabel}>Orders</label>
           {ordersLoading ? (
             <div className={styles.formHelp}>Loading orders...</div>
@@ -309,52 +291,9 @@ export const DeliveryRunsPage: React.FC = () => {
               No eligible paid orders found for this date.
             </div>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "var(--space-2)",
-                maxHeight: 260,
-                overflow: "auto",
-                border: "1px solid var(--color-gray-200)",
-                borderRadius: "var(--radius-md)",
-                padding: "var(--space-3)",
-              }}
-            >
-              {eligibleOrders.map((o: any) => {
-                const checked = selectedOrderIds.includes(o.id);
-                return (
-                  <label
-                    key={o.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "var(--space-2)",
-                    }}
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onCheckedChange={(val) => {
-                        const isChecked = val === true;
-                        setSelectedOrderIds((prev) => {
-                          if (isChecked)
-                            return prev.includes(o.id) ? prev : [...prev, o.id];
-                          return prev.filter((x) => x !== o.id);
-                        });
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontSize: "var(--text-sm)",
-                        color: "var(--color-gray-700)",
-                      }}
-                    >
-                      {o.orderId} • {o.customerName || "Customer"} •{" "}
-                      {o.postcode}
-                    </span>
-                  </label>
-                );
-              })}
+            <div className={styles.formHelp}>
+              {selectedOrderIds.length} existing paid orders will be included
+              automatically.
             </div>
           )}
         </div>
@@ -367,9 +306,26 @@ export const DeliveryRunsPage: React.FC = () => {
             type="file"
             className={styles.formInput}
             accept=".xlsx,.xls,.csv"
-            onChange={(e) => {
+            onChange={async (e) => {
               const f = e.target.files?.[0] || null;
               setOrdersFile(f);
+              setImportedOrdersCount(0);
+
+              if (!f) return;
+
+              setImportCountLoading(true);
+              try {
+                const count = await getImportedOrdersCount(f);
+                setImportedOrdersCount(count);
+              } catch {
+                setImportedOrdersCount(0);
+                showToast({
+                  type: "error",
+                  title: "Could not read the imported orders file",
+                });
+              } finally {
+                setImportCountLoading(false);
+              }
             }}
           />
           <p className={styles.formHelp}>
@@ -378,6 +334,22 @@ export const DeliveryRunsPage: React.FC = () => {
             contact, order (e.g. "1x test-csv,2x test-csv-2"), delivery fee,
             total.
           </p>
+        </div>
+
+        <div className={styles.formField}>
+          <label className={styles.formLabel}>Total Orders</label>
+          <div className={styles.formHelp}>
+            {ordersLoading
+              ? "Calculating available orders..."
+              : `${totalOrdersToCreate} orders will be included in this delivery run.`}
+          </div>
+          {ordersFile && (
+            <div className={styles.formHelp}>
+              {importCountLoading
+                ? "Reading imported file..."
+                : `${importedOrdersCount} imported orders detected from ${ordersFile.name}.`}
+            </div>
+          )}
         </div>
 
         <ModalFooter>
@@ -389,7 +361,7 @@ export const DeliveryRunsPage: React.FC = () => {
             onClick={handleCreateRun}
             disabled={
               !newRunDate ||
-              !newRunStartTime ||
+              importCountLoading ||
               creating ||
               (selectedOrderIds.length === 0 && !ordersFile)
             }

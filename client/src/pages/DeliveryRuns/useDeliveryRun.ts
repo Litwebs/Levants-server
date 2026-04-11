@@ -1,6 +1,10 @@
 // Hook for single Delivery Run details page
 import { useState, useEffect, useCallback } from 'react';
-import type { DeliveryRun } from "@/context/DeliveryRuns";
+import type {
+  DeliveryRun,
+  GenerateRouteDriverConfig,
+  ManualOrderAssignment,
+} from "@/context/DeliveryRuns";
 import { getRun, lockRun, unlockRun, optimizeRun, dispatchRun } from "@/context/DeliveryRuns";
 
 interface UseDeliveryRunState {
@@ -74,12 +78,12 @@ export function useDeliveryRun(id: string) {
 
   const handleOptimize = useCallback(
     async (
-      driverIds: string[],
-      window: { startTime: string },
+      driverConfigs: GenerateRouteDriverConfig[],
+      manualAssignments: ManualOrderAssignment[] = [],
     ) => {
     setState(s => ({ ...s, actionLoading: 'optimize' }));
     try {
-      const updated = await optimizeRun(id, driverIds, window);
+      const updated = await optimizeRun(id, driverConfigs, manualAssignments);
       if (updated) {
         setState(s => ({ ...s, run: updated, actionLoading: null }));
         return true;

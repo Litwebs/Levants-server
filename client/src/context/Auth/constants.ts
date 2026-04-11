@@ -25,6 +25,11 @@ export type UserPreferences = {
   notifications?: Partial<NotificationPreferences>;
 };
 
+export type UserDriverRouting = {
+  postcodeAreas: string[];
+  routeStartTime?: string | null;
+};
+
 export type RoleRef = {
   _id: string;
   name: string;
@@ -63,6 +68,7 @@ export type User = {
   twoFactorEnabled: boolean;
 
   preferences?: UserPreferences;
+  driverRouting?: UserDriverRouting;
 
   createdBy?: string;
 

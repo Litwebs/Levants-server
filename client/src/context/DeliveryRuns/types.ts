@@ -4,7 +4,38 @@ export type RunStatus = 'draft' | 'locked' | 'routed' | 'dispatched' | 'complete
 // Support any number of vans (routes). We still only have 3 style/color variants,
 // so extra vans cycle through the existing palette.
 export type VanId = `van-${number}`;
-export type IssueType = 'MISSING_GEO' | 'BAD_ADDRESS' | 'OUT_OF_RANGE' | 'CAPACITY_EXCEEDED';
+export type IssueType =
+  | 'MISSING_GEO'
+  | 'BAD_ADDRESS'
+  | 'OUT_OF_RANGE'
+  | 'CAPACITY_EXCEEDED'
+  | 'NO_DRIVER_MATCH'
+  | 'MULTIPLE_DRIVER_MATCH'
+  | 'DRIVER_POSTCODE_AREAS_MISSING'
+  | 'DRIVER_START_TIME_MISSING';
+
+export interface DriverRoutingConfig {
+  postcodeAreas: string[];
+  routeStartTime?: string | null;
+}
+
+export interface DeliveryDriver {
+  id: string;
+  name: string;
+  email: string;
+  driverRouting: DriverRoutingConfig;
+}
+
+export interface GenerateRouteDriverConfig {
+  driverId: string;
+  postcodeAreas: string[];
+  routeStartTime: string;
+}
+
+export interface ManualOrderAssignment {
+  orderDbId: string;
+  driverId: string;
+}
 
 export interface ManifestItem {
   skuId: string;
@@ -62,9 +93,12 @@ export interface VanRoute {
 }
 
 export interface OrderSummary {
+  orderDbId?: string;
   orderId: string;
   customerName: string;
+  addressLine1?: string;
   postcode: string;
+  routingArea?: string;
   totalItems: number;
   lat?: number;
   lng?: number;
@@ -75,6 +109,10 @@ export interface Issue {
   type: IssueType;
   message: string;
   orderId?: string;
+  orderDbId?: string;
+  driverId?: string;
+  driverIds?: string[];
+  postcode?: string;
 }
 
 export interface RunTotals {
@@ -96,6 +134,7 @@ export interface DeliveryRun {
   deliveryWindowEnd?: string;
   totals: RunTotals;
   vans: VanRoute[];
+  allOrders?: OrderSummary[];
   unassignedOrders: OrderSummary[];
   issues: Issue[];
 }

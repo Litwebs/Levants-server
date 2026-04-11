@@ -227,9 +227,9 @@ export const DeliveryRunDetailsPage: React.FC = () => {
                 () => true,
               )
             }
-            onOptimize={(driverIds, window) =>
+            onOptimize={(driverConfigs, manualAssignments) =>
               handleAction(
-                () => optimize(driverIds, window),
+                () => optimize(driverConfigs, manualAssignments),
                 "Routes optimized!",
                 "Failed to optimize routes",
               ).then(() => true)
