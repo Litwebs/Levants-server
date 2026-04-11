@@ -11,8 +11,6 @@ type UserForm = {
   status: "active" | "disabled";
   password: string;
   confirmPassword: string;
-  postcodeAreasText: string;
-  routeStartTime: string;
 };
 
 type NotificationChannel = string;
@@ -322,8 +320,6 @@ export const useSettings = () => {
     status: "active",
     password: "",
     confirmPassword: "",
-    postcodeAreasText: "",
-    routeStartTime: "",
   };
 
   const [userForm, setUserForm] = useState<UserForm>(emptyUserForm);
@@ -385,13 +381,6 @@ export const useSettings = () => {
         status: userToEdit.status as "active" | "disabled",
         password: "",
         confirmPassword: "",
-        postcodeAreasText: Array.isArray(userToEdit?.driverRouting?.postcodeAreas)
-          ? userToEdit.driverRouting.postcodeAreas.join(", ")
-          : "",
-        routeStartTime:
-          typeof userToEdit?.driverRouting?.routeStartTime === "string"
-            ? userToEdit.driverRouting.routeStartTime
-            : "",
       });
     } else {
       setSelectedUserId(null);
@@ -410,17 +399,6 @@ export const useSettings = () => {
     const selectedRole = roles.find(
       (role: any) => String(role?._id || role?.id) === userForm.roleId,
     );
-    const isDriverRole =
-      String(selectedRole?.name || "").trim().toLowerCase() === "driver";
-    const driverRouting = isDriverRole
-      ? {
-          postcodeAreas: userForm.postcodeAreasText
-            .split(/[\n,;|]+/g)
-            .map((entry) => entry.trim())
-            .filter(Boolean),
-          routeStartTime: userForm.routeStartTime || null,
-        }
-      : undefined;
 
     if (userModalMode === "add") {
       if (!userForm.roleId || userForm.roleId.length !== 24) {
@@ -438,19 +416,6 @@ export const useSettings = () => {
         return;
       }
 
-      if (
-        isDriverRole &&
-        (!driverRouting ||
-          driverRouting.postcodeAreas.length === 0 ||
-          !driverRouting.routeStartTime)
-      ) {
-        showToast({
-          type: "error",
-          title: "Drivers need postcode areas and a route start time",
-        });
-        return;
-      }
-
       try {
         await createUser({
           name: userForm.name.trim(),
@@ -458,7 +423,6 @@ export const useSettings = () => {
           password: userForm.password,
           roleId: userForm.roleId,
           status: userForm.status,
-          ...(driverRouting ? { driverRouting } : {}),
         });
 
         showToast({
@@ -480,25 +444,11 @@ export const useSettings = () => {
           ? { roleId: userForm.roleId }
           : {};
 
-        if (
-          isDriverRole &&
-          (!driverRouting ||
-            driverRouting.postcodeAreas.length === 0 ||
-            !driverRouting.routeStartTime)
-        ) {
-          showToast({
-            type: "error",
-            title: "Drivers need postcode areas and a route start time",
-          });
-          return;
-        }
-
         await updateUser(selectedUserId, {
           name: userForm.name.trim(),
           email: userForm.email.trim(),
           status: userForm.status,
           ...maybeRoleId,
-          ...(driverRouting ? { driverRouting } : {}),
         });
 
         showToast({ type: "success", title: "User updated successfully" });
