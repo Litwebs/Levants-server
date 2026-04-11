@@ -17,6 +17,7 @@ const { generateGoogleMapsLink } = require("../utils/navigation.util");
 const { normalizeKey } = require("../utils/ordersSpreadsheet.util");
 const { geocodeAddress } = require("../Integration/google.geocode");
 const { normalizeDriverRouting } = require("../utils/driverRouting.util");
+const { compareManifestItems } = require("../utils/manifestItemOrder.util");
 
 const chunkArray = (arr, size) => {
   const out = [];
@@ -2242,7 +2243,7 @@ async function getOrdersStockRequirements({ orderIds, ordersSheet } = {}) {
 
     const aggregatedItems = Array.from(aggregationMap.values())
       .filter((x) => Number(x.totalQuantity) > 0)
-      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+      .sort(compareManifestItems);
 
     return {
       success: true,

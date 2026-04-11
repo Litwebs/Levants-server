@@ -1,6 +1,7 @@
 const Route = require("../models/route.model");
 const Stop = require("../models/stop.model");
 const Order = require("../models/order.model");
+const { compareManifestItems } = require("../utils/manifestItemOrder.util");
 
 /**
  * Get aggregated stock list for a route
@@ -61,8 +62,8 @@ async function getRouteStockAggregation({ routeId }) {
     }
   }
 
-  const aggregatedItems = Array.from(aggregationMap.values()).sort((a, b) =>
-    a.name.localeCompare(b.name),
+  const aggregatedItems = Array.from(aggregationMap.values()).sort(
+    compareManifestItems,
   );
 
   return {

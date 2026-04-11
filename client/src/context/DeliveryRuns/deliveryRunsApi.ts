@@ -16,6 +16,7 @@ import {
   VanId,
   VanRoute,
 } from "./types";
+import { compareManifestItems } from "./manifestItemOrder";
 
 type ApiEnvelope<T> = { success: boolean; data?: T; message?: string };
 
@@ -185,7 +186,7 @@ const manifestFromStops = (stops: RouteStop[]): ManifestItem[] => {
       }
     }
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).sort(compareManifestItems);
 };
 
 const manifestFromRouteStock = (stock: RouteStockData | null | undefined): ManifestItem[] => {
@@ -201,7 +202,7 @@ const manifestFromRouteStock = (stock: RouteStockData | null | undefined): Manif
       };
     })
     .filter((it) => it.skuId || it.name)
-    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    .sort(compareManifestItems);
 };
 
 const mapStops = (stops: any[]): RouteStop[] => {

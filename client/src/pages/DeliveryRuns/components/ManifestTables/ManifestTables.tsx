@@ -7,6 +7,7 @@ import {
   formatManifestItemSku,
   formatProductNameWithSku,
 } from "@/context/DeliveryRuns";
+import { compareManifestItems } from "@/context/DeliveryRuns/manifestItemOrder";
 import styles from "./ManifestTables.module.css";
 
 interface ManifestTablesProps {
@@ -46,10 +47,7 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
     }
 
     const rows = Array.from(bySku.values());
-    rows.sort((a, b) => {
-      if (a.name !== b.name) return a.name.localeCompare(b.name);
-      return a.skuId.localeCompare(b.skuId);
-    });
+    rows.sort(compareManifestItems);
     return rows;
   }, [vans]);
 
