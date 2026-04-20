@@ -303,6 +303,18 @@ const orderSchema = new mongoose.Schema(
       type: Object,
       default: {},
     },
+
+    archived: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    archivedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,

@@ -189,7 +189,7 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
     expect(updatedVariant.reservedQuantity).toBe(2);
   });
 
-  test("paid orders are ignored even if reservation is in the past", async () => {
+  test("reconciles orphaned reserved stock when no pending orders exist", async () => {
     const paidOrder = await Order.create({
       customer: new mongoose.Types.ObjectId(),
       items: [
@@ -224,7 +224,7 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
 
     expect(updatedOrder.status).toBe("paid");
     expect(updatedOrder.expiresAt).toBeUndefined();
-    expect(updatedVariant.reservedQuantity).toBe(2);
+    expect(updatedVariant.reservedQuantity).toBe(0);
   });
 
   test("expired order with multiple variants releases reservations for each", async () => {

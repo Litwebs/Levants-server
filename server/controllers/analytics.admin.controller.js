@@ -6,6 +6,7 @@ const GetSummary = async (req, res) => {
     range: req.query.range,
     from: req.query.from,
     to: req.query.to,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {
@@ -24,6 +25,7 @@ const GetRevenueSeries = async (req, res) => {
     from: req.query.from,
     to: req.query.to,
     interval: req.query.interval,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {
@@ -39,6 +41,7 @@ const GetRevenueSeries = async (req, res) => {
 const GetRevenueOverview = async (req, res) => {
   const result = await service.GetRevenueOverview({
     days: req.query.days,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {
@@ -57,6 +60,7 @@ const GetTopProducts = async (req, res) => {
     from: req.query.from,
     to: req.query.to,
     limit: req.query.limit,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {
@@ -75,6 +79,7 @@ const GetRecentOrders = async (req, res) => {
     from: req.query.from,
     to: req.query.to,
     limit: req.query.limit,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {
@@ -107,6 +112,7 @@ const GetOrderStatusCounts = async (req, res) => {
     range: req.query.range,
     from: req.query.from,
     to: req.query.to,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {
@@ -125,6 +131,7 @@ const GetDashboard = async (req, res) => {
     from: req.query.from,
     to: req.query.to,
     interval: req.query.interval,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {

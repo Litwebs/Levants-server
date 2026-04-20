@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Order = require("../models/order.model");
 const ProductVariant = require("../models/variant.model");
+const { reconcileReservedStock } = require("./orders.stock.service");
 
 let _stripe;
 function getStripe() {
@@ -11,6 +12,7 @@ function getStripe() {
 
 async function ExpirePendingOrders() {
   const now = new Date();
+  let expiredCount = 0;
 
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -59,13 +61,27 @@ async function ExpirePendingOrders() {
       }
     }
 
-    if (orders.length > 0) {
-      console.log(`Expired ${orders.length} orders`);
-    }
+    expiredCount = orders.length;
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
     console.error("❌ Order expiration cron failed:", err);
+  }
+
+  try {
+    const reconciliation = await reconcileReservedStock();
+
+    if (expiredCount > 0) {
+      console.log(`Expired ${expiredCount} orders`);
+    }
+
+    if (reconciliation.updated > 0) {
+      console.log(
+        `Reconciled reserved stock for ${reconciliation.updated} variants`,
+      );
+    }
+  } catch (err) {
+    console.error("❌ Reserved stock reconciliation failed:", err);
   }
 }
 

@@ -4,11 +4,20 @@ const Order = require("../models/order.model");
 const Product = require("../models/product.model");
 const ProductVariant = require("../models/variant.model");
 
-const COUNTABLE_ORDER_STATUSES = [
+const ACTIVE_ORDER_MATCH = {
+  archived: { $ne: true },
+};
+
+const ANALYTICS_ORDER_STATUSES = [
+  "pending",
+  "unpaid",
   "paid",
+  "failed",
+  "cancelled",
   "refund_pending",
   "partially_refunded",
   "refunded",
+  "refund_failed",
 ];
 
 const clampToStartOfDay = (d) => {
@@ -104,6 +113,63 @@ const buildCreatedAtMatch = ({ range, from, to } = {}) => {
   return { createdAt };
 };
 
+const buildOrderSourceMatch = (orderSource) => {
+  const normalized =
+    typeof orderSource === "string" ? orderSource.trim().toLowerCase() : "";
+
+  if (normalized === "imported") {
+    return { "metadata.manualImport": true };
+  }
+
+  if (normalized === "website") {
+    return { "metadata.manualImport": { $ne: true } };
+  }
+
+  return {};
+};
+
+const buildOrderMatch = ({ range, from, to, orderSource } = {}) => ({
+  ...ACTIVE_ORDER_MATCH,
+  ...buildCreatedAtMatch({ range, from, to }),
+  ...buildOrderSourceMatch(orderSource),
+});
+
+const createAnalyticsCounts = () => ({
+  pending: 0,
+  unpaid: 0,
+  paid: 0,
+  failed: 0,
+  cancelled: 0,
+  refund_pending: 0,
+  partially_refunded: 0,
+  refunded: 0,
+  refund_failed: 0,
+});
+
+const buildAnalyticsCounts = (statusCounts = []) => {
+  const counts = createAnalyticsCounts();
+
+  for (const row of statusCounts) {
+    if (Object.prototype.hasOwnProperty.call(counts, row._id)) {
+      counts[row._id] = row.count;
+    }
+  }
+
+  return counts;
+};
+
+const summarizeAnalyticsCounts = (counts) => {
+  const pending = (counts.pending || 0) + (counts.unpaid || 0);
+  const refunded = (counts.partially_refunded || 0) + (counts.refunded || 0);
+  const totalRefunds = (counts.refund_pending || 0) + refunded;
+
+  return {
+    pending,
+    refunded,
+    totalRefunds,
+  };
+};
+
 const normalizeDeliveryStatus = (value) => {
   return String(value || "")
     .trim()
@@ -111,12 +177,12 @@ const normalizeDeliveryStatus = (value) => {
     .replace(/\s+/g, "_");
 };
 
-async function GetSummary({ range, from, to } = {}) {
-  const createdAtMatch = buildCreatedAtMatch({ range, from, to });
+async function GetSummary({ range, from, to, orderSource } = {}) {
+  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
   const { start } = parseDateRange({ range, from, to });
 
   const paidCreatedAtMatch = {
-    ...createdAtMatch,
+    ...orderMatch,
     status: "paid",
     customer: { $ne: null },
   };
@@ -132,6 +198,8 @@ async function GetSummary({ range, from, to } = {}) {
             pipeline: [
               {
                 $match: {
+                  ...ACTIVE_ORDER_MATCH,
+                  ...buildOrderSourceMatch(orderSource),
                   $expr: {
                     $and: [
                       { $eq: ["$customer", "$$customerId"] },
@@ -184,21 +252,20 @@ async function GetSummary({ range, from, to } = {}) {
     customersAgg,
   ] = await Promise.all([
     Order.countDocuments({
-      ...createdAtMatch,
-      status: { $in: COUNTABLE_ORDER_STATUSES },
+      ...orderMatch,
+      status: { $in: ANALYTICS_ORDER_STATUSES },
     }),
 
     Order.aggregate([
-      { $match: { ...createdAtMatch, status: "paid" } },
+      { $match: { ...orderMatch, status: "paid" } },
       { $group: { _id: null, revenue: { $sum: "$total" } } },
     ]),
 
-    // Real order status distribution (restricted to countable statuses)
     Order.aggregate([
       {
         $match: {
-          ...createdAtMatch,
-          status: { $in: COUNTABLE_ORDER_STATUSES },
+          ...orderMatch,
+          status: { $in: ANALYTICS_ORDER_STATUSES },
         },
       },
       { $group: { _id: "$status", count: { $sum: 1 } } },
@@ -293,7 +360,7 @@ async function GetSummary({ range, from, to } = {}) {
 
     // Total units sold (paid orders only)
     Order.aggregate([
-      { $match: { ...createdAtMatch, status: "paid" } },
+      { $match: { ...orderMatch, status: "paid" } },
       { $unwind: "$items" },
       { $group: { _id: null, unitsSold: { $sum: "$items.quantity" } } },
     ]),
@@ -309,30 +376,11 @@ async function GetSummary({ range, from, to } = {}) {
   const newCustomers = customerStats.newCustomers ?? 0;
   const repeatCustomers = customerStats.repeatCustomers ?? 0;
 
-  const counts = {
-    pending: 0,
-    paid: 0,
-    failed: 0,
-    cancelled: 0,
-    refund_pending: 0,
-    refunded: 0,
-    refund_failed: 0,
-  };
-
-  for (const row of statusCounts || []) {
-    if (row._id === "pending") counts.pending = row.count;
-    else if (row._id === "paid") counts.paid = row.count;
-    else if (row._id === "failed") counts.failed = row.count;
-    else if (row._id === "cancelled") counts.cancelled = row.count;
-    else if (row._id === "refund_pending") counts.refund_pending = row.count;
-    else if (row._id === "refunded") counts.refunded = row.count;
-    else if (row._id === "refund_failed") counts.refund_failed = row.count;
-  }
+  const counts = buildAnalyticsCounts(statusCounts);
+  const summaryCounts = summarizeAnalyticsCounts(counts);
 
   const lowStockItemsCount = lowStockCountAgg?.[0]?.count ?? 0;
   const outOfStockItemsCount = outOfStockCountAgg?.[0]?.count ?? 0;
-
-  const totalRefunds = (counts.refund_pending || 0) + (counts.refunded || 0);
 
   return {
     success: true,
@@ -340,33 +388,39 @@ async function GetSummary({ range, from, to } = {}) {
       totalOrders,
       revenue,
       unitsSold,
-      totalRefunds,
+      totalRefunds: summaryCounts.totalRefunds,
       newCustomers,
       repeatCustomers,
-      pendingOrders: counts.pending,
+      pendingOrders: summaryCounts.pending,
       paidOrders: counts.paid,
       failedOrders: counts.failed,
       cancelledOrders: counts.cancelled,
       refundPendingOrders: counts.refund_pending,
-      refundedOrders: counts.refunded,
+      refundedOrders: summaryCounts.refunded,
       refundFailedOrders: counts.refund_failed,
       lowStockItems: lowStockItemsCount,
       outOfStockItems: outOfStockItemsCount,
       orderStatus: {
-        Pending: counts.pending,
+        Pending: summaryCounts.pending,
         Paid: counts.paid,
         Failed: counts.failed,
         Cancelled: counts.cancelled,
         "Refund Pending": counts.refund_pending,
-        Refunded: counts.refunded,
+        Refunded: summaryCounts.refunded,
         "Refund Failed": counts.refund_failed,
       },
     },
   };
 }
 
-async function GetRevenueSeries({ range, from, to, interval = "week" } = {}) {
-  const createdAtMatch = buildCreatedAtMatch({ range, from, to });
+async function GetRevenueSeries({
+  range,
+  from,
+  to,
+  interval = "week",
+  orderSource,
+} = {}) {
+  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
 
   const i = typeof interval === "string" ? interval : "week";
 
@@ -454,7 +508,7 @@ async function GetRevenueSeries({ range, from, to, interval = "week" } = {}) {
   }
 
   const series = await Order.aggregate([
-    { $match: { ...createdAtMatch, status: "paid" } },
+    { $match: { ...orderMatch, status: "paid" } },
     {
       $group: {
         _id: groupId,
@@ -488,6 +542,7 @@ const formatYmdInTimeZone = (date, timeZone) => {
 async function GetRevenueOverview({
   days = 7,
   timeZone = "Europe/London",
+  orderSource,
 } = {}) {
   const d = Math.max(7, Math.min(Number(days) || 7, 90));
 
@@ -500,6 +555,8 @@ async function GetRevenueOverview({
   const rows = await Order.aggregate([
     {
       $match: {
+        ...ACTIVE_ORDER_MATCH,
+        ...buildOrderSourceMatch(orderSource),
         status: "paid",
         createdAt: { $gte: startDay, $lte: end },
       },
@@ -552,49 +609,51 @@ async function GetRevenueOverview({
   };
 }
 
-async function GetOrderStatusCounts({ range, from, to } = {}) {
-  const createdAtMatch = buildCreatedAtMatch({ range, from, to });
+async function GetOrderStatusCounts({ range, from, to, orderSource } = {}) {
+  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
 
   const statusCounts = await Order.aggregate([
     {
       $match: {
-        ...createdAtMatch,
-        status: { $in: COUNTABLE_ORDER_STATUSES },
+        ...orderMatch,
+        status: { $in: ANALYTICS_ORDER_STATUSES },
       },
     },
     { $group: { _id: "$status", count: { $sum: 1 } } },
   ]);
 
-  const counts = {
-    Pending: 0,
-    Paid: 0,
-    Failed: 0,
-    Cancelled: 0,
-    "Refund Pending": 0,
-    Refunded: 0,
-    "Refund Failed": 0,
+  const counts = buildAnalyticsCounts(statusCounts);
+  const summaryCounts = summarizeAnalyticsCounts(counts);
+
+  return {
+    success: true,
+    data: {
+      counts: {
+        Pending: summaryCounts.pending,
+        Paid: counts.paid,
+        Failed: counts.failed,
+        Cancelled: counts.cancelled,
+        "Refund Pending": counts.refund_pending,
+        Refunded: summaryCounts.refunded,
+        "Refund Failed": counts.refund_failed,
+      },
+    },
   };
-
-  for (const row of statusCounts || []) {
-    if (row._id === "pending") counts.Pending = row.count;
-    else if (row._id === "paid") counts.Paid = row.count;
-    else if (row._id === "failed") counts.Failed = row.count;
-    else if (row._id === "cancelled") counts.Cancelled = row.count;
-    else if (row._id === "refund_pending") counts["Refund Pending"] = row.count;
-    else if (row._id === "refunded") counts.Refunded = row.count;
-    else if (row._id === "refund_failed") counts["Refund Failed"] = row.count;
-  }
-
-  return { success: true, data: { counts } };
 }
 
-async function GetTopProducts({ range, from, to, limit = 5 } = {}) {
-  const createdAtMatch = buildCreatedAtMatch({ range, from, to });
+async function GetTopProducts({
+  range,
+  from,
+  to,
+  limit = 5,
+  orderSource,
+} = {}) {
+  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
 
   const lim = Math.max(1, Math.min(Number(limit) || 5, 25));
 
   const rows = await Order.aggregate([
-    { $match: { ...createdAtMatch, status: "paid" } },
+    { $match: { ...orderMatch, status: "paid" } },
     { $unwind: "$items" },
     {
       $group: {
@@ -662,20 +721,20 @@ async function GetTopProducts({ range, from, to, limit = 5 } = {}) {
   };
 }
 
-async function GetRecentOrders({ range, from, to, limit = 5 } = {}) {
-  const createdAtMatch = buildCreatedAtMatch({ range, from, to });
+async function GetRecentOrders({
+  range,
+  from,
+  to,
+  limit = 5,
+  orderSource,
+} = {}) {
+  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
   const lim = Math.max(1, Math.min(Number(limit) || 5, 25));
 
   const orders = await Order.find({
-    ...createdAtMatch,
+    ...orderMatch,
     status: {
-      $in: [
-        "pending",
-        "paid",
-        "refund_pending",
-        "partially_refunded",
-        "refunded",
-      ],
+      $in: ANALYTICS_ORDER_STATUSES,
     },
   })
     .populate({ path: "customer", select: "firstName lastName email phone" })
@@ -870,13 +929,19 @@ async function GetOutOfStock({ limit = 50 } = {}) {
   };
 }
 
-async function GetDashboard({ range, from, to, interval = "week" } = {}) {
+async function GetDashboard({
+  range,
+  from,
+  to,
+  interval = "week",
+  orderSource,
+} = {}) {
   const [summary, revenue, topProducts, recentOrders, lowStock, outOfStock] =
     await Promise.all([
-      GetSummary({ range, from, to }),
-      GetRevenueSeries({ range, from, to, interval }),
-      GetTopProducts({ range, from, to, limit: 5 }),
-      GetRecentOrders({ range, from, to, limit: 5 }),
+      GetSummary({ range, from, to, orderSource }),
+      GetRevenueSeries({ range, from, to, interval, orderSource }),
+      GetTopProducts({ range, from, to, limit: 5, orderSource }),
+      GetRecentOrders({ range, from, to, limit: 5, orderSource }),
       GetLowStock({ limit: 50 }),
       GetOutOfStock({ limit: 50 }),
     ]);

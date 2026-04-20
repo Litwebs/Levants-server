@@ -188,6 +188,103 @@ describe("GET /api/admin/orders (Admin)", () => {
     );
   });
 
+  test("hides unpaid website orders while keeping imported pending orders visible", async () => {
+    const adminCookie = await loginAsAdmin(app);
+
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+
+    await Order.create([
+      {
+        customer: customer._id,
+        items: [
+          {
+            product: product._id,
+            variant: variant._id,
+            name: variant.name,
+            sku: variant.sku,
+            price: variant.price,
+            quantity: 1,
+            subtotal: variant.price,
+          },
+        ],
+        subtotal: variant.price,
+        deliveryAddress: getValidDeliveryAddress(),
+        location: getValidLocation(),
+        deliveryFee: 0,
+        total: variant.price,
+        status: "pending",
+        reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+      {
+        customer: customer._id,
+        items: [
+          {
+            product: product._id,
+            variant: variant._id,
+            name: variant.name,
+            sku: variant.sku,
+            price: variant.price,
+            quantity: 1,
+            subtotal: variant.price,
+          },
+        ],
+        subtotal: variant.price,
+        deliveryAddress: getValidDeliveryAddress(),
+        location: getValidLocation(),
+        deliveryFee: 0,
+        total: variant.price,
+        status: "pending",
+        reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        metadata: {
+          manualImport: true,
+        },
+      },
+      {
+        customer: customer._id,
+        items: [
+          {
+            product: product._id,
+            variant: variant._id,
+            name: variant.name,
+            sku: variant.sku,
+            price: variant.price,
+            quantity: 1,
+            subtotal: variant.price,
+          },
+        ],
+        subtotal: variant.price,
+        deliveryAddress: getValidDeliveryAddress(),
+        location: getValidLocation(),
+        deliveryFee: 0,
+        total: variant.price,
+        status: "paid",
+        paidAt: new Date(),
+        reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    ]);
+
+    const res = await request(app)
+      .get("/api/admin/orders")
+      .set("Cookie", adminCookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.orders).toHaveLength(2);
+    expect(
+      res.body.data.orders.some(
+        (order) => order.status === "pending" && order.metadata?.manualImport,
+      ),
+    ).toBe(true);
+    expect(
+      res.body.data.orders.some(
+        (order) =>
+          order.status === "pending" && order.metadata?.manualImport !== true,
+      ),
+    ).toBe(false);
+  });
+
   test("fails when not authenticated", async () => {
     const res = await request(app).get("/api/admin/orders");
 

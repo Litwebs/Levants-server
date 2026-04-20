@@ -18,6 +18,19 @@ const {
   applyStripeRefundFailed,
 } = require("./orders.refund.service");
 
+function getStripePricingFromSession(session) {
+  if (!session || typeof session !== "object") return null;
+
+  return {
+    amountSubtotal: session.amount_subtotal,
+    amountTotal: session.amount_total,
+    discountAmount: session.total_details?.amount_discount,
+    currency: session.currency,
+    paidAt:
+      typeof session.created === "number" ? session.created * 1000 : undefined,
+  };
+}
+
 async function HandlePaymentSuccess(session) {
   const orderId = session.metadata?.orderId;
   if (!orderId) return;
@@ -82,6 +95,7 @@ async function HandlePaymentSuccess(session) {
   await finalizeStockForOrder(orderId, {
     stripeCheckoutSessionId,
     stripePaymentIntentId: paymentIntentId,
+    stripePricing: getStripePricingFromSession(session),
   });
 
   // Record discount redemption (best-effort, idempotent)

@@ -11,8 +11,67 @@ const path = require("path");
 const crypto = require("crypto");
 
 const { uploadAndCreateFile } = require("./files.service");
+const { reconcileReservedStock } = require("./orders.stock.service");
 
 const sendEmail = require("../Integration/Email.service");
+
+const VISIBLE_WEBSITE_PAYMENT_STATUSES = new Set([
+  "paid",
+  "refund_pending",
+  "partially_refunded",
+  "refunded",
+]);
+
+const ACTIVE_ORDER_FILTER = {
+  archived: { $ne: true },
+};
+
+function buildActiveOrderIdQuery(orderId) {
+  return {
+    _id: orderId,
+    ...ACTIVE_ORDER_FILTER,
+  };
+}
+
+function buildPaymentVisibilityQuery({
+  requestedStatuses,
+  normalizedOrderSource,
+} = {}) {
+  const websiteStatuses = requestedStatuses.filter((status) =>
+    VISIBLE_WEBSITE_PAYMENT_STATUSES.has(status),
+  );
+
+  if (normalizedOrderSource === "imported") {
+    return {
+      status: {
+        $in: requestedStatuses,
+      },
+      "metadata.manualImport": true,
+    };
+  }
+
+  if (normalizedOrderSource === "website") {
+    return {
+      status: {
+        $in: websiteStatuses,
+      },
+      "metadata.manualImport": { $ne: true },
+    };
+  }
+
+  return {
+    $or: [
+      {
+        status: { $in: requestedStatuses },
+        "metadata.manualImport": true,
+      },
+      {
+        status: { $in: websiteStatuses },
+        "metadata.manualImport": { $ne: true },
+      },
+    ],
+  };
+}
 
 async function ListOrders({
   filters = {},
@@ -21,7 +80,7 @@ async function ListOrders({
   sortBy = "createdAt",
   sortOrder = "desc",
 }) {
-  const query = {};
+  const query = { ...ACTIVE_ORDER_FILTER };
   const search =
     typeof filters.search === "string" ? filters.search.trim() : "";
 
@@ -71,11 +130,17 @@ async function ListOrders({
     .map((status) => String(status).trim().toLowerCase())
     .filter((status) => ALLOWED_PAYMENT.has(status));
 
-  query.status = {
-    $in: cleanedPaymentStatuses.length
-      ? cleanedPaymentStatuses
-      : DEFAULT_PAYMENT,
-  };
+  const effectivePaymentStatuses = cleanedPaymentStatuses.length
+    ? cleanedPaymentStatuses
+    : DEFAULT_PAYMENT;
+
+  Object.assign(
+    query,
+    buildPaymentVisibilityQuery({
+      requestedStatuses: effectivePaymentStatuses,
+      normalizedOrderSource,
+    }),
+  );
 
   /* ==============================
      DELIVERY STATUS (FILTERABLE)
@@ -93,12 +158,6 @@ async function ListOrders({
       query.deliveryStatus = { $in: cleaned };
     }
     // If cleaned is empty, we simply do NOT apply a deliveryStatus filter.
-  }
-
-  if (normalizedOrderSource === "imported") {
-    query["metadata.manualImport"] = true;
-  } else if (normalizedOrderSource === "website") {
-    query["metadata.manualImport"] = { $ne: true };
   }
 
   /* ==============================
@@ -285,7 +344,7 @@ async function UpdateOrderPaymentStatus({ orderId, paid, actorUserId } = {}) {
     return { success: false, statusCode: 400, message: "orderId is required" };
   }
 
-  const order = await Order.findById(orderId);
+  const order = await Order.findOne(buildActiveOrderIdQuery(orderId));
   if (!order) {
     return { success: false, statusCode: 404, message: "Order not found" };
   }
@@ -343,7 +402,9 @@ async function UpdateOrderPaymentStatus({ orderId, paid, actorUserId } = {}) {
 }
 
 async function GetOrderById({ orderId }) {
-  const order = await Order.findById(orderId).populate("customer");
+  const order = await Order.findOne(buildActiveOrderIdQuery(orderId)).populate(
+    "customer",
+  );
 
   if (!order) {
     return { success: false, message: "Order not found" };
@@ -362,7 +423,7 @@ async function UpdateOrderStatus({
   actorRoleName,
   actorPermissions,
 }) {
-  const order = await Order.findById(orderId);
+  const order = await Order.findOne(buildActiveOrderIdQuery(orderId));
 
   if (!order) {
     return { success: false, statusCode: 404, message: "Order not found" };
@@ -726,7 +787,7 @@ async function UpdateOrderItems({ orderId, items, actorUserId } = {}) {
     return { success: false, statusCode: 400, message: "items is required" };
   }
 
-  const order = await Order.findById(orderId);
+  const order = await Order.findOne(buildActiveOrderIdQuery(orderId));
   if (!order) {
     return { success: false, statusCode: 404, message: "Order not found" };
   }
@@ -810,6 +871,10 @@ async function UpdateOrderItems({ orderId, items, actorUserId } = {}) {
 }
 
 async function deleteOrderDocument(order) {
+  const affectedVariantIds = Array.isArray(order.items)
+    ? order.items.map((item) => item.variant).filter(Boolean)
+    : [];
+
   const stops = await Stop.find({ order: order._id }).select("route").lean();
   const routeIds = Array.from(
     new Set(
@@ -826,8 +891,20 @@ async function deleteOrderDocument(order) {
     ),
     Stop.deleteMany({ order: order._id }),
     DiscountRedemption.deleteMany({ order: order._id }),
-    Order.deleteOne({ _id: order._id }),
+    Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          archived: true,
+          archivedAt: new Date(),
+        },
+      },
+    ),
   ]);
+
+  if (affectedVariantIds.length > 0) {
+    await reconcileReservedStock({ variantIds: affectedVariantIds });
+  }
 
   if (routeIds.length > 0) {
     await Promise.all(
@@ -844,7 +921,9 @@ async function DeleteOrder({ orderId } = {}) {
     return { success: false, statusCode: 400, message: "orderId is required" };
   }
 
-  const order = await Order.findById(orderId).select("_id");
+  const order = await Order.findOne(buildActiveOrderIdQuery(orderId)).select(
+    "_id items",
+  );
   if (!order) {
     return { success: false, statusCode: 404, message: "Order not found" };
   }
@@ -878,7 +957,10 @@ async function BulkDeleteOrders({ orderIds } = {}) {
     };
   }
 
-  const orders = await Order.find({ _id: { $in: ids } }).select("_id");
+  const orders = await Order.find({
+    _id: { $in: ids },
+    ...ACTIVE_ORDER_FILTER,
+  }).select("_id items");
 
   for (const order of orders) {
     await deleteOrderDocument(order);

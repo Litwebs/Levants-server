@@ -4,6 +4,7 @@ const File = require("../models/file.model");
 const cloudinary = require("../config/cloudinary.js");
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
+const compressImageForUpload = require("../utils/compressImageForUpload.util");
 
 const getResourceType = (mimeType = "") => {
   if (mimeType.startsWith("image/")) return "image";
@@ -35,27 +36,48 @@ const uploadAndCreateFile = async ({
   }
 
   let uploadResult;
+  let uploadPath = localPath;
+  let uploadMimeType = mimeType;
+  let uploadOriginalName = originalName;
+  let uploadSizeBytes = sizeBytes;
+  let cleanupPaths = [];
 
   try {
-    uploadResult = await cloudinary.uploader.upload(localPath, {
+    const optimizedImage = await compressImageForUpload({
+      localPath,
+      mimeType,
+      originalName,
+      sizeBytes,
+    });
+
+    uploadPath = optimizedImage.localPath || localPath;
+    uploadMimeType = optimizedImage.mimeType || mimeType;
+    uploadOriginalName = optimizedImage.originalName || originalName;
+    uploadSizeBytes = optimizedImage.sizeBytes || sizeBytes;
+    cleanupPaths = Array.isArray(optimizedImage.cleanupPaths)
+      ? optimizedImage.cleanupPaths
+      : [];
+
+    uploadResult = await cloudinary.uploader.upload(uploadPath, {
       folder,
-      resource_type: getResourceType(mimeType),
+      resource_type: getResourceType(uploadMimeType),
       use_filename: true,
       unique_filename: true,
-      filename_override: originalName,
+      filename_override: uploadOriginalName,
     });
   } finally {
-    // cleanup temp file
-    try {
-      await fs.unlink(localPath);
-    } catch (_) {}
+    await Promise.allSettled(
+      [...new Set([uploadPath, ...cleanupPaths].filter(Boolean))].map((file) =>
+        fs.unlink(file),
+      ),
+    );
   }
 
   const file = await File.create({
-    originalName,
+    originalName: uploadOriginalName,
     filename: uploadResult.public_id,
-    mimeType,
-    sizeBytes: uploadResult.bytes ?? sizeBytes,
+    mimeType: uploadMimeType,
+    sizeBytes: uploadResult.bytes ?? uploadSizeBytes,
     url: uploadResult.secure_url,
     uploadedBy,
   });

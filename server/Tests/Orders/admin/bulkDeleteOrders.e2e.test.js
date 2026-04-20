@@ -8,6 +8,7 @@ const DeliveryBatch = require("../../../models/deliveryBatch.model");
 const Route = require("../../../models/route.model");
 const Stop = require("../../../models/stop.model");
 const DiscountRedemption = require("../../../models/discountRedemption.model");
+const Variant = require("../../../models/variant.model");
 
 const { loginAsAdmin } = require("../../helpers/loginAs");
 const { createUser } = require("../../helpers/authTestData");
@@ -31,7 +32,7 @@ describe("DELETE /api/admin/orders/bulk", () => {
     lng: -0.1276248,
   });
 
-  test("deletes selected orders and cleans related delivery references", async () => {
+  test("soft deletes selected orders and cleans related delivery references", async () => {
     const adminCookie = await loginAsAdmin(app);
 
     const customer = await createCustomer();
@@ -117,11 +118,76 @@ describe("DELETE /api/admin/orders/bulk", () => {
       DiscountRedemption.findOne({ order: orderA._id }),
     ]);
 
-    expect(freshA).toBeNull();
-    expect(freshB).toBeNull();
+    expect(freshA).toBeTruthy();
+    expect(freshB).toBeTruthy();
+    expect(freshA.archived).toBe(true);
+    expect(freshB.archived).toBe(true);
+    expect(freshA.archivedAt).toBeTruthy();
+    expect(freshB.archivedAt).toBeTruthy();
     expect(freshBatch.orders).toHaveLength(0);
     expect(freshStops).toHaveLength(0);
     expect(freshRoute.totalStops).toBe(0);
     expect(freshRedemption).toBeNull();
+
+    const listRes = await request(app)
+      .get("/api/admin/orders")
+      .set("Cookie", adminCookie);
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.data.orders).toHaveLength(0);
+  });
+
+  test("releases reserved stock when pending orders are soft deleted", async () => {
+    const adminCookie = await loginAsAdmin(app);
+
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, price: 5 });
+
+    const pendingOrder = await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: variant.price,
+          quantity: 2,
+          subtotal: variant.price * 2,
+        },
+      ],
+      subtotal: variant.price * 2,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 1,
+      total: variant.price * 2 + 1,
+      totalBeforeDiscount: variant.price * 2 + 1,
+      discountAmount: 0,
+      isDiscounted: false,
+      status: "pending",
+      reservationExpiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
+    await Variant.updateOne(
+      { _id: variant._id },
+      { $set: { reservedQuantity: 2 } },
+    );
+
+    const res = await request(app)
+      .delete("/api/admin/orders/bulk")
+      .set("Cookie", adminCookie)
+      .send({ orderIds: [pendingOrder._id.toString()] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const [updatedOrder, updatedVariant] = await Promise.all([
+      Order.findById(pendingOrder._id),
+      Variant.findById(variant._id),
+    ]);
+
+    expect(updatedOrder.archived).toBe(true);
+    expect(updatedVariant.reservedQuantity).toBe(0);
   });
 });

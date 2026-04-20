@@ -85,6 +85,46 @@ describe("GET /api/admin/orders/:id (Admin)", () => {
     expect(res.body.success).toBe(false);
   });
 
+  test("returns 404 when order is archived", async () => {
+    const adminCookie = await loginAsAdmin(app);
+
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+
+    const order = await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: variant.price,
+          quantity: 1,
+          subtotal: variant.price,
+        },
+      ],
+      subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 0,
+      total: variant.price,
+      status: "paid",
+      paidAt: new Date(),
+      reservationExpiresAt: new Date(),
+      archived: true,
+      archivedAt: new Date(),
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/orders/${order._id}`)
+      .set("Cookie", adminCookie);
+
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+  });
+
   test("returns 400 for invalid order id", async () => {
     const adminCookie = await loginAsAdmin(app);
 
