@@ -20,6 +20,10 @@ const ANALYTICS_ORDER_STATUSES = [
   "refund_failed",
 ];
 
+const PAID_ORDER_MATCH = {
+  status: "paid",
+};
+
 const clampToStartOfDay = (d) => {
   const date = new Date(d);
   date.setHours(0, 0, 0, 0);
@@ -253,11 +257,11 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
   ] = await Promise.all([
     Order.countDocuments({
       ...orderMatch,
-      status: { $in: ANALYTICS_ORDER_STATUSES },
+      ...PAID_ORDER_MATCH,
     }),
 
     Order.aggregate([
-      { $match: { ...orderMatch, status: "paid" } },
+      { $match: { ...orderMatch, ...PAID_ORDER_MATCH } },
       { $group: { _id: null, revenue: { $sum: "$total" } } },
     ]),
 
@@ -265,7 +269,7 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
       {
         $match: {
           ...orderMatch,
-          status: { $in: ANALYTICS_ORDER_STATUSES },
+          ...PAID_ORDER_MATCH,
         },
       },
       { $group: { _id: "$status", count: { $sum: 1 } } },
@@ -360,7 +364,7 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
 
     // Total units sold (paid orders only)
     Order.aggregate([
-      { $match: { ...orderMatch, status: "paid" } },
+      { $match: { ...orderMatch, ...PAID_ORDER_MATCH } },
       { $unwind: "$items" },
       { $group: { _id: null, unitsSold: { $sum: "$items.quantity" } } },
     ]),

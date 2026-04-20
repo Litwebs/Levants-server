@@ -7,7 +7,7 @@ const {
 } = require("../Orders/helpers/orderFactory");
 
 describe("GetSummary", () => {
-  test("counts active orders accurately and filters by order source", async () => {
+  test("counts only paid orders in summary and filters by order source", async () => {
     const customer = await createCustomer();
     const product = await createProduct();
     const variant = await createVariant({ product, price: 10, stock: 20 });
@@ -75,6 +75,10 @@ describe("GetSummary", () => {
     });
 
     const summary = await analyticsService.GetSummary({ range: "today" });
+    const recentOrders = await analyticsService.GetRecentOrders({
+      range: "today",
+      limit: 10,
+    });
     const websiteSummary = await analyticsService.GetSummary({
       range: "today",
       orderSource: "website",
@@ -85,32 +89,44 @@ describe("GetSummary", () => {
     });
 
     expect(summary.success).toBe(true);
-    expect(summary.data.totalOrders).toBe(5);
-    expect(summary.data.pendingOrders).toBe(2);
+    expect(summary.data.totalOrders).toBe(1);
+    expect(summary.data.pendingOrders).toBe(0);
     expect(summary.data.paidOrders).toBe(1);
-    expect(summary.data.cancelledOrders).toBe(1);
-    expect(summary.data.refundedOrders).toBe(1);
+    expect(summary.data.cancelledOrders).toBe(0);
+    expect(summary.data.refundedOrders).toBe(0);
     expect(summary.data.failedOrders).toBe(0);
-    expect(summary.data.totalRefunds).toBe(1);
+    expect(summary.data.totalRefunds).toBe(0);
     expect(summary.data.revenue).toBe(25);
     expect(summary.data.orderStatus).toEqual(
       expect.objectContaining({
-        Pending: 2,
+        Pending: 0,
         Paid: 1,
-        Cancelled: 1,
-        Refunded: 1,
+        Cancelled: 0,
+        Refunded: 0,
       }),
     );
 
-    expect(websiteSummary.data.totalOrders).toBe(3);
-    expect(websiteSummary.data.pendingOrders).toBe(2);
+    expect(recentOrders.success).toBe(true);
+    expect(recentOrders.data.orders).toHaveLength(5);
+    expect(recentOrders.data.orders.map((order) => order.status)).toEqual(
+      expect.arrayContaining([
+        "pending",
+        "unpaid",
+        "partially_refunded",
+        "paid",
+        "cancelled",
+      ]),
+    );
+
+    expect(websiteSummary.data.totalOrders).toBe(0);
+    expect(websiteSummary.data.pendingOrders).toBe(0);
     expect(websiteSummary.data.paidOrders).toBe(0);
-    expect(websiteSummary.data.refundedOrders).toBe(1);
+    expect(websiteSummary.data.refundedOrders).toBe(0);
     expect(websiteSummary.data.revenue).toBe(0);
 
-    expect(importedSummary.data.totalOrders).toBe(2);
+    expect(importedSummary.data.totalOrders).toBe(1);
     expect(importedSummary.data.paidOrders).toBe(1);
-    expect(importedSummary.data.cancelledOrders).toBe(1);
+    expect(importedSummary.data.cancelledOrders).toBe(0);
     expect(importedSummary.data.pendingOrders).toBe(0);
     expect(importedSummary.data.revenue).toBe(25);
   });
