@@ -1,6 +1,7 @@
 import {
   type AnalyticsDashboard,
   type AnalyticsDateRange,
+  type AnalyticsOrderSource,
   type AnalyticsState,
   type RevenueOverview,
   type RevenueInterval,
@@ -37,6 +38,7 @@ export type AnalyticsAction =
       type: typeof ANALYTICS_SET_FILTERS;
       payload: {
         range: AnalyticsDateRange;
+        orderSource: AnalyticsOrderSource;
         from: string;
         to: string;
         interval: RevenueInterval;
@@ -58,6 +60,7 @@ export default function AnalyticsReducer(
       return {
         ...state,
         range: action.payload.range,
+        orderSource: action.payload.orderSource,
         from: action.payload.from,
         to: action.payload.to,
         interval: action.payload.interval,

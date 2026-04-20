@@ -2,12 +2,14 @@ import { Download, RefreshCw } from "lucide-react";
 import { Button } from "../../components/common";
 import styles from "./Orders.module.css";
 
-const OrdersHeader = ({ filteredOrders, exportToCSV, refresh }: any) => {
+const OrdersHeader = ({ filteredOrders, meta, exportToCSV, refresh }: any) => {
+  const totalOrders = meta?.total ?? filteredOrders.length;
+
   return (
     <div className={styles.header}>
       <div>
         <h1 className={styles.title}>Orders</h1>
-        <p className={styles.subtitle}>{filteredOrders.length} orders found</p>
+        <p className={styles.subtitle}>{totalOrders} orders found</p>
       </div>
 
       <div className={styles.headerActions}>

@@ -10,6 +10,8 @@ export type AnalyticsDateRange =
   | "lastYear"
   | "custom";
 
+export type AnalyticsOrderSource = "all" | "website" | "imported";
+
 export type RevenueInterval = "week" | "month" | "year";
 
 export type AnalyticsSummary = {
@@ -136,6 +138,7 @@ export interface AnalyticsState {
   revenueOverview: RevenueOverview | null;
 
   range: AnalyticsDateRange;
+  orderSource: AnalyticsOrderSource;
   from: string;
   to: string;
   interval: RevenueInterval;
@@ -152,7 +155,8 @@ export const initialAnalyticsState: AnalyticsState = {
 
   revenueOverview: null,
 
-  range: "last30",
+  range: "today",
+  orderSource: "all",
   from: "",
   to: "",
   interval: "week",

@@ -1,4 +1,7 @@
-import type { AnalyticsDateRange } from "../../context/Analytics";
+import type {
+  AnalyticsDateRange,
+  AnalyticsOrderSource,
+} from "../../context/Analytics";
 
 export const dateRangeOptions: { value: AnalyticsDateRange; label: string }[] = [
   { value: "today", label: "Today" },
@@ -11,4 +14,13 @@ export const dateRangeOptions: { value: AnalyticsDateRange; label: string }[] = 
   { value: "lastYear", label: "Last Year" },
   { value: "all", label: "All Time" },
   { value: "custom", label: "Custom" },
+];
+
+export const orderSourceOptions: {
+  value: AnalyticsOrderSource;
+  label: string;
+}[] = [
+  { value: "all", label: "All Sources" },
+  { value: "website", label: "Website" },
+  { value: "imported", label: "Imported" },
 ];

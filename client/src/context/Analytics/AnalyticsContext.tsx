@@ -22,6 +22,7 @@ import AnalyticsReducer, {
 import {
   type AnalyticsDashboard,
   type AnalyticsDateRange,
+  type AnalyticsOrderSource,
   type AnalyticsState,
   type RevenueOverview,
   type RevenueInterval,
@@ -50,6 +51,7 @@ type AnalyticsContextType = {
   revenueOverviewError: AnalyticsState["revenueOverviewError"];
 
   range: AnalyticsState["range"];
+  orderSource: AnalyticsState["orderSource"];
   from: AnalyticsState["from"];
   to: AnalyticsState["to"];
   interval: AnalyticsState["interval"];
@@ -59,6 +61,7 @@ type AnalyticsContextType = {
 
   setFilters: (filters: {
     range: AnalyticsDateRange;
+    orderSource?: AnalyticsOrderSource;
     from?: string;
     to?: string;
     interval?: RevenueInterval;
@@ -66,12 +69,16 @@ type AnalyticsContextType = {
 
   getDashboard: (params?: {
     range?: AnalyticsDateRange;
+    orderSource?: AnalyticsOrderSource;
     from?: string;
     to?: string;
     interval?: RevenueInterval;
   }) => Promise<AnalyticsDashboard>;
 
-  getRevenueOverview: (params?: { days?: number }) => Promise<RevenueOverview>;
+  getRevenueOverview: (params?: {
+    days?: number;
+    orderSource?: AnalyticsOrderSource;
+  }) => Promise<RevenueOverview>;
 };
 
 const AnalyticsContext = createContext<AnalyticsContextType | null>(null);
@@ -82,6 +89,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
   const setFilters = useCallback(
     (filters: {
       range: AnalyticsDateRange;
+      orderSource?: AnalyticsOrderSource;
       from?: string;
       to?: string;
       interval?: RevenueInterval;
@@ -90,6 +98,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
         type: ANALYTICS_SET_FILTERS,
         payload: {
           range: filters.range,
+          orderSource: filters.orderSource ?? state.orderSource,
           from: filters.from ?? "",
           to: filters.to ?? "",
           interval: filters.interval ?? state.interval,
@@ -102,6 +111,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
   const getDashboard = useCallback(
     async (params?: {
       range?: AnalyticsDateRange;
+      orderSource?: AnalyticsOrderSource;
       from?: string;
       to?: string;
       interval?: RevenueInterval;
@@ -111,6 +121,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
         const res = await api.get("/admin/analytics/dashboard", {
           params: {
             range: params?.range,
+            orderSource: params?.orderSource,
             from: params?.from,
             to: params?.to,
             interval: params?.interval,
@@ -136,32 +147,36 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
-  const getRevenueOverview = useCallback(async (params?: { days?: number }) => {
-    dispatch({ type: ANALYTICS_REVENUE_OVERVIEW_REQUEST });
-    try {
-      const res = await api.get("/admin/analytics/revenue-overview", {
-        params: {
-          days: params?.days,
-        },
-      });
+  const getRevenueOverview = useCallback(
+    async (params?: { days?: number; orderSource?: AnalyticsOrderSource }) => {
+      dispatch({ type: ANALYTICS_REVENUE_OVERVIEW_REQUEST });
+      try {
+        const res = await api.get("/admin/analytics/revenue-overview", {
+          params: {
+            days: params?.days,
+            orderSource: params?.orderSource,
+          },
+        });
 
-      const revenueOverview = unwrapData<RevenueOverview>(res.data);
-      if (!revenueOverview?.points)
-        throw new Error("Failed to load revenue overview");
+        const revenueOverview = unwrapData<RevenueOverview>(res.data);
+        if (!revenueOverview?.points)
+          throw new Error("Failed to load revenue overview");
 
-      dispatch({
-        type: ANALYTICS_REVENUE_OVERVIEW_SUCCESS,
-        payload: { revenueOverview },
-      });
+        dispatch({
+          type: ANALYTICS_REVENUE_OVERVIEW_SUCCESS,
+          payload: { revenueOverview },
+        });
 
-      return revenueOverview;
-    } catch (err: any) {
-      const msg =
-        err?.response?.data?.message || "Failed to load revenue overview";
-      dispatch({ type: ANALYTICS_REVENUE_OVERVIEW_FAILURE, payload: msg });
-      throw err;
-    }
-  }, []);
+        return revenueOverview;
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message || "Failed to load revenue overview";
+        dispatch({ type: ANALYTICS_REVENUE_OVERVIEW_FAILURE, payload: msg });
+        throw err;
+      }
+    },
+    [],
+  );
 
   const value = useMemo(
     () => ({
@@ -172,6 +187,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       revenueOverviewError: state.revenueOverviewError,
 
       range: state.range,
+      orderSource: state.orderSource,
       from: state.from,
       to: state.to,
       interval: state.interval,

@@ -2,6 +2,7 @@ export { AnalyticsProvider, useAnalyticsApi } from "./AnalyticsContext";
 export type {
   AnalyticsDashboard,
   AnalyticsDateRange,
+  AnalyticsOrderSource,
   AnalyticsSummary,
   RevenueInterval,
   RevenueSeries,

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAnalyticsApi } from "../../context/Analytics";
 
 import styles from "./Dashboard.module.css";
-import { dateRangeOptions } from "./dashboard.constants";
+import { dateRangeOptions, orderSourceOptions } from "./dashboard.constants";
 import { useDashboardViewModel } from "./dashboard.viewmodel";
 
 import DashboardHeader from "./components/DashboardHeader";
@@ -23,6 +23,7 @@ const Dashboard: React.FC = () => {
     revenueOverviewLoading,
     revenueOverviewError,
     range,
+    orderSource,
     from,
     to,
     interval,
@@ -35,14 +36,15 @@ const Dashboard: React.FC = () => {
 
     void getDashboard({
       interval,
+      orderSource,
       ...(isCustom ? { from, to } : { range }),
     });
-  }, [range, from, to, interval, getDashboard]);
+  }, [range, orderSource, from, to, interval, getDashboard]);
 
   useEffect(() => {
     // Fixed daily window; not affected by selected filters
-    void getRevenueOverview();
-  }, [getRevenueOverview]);
+    void getRevenueOverview({ orderSource });
+  }, [orderSource, getRevenueOverview]);
 
   const vm = useDashboardViewModel({
     dashboard,
@@ -53,9 +55,11 @@ const Dashboard: React.FC = () => {
     <div className={styles.dashboard}>
       <DashboardHeader
         range={range}
+        orderSource={orderSource}
         interval={interval}
         setFilters={setFilters}
         dateRangeOptions={dateRangeOptions}
+        orderSourceOptions={orderSourceOptions}
         onViewOrders={() => navigate("/orders")}
         onCreateProduct={() => navigate("/products")}
       />
@@ -69,6 +73,7 @@ const Dashboard: React.FC = () => {
             onChange={(e) =>
               setFilters({
                 range,
+                orderSource,
                 from: e.target.value,
                 to,
                 interval,
@@ -82,6 +87,7 @@ const Dashboard: React.FC = () => {
             onChange={(e) =>
               setFilters({
                 range,
+                orderSource,
                 from,
                 to: e.target.value,
                 interval,

@@ -20,6 +20,7 @@ import { SimpleBarChart, DonutChart } from "../components/charts";
 import {
   useAnalyticsApi,
   type AnalyticsDateRange,
+  type AnalyticsOrderSource,
   type RevenueInterval,
 } from "../context/Analytics";
 
@@ -52,6 +53,7 @@ const Reports = () => {
     loading,
     error,
     range,
+    orderSource,
     from,
     to,
     interval,
@@ -65,9 +67,10 @@ const Reports = () => {
 
     void getDashboard({
       interval,
+      orderSource,
       ...(isCustom ? { from, to } : { range }),
     });
-  }, [range, from, to, interval, getDashboard]);
+  }, [range, orderSource, from, to, interval, getDashboard]);
 
   const dateRangeOptions: { value: AnalyticsDateRange; label: string }[] = [
     { value: "today", label: "Today" },
@@ -86,6 +89,15 @@ const Reports = () => {
     { value: "week", label: "Weekly" },
     { value: "month", label: "Monthly" },
     { value: "year", label: "Yearly" },
+  ];
+
+  const orderSourceOptions: {
+    value: AnalyticsOrderSource;
+    label: string;
+  }[] = [
+    { value: "all", label: "All Sources" },
+    { value: "website", label: "Website" },
+    { value: "imported", label: "Imported" },
   ];
 
   const summary = dashboard?.summary;
@@ -147,9 +159,25 @@ const Reports = () => {
           <Select
             value={range}
             onChange={(value) =>
-              setFilters({ range: value as AnalyticsDateRange })
+              setFilters({
+                range: value as AnalyticsDateRange,
+                orderSource,
+                interval,
+              })
             }
             options={dateRangeOptions}
+          />
+
+          <Select
+            value={orderSource}
+            onChange={(value) =>
+              setFilters({
+                range,
+                orderSource: value as AnalyticsOrderSource,
+                interval,
+              })
+            }
+            options={orderSourceOptions}
           />
 
           <Select
@@ -157,6 +185,7 @@ const Reports = () => {
             onChange={(value) =>
               setFilters({
                 range,
+                orderSource,
                 from,
                 to,
                 interval: value as RevenueInterval,
@@ -174,6 +203,7 @@ const Reports = () => {
                 onChange={(e) =>
                   setFilters({
                     range,
+                    orderSource,
                     from: e.target.value,
                     to,
                     interval,
@@ -187,6 +217,7 @@ const Reports = () => {
                 onChange={(e) =>
                   setFilters({
                     range,
+                    orderSource,
                     from,
                     to: e.target.value,
                     interval,

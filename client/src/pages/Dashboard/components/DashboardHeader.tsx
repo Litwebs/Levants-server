@@ -1,22 +1,28 @@
-import { Eye, Plus } from "lucide-react";
-import type { AnalyticsDateRange } from "../../../context/Analytics";
-import { Button, Select } from "../../../components/common";
+import type {
+  AnalyticsDateRange,
+  AnalyticsOrderSource,
+} from "../../../context/Analytics";
+import { Select } from "../../../components/common";
 import styles from "../Dashboard.module.css";
 
 type Props = {
   range: AnalyticsDateRange;
+  orderSource: AnalyticsOrderSource;
   interval: any;
   setFilters: (next: any) => void;
   dateRangeOptions: { value: AnalyticsDateRange; label: string }[];
+  orderSourceOptions: { value: AnalyticsOrderSource; label: string }[];
   onViewOrders: () => void;
   onCreateProduct: () => void;
 };
 
 const DashboardHeader: React.FC<Props> = ({
   range,
+  orderSource,
   interval,
   setFilters,
   dateRangeOptions,
+  orderSourceOptions,
   onViewOrders,
   onCreateProduct,
 }) => {
@@ -36,10 +42,23 @@ const DashboardHeader: React.FC<Props> = ({
             onChange={(value) =>
               setFilters({
                 range: value as AnalyticsDateRange,
+                orderSource,
                 interval,
               })
             }
             options={dateRangeOptions}
+          />
+
+          <Select
+            value={orderSource}
+            onChange={(value) =>
+              setFilters({
+                range,
+                orderSource: value as AnalyticsOrderSource,
+                interval,
+              })
+            }
+            options={orderSourceOptions}
           />
         </div>
       </div>
