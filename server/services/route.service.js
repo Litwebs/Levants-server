@@ -21,10 +21,12 @@ const DELIVERY_TIME_ZONE =
   "Europe/London";
 
 function isFiniteNumber(n) {
+  // Checks if n is a number and is not NaN or Infinity
   return typeof n === "number" && Number.isFinite(n);
 }
 
 function isValidLatLng(lat, lng) {
+  // check if lat and lng are finite numbers
   if (!isFiniteNumber(lat) || !isFiniteNumber(lng)) return false;
   if (lat < -90 || lat > 90) return false;
   if (lng < -180 || lng > 180) return false;
@@ -32,6 +34,7 @@ function isValidLatLng(lat, lng) {
 }
 
 function extractEncodedPolyline(routeData) {
+  // The structure of the route data can vary based on the optimization request and response.
   if (!routeData || typeof routeData !== "object") return null;
 
   const points =
@@ -41,6 +44,7 @@ function extractEncodedPolyline(routeData) {
 }
 
 function isHHMM(value) {
+  // Checks if the value is a string in "HH:MM" 24-hour format
   if (typeof value !== "string") return false;
   if (!/^\d{2}:\d{2}$/.test(value)) return false;
 
@@ -54,6 +58,7 @@ function isHHMM(value) {
 }
 
 function parseDurationSeconds(value) {
+  // Parses a duration value that can be a number (assumed to be seconds) or a string like "5s", "2m", "1h"
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.round(value));
   }
@@ -700,10 +705,10 @@ async function optimizeSingleDriverRoute({
             latitude: WAREHOUSE_LAT,
             longitude: WAREHOUSE_LNG,
           },
-          endLocation: {
-            latitude: WAREHOUSE_LAT,
-            longitude: WAREHOUSE_LNG,
-          },
+          // endLocation: {
+          //   latitude: WAREHOUSE_LAT,
+          //   longitude: WAREHOUSE_LNG,
+          // },
           costPerHour: 1,
           costPerKilometer: 0.001,
         },
@@ -1128,6 +1133,24 @@ async function generateRoutesForBatch({
         startTime: globalStartTime,
         endTime: globalEndTime,
       });
+
+      console.log(
+        result.routeData?.visits?.map((visit, i) => ({
+          index: i + 1,
+          shipmentIndex: visit.shipmentIndex,
+          shipmentLabel: visit.shipmentLabel,
+          startTime: visit.startTime,
+        })),
+      );
+
+      console.log(
+        assignedGroups.map((group, index) => ({
+          shipment: `shipment-${index}`,
+          lat: group.lat,
+          lng: group.lng,
+          orders: group.orders.map((o) => o.orderId),
+        })),
+      );
 
       if (result.optimized?.validationErrors?.length) {
         return {
