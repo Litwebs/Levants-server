@@ -1,6 +1,6 @@
 // src/controllers/access.controller.js
 
-const accessService = require("../services/access.service");
+const accessService = require("../services/access");
 const { sendOk, sendErr } = require("../utils/response.util");
 
 /**
