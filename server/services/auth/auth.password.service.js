@@ -1,13 +1,13 @@
 "use strict";
 
 const crypto = require("crypto");
-const User = require("../models/user.model");
-const PasswordResetToken = require("../models/passwordResetToken.model");
-const passwordUtil = require("../utils/password.util");
-const Session = require("../models/session.model");
-const cryptoUtil = require("../utils/crypto.util");
-const sendEmail = require("../Integration/Email.service");
-const { FRONTEND_URL } = require("../config/env");
+const User = require("../../models/user.model");
+const PasswordResetToken = require("../../models/passwordResetToken.model");
+const passwordUtil = require("../../utils/password.util");
+const Session = require("../../models/session.model");
+const cryptoUtil = require("../../utils/crypto.util");
+const sendEmail = require("../../Integration/Email.service");
+const { FRONTEND_URL } = require("../../config/env");
 const {
   INVALID_OR_EXPIRED_TOKEN,
   IF_ACCOUNT_EXISTS,
@@ -17,8 +17,8 @@ const {
   CURRENT_PASSWORD_INCORRECT,
   NEW_PASSWORD_MUST_BE_DIFFERENT,
   PASSWORD_CHANGED_SUCCESSFULLY,
-} = require("../constants/Auth.constants");
-const { Response } = require("../utils/response.util");
+} = require("../../constants/Auth.constants");
+const { Response } = require("../../utils/response.util");
 
 const ForgotPassword = async ({ email, ip, userAgent } = {}) => {
   const normalizedEmail = email.trim().toLowerCase();

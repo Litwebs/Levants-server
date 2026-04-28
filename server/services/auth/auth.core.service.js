@@ -1,12 +1,12 @@
 "use strict";
 
 const mongoose = require("mongoose");
-const User = require("../models/user.model");
-const jwtUtil = require("../utils/jwt.util");
-const passwordUtil = require("../utils/password.util");
-const Session = require("../models/session.model");
-const cryptoUtil = require("../utils/crypto.util");
-const sendEmail = require("../Integration/Email.service");
+const User = require("../../models/user.model");
+const jwtUtil = require("../../utils/jwt.util");
+const passwordUtil = require("../../utils/password.util");
+const Session = require("../../models/session.model");
+const cryptoUtil = require("../../utils/crypto.util");
+const sendEmail = require("../../Integration/Email.service");
 const {
   INVALID_EMAIL_OR_PASSWORD,
   ACCOUNT_DISABLED,
@@ -25,13 +25,13 @@ const {
   USER_NOT_FOUND,
   NO_ACTIVE_2FA_SESSION,
   INVALID_OR_EXPIRED_SESSION,
-} = require("../constants/Auth.constants");
-const { Response } = require("../utils/response.util");
-const { sanitizeUser } = require("../utils/authUser.util");
+} = require("../../constants/Auth.constants");
+const { Response } = require("../../utils/response.util");
+const { sanitizeUser } = require("../../utils/authUser.util");
 const {
   getSessionExpiryDate,
   generate6DigitCode,
-} = require("../utils/authSession.util");
+} = require("../../utils/authSession.util");
 
 const Login = async ({
   email,

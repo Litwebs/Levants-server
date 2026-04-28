@@ -2,16 +2,16 @@
 
 const crypto = require("crypto");
 const mongoose = require("mongoose");
-const User = require("../models/user.model");
-const Session = require("../models/session.model");
-const cryptoUtil = require("../utils/crypto.util");
-const sendEmail = require("../Integration/Email.service");
-const { Response } = require("../utils/response.util");
-const { sanitizeUser } = require("../utils/authUser.util");
+const User = require("../../models/user.model");
+const Session = require("../../models/session.model");
+const cryptoUtil = require("../../utils/crypto.util");
+const sendEmail = require("../../Integration/Email.service");
+const { Response } = require("../../utils/response.util");
+const { sanitizeUser } = require("../../utils/authUser.util");
 const {
   buildVerifyEmailLink,
   buildSecurityUrl,
-} = require("../utils/authLinks.util");
+} = require("../../utils/authLinks.util");
 
 const UpdateSelf = async ({ userId, updates }, options = {}) => {
   const { updatedBy } = options;

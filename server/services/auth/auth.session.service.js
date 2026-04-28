@@ -1,7 +1,7 @@
 "use strict";
 
-const User = require("../models/user.model");
-const Session = require("../models/session.model");
+const User = require("../../models/user.model");
+const Session = require("../../models/session.model");
 const {
   USER_NOT_FOUND,
   USER_ID_REQUIRED,
@@ -10,10 +10,10 @@ const {
   SESSION_NOT_FOUND,
   SESSION_ID_REQUIRED,
   OK,
-} = require("../constants/Auth.constants");
-const { Response } = require("../utils/response.util");
-const { sanitizeUser } = require("../utils/authUser.util");
-const { sessionLabelFromUserAgent } = require("../utils/authSession.util");
+} = require("../../constants/Auth.constants");
+const { Response } = require("../../utils/response.util");
+const { sanitizeUser } = require("../../utils/authUser.util");
+const { sessionLabelFromUserAgent } = require("../../utils/authSession.util");
 
 const GetAuthenticatedUser = async ({ userId }) => {
   const user = await User.findById(userId).populate("role");

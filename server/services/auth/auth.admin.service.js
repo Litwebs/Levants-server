@@ -2,24 +2,24 @@
 
 const crypto = require("crypto");
 const mongoose = require("mongoose");
-const User = require("../models/user.model");
-const Role = require("../models/role.model");
-const PasswordResetToken = require("../models/passwordResetToken.model");
-const passwordUtil = require("../utils/password.util");
-const Session = require("../models/session.model");
-const cryptoUtil = require("../utils/crypto.util");
-const sendEmail = require("../Integration/Email.service");
-const { Response } = require("../utils/response.util");
+const User = require("../../models/user.model");
+const Role = require("../../models/role.model");
+const PasswordResetToken = require("../../models/passwordResetToken.model");
+const passwordUtil = require("../../utils/password.util");
+const Session = require("../../models/session.model");
+const cryptoUtil = require("../../utils/crypto.util");
+const sendEmail = require("../../Integration/Email.service");
+const { Response } = require("../../utils/response.util");
 const {
   isDriverRole,
   getDriverNotificationDefaults,
   mergeDriverRouting,
   sanitizeUser,
-} = require("../utils/authUser.util");
+} = require("../../utils/authUser.util");
 const {
   buildVerifyEmailLink,
   buildAcceptInvitationLink,
-} = require("../utils/authLinks.util");
+} = require("../../utils/authLinks.util");
 
 const UpdateUserStatus = async ({ targetUserId, status, actorUserId }) => {
   if (String(targetUserId) === String(actorUserId)) {
