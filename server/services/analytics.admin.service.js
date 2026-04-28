@@ -4,182 +4,39 @@ const Order = require("../models/order.model");
 const Product = require("../models/product.model");
 const ProductVariant = require("../models/variant.model");
 
-const ACTIVE_ORDER_MATCH = {
-  archived: { $ne: true },
-};
+const {
+  parseDateRange,
+  clampToStartOfDay,
+  clampToEndOfDay,
+  formatYmdInTimeZone,
+} = require("../utils/analyticsDate.util");
 
-const ANALYTICS_ORDER_STATUSES = [
-  "pending",
-  "unpaid",
-  "paid",
-  "failed",
-  "cancelled",
-  "refund_pending",
-  "partially_refunded",
-  "refunded",
-  "refund_failed",
-];
+const {
+  ACTIVE_ORDER_MATCH,
+  ANALYTICS_ORDER_STATUSES,
+  PAID_ORDER_MATCH,
+  buildOrderSourceMatch,
+  buildOrderMatch,
+} = require("../utils/analyticsFilter.util");
 
-const PAID_ORDER_MATCH = {
-  status: "paid",
-};
+const {
+  buildAnalyticsCounts,
+  summarizeAnalyticsCounts,
+} = require("../utils/analyticsStatus.util");
 
-const clampToStartOfDay = (d) => {
-  const date = new Date(d);
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
+const {
+  STOCK_AVAILABLE_ADD_FIELDS,
+  LOW_STOCK_MATCH,
+  OUT_OF_STOCK_MATCH,
+  STOCK_PRODUCT_LOOKUP,
+  STOCK_PRODUCT_UNWIND,
+  STOCK_DEDUP_STAGES,
+  STOCK_ITEM_PROJECT,
+} = require("../utils/analyticsStock.util");
 
-const clampToEndOfDay = (d) => {
-  const date = new Date(d);
-  date.setHours(23, 59, 59, 999);
-  return date;
-};
-
-const parseDateRange = ({ range, from, to } = {}) => {
-  const now = new Date();
-
-  const hasCustom = Boolean(from || to);
-  if (hasCustom) {
-    const start = from ? clampToStartOfDay(new Date(from)) : null;
-    const end = to ? clampToEndOfDay(new Date(to)) : null;
-
-    if (
-      (start && Number.isNaN(start.getTime())) ||
-      (end && Number.isNaN(end.getTime()))
-    ) {
-      return { start: null, end: null };
-    }
-
-    return { start, end };
-  }
-
-  const r = typeof range === "string" ? range : "all";
-
-  if (r === "all") return { start: null, end: null };
-
-  if (r === "today") {
-    return { start: clampToStartOfDay(now), end: clampToEndOfDay(now) };
-  }
-
-  if (r === "yesterday") {
-    const y = new Date(now);
-    y.setDate(y.getDate() - 1);
-    return { start: clampToStartOfDay(y), end: clampToEndOfDay(y) };
-  }
-
-  if (r === "last7") {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 6);
-    return { start: clampToStartOfDay(start), end: clampToEndOfDay(now) };
-  }
-
-  if (r === "last30") {
-    const start = new Date(now);
-    start.setDate(start.getDate() - 29);
-    return { start: clampToStartOfDay(start), end: clampToEndOfDay(now) };
-  }
-
-  if (r === "thisMonth") {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return { start: clampToStartOfDay(start), end: clampToEndOfDay(now) };
-  }
-
-  if (r === "lastMonth") {
-    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const end = new Date(now.getFullYear(), now.getMonth(), 0);
-    return { start: clampToStartOfDay(start), end: clampToEndOfDay(end) };
-  }
-
-  if (r === "thisYear") {
-    const start = new Date(now.getFullYear(), 0, 1);
-    return { start: clampToStartOfDay(start), end: clampToEndOfDay(now) };
-  }
-
-  if (r === "lastYear") {
-    const start = new Date(now.getFullYear() - 1, 0, 1);
-    const end = new Date(now.getFullYear() - 1, 11, 31);
-    return { start: clampToStartOfDay(start), end: clampToEndOfDay(end) };
-  }
-
-  return { start: null, end: null };
-};
-
-const buildCreatedAtMatch = ({ range, from, to } = {}) => {
-  const { start, end } = parseDateRange({ range, from, to });
-
-  if (!start && !end) return {};
-
-  const createdAt = {};
-  if (start) createdAt.$gte = start;
-  if (end) createdAt.$lte = end;
-
-  return { createdAt };
-};
-
-const buildOrderSourceMatch = (orderSource) => {
-  const normalized =
-    typeof orderSource === "string" ? orderSource.trim().toLowerCase() : "";
-
-  if (normalized === "imported") {
-    return { "metadata.manualImport": true };
-  }
-
-  if (normalized === "website") {
-    return { "metadata.manualImport": { $ne: true } };
-  }
-
-  return {};
-};
-
-const buildOrderMatch = ({ range, from, to, orderSource } = {}) => ({
-  ...ACTIVE_ORDER_MATCH,
-  ...buildCreatedAtMatch({ range, from, to }),
-  ...buildOrderSourceMatch(orderSource),
-});
-
-const createAnalyticsCounts = () => ({
-  pending: 0,
-  unpaid: 0,
-  paid: 0,
-  failed: 0,
-  cancelled: 0,
-  refund_pending: 0,
-  partially_refunded: 0,
-  refunded: 0,
-  refund_failed: 0,
-});
-
-const buildAnalyticsCounts = (statusCounts = []) => {
-  const counts = createAnalyticsCounts();
-
-  for (const row of statusCounts) {
-    if (Object.prototype.hasOwnProperty.call(counts, row._id)) {
-      counts[row._id] = row.count;
-    }
-  }
-
-  return counts;
-};
-
-const summarizeAnalyticsCounts = (counts) => {
-  const pending = (counts.pending || 0) + (counts.unpaid || 0);
-  const refunded = (counts.partially_refunded || 0) + (counts.refunded || 0);
-  const totalRefunds = (counts.refund_pending || 0) + refunded;
-
-  return {
-    pending,
-    refunded,
-    totalRefunds,
-  };
-};
-
-const normalizeDeliveryStatus = (value) => {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_");
-};
+const {
+  buildRevenueSeriesStages,
+} = require("../utils/analyticsRevenueSeries.util");
 
 async function GetSummary({ range, from, to, orderSource } = {}) {
   const orderMatch = buildOrderMatch({ range, from, to, orderSource });
@@ -277,88 +134,15 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
 
     ProductVariant.aggregate([
       { $match: { status: "active" } },
-      {
-        $addFields: {
-          available: {
-            $subtract: [
-              {
-                $convert: {
-                  input: "$stockQuantity",
-                  to: "double",
-                  onError: 0,
-                  onNull: 0,
-                },
-              },
-              {
-                $convert: {
-                  input: "$reservedQuantity",
-                  to: "double",
-                  onError: 0,
-                  onNull: 0,
-                },
-              },
-            ],
-          },
-        },
-      },
-      {
-        $match: {
-          // Low stock (available > 0 and available <= lowStockAlert)
-          $expr: {
-            $and: [
-              { $gt: ["$available", 0] },
-              {
-                $lte: [
-                  "$available",
-                  {
-                    $convert: {
-                      input: "$lowStockAlert",
-                      to: "double",
-                      onError: 0,
-                      onNull: 0,
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        },
-      },
+      STOCK_AVAILABLE_ADD_FIELDS,
+      LOW_STOCK_MATCH,
       { $count: "count" },
     ]),
 
     ProductVariant.aggregate([
       { $match: { status: "active" } },
-      {
-        $addFields: {
-          available: {
-            $subtract: [
-              {
-                $convert: {
-                  input: "$stockQuantity",
-                  to: "double",
-                  onError: 0,
-                  onNull: 0,
-                },
-              },
-              {
-                $convert: {
-                  input: "$reservedQuantity",
-                  to: "double",
-                  onError: 0,
-                  onNull: 0,
-                },
-              },
-            ],
-          },
-        },
-      },
-      {
-        $match: {
-          // Out of stock (available <= 0)
-          $expr: { $lte: ["$available", 0] },
-        },
-      },
+      STOCK_AVAILABLE_ADD_FIELDS,
+      OUT_OF_STOCK_MATCH,
       { $count: "count" },
     ]),
 
@@ -425,91 +209,11 @@ async function GetRevenueSeries({
   orderSource,
 } = {}) {
   const orderMatch = buildOrderMatch({ range, from, to, orderSource });
-
   const i = typeof interval === "string" ? interval : "week";
-
-  let groupId;
-  let sortStage;
-  let projectStage;
-
-  if (i === "year") {
-    groupId = { year: { $year: "$createdAt" } };
-    sortStage = { "_id.year": 1 };
-    projectStage = {
-      _id: 0,
-      label: { $toString: "$_id.year" },
-      revenue: 1,
-      orders: 1,
-    };
-  } else if (i === "month") {
-    groupId = {
-      year: { $year: "$createdAt" },
-      month: { $month: "$createdAt" },
-    };
-    sortStage = { "_id.year": 1, "_id.month": 1 };
-    projectStage = {
-      _id: 0,
-      label: {
-        $concat: [
-          { $toString: "$_id.year" },
-          "-",
-          {
-            $cond: [
-              { $lt: ["$_id.month", 10] },
-              { $concat: ["0", { $toString: "$_id.month" }] },
-              { $toString: "$_id.month" },
-            ],
-          },
-        ],
-      },
-      revenue: 1,
-      orders: 1,
-    };
-  } else {
-    // "week" interval on short ranges should still show multiple points.
-    // For today/yesterday/last7 we group by day.
-    const r = typeof range === "string" ? range : "all";
-    const useDaily = r === "today" || r === "yesterday" || r === "last7";
-
-    if (useDaily) {
-      groupId = {
-        day: {
-          $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
-        },
-      };
-      sortStage = { "_id.day": 1 };
-      projectStage = {
-        _id: 0,
-        label: "$_id.day",
-        revenue: 1,
-        orders: 1,
-      };
-    } else {
-      // week (ISO)
-      groupId = {
-        year: { $isoWeekYear: "$createdAt" },
-        week: { $isoWeek: "$createdAt" },
-      };
-      sortStage = { "_id.year": 1, "_id.week": 1 };
-      projectStage = {
-        _id: 0,
-        label: {
-          $concat: [
-            "Wk-",
-            {
-              $cond: [
-                { $lt: ["$_id.week", 10] },
-                { $concat: ["0", { $toString: "$_id.week" }] },
-                { $toString: "$_id.week" },
-              ],
-            },
-          ],
-        },
-        revenue: 1,
-        orders: 1,
-      };
-    }
-  }
+  const { groupId, sortStage, projectStage } = buildRevenueSeriesStages(
+    interval,
+    range,
+  );
 
   const series = await Order.aggregate([
     { $match: { ...orderMatch, status: "paid" } },
@@ -532,16 +236,6 @@ async function GetRevenueSeries({
     },
   };
 }
-
-const formatYmdInTimeZone = (date, timeZone) => {
-  // en-CA yields YYYY-MM-DD in most JS engines.
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
-};
 
 async function GetRevenueOverview({
   days = 7,
@@ -761,88 +455,14 @@ async function GetLowStock({ limit = 50 } = {}) {
   // So we aggregate.
   const items = await ProductVariant.aggregate([
     { $match: { status: "active" } },
-    {
-      $addFields: {
-        available: {
-          $subtract: [
-            {
-              $convert: {
-                input: "$stockQuantity",
-                to: "double",
-                onError: 0,
-                onNull: 0,
-              },
-            },
-            {
-              $convert: {
-                input: "$reservedQuantity",
-                to: "double",
-                onError: 0,
-                onNull: 0,
-              },
-            },
-          ],
-        },
-      },
-    },
-    {
-      $match: {
-        // Low stock (available > 0 and available <= lowStockAlert)
-        $expr: {
-          $and: [
-            { $gt: ["$available", 0] },
-            {
-              $lte: [
-                "$available",
-                {
-                  $convert: {
-                    input: "$lowStockAlert",
-                    to: "double",
-                    onError: 0,
-                    onNull: 0,
-                  },
-                },
-              ],
-            },
-          ],
-        },
-      },
-    },
+    STOCK_AVAILABLE_ADD_FIELDS,
+    LOW_STOCK_MATCH,
     { $sort: { available: 1 } },
     { $limit: lim },
-    {
-      $lookup: {
-        from: "products",
-        localField: "product",
-        foreignField: "_id",
-        as: "product",
-      },
-    },
-    {
-      $unwind: {
-        path: "$product",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    // Safety: prevent duplicates if joins ever multiply documents
-    { $group: { _id: "$_id", doc: { $first: "$$ROOT" } } },
-    { $replaceRoot: { newRoot: "$doc" } },
-    {
-      $project: {
-        _id: 1,
-        sku: 1,
-        name: 1,
-        stockQuantity: 1,
-        reservedQuantity: 1,
-        lowStockAlert: 1,
-        available: 1,
-        product: {
-          _id: "$product._id",
-          name: "$product.name",
-          status: "$product.status",
-        },
-      },
-    },
+    STOCK_PRODUCT_LOOKUP,
+    STOCK_PRODUCT_UNWIND,
+    ...STOCK_DEDUP_STAGES,
+    STOCK_ITEM_PROJECT,
   ]);
 
   return {
@@ -858,71 +478,14 @@ async function GetOutOfStock({ limit = 50 } = {}) {
 
   const items = await ProductVariant.aggregate([
     { $match: { status: "active" } },
-    {
-      $addFields: {
-        available: {
-          $subtract: [
-            {
-              $convert: {
-                input: "$stockQuantity",
-                to: "double",
-                onError: 0,
-                onNull: 0,
-              },
-            },
-            {
-              $convert: {
-                input: "$reservedQuantity",
-                to: "double",
-                onError: 0,
-                onNull: 0,
-              },
-            },
-          ],
-        },
-      },
-    },
-    {
-      $match: {
-        // Out of stock (available <= 0)
-        $expr: { $lte: ["$available", 0] },
-      },
-    },
+    STOCK_AVAILABLE_ADD_FIELDS,
+    OUT_OF_STOCK_MATCH,
     { $sort: { available: 1 } },
     { $limit: lim },
-    {
-      $lookup: {
-        from: "products",
-        localField: "product",
-        foreignField: "_id",
-        as: "product",
-      },
-    },
-    {
-      $unwind: {
-        path: "$product",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-    // Safety: prevent duplicates if joins ever multiply documents
-    { $group: { _id: "$_id", doc: { $first: "$$ROOT" } } },
-    { $replaceRoot: { newRoot: "$doc" } },
-    {
-      $project: {
-        _id: 1,
-        sku: 1,
-        name: 1,
-        stockQuantity: 1,
-        reservedQuantity: 1,
-        lowStockAlert: 1,
-        available: 1,
-        product: {
-          _id: "$product._id",
-          name: "$product.name",
-          status: "$product.status",
-        },
-      },
-    },
+    STOCK_PRODUCT_LOOKUP,
+    STOCK_PRODUCT_UNWIND,
+    ...STOCK_DEDUP_STAGES,
+    STOCK_ITEM_PROJECT,
   ]);
 
   return {
