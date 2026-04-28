@@ -1,14 +1,4 @@
-function isHHMM(value) {
-  if (typeof value !== "string") return false;
-  if (!/^\d{2}:\d{2}$/.test(value)) return false;
-
-  const [hh, mm] = value.split(":").map(Number);
-  if (!Number.isInteger(hh) || !Number.isInteger(mm)) return false;
-  if (hh < 0 || hh > 23) return false;
-  if (mm < 0 || mm > 59) return false;
-
-  return true;
-}
+const { isHHMM } = require("./routeValidation.util");
 
 function normalizeRoutingArea(value) {
   if (typeof value !== "string") return "";
@@ -118,7 +108,6 @@ function matchesRoutingArea(postcodeValue, routingArea) {
 }
 
 module.exports = {
-  isHHMM,
   normalizeRoutingArea,
   normalizeRoutingAreas,
   normalizeDriverRouting,

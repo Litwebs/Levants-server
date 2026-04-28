@@ -9,9 +9,9 @@
  * @returns {{ groupId: object, sortStage: object, projectStage: object }}
  */
 const buildRevenueSeriesStages = (interval, range) => {
-  const i = typeof interval === "string" ? interval : "week";
+  if (typeof interval !== "string") interval = "week";
 
-  if (i === "year") {
+  if (interval === "year") {
     return {
       groupId: { year: { $year: "$createdAt" } },
       sortStage: { "_id.year": 1 },
@@ -24,7 +24,7 @@ const buildRevenueSeriesStages = (interval, range) => {
     };
   }
 
-  if (i === "month") {
+  if (interval === "month") {
     return {
       groupId: {
         year: { $year: "$createdAt" },

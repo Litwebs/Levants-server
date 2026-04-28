@@ -1,9 +1,10 @@
-const Role = require("../models/role.model");
-const User = require("../models/user.model");
-const Order = require("../models/order.model");
-const Customer = require("../models/customer.model");
-const sendEmail = require("../Integration/Email.service");
-const { FRONTEND_URL } = require("../config/env");
+const Role = require("../../models/role.model");
+const User = require("../../models/user.model");
+const Order = require("../../models/order.model");
+const Customer = require("../../models/customer.model");
+const sendEmail = require("../../Integration/Email.service");
+const { FRONTEND_URL } = require("../../config/env");
+const { normalizeBaseUrl } = require("../../utils/navigation.util");
 
 function formatMoney(value) {
   const n = Number(value);
@@ -16,19 +17,6 @@ function isValidEmail(raw) {
   if (!email) return false;
   if (email.length > 254) return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function normalizeBaseUrl(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "";
-
-  if (/^https?:\/\//i.test(value)) return value.replace(/\/$/, "");
-
-  if (process.env.NODE_ENV !== "production") {
-    return `http://${value.replace(/\/$/, "")}`;
-  }
-
-  return value.replace(/\/$/, "");
 }
 
 function buildDashboardUrl() {

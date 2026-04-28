@@ -1,4 +1,3 @@
-// src/utils/crypto.util.js
 //
 // General crypto helpers:
 //  - hashToken: for password-reset tokens, etc.

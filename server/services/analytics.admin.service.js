@@ -209,7 +209,7 @@ async function GetRevenueSeries({
   orderSource,
 } = {}) {
   const orderMatch = buildOrderMatch({ range, from, to, orderSource });
-  const i = typeof interval === "string" ? interval : "week";
+  if (typeof interval !== "string") interval = "week";
   const { groupId, sortStage, projectStage } = buildRevenueSeriesStages(
     interval,
     range,
@@ -231,7 +231,7 @@ async function GetRevenueSeries({
   return {
     success: true,
     data: {
-      interval: i,
+      interval,
       points: series,
     },
   };

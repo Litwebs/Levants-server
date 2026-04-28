@@ -256,24 +256,6 @@ async function generateRoutesForBatch({
         endTime: globalEndTime,
       });
 
-      console.log(
-        result.routeData?.visits?.map((visit, i) => ({
-          index: i + 1,
-          shipmentIndex: visit.shipmentIndex,
-          shipmentLabel: visit.shipmentLabel,
-          startTime: visit.startTime,
-        })),
-      );
-
-      console.log(
-        assignedGroups.map((group, index) => ({
-          shipment: `shipment-${index}`,
-          lat: group.lat,
-          lng: group.lng,
-          orders: group.orders.map((o) => o.orderId),
-        })),
-      );
-
       if (result.optimized?.validationErrors?.length) {
         return {
           success: false,

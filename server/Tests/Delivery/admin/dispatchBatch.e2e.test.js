@@ -1,8 +1,23 @@
 const request = require("supertest");
 
-jest.mock("../../../Integration/Email.service", () =>
-  jest.fn(async () => ({ success: true, response: { id: "email_test" } })),
-);
+jest.mock("../../../Integration/Email.service", () => {
+  const sendEmail = jest.fn(async () => ({
+    success: true,
+    response: { id: "email_test" },
+  }));
+  sendEmail.sendBatchEmails = jest.fn(async (jobs) => ({
+    results: Array.isArray(jobs)
+      ? jobs.map((job) => ({
+          success: true,
+          orderDbId: job.orderDbId,
+          orderId: job.orderId,
+          to: job.to,
+          providerId: "email_test",
+        }))
+      : [],
+  }));
+  return sendEmail;
+});
 
 const app = require("../../testApp");
 
@@ -23,7 +38,8 @@ const {
 describe("PATCH /api/admin/delivery/batch/:batchId/dispatch (E2E)", () => {
   test("marks orders as dispatched and emails customers with rounded ETA window", async () => {
     const adminCookie = await loginAsAdmin(app);
-    const sendEmail = require("../../../Integration/Email.service");
+    const sendBatchEmails =
+      require("../../../Integration/Email.service").sendBatchEmails;
 
     const customer1 = await createCustomer();
     const customer2 = await createCustomer();
@@ -109,32 +125,33 @@ describe("PATCH /api/admin/delivery/batch/:batchId/dispatch (E2E)", () => {
     expect(updated1.metadata?.dispatchedEmailSentAt).toBeTruthy();
     expect(updated2.metadata?.dispatchedEmailSentAt).toBeTruthy();
 
-    expect(sendEmail).toHaveBeenCalledTimes(2);
+    expect(sendBatchEmails).toHaveBeenCalledTimes(1);
 
-    const callsByTo = new Map(sendEmail.mock.calls.map((c) => [c[0], c]));
+    const [jobs] = sendBatchEmails.mock.calls[0];
+    expect(jobs).toHaveLength(2);
 
-    const call1 = callsByTo.get(customer1.email);
-    const call2 = callsByTo.get(customer2.email);
+    const jobsByTo = new Map(jobs.map((j) => [j.to, j]));
 
-    expect(call1).toBeTruthy();
-    expect(call2).toBeTruthy();
+    const job1 = jobsByTo.get(customer1.email);
+    const job2 = jobsByTo.get(customer2.email);
+
+    expect(job1).toBeTruthy();
+    expect(job2).toBeTruthy();
 
     {
-      const [_to, subject, templateName, params] = call1;
-      expect(String(subject)).toMatch(/dispatched/i);
-      expect(templateName).toBe("orderDispatched");
-      expect(params.orderId).toBe(updated1.orderId);
-      expect(params.etaWindowStart).toBe("08:30");
-      expect(params.etaWindowEnd).toBe("10:30");
+      expect(String(job1.subject)).toMatch(/dispatched/i);
+      expect(job1.template).toBe("orderDispatched");
+      expect(job1.templateParams.orderId).toBe(updated1.orderId);
+      expect(job1.templateParams.etaWindowStart).toBe("08:30");
+      expect(job1.templateParams.etaWindowEnd).toBe("10:30");
     }
 
     {
-      const [_to, subject, templateName, params] = call2;
-      expect(String(subject)).toMatch(/dispatched/i);
-      expect(templateName).toBe("orderDispatched");
-      expect(params.orderId).toBe(updated2.orderId);
-      expect(params.etaWindowStart).toBe("08:00");
-      expect(params.etaWindowEnd).toBe("10:00");
+      expect(String(job2.subject)).toMatch(/dispatched/i);
+      expect(job2.template).toBe("orderDispatched");
+      expect(job2.templateParams.orderId).toBe(updated2.orderId);
+      expect(job2.templateParams.etaWindowStart).toBe("08:00");
+      expect(job2.templateParams.etaWindowEnd).toBe("10:00");
     }
 
     // Calling again should NOT resend.
@@ -144,6 +161,6 @@ describe("PATCH /api/admin/delivery/batch/:batchId/dispatch (E2E)", () => {
       .send({});
 
     expect(res2.status).toBe(200);
-    expect(sendEmail).toHaveBeenCalledTimes(2);
+    expect(sendBatchEmails).toHaveBeenCalledTimes(1);
   });
 });

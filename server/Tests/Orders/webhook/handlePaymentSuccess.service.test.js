@@ -2,14 +2,14 @@ jest.mock("../../../services/discounts.public.service", () => ({
   recordRedemption: jest.fn(async () => {}),
 }));
 
-jest.mock("../../../services/orders.notifications.service", () => ({
+jest.mock("../../../services/orders/orders.notifications.service", () => ({
   sendNewOrderAlertEmailToUsers: jest.fn(async () => {}),
   sendOrderConfirmationEmailToCustomer: jest.fn(async () => {}),
   sendRefundConfirmationEmailToCustomer: jest.fn(async () => {}),
 }));
 
 const Order = require("../../../models/order.model");
-const webhookService = require("../../../services/orders.webhook.service");
+const webhookService = require("../../../services/orders/orders.webhook.service");
 const {
   createCustomer,
   createProduct,

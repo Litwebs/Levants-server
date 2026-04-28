@@ -1,5 +1,5 @@
-const service = require("../services/orders.admin.service");
-const refundService = require("../services/orders.refund.service");
+const service = require("../services/orders/orders.admin.service");
+const refundService = require("../services/orders/orders.refund.service");
 const { sendOk, sendErr } = require("../utils/response.util");
 
 const ListOrders = async (req, res) => {

@@ -76,6 +76,7 @@ describe("GET /api/discounts/active (PUBLIC)", () => {
       scope: "variant",
       variantIds: [activeVariant._id, archivedVariant._id],
       isActive: true,
+      isCodeVisibleOnWebsite: true,
       startsAt: null,
       endsAt: null,
       stripeCouponId: "coupon_test_123",

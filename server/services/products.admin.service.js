@@ -1,4 +1,3 @@
-// src/services/products.admin.service.js
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
 const slugify = require("slugify");

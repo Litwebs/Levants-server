@@ -8,7 +8,7 @@ const Stop = require("../../models/stop.model");
 const Route = require("../../models/route.model");
 const DiscountRedemption = require("../../models/discountRedemption.model");
 
-const { reconcileReservedStock } = require("../orders.stock.service");
+const { reconcileReservedStock } = require("./orders.stock.service");
 const {
   ACTIVE_ORDER_FILTER,
   buildActiveOrderIdQuery,

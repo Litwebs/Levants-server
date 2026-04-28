@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { mongoUri, env } = require("./env");
+const logger = require("../utils/logger.util");
 
 async function ensureDiscountCodeIndex() {
   const collection = mongoose.connection?.db?.collection("discounts");
@@ -33,12 +34,10 @@ const connectDb = async () => {
     await ensureDiscountCodeIndex();
 
     if (env !== "test") {
-      // eslint-disable-next-line no-console
-      console.log(`MongoDB connected`);
+      logger.db("MongoDB connected");
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("MongoDB connection error", err);
+    logger.error("MongoDB connection error", err);
     process.exit(1);
   }
 };

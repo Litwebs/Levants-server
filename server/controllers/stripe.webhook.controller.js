@@ -1,5 +1,5 @@
 const stripe = require("../utils/stripe.util");
-const orderService = require("../services/orders.webhook.service");
+const orderService = require("../services/orders/orders.webhook.service");
 
 const HandleStripeWebhook = async (req, res) => {
   const sig = req.headers["stripe-signature"];

@@ -1,4 +1,3 @@
-// src/utils/password.util.js
 //
 // Wrapper around bcrypt for hashing + verifying passwords.
 

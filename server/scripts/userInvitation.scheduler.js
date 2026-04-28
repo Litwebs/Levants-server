@@ -1,6 +1,7 @@
 const cron = require("node-cron");
 const User = require("../models/user.model");
 const Session = require("../models/session.model");
+const logger = require("../utils/logger.util");
 
 async function cleanupExpiredInvitations() {
   const now = new Date();
@@ -32,11 +33,11 @@ function startInvitationCleanupCron() {
     try {
       await cleanupExpiredInvitations();
     } catch (err) {
-      console.error("Invitation cleanup cron error:", err);
+      logger.error("Invitation cleanup cron failed", err);
     }
   });
 
-  console.log("Invitation cleanup cron started");
+  logger.cron("Invitation cleanup");
 }
 
 module.exports = {

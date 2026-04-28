@@ -3,19 +3,7 @@ const User = require("../models/user.model");
 const Variant = require("../models/variant.model");
 const sendEmail = require("../Integration/Email.service");
 const { FRONTEND_URL } = require("../config/env");
-
-function normalizeBaseUrl(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "";
-
-  if (/^https?:\/\//i.test(value)) return value.replace(/\/$/, "");
-
-  if (process.env.NODE_ENV !== "production") {
-    return `http://${value.replace(/\/$/, "")}`;
-  }
-
-  return value.replace(/\/$/, "");
-}
+const { normalizeBaseUrl } = require("../utils/navigation.util");
 
 function buildDashboardUrl() {
   return normalizeBaseUrl(FRONTEND_URL);

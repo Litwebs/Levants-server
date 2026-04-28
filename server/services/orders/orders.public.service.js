@@ -1,13 +1,14 @@
 const mongoose = require("mongoose");
-const Order = require("../models/order.model");
-const ProductVariant = require("../models/variant.model");
-const stripe = require("../utils/stripe.util");
-const Customer = require("../models/customer.model");
-const { geocodeAddress } = require("../Integration/google.geocode");
-const { validateDiscountForOrder } = require("./discounts.public.service");
+const Order = require("../../models/order.model");
+const ProductVariant = require("../../models/variant.model");
+const stripe = require("../../utils/stripe.util");
+const Customer = require("../../models/customer.model");
+const { geocodeAddress } = require("../../Integration/google.geocode");
+const { validateDiscountForOrder } = require("../discounts.public.service");
 const {
   processInventoryAlertsForVariants,
-} = require("./inventory.notifications.service");
+} = require("../inventory.notifications.service");
+const { normalizeBaseUrl } = require("../../utils/navigation.util");
 
 function getReservationTtlMinutes() {
   const raw = process.env.ORDER_RESERVATION_TTL_MINUTES;
@@ -24,20 +25,6 @@ function getReservationTtlMinutes() {
   minutes = Math.min(Math.max(minutes, minMinutes), maxMinutes);
 
   return minutes;
-}
-
-function normalizeBaseUrl(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "";
-
-  if (/^https?:\/\//i.test(value)) return value.replace(/\/$/, "");
-
-  // In dev people often set FRONTEND_URL_DEV=localhost:3000
-  if (process.env.NODE_ENV !== "production") {
-    return `http://${value.replace(/\/$/, "")}`;
-  }
-
-  return value.replace(/\/$/, "");
 }
 
 function buildFrontendUrl(pathname) {

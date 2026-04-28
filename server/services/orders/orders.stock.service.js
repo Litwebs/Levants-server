@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
-const Order = require("../models/order.model");
-const ProductVariant = require("../models/variant.model");
+const Order = require("../../models/order.model");
+const ProductVariant = require("../../models/variant.model");
 
 function toMajorCurrencyAmount(amountMinor) {
   const normalized = Number(amountMinor);
