@@ -1,4 +1,5 @@
-export { OrdersProvider, useOrdersApi } from "./OrdersContext";
+export { OrdersProvider } from "./OrdersContext";
+export { useOrdersApi } from "./useOrdersApi";
 export type {
   AdminOrder,
   OrderCustomer,
