@@ -89,8 +89,8 @@ describe("PATCH /api/admin/delivery/batch/:batchId/dispatch (E2E)", () => {
     });
 
     // ETA examples (Europe/London is GMT on 9 Mar 2026):
-    // 09:35 => window 08:30 - 10:30
-    // 09:05 => window 08:00 - 10:00
+    // 09:35 => window 08:00 - 11:00
+    // 09:05 => window 07:30 - 10:30
     const eta1 = new Date(Date.UTC(2026, 2, 9, 9, 35, 0));
     const eta2 = new Date(Date.UTC(2026, 2, 9, 9, 5, 0));
 
@@ -142,16 +142,16 @@ describe("PATCH /api/admin/delivery/batch/:batchId/dispatch (E2E)", () => {
       expect(String(job1.subject)).toMatch(/dispatched/i);
       expect(job1.template).toBe("orderDispatched");
       expect(job1.templateParams.orderId).toBe(updated1.orderId);
-      expect(job1.templateParams.etaWindowStart).toBe("08:30");
-      expect(job1.templateParams.etaWindowEnd).toBe("10:30");
+      expect(job1.templateParams.etaWindowStart).toBe("08:00");
+      expect(job1.templateParams.etaWindowEnd).toBe("11:00");
     }
 
     {
       expect(String(job2.subject)).toMatch(/dispatched/i);
       expect(job2.template).toBe("orderDispatched");
       expect(job2.templateParams.orderId).toBe(updated2.orderId);
-      expect(job2.templateParams.etaWindowStart).toBe("08:00");
-      expect(job2.templateParams.etaWindowEnd).toBe("10:00");
+      expect(job2.templateParams.etaWindowStart).toBe("07:30");
+      expect(job2.templateParams.etaWindowEnd).toBe("10:30");
     }
 
     // Calling again should NOT resend.

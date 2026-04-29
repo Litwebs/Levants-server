@@ -1,12 +1,5 @@
 import React, { useState } from "react";
-import {
-  Lock,
-  Unlock,
-  Route,
-  Truck,
-  RefreshCw,
-  AlertTriangle,
-} from "lucide-react";
+import { Lock, Unlock, Route, RefreshCw, AlertTriangle } from "lucide-react";
 import type {
   DeliveryDriver,
   DeliveryRun,
@@ -28,16 +21,9 @@ interface RunActionsBarProps {
     driverConfigs: GenerateRouteDriverConfig[],
     manualAssignments: ManualOrderAssignment[],
   ) => Promise<boolean>;
-  onDispatch: () => Promise<boolean>;
 }
 
-type ConfirmAction =
-  | "lock"
-  | "unlock"
-  | "optimize"
-  | "reoptimize"
-  | "dispatch"
-  | null;
+type ConfirmAction = "lock" | "unlock" | "optimize" | "reoptimize" | null;
 
 type DriverRoutingForm = DeliveryDriver & {
   selected: boolean;
@@ -148,7 +134,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
   onLock,
   onUnlock,
   onOptimize,
-  onDispatch,
 }) => {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [drivers, setDrivers] = useState<DriverRoutingForm[]>([]);
@@ -240,9 +225,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
             })),
         );
         break;
-      case "dispatch":
-        success = await onDispatch();
-        break;
     }
     if (success) {
       setConfirmAction(null);
@@ -259,8 +241,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
         return "Optimize Routes?";
       case "reoptimize":
         return "Re-optimize Routes?";
-      case "dispatch":
-        return "Dispatch Delivery Run?";
       default:
         return "";
     }
@@ -276,8 +256,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
         return "Select drivers, then generate optimized routes based on current orders.";
       case "reoptimize":
         return "This will regenerate all routes. Existing van assignments will be changed.";
-      case "dispatch":
-        return "This will mark the run as dispatched. Drivers will receive their routes.";
       default:
         return "";
     }
@@ -287,7 +265,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
   const canUnlock = run.status === "locked" || run.status === "routed";
   const canOptimize = run.status === "locked" || run.status === "draft";
   const canReoptimize = run.status === "routed";
-  const canDispatch = run.status === "routed";
   const selectedDrivers = drivers.filter((driver) => driver.selected);
   const hasInvalidSelectedDriverConfig = selectedDrivers.some(
     (driver) =>
@@ -362,17 +339,6 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
         )}
 
         <div className={styles.spacer} />
-
-        {canDispatch && (
-          <Button
-            variant="primary"
-            leftIcon={<Truck size={16} />}
-            onClick={() => openConfirm("dispatch")}
-            disabled={!!actionLoading}
-          >
-            Dispatch
-          </Button>
-        )}
       </div>
 
       <Modal

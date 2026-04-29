@@ -5,13 +5,14 @@ import type {
   GenerateRouteDriverConfig,
   ManualOrderAssignment,
 } from "@/context/DeliveryRuns";
-import { getRun, lockRun, unlockRun, optimizeRun, dispatchRun } from "@/context/DeliveryRuns";
+import { getRun, lockRun, unlockRun, optimizeRun, dispatchRun, dispatchRoute } from "@/context/DeliveryRuns";
 
 interface UseDeliveryRunState {
   run: DeliveryRun | null;
   loading: boolean;
   error: string | null;
   actionLoading: 'lock' | 'unlock' | 'optimize' | 'dispatch' | null;
+  dispatchingRouteId: string | null;
 }
 
 export function useDeliveryRun(id: string) {
@@ -19,7 +20,8 @@ export function useDeliveryRun(id: string) {
     run: null,
     loading: true,
     error: null,
-    actionLoading: null
+    actionLoading: null,
+    dispatchingRouteId: null,
   });
 
   const fetchRun = useCallback(async () => {
@@ -112,12 +114,29 @@ export function useDeliveryRun(id: string) {
     }
   }, [id]);
 
+  const handleDispatchVan = useCallback(async (routeId: string) => {
+    setState(s => ({ ...s, actionLoading: 'dispatch', dispatchingRouteId: routeId }));
+    try {
+      const updated = await dispatchRoute(id, routeId);
+      if (updated) {
+        setState(s => ({ ...s, run: updated, actionLoading: null, dispatchingRouteId: null }));
+        return true;
+      }
+      setState(s => ({ ...s, actionLoading: null, dispatchingRouteId: null }));
+      return false;
+    } catch (err) {
+      setState(s => ({ ...s, actionLoading: null, dispatchingRouteId: null }));
+      throw err;
+    }
+  }, [id]);
+
   return {
     ...state,
     refetch: fetchRun,
     lock: handleLock,
     unlock: handleUnlock,
     optimize: handleOptimize,
-    dispatch: handleDispatch
+    dispatch: handleDispatch,
+    dispatchVan: handleDispatchVan,
   };
 }

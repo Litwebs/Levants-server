@@ -56,11 +56,13 @@ export const DeliveryRunDetailsPage: React.FC = () => {
     loading,
     error,
     actionLoading,
+    dispatchingRouteId,
     refetch,
     lock,
     unlock,
     optimize,
     dispatch,
+    dispatchVan,
   } = useDeliveryRun(id!);
 
   const [activeTab, setActiveTab] = useState<TabId>(
@@ -234,13 +236,6 @@ export const DeliveryRunDetailsPage: React.FC = () => {
                 "Failed to optimize routes",
               ).then(() => true)
             }
-            onDispatch={() =>
-              handleAction(
-                dispatch,
-                "Run dispatched!",
-                "Failed to dispatch run",
-              ).then(() => true)
-            }
           />
         </div>
       )}
@@ -389,9 +384,18 @@ export const DeliveryRunDetailsPage: React.FC = () => {
               {activeTab === "vans" && (
                 <VansGrid
                   vans={run.vans}
+                  runStatus={run.status}
                   onViewRoute={handleViewRoute}
-                  onViewManifest={handleViewManifest}
-                  onPrint={handlePrint}
+                  dispatchingRouteId={dispatchingRouteId}
+                  onDispatchVan={(vanId) => {
+                    const van = run.vans.find((v) => v.vanId === vanId);
+                    if (!van?.routeId) return;
+                    handleAction(
+                      () => dispatchVan(van.routeId!),
+                      `${van.name} dispatched!`,
+                      `Failed to dispatch ${van.name}`,
+                    );
+                  }}
                 />
               )}
 

@@ -26,6 +26,8 @@ const OrderDetailModal = ({
   const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
   const [isPaymentConfirmOpen, setIsPaymentConfirmOpen] = useState(false);
   const [nextPaidValue, setNextPaidValue] = useState<boolean | null>(null);
+  const [paymentMode, setPaymentMode] = useState<"full" | "custom">("full");
+  const [customPayAmount, setCustomPayAmount] = useState<string>("");
 
   const [isEditingItems, setIsEditingItems] = useState(false);
   const [isSavingItems, setIsSavingItems] = useState(false);
@@ -48,7 +50,8 @@ const OrderDetailModal = ({
   const isRefundRelated =
     isAlreadyRefunded || isRefundPending || isPartiallyRefunded;
 
-  const isPaid = selectedOrder?.paymentStatus === "paid";
+  const isPartiallyPaid = selectedOrder?.paymentStatus === "partially_paid";
+  const isPaid = selectedOrder?.paymentStatus === "paid" || isPartiallyPaid;
   const canTogglePaymentStatus =
     canUpdatePaymentPermission &&
     Boolean(selectedOrder?.id) &&
@@ -582,7 +585,12 @@ const OrderDetailModal = ({
               isLoading={isUpdatingPayment}
               onClick={async () => {
                 if (!canTogglePaymentStatus) return;
-                setNextPaidValue(!isPaid);
+                const markingPaid = !isPaid;
+                setNextPaidValue(markingPaid);
+                if (markingPaid) {
+                  setPaymentMode("full");
+                  setCustomPayAmount("");
+                }
                 setIsPaymentConfirmOpen(true);
               }}
             >
@@ -712,14 +720,103 @@ const OrderDetailModal = ({
           onClose={() => {
             if (!isUpdatingPayment) setIsPaymentConfirmOpen(false);
           }}
-          title="Confirm payment status"
+          title={nextPaidValue ? "Mark as paid" : "Mark as unpaid"}
           size="sm"
         >
-          <p>
-            {nextPaidValue
-              ? `Mark order ${selectedOrder?.orderNumber || ""} as paid?`
-              : `Mark order ${selectedOrder?.orderNumber || ""} as unpaid?`}
-          </p>
+          {nextPaidValue ? (
+            (() => {
+              const orderTotal =
+                typeof selectedOrder?.total === "number"
+                  ? selectedOrder.total
+                  : 0;
+              const parsedCustom = Number(customPayAmount);
+              const customIsValid =
+                customPayAmount.trim() !== "" &&
+                Number.isFinite(parsedCustom) &&
+                parsedCustom >= 0;
+              const effectiveAmount =
+                paymentMode === "full"
+                  ? orderTotal
+                  : customIsValid
+                    ? parsedCustom
+                    : null;
+              const isPartial =
+                effectiveAmount !== null &&
+                orderTotal > 0 &&
+                effectiveAmount < orderTotal;
+              const remaining =
+                effectiveAmount !== null
+                  ? Math.max(0, orderTotal - effectiveAmount)
+                  : null;
+
+              return (
+                <>
+                  <div className={styles.filterGroup}>
+                    <label className={styles.filterLabel}>
+                      Amount received
+                    </label>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "var(--space-2)",
+                        marginBottom: "var(--space-3)",
+                      }}
+                    >
+                      <Button
+                        size="sm"
+                        variant={paymentMode === "full" ? "primary" : "outline"}
+                        onClick={() => setPaymentMode("full")}
+                        disabled={isUpdatingPayment}
+                      >
+                        Full — £{orderTotal.toFixed(2)}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={
+                          paymentMode === "custom" ? "primary" : "outline"
+                        }
+                        onClick={() => setPaymentMode("custom")}
+                        disabled={isUpdatingPayment}
+                      >
+                        Custom amount
+                      </Button>
+                    </div>
+                    {paymentMode === "custom" && (
+                      <input
+                        className={styles.filterInput}
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step={0.01}
+                        placeholder={`e.g. ${(orderTotal / 2).toFixed(2)}`}
+                        value={customPayAmount}
+                        onChange={(e) => setCustomPayAmount(e.target.value)}
+                        disabled={isUpdatingPayment}
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                  {paymentMode === "custom" && customIsValid && (
+                    <p
+                      style={{
+                        fontSize: "var(--text-sm)",
+                        color: isPartial
+                          ? "var(--color-warning-600, #b45309)"
+                          : "var(--color-success-600, #16a34a)",
+                        marginTop: "var(--space-1)",
+                      }}
+                    >
+                      {isPartial
+                        ? `Partially paid — £${remaining!.toFixed(2)} outstanding`
+                        : "Paid in full"}
+                    </p>
+                  )}
+                </>
+              );
+            })()
+          ) : (
+            <p>Mark order {selectedOrder?.orderNumber || ""} as unpaid?</p>
+          )}
 
           <ModalFooter>
             <Button
@@ -731,22 +828,43 @@ const OrderDetailModal = ({
             </Button>
             <Button
               isLoading={isUpdatingPayment}
-              disabled={
-                isUpdatingPayment ||
-                !canTogglePaymentStatus ||
-                !selectedOrder?.id ||
-                typeof nextPaidValue !== "boolean"
-              }
+              disabled={(() => {
+                if (
+                  isUpdatingPayment ||
+                  !canTogglePaymentStatus ||
+                  !selectedOrder?.id ||
+                  typeof nextPaidValue !== "boolean"
+                )
+                  return true;
+                if (nextPaidValue && paymentMode === "custom") {
+                  const v = Number(customPayAmount);
+                  return (
+                    customPayAmount.trim() === "" ||
+                    !Number.isFinite(v) ||
+                    v < 0
+                  );
+                }
+                return false;
+              })()}
               onClick={async () => {
                 if (!selectedOrder?.id) return;
                 if (typeof nextPaidValue !== "boolean") return;
                 if (!canTogglePaymentStatus) return;
+
+                let amountPaid: number | undefined;
+                if (nextPaidValue) {
+                  if (paymentMode === "custom") {
+                    amountPaid = Number(customPayAmount);
+                  }
+                  // paymentMode === "full" → amountPaid undefined (server defaults to total)
+                }
 
                 setIsUpdatingPayment(true);
                 try {
                   await updateOrderPaymentStatus?.(
                     selectedOrder.id,
                     nextPaidValue,
+                    amountPaid,
                   );
                   setIsPaymentConfirmOpen(false);
                 } finally {

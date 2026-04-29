@@ -27,11 +27,11 @@ const buildDispatchEmailJob = ({ order, batch, eta }) => {
 
   if (eta instanceof Date && Number.isFinite(eta.getTime())) {
     const start = roundToNearestMinutes(
-      new Date(eta.getTime() - 60 * 60 * 1000),
+      new Date(eta.getTime() - 90 * 60 * 1000),
       30,
     );
     const end = roundToNearestMinutes(
-      new Date(eta.getTime() + 60 * 60 * 1000),
+      new Date(eta.getTime() + 90 * 60 * 1000),
       30,
     );
 

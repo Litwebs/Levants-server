@@ -155,6 +155,7 @@ const orderSchema = new mongoose.Schema(
         "pending",
         "unpaid",
         "paid",
+        "partially_paid",
         "failed",
         "cancelled",
         "refund_pending",
@@ -200,6 +201,12 @@ const orderSchema = new mongoose.Schema(
 
     paidAt: {
       type: Date,
+    },
+
+    /** Amount collected for imported orders (supports partial payment) */
+    amountPaid: {
+      type: Number,
+      min: 0,
     },
 
     refund: {

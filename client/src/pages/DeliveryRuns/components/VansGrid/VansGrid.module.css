@@ -46,6 +46,15 @@
   color: var(--color-gray-900);
 }
 
+.startTime {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  margin-bottom: var(--space-3);
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

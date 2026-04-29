@@ -3,6 +3,7 @@
 const mongoose = require("mongoose");
 const DeliveryBatch = require("../../models/deliveryBatch.model");
 const Order = require("../../models/order.model");
+const Route = require("../../models/route.model");
 const Stop = require("../../models/stop.model");
 const { sendBatchEmails } = require("../../Integration/Email.service");
 const {
@@ -258,4 +259,247 @@ async function dispatchBatch({ batchId } = {}) {
   };
 }
 
-module.exports = { dispatchBatch };
+/**
+ * Dispatch a single route (driver). Marks only the orders on that route as
+ * dispatched and sends dispatch emails for those orders only.
+ * The parent batch is moved to "dispatched" status once ALL its routes have
+ * been individually dispatched (or immediately if this is the only route).
+ */
+async function dispatchRoute({ batchId, routeId } = {}) {
+  if (!batchId) {
+    return { success: false, statusCode: 400, message: "batchId is required" };
+  }
+  if (!routeId) {
+    return { success: false, statusCode: 400, message: "routeId is required" };
+  }
+
+  const batch = await DeliveryBatch.findById(batchId);
+  if (!batch) {
+    return { success: false, statusCode: 404, message: "Batch not found" };
+  }
+
+  const route = await Route.findOne({ _id: routeId, batch: batchId });
+  if (!route) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "Route not found in this batch",
+    };
+  }
+
+  // Collect orders assigned to this route via stops
+  const stops = await Stop.find({ route: routeId })
+    .select("order estimatedArrival")
+    .lean();
+
+  const etaByOrderId = new Map();
+  const routeOrderIds = [];
+
+  for (const stop of stops) {
+    const oid = String(stop?.order || "");
+    if (!oid || !mongoose.Types.ObjectId.isValid(oid)) continue;
+
+    routeOrderIds.push(new mongoose.Types.ObjectId(oid));
+
+    const eta = stop?.estimatedArrival ? new Date(stop.estimatedArrival) : null;
+    if (eta instanceof Date && Number.isFinite(eta.getTime())) {
+      if (!etaByOrderId.has(oid)) etaByOrderId.set(oid, eta);
+    }
+  }
+
+  let ordersUpdatedCount = 0;
+
+  if (routeOrderIds.length > 0) {
+    const updateRes = await Order.updateMany(
+      {
+        _id: { $in: routeOrderIds },
+        deliveryStatus: { $nin: ["delivered", "returned"] },
+      },
+      { $set: { deliveryStatus: "dispatched" } },
+    );
+
+    ordersUpdatedCount =
+      typeof updateRes?.modifiedCount === "number"
+        ? updateRes.modifiedCount
+        : typeof updateRes?.nModified === "number"
+          ? updateRes.nModified
+          : 0;
+  }
+
+  // Mark the route itself as in_progress
+  route.status = "in_progress";
+  await route.save();
+
+  // If all routes in the batch are now in_progress or completed, mark the batch dispatched
+  const allRouteIds = (Array.isArray(batch.routes) ? batch.routes : []).map(
+    (id) => String(id),
+  );
+  const pendingRoutes = await Route.countDocuments({
+    _id: { $in: allRouteIds },
+    status: "planned",
+  });
+  if (pendingRoutes === 0 && !batch.dispatchedAt) {
+    batch.status = "dispatched";
+    batch.dispatchedAt = new Date();
+    await batch.save();
+  }
+
+  // Send dispatch emails for this route's orders
+  let emailsSent = 0;
+  let emailsSkipped = 0;
+  let emailsFailed = 0;
+  let emailsAttempted = 0;
+
+  const sentDetails = [];
+  const skippedDetails = [];
+  const failedDetails = [];
+
+  if (routeOrderIds.length > 0) {
+    const orders = await Order.find({ _id: { $in: routeOrderIds } })
+      .select("_id orderId customer metadata deliveryDate deliveryStatus")
+      .populate("customer", "firstName email")
+      .lean();
+
+    const claimedIds = await claimOrdersForDispatchEmail(
+      orders.map((o) => o._id),
+    );
+
+    const jobs = [];
+
+    for (const order of orders) {
+      try {
+        if (["delivered", "returned"].includes(String(order?.deliveryStatus))) {
+          emailsSkipped += 1;
+          skippedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            reason: "already_delivered_or_returned",
+          });
+          continue;
+        }
+
+        if (order?.metadata?.dispatchedEmailSentAt) {
+          emailsSkipped += 1;
+          skippedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            reason: "already_sent",
+          });
+          continue;
+        }
+
+        if (!claimedIds.has(String(order._id))) {
+          emailsSkipped += 1;
+          skippedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            reason: "already_claimed_or_sent",
+          });
+          continue;
+        }
+
+        const built = buildDispatchEmailJob({
+          order,
+          batch,
+          eta: etaByOrderId.get(String(order._id)),
+        });
+
+        if (!built.ok) {
+          emailsSkipped += 1;
+          await Order.updateOne(
+            { _id: order._id },
+            { $unset: { "metadata.dispatchEmailClaimedAt": "" } },
+          );
+          skippedDetails.push({
+            orderId: order.orderId,
+            orderDbId: String(order._id),
+            reason: built.reason || "not_eligible",
+          });
+          continue;
+        }
+
+        jobs.push(built.job);
+      } catch (err) {
+        emailsFailed += 1;
+        await Order.updateOne(
+          { _id: order._id },
+          {
+            $set: {
+              "metadata.dispatchedEmailLastError": {
+                at: new Date(),
+                status: null,
+                message: "Failed to prepare dispatch email",
+              },
+            },
+            $unset: { "metadata.dispatchEmailClaimedAt": "" },
+          },
+        );
+        failedDetails.push({
+          orderId: order.orderId,
+          orderDbId: String(order._id),
+          to: String(order?.customer?.email || ""),
+          status: null,
+          message: "Failed to prepare dispatch email",
+        });
+      }
+    }
+
+    emailsAttempted = jobs.length;
+
+    if (jobs.length > 0) {
+      const batchRes = await sendBatchEmails(jobs, {
+        chunkSize: 100,
+        maxAttempts: 3,
+        baseDelayMs: 750,
+      });
+
+      const results = Array.isArray(batchRes?.results) ? batchRes.results : [];
+      const persisted = await persistDispatchEmailResults(results);
+
+      emailsSent += persisted.sent;
+      emailsFailed += persisted.failed;
+
+      for (const result of results) {
+        if (result.success) {
+          sentDetails.push({
+            orderId: result.orderId,
+            orderDbId: result.orderDbId,
+            to: result.to,
+            providerId: result.providerId || null,
+          });
+        } else {
+          failedDetails.push({
+            orderId: result.orderId,
+            orderDbId: result.orderDbId,
+            to: result.to,
+            status: result?.error?.status ?? null,
+            message: result?.error?.message || "Email send failed",
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    success: true,
+    data: {
+      batchId: batch._id,
+      routeId: route._id,
+      batchStatus: batch.status,
+      ordersUpdatedCount,
+      emails: {
+        sent: emailsSent,
+        skipped: emailsSkipped,
+        failed: emailsFailed,
+        attempted: emailsAttempted,
+        details: {
+          sent: sentDetails.slice(0, 50),
+          skipped: skippedDetails.slice(0, 50),
+          failed: failedDetails.slice(0, 50),
+        },
+      },
+    },
+  };
+}
+
+module.exports = { dispatchBatch, dispatchRoute };

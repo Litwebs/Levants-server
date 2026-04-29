@@ -9,13 +9,52 @@ const roundToNearestMinutes = (date, minutes) => {
   return new Date(Math.round(date.getTime() / stepMs) * stepMs);
 };
 
-const formatUkTime = (date) => {
-  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
-  return date.toLocaleTimeString("en-GB", {
+/**
+ * Returns the offset (ms) between the local wall-clock time in `timeZone` and
+ * UTC for the given `date`.  Positive during BST (UTC+1 → +3 600 000 ms).
+ * Uses Intl.DateTimeFormat.formatToParts so it correctly tracks DST transitions.
+ */
+function getTzOffsetMs(date, timeZone) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: LONDON_TZ,
+    second: "2-digit",
+    hourCycle: "h23",
   });
+  const parts = {};
+  for (const p of dtf.formatToParts(date)) {
+    if (p.type !== "literal") parts[p.type] = p.value;
+  }
+  let hour = Number(parts.hour);
+  if (hour === 24) hour = 0;
+  const asUTC = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    hour,
+    Number(parts.minute),
+    Number(parts.second),
+  );
+  return asUTC - date.getTime();
+}
+
+/**
+ * Formats a UTC Date as "HH:MM" in Europe/London local time, correctly
+ * adapting to GMT/BST transitions without relying on toLocaleTimeString
+ * (which can silently ignore the timeZone option in Node.js builds that
+ * lack full ICU data).
+ */
+const formatUkTime = (date) => {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return "";
+  const offsetMs = getTzOffsetMs(date, LONDON_TZ);
+  const local = new Date(date.getTime() + offsetMs);
+  const h = String(local.getUTCHours()).padStart(2, "0");
+  const m = String(local.getUTCMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
 };
 
 const formatUkDate = (date) => {

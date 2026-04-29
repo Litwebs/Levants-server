@@ -1,15 +1,16 @@
-import React from "react";
-import { Truck, Map, FileText, Printer } from "lucide-react";
-import type { VanRoute, VanId } from "@/context/DeliveryRuns";
+import React, { useState } from "react";
+import { Truck, Map, Send, Clock } from "lucide-react";
+import type { VanRoute, VanId, RunStatus } from "@/context/DeliveryRuns";
 import { getVanStyleKey } from "@/context/DeliveryRuns";
-import { Button } from "@/components/common";
+import { Button, Modal, ModalFooter } from "@/components/common";
 import styles from "./VansGrid.module.css";
 
 interface VansGridProps {
   vans: VanRoute[];
+  runStatus: RunStatus;
   onViewRoute: (vanId: VanId) => void;
-  onViewManifest: (vanId: VanId) => void;
-  onPrint: (vanId: VanId) => void;
+  onDispatchVan: (vanId: VanId) => void;
+  dispatchingRouteId?: string | null;
 }
 
 const KM_TO_MI = 0.621371;
@@ -29,12 +30,37 @@ const formatDuration = (minutes: number) => {
   return mins > 0 ? `${hours}h ${mins.toFixed(2)}m` : `${hours}h`;
 };
 
+const formatStartTime = (iso: string | undefined) => {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Europe/London",
+    });
+  } catch {
+    return null;
+  }
+};
+
 export const VansGrid: React.FC<VansGridProps> = ({
   vans,
+  runStatus,
   onViewRoute,
-  onViewManifest,
-  onPrint,
+  onDispatchVan,
+  dispatchingRouteId,
 }) => {
+  const canDispatch = runStatus === "routed";
+  const [pendingDispatchVan, setPendingDispatchVan] = useState<VanRoute | null>(
+    null,
+  );
+
+  const handleConfirmDispatch = () => {
+    if (!pendingDispatchVan) return;
+    onDispatchVan(pendingDispatchVan.vanId);
+    setPendingDispatchVan(null);
+  };
+
   if (vans.length === 0) {
     return (
       <div className={styles.grid}>
@@ -50,66 +76,108 @@ export const VansGrid: React.FC<VansGridProps> = ({
   }
 
   return (
-    <div className={styles.grid}>
-      {vans.map((van) => (
-        <div key={van.vanId} className={styles.card}>
-          <div className={styles.cardHeader}>
-            <div
-              className={`${styles.vanIcon} ${styles[getVanStyleKey(van.vanId)]}`}
-            >
-              <Truck size={20} />
-            </div>
-            <span className={styles.vanName}>{van.name}</span>
-          </div>
+    <>
+      <div className={styles.grid}>
+        {vans.map((van) => {
+          const isDispatching =
+            !!dispatchingRouteId && dispatchingRouteId === van.routeId;
+          const anyDispatching = !!dispatchingRouteId;
 
-          <div className={styles.stats}>
-            <div className={styles.stat}>
-              <div className={styles.statValue}>{van.stats.stops}</div>
-              <div className={styles.statLabel}>Stops</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={styles.statValue}>
-                {formatMilesFromKm(van.stats.distanceKm)} mi
+          return (
+            <div key={van.vanId} className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div
+                  className={`${styles.vanIcon} ${styles[getVanStyleKey(van.vanId)]}`}
+                >
+                  <Truck size={20} />
+                </div>
+                <span className={styles.vanName}>{van.name}</span>
               </div>
-              <div className={styles.statLabel}>Distance</div>
-            </div>
-            <div className={styles.stat}>
-              <div className={styles.statValue}>
-                {formatDuration(van.stats.durationMin)}
-              </div>
-              <div className={styles.statLabel}>Duration</div>
-            </div>
-          </div>
 
-          <div className={styles.actions}>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onViewRoute(van.vanId)}
-            >
-              <Map size={16} />
-              View Route
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onViewManifest(van.vanId)}
-            >
-              <FileText size={16} />
-              View Manifest
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onPrint(van.vanId)}
-            >
-              <Printer size={16} />
-              Print
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
+              {formatStartTime(van.startTime) && (
+                <div className={styles.startTime}>
+                  <Clock size={13} />
+                  <span>Starts {formatStartTime(van.startTime)}</span>
+                </div>
+              )}
+
+              <div className={styles.stats}>
+                <div className={styles.stat}>
+                  <div className={styles.statValue}>{van.stats.stops}</div>
+                  <div className={styles.statLabel}>Stops</div>
+                </div>
+                <div className={styles.stat}>
+                  <div className={styles.statValue}>
+                    {formatMilesFromKm(van.stats.distanceKm)} mi
+                  </div>
+                  <div className={styles.statLabel}>Distance</div>
+                </div>
+                <div className={styles.stat}>
+                  <div className={styles.statValue}>
+                    {formatDuration(van.stats.durationMin)}
+                  </div>
+                  <div className={styles.statLabel}>Duration</div>
+                </div>
+              </div>
+
+              <div className={styles.actions}>
+                {canDispatch && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setPendingDispatchVan(van)}
+                    disabled={anyDispatching}
+                    isLoading={isDispatching}
+                    leftIcon={<Send size={16} />}
+                  >
+                    {isDispatching ? "Dispatching..." : "Dispatch"}
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onViewRoute(van.vanId)}
+                  leftIcon={<Map size={16} />}
+                >
+                  View Route
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <Modal
+        isOpen={!!pendingDispatchVan}
+        onClose={() => setPendingDispatchVan(null)}
+        title={`Dispatch ${pendingDispatchVan?.name ?? ""}?`}
+        size="sm"
+      >
+        <p
+          style={{
+            fontSize: "var(--text-sm)",
+            color: "var(--color-gray-600)",
+            margin: 0,
+          }}
+        >
+          This will mark <strong>{pendingDispatchVan?.name}</strong> as
+          dispatched and send dispatch emails to all customers on this route.
+        </p>
+        <ModalFooter>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setPendingDispatchVan(null)}
+          >
+            Cancel
+          </Button>
+          <Button variant="danger" size="sm" onClick={handleConfirmDispatch}>
+            <Send size={14} />
+            Confirm Dispatch
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </>
   );
 };
 

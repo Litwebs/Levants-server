@@ -7,6 +7,7 @@ const {
   lockBatch: lockBatchService,
   unlockBatch: unlockBatchService,
   dispatchBatch: dispatchBatchService,
+  dispatchRoute: dispatchRouteService,
   generateRoutes: generateRoutesService,
   getBatch: getBatchService,
   getRoute: getRouteService,
@@ -238,6 +239,21 @@ async function dispatchBatch(req, res) {
   }
   return res.status(200).json(result);
 }
+
+async function dispatchRoute(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
+  const { batchId, routeId } = req.params;
+  const result = await dispatchRouteService({ batchId, routeId });
+  if (!result.success) {
+    return res.status(result.statusCode || 400).json(result);
+  }
+  return res.status(200).json(result);
+}
 /**
  * Generate routes
  */
@@ -357,6 +373,7 @@ module.exports = {
   lockBatch,
   unlockBatch,
   dispatchBatch,
+  dispatchRoute,
   getOrdersStockRequirements,
   generateRoutes,
   getBatch,

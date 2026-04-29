@@ -79,6 +79,7 @@ type OrdersContextType = {
   updateOrderPaymentStatus: (
     orderId: string,
     paid: boolean,
+    amountPaid?: number,
   ) => Promise<AdminOrder>;
 
   updateOrderItems: (
@@ -258,11 +259,12 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const updateOrderPaymentStatus = useCallback(
-    async (orderId: string, paid: boolean) => {
+    async (orderId: string, paid: boolean, amountPaid?: number) => {
       dispatch({ type: ORDERS_REQUEST });
       try {
         const res = await api.patch(`/admin/orders/${orderId}/payment`, {
           paid,
+          ...(amountPaid !== undefined ? { amountPaid } : {}),
         });
 
         const order = unwrapData<AdminOrder>(res.data);

@@ -19,7 +19,12 @@ async function GetOrderById({ orderId }) {
   return { success: true, data: order };
 }
 
-async function UpdateOrderPaymentStatus({ orderId, paid, actorUserId } = {}) {
+async function UpdateOrderPaymentStatus({
+  orderId,
+  paid,
+  amountPaid,
+  actorUserId,
+} = {}) {
   if (!orderId) {
     return { success: false, statusCode: 400, message: "orderId is required" };
   }
@@ -61,11 +66,33 @@ async function UpdateOrderPaymentStatus({ orderId, paid, actorUserId } = {}) {
   const now = new Date();
 
   if (normalizedPaid) {
-    order.status = "paid";
+    const orderTotal = Number(order.total) || 0;
+    const parsedAmount =
+      amountPaid !== undefined && amountPaid !== null
+        ? Number(amountPaid)
+        : null;
+
+    if (parsedAmount !== null && !Number.isFinite(parsedAmount)) {
+      return { success: false, statusCode: 400, message: "Invalid amountPaid" };
+    }
+    if (parsedAmount !== null && parsedAmount < 0) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "amountPaid cannot be negative",
+      };
+    }
+
+    const isPartial =
+      parsedAmount !== null && orderTotal > 0 && parsedAmount < orderTotal;
+
+    order.status = isPartial ? "partially_paid" : "paid";
+    order.amountPaid = parsedAmount !== null ? parsedAmount : orderTotal;
     order.paidAt = order.paidAt || now;
   } else {
     order.status = "unpaid";
     order.paidAt = undefined;
+    order.amountPaid = undefined;
   }
 
   if (!order.metadata || typeof order.metadata !== "object")

@@ -88,6 +88,7 @@ const UpdateOrderPaymentStatus = async (req, res) => {
   const result = await service.UpdateOrderPaymentStatus({
     orderId: req.params.orderId,
     paid: req.body.paid,
+    amountPaid: req.body.amountPaid,
     actorUserId: req.user?._id || req.user?.id,
   });
 
