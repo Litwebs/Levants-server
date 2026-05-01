@@ -35,6 +35,7 @@ export const getPaymentBadge = (status: PaymentStatus) => {
     pending: { variant: "error", label: "Unpaid" },
     unpaid: { variant: "error", label: "Unpaid" },
     paid: { variant: "success", label: "Paid" },
+    partially_paid: { variant: "warning", label: "Partially Paid" },
     failed: { variant: "error", label: "Failed" },
     cancelled: { variant: "error", label: "Cancelled" },
     refund_pending: { variant: "warning", label: "Refund Pending" },

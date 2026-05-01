@@ -76,7 +76,11 @@ export interface RouteStop {
 
 export interface VanRoute {
   vanId: VanId;
+  /** Backend DB _id for this route — used for per-driver dispatch */
+  routeId?: string;
   name: string;
+  /** ISO string of the first stop's estimated arrival — route start time */
+  startTime?: string;
   driverId?: string;
   driverName?: string;
   driverEmail?: string;

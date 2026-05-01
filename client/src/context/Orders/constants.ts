@@ -64,6 +64,7 @@ export type OrderRefundRecord = {
 export type OrderStatus =
   | "pending"
   | "paid"
+  | "partially_paid"
   | "failed"
   | "cancelled"
   | "refund_pending"
@@ -97,6 +98,9 @@ export type AdminOrder = {
   reservationExpiresAt?: string;
   paidAt?: string;
   expiresAt?: string;
+
+  /** Amount collected — set for partially_paid imported orders */
+  amountPaid?: number;
 
   stripeCheckoutSessionId?: string;
   stripePaymentIntentId?: string;

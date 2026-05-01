@@ -435,6 +435,8 @@ export const MapView: React.FC<MapViewProps> = ({
   const [paymentConfirmNextPaid, setPaymentConfirmNextPaid] = useState<
     boolean | null
   >(null);
+  const [paymentMode, setPaymentMode] = useState<"full" | "custom">("full");
+  const [customPayAmount, setCustomPayAmount] = useState<string>("");
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [mapSizeNonce, setMapSizeNonce] = useState(0);
 
@@ -548,6 +550,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const handleTogglePaymentForStop = async (
     stop: VanRoute["stops"][0],
     nextPaidOverride?: boolean,
+    amountPaid?: number,
   ) => {
     if (!canTogglePaymentForStop(stop)) return;
     if (paymentUpdateStopId) return;
@@ -571,14 +574,28 @@ export const MapView: React.FC<MapViewProps> = ({
         return;
       }
 
-      await updateOrderPaymentStatus(orderDbId, nextPaid);
+      await updateOrderPaymentStatus(orderDbId, nextPaid, amountPaid);
+      const stopTotal = Number((stop as any)?.orderTotal) || 0;
+      const isPartial =
+        nextPaid &&
+        amountPaid !== undefined &&
+        stopTotal > 0 &&
+        amountPaid < stopTotal;
       setPaymentStatusOverrides((prev) => ({
         ...prev,
-        [stop.stopId]: nextPaid ? "paid" : "unpaid",
+        [stop.stopId]: isPartial
+          ? "partially_paid"
+          : nextPaid
+            ? "paid"
+            : "unpaid",
       }));
       showToast({
         type: "success",
-        title: nextPaid ? "Marked as paid" : "Marked as unpaid",
+        title: isPartial
+          ? "Marked as partially paid"
+          : nextPaid
+            ? "Marked as paid"
+            : "Marked as unpaid",
       });
     } catch {
       showToast({ type: "error", title: "Failed to update payment status" });
@@ -596,6 +613,8 @@ export const MapView: React.FC<MapViewProps> = ({
     ).toLowerCase();
     const nextPaid = current !== "paid";
 
+    setPaymentMode("full");
+    setCustomPayAmount("");
     setPaymentConfirmStop(stop);
     setPaymentConfirmNextPaid(nextPaid);
   };
@@ -1070,14 +1089,122 @@ export const MapView: React.FC<MapViewProps> = ({
             setPaymentConfirmNextPaid(null);
           }
         }}
-        title="Confirm payment status"
+        title={paymentConfirmNextPaid ? "Mark as paid" : "Mark as unpaid"}
         size="sm"
       >
-        <p>
-          {paymentConfirmNextPaid
-            ? `Mark order ${(paymentConfirmStop as any)?.orderId || ""} as paid?`
-            : `Mark order ${(paymentConfirmStop as any)?.orderId || ""} as unpaid?`}
-        </p>
+        {paymentConfirmNextPaid ? (
+          (() => {
+            const stopTotal =
+              Number((paymentConfirmStop as any)?.orderTotal) || 0;
+            const parsedCustom = Number(customPayAmount);
+            const customIsValid =
+              customPayAmount.trim() !== "" &&
+              Number.isFinite(parsedCustom) &&
+              parsedCustom >= 0;
+            const effectiveAmount =
+              paymentMode === "full"
+                ? stopTotal
+                : customIsValid
+                  ? parsedCustom
+                  : null;
+            const isPartial =
+              effectiveAmount !== null &&
+              stopTotal > 0 &&
+              effectiveAmount < stopTotal;
+            const remaining =
+              effectiveAmount !== null
+                ? Math.max(0, stopTotal - effectiveAmount)
+                : null;
+
+            return (
+              <>
+                <div style={{ marginBottom: "var(--space-3)" }}>
+                  <div
+                    style={{
+                      fontSize: "var(--text-sm)",
+                      fontWeight: "var(--font-medium)",
+                      color: "var(--color-gray-700)",
+                      marginBottom: "var(--space-2)",
+                    }}
+                  >
+                    Amount received
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "var(--space-2)",
+                      marginBottom: "var(--space-3)",
+                    }}
+                  >
+                    <Button
+                      size="sm"
+                      variant={paymentMode === "full" ? "primary" : "outline"}
+                      onClick={() => setPaymentMode("full")}
+                      disabled={Boolean(paymentUpdateStopId)}
+                    >
+                      {stopTotal > 0
+                        ? `Full — £${stopTotal.toFixed(2)}`
+                        : "Full amount"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={paymentMode === "custom" ? "primary" : "outline"}
+                      onClick={() => setPaymentMode("custom")}
+                      disabled={Boolean(paymentUpdateStopId)}
+                    >
+                      Custom amount
+                    </Button>
+                  </div>
+                  {paymentMode === "custom" && (
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      step={0.01}
+                      placeholder={
+                        stopTotal > 0
+                          ? `e.g. ${(stopTotal / 2).toFixed(2)}`
+                          : "Enter amount"
+                      }
+                      value={customPayAmount}
+                      onChange={(e) => setCustomPayAmount(e.target.value)}
+                      disabled={Boolean(paymentUpdateStopId)}
+                      autoFocus
+                      style={{
+                        width: "100%",
+                        padding: "var(--space-2) var(--space-3)",
+                        border: "1px solid var(--color-gray-300)",
+                        borderRadius: "var(--radius-md)",
+                        fontSize: "var(--text-sm)",
+                        background: "var(--color-white)",
+                        color: "var(--color-gray-900)",
+                      }}
+                    />
+                  )}
+                  {paymentMode === "custom" && customIsValid && (
+                    <p
+                      style={{
+                        fontSize: "var(--text-sm)",
+                        marginTop: "var(--space-1)",
+                        color: isPartial
+                          ? "var(--color-warning-600, #b45309)"
+                          : "var(--color-success-600, #16a34a)",
+                      }}
+                    >
+                      {isPartial
+                        ? `Partially paid — £${remaining!.toFixed(2)} outstanding`
+                        : "Paid in full"}
+                    </p>
+                  )}
+                </div>
+              </>
+            );
+          })()
+        ) : (
+          <p>
+            Mark order {(paymentConfirmStop as any)?.orderId || ""} as unpaid?
+          </p>
+        )}
 
         <ModalFooter>
           <Button
@@ -1091,17 +1218,33 @@ export const MapView: React.FC<MapViewProps> = ({
             Cancel
           </Button>
           <Button
-            disabled={
-              Boolean(paymentUpdateStopId) ||
-              !paymentConfirmStop ||
-              typeof paymentConfirmNextPaid !== "boolean"
-            }
+            disabled={(() => {
+              if (
+                Boolean(paymentUpdateStopId) ||
+                !paymentConfirmStop ||
+                typeof paymentConfirmNextPaid !== "boolean"
+              )
+                return true;
+              if (paymentConfirmNextPaid && paymentMode === "custom") {
+                const v = Number(customPayAmount);
+                return (
+                  customPayAmount.trim() === "" || !Number.isFinite(v) || v < 0
+                );
+              }
+              return false;
+            })()}
+            isLoading={Boolean(paymentUpdateStopId)}
             onClick={async () => {
               if (!paymentConfirmStop) return;
               if (typeof paymentConfirmNextPaid !== "boolean") return;
+              let amountPaid: number | undefined;
+              if (paymentConfirmNextPaid && paymentMode === "custom") {
+                amountPaid = Number(customPayAmount);
+              }
               await handleTogglePaymentForStop(
                 paymentConfirmStop,
                 paymentConfirmNextPaid,
+                amountPaid,
               );
               setPaymentConfirmStop(null);
               setPaymentConfirmNextPaid(null);

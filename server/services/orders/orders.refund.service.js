@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
-const Order = require("../models/order.model");
-const ProductVariant = require("../models/variant.model");
-const stripe = require("../utils/stripe.util");
+const Order = require("../../models/order.model");
+const ProductVariant = require("../../models/variant.model");
+const stripe = require("../../utils/stripe.util");
 
 const ZERO_DECIMAL_CURRENCIES = new Set([
   "BIF",

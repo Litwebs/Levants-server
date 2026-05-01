@@ -1,12 +1,12 @@
 const mongoose = require("mongoose");
-const Order = require("../models/order.model");
-const ProductVariant = require("../models/variant.model");
+const Order = require("../../models/order.model");
+const ProductVariant = require("../../models/variant.model");
 const { reconcileReservedStock } = require("./orders.stock.service");
 
 let _stripe;
 function getStripe() {
   if (_stripe) return _stripe;
-  _stripe = require("../utils/stripe.util");
+  _stripe = require("../../utils/stripe.util");
   return _stripe;
 }
 

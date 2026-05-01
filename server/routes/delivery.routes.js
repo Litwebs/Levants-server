@@ -11,6 +11,7 @@ const {
   lockBatch,
   unlockBatch,
   dispatchBatch,
+  dispatchRoute,
   getOrdersStockRequirements,
   generateRoutes,
   getBatch,
@@ -112,6 +113,16 @@ router.patch(
   requireAuth,
   requirePermission("delivery.routes.update"),
   dispatchBatch,
+);
+
+/**
+ * PATCH /api/admin/delivery/batch/:batchId/route/:routeId/dispatch
+ */
+router.patch(
+  "/batch/:batchId/route/:routeId/dispatch",
+  requireAuth,
+  requirePermission("delivery.routes.update"),
+  dispatchRoute,
 );
 
 /**

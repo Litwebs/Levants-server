@@ -3,8 +3,8 @@ const {
   releaseReservedStock,
 } = require("./orders.stock.service");
 
-const Order = require("../models/order.model");
-const { recordRedemption } = require("./discounts.public.service");
+const Order = require("../../models/order.model");
+const { recordRedemption } = require("../discounts.public.service");
 const {
   sendNewOrderAlertEmailToUsers,
   sendOrderConfirmationEmailToCustomer,

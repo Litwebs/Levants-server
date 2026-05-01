@@ -37,6 +37,7 @@ export type Order = {
   deliveryStatus:string
   discount: number;
   total: number;
+  amountPaid?: number;
   // fulfillmentStatus: FulfillmentStatus;
   paymentStatus: FulfillmentStatus;
   isManualImport?: boolean;
@@ -176,6 +177,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
           ? Math.max(0, (order as any).totalBeforeDiscount - order.total)
           : 0,
     total: order.total,
+    amountPaid: typeof (order as any).amountPaid === "number" ? (order as any).amountPaid : undefined,
 
     deliveryStatus: order.deliveryStatus,
     paymentStatus: order.status,
@@ -469,13 +471,13 @@ const refresh = useCallback(
     }
   };
 
-  const updateOrderPaymentStatus = async (orderId: string, paid: boolean) => {
+  const updateOrderPaymentStatus = async (orderId: string, paid: boolean, amountPaid?: number) => {
     try {
-      const adminOrder = await updateOrderPaymentStatusApi(orderId, paid);
+      const adminOrder = await updateOrderPaymentStatusApi(orderId, paid, amountPaid);
       const uiOrder = mapAdminOrderToUi(adminOrder);
       setSelectedOrder(uiOrder);
       showToast({
-        title: paid ? "Marked as paid" : "Marked as unpaid",
+        title: paid ? (amountPaid !== undefined && amountPaid < (uiOrder.total ?? 0) ? "Marked as partially paid" : "Marked as paid") : "Marked as unpaid",
         type: "success",
       });
       return uiOrder;

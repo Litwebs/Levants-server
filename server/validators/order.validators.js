@@ -51,6 +51,7 @@ const updateOrderStatusSchema = Joi.object({
 
 const updateOrderPaymentSchema = Joi.object({
   paid: Joi.boolean().required(),
+  amountPaid: Joi.number().min(0).optional(),
 }).unknown(false);
 
 const bulkUpdateDeliveryStatusSchema = Joi.object({

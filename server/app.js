@@ -6,6 +6,7 @@ const cookieParser = require("cookie-parser");
 
 const { allowedOrigins, env } = require("./config/env");
 const { sendOk } = require("./utils/response.util");
+const logger = require("./utils/logger.util");
 
 // Middleware
 const errorMiddleware = require("./middleware/error.middleware");
@@ -117,7 +118,7 @@ app.use(
     startOrderExpirationCron();
     startInvitationCleanupCron();
   } catch (err) {
-    console.error("❌ Startup failed", err);
+    logger.error("Startup failed", err);
     process.exit(1);
   }
 })();

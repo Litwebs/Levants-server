@@ -1,4 +1,3 @@
-// src/utils/base64ToTempFile.util.js
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");

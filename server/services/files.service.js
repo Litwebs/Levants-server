@@ -1,4 +1,3 @@
-// src/services/files.service.js
 const fs = require("fs/promises");
 const File = require("../models/file.model");
 const cloudinary = require("../config/cloudinary.js");

@@ -1,18 +1,7 @@
-// src/services/access.service.js
-
 const Role = require("../models/role.model");
 const User = require("../models/user.model");
 const { PERMISSIONS } = require("../constants/Auth.constants");
-
-const DRIVER_NOTIFICATION_DEFAULTS = Object.freeze({
-  newOrders: false,
-  orderUpdates: false,
-  lowStockAlerts: false,
-  outOfStock: false,
-  deliveryUpdates: false,
-  customerMessages: false,
-  paymentReceived: false,
-});
+const { DRIVER_NOTIFICATION_DEFAULTS } = require("./access/access.constants");
 
 /**
  * ===== ROLES =====

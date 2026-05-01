@@ -1,4 +1,4 @@
-const service = require("../services/orders.public.service");
+const service = require("../services/orders/orders.public.service");
 const { sendOk, sendErr } = require("../utils/response.util");
 
 const CreateOrder = async (req, res) => {

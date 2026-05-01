@@ -70,6 +70,5 @@ function compareManifestItems(a, b) {
 }
 
 module.exports = {
-  MANIFEST_ITEM_ORDER,
   compareManifestItems,
 };

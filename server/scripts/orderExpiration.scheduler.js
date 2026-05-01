@@ -1,5 +1,8 @@
 const cron = require("node-cron");
-const { ExpirePendingOrders } = require("../services/orders.cron.service");
+const {
+  ExpirePendingOrders,
+} = require("../services/orders/orders.cron.service");
+const logger = require("../utils/logger.util");
 
 async function runOrderExpirationJob() {
   return ExpirePendingOrders();
@@ -11,11 +14,11 @@ function startOrderExpirationCron() {
     try {
       await ExpirePendingOrders();
     } catch (err) {
-      console.error("Cron execution error:", err);
+      logger.error("Order expiration cron failed", err);
     }
   });
 
-  console.log("Order expiration cron started");
+  logger.cron("Order expiration");
 }
 
 module.exports = {

@@ -322,9 +322,12 @@ async function buildRunFromBatch(batch: BatchDetails): Promise<DeliveryRun> {
       typeof route?.driver?.name === "string" ? route.driver.name : undefined;
     const driverEmail =
       typeof route?.driver?.email === "string" ? route.driver.email : undefined;
+    const firstStop = mappedStops.slice().sort((a, b) => a.sequence - b.sequence)[0];
     vans.push({
       vanId,
+      routeId,
       name: driverName || `Van ${i + 1}`,
+      startTime: firstStop?.eta ?? undefined,
       driverId,
       driverName,
       driverEmail,
@@ -556,12 +559,24 @@ export const optimizeRun = async (
 };
 
 /**
- * Dispatch a delivery run
- * PATCH /api/delivery-runs/:id/dispatch
+ * Dispatch a delivery run (all routes at once)
+ * PATCH /api/admin/delivery/batch/:id/dispatch
  */
 export const dispatchRun = async (id: string): Promise<DeliveryRun | null> => {
   await api.patch(`/admin/delivery/batch/${id}/dispatch`);
   return getRun(id);
+};
+
+/**
+ * Dispatch a single route (per-driver)
+ * PATCH /api/admin/delivery/batch/:batchId/route/:routeId/dispatch
+ */
+export const dispatchRoute = async (
+  batchId: string,
+  routeId: string,
+): Promise<DeliveryRun | null> => {
+  await api.patch(`/admin/delivery/batch/${batchId}/route/${routeId}/dispatch`);
+  return getRun(batchId);
 };
 
 /**

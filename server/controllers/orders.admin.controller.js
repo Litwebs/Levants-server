@@ -1,5 +1,5 @@
-const service = require("../services/orders.admin.service");
-const refundService = require("../services/orders.refund.service");
+const service = require("../services/orders/orders.admin.service");
+const refundService = require("../services/orders/orders.refund.service");
 const { sendOk, sendErr } = require("../utils/response.util");
 
 const ListOrders = async (req, res) => {
@@ -88,6 +88,7 @@ const UpdateOrderPaymentStatus = async (req, res) => {
   const result = await service.UpdateOrderPaymentStatus({
     orderId: req.params.orderId,
     paid: req.body.paid,
+    amountPaid: req.body.amountPaid,
     actorUserId: req.user?._id || req.user?.id,
   });
 
