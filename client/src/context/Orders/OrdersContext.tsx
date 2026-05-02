@@ -85,6 +85,10 @@ type OrdersContextType = {
   updateOrderItems: (
     orderId: string,
     items: { variantId: string; quantity: number }[],
+    pricing?: {
+      importedBaseTotal?: number;
+      includeDeliveryFee?: boolean;
+    },
   ) => Promise<AdminOrder>;
 
   deleteOrder: (orderId: string) => Promise<{ deleted: true; orderId: string }>;
@@ -286,11 +290,21 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     async (
       orderId: string,
       items: { variantId: string; quantity: number }[],
+      pricing?: {
+        importedBaseTotal?: number;
+        includeDeliveryFee?: boolean;
+      },
     ) => {
       dispatch({ type: ORDERS_REQUEST });
       try {
         const res = await api.patch(`/admin/orders/${orderId}/items`, {
           items,
+          ...(pricing?.importedBaseTotal !== undefined
+            ? { importedBaseTotal: pricing.importedBaseTotal }
+            : {}),
+          ...(typeof pricing?.includeDeliveryFee === "boolean"
+            ? { includeDeliveryFee: pricing.includeDeliveryFee }
+            : {}),
         });
 
         const order = unwrapData<AdminOrder>(res.data);

@@ -17,6 +17,8 @@ type FulfillmentStatus =
   | "refund_failed"
   | (string & {});
 
+const MANUAL_IMPORT_DELIVERY_FEE = 1;
+
 export type OrderItem = {
   name: string;
   variant?: string;
@@ -38,6 +40,9 @@ export type Order = {
   discount: number;
   total: number;
   amountPaid?: number;
+  importedBaseTotal?: number;
+  includeDeliveryFeeInTotal?: boolean;
+  usesImportedBasePricing?: boolean;
   // fulfillmentStatus: FulfillmentStatus;
   paymentStatus: FulfillmentStatus;
   isManualImport?: boolean;
@@ -140,6 +145,38 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
   const isStripeBacked = Boolean(
     (order as any)?.stripeCheckoutSessionId || (order as any)?.stripePaymentIntentId,
   );
+  const effectiveDeliveryFee = isManualImport
+    ? MANUAL_IMPORT_DELIVERY_FEE
+    : order.deliveryFee;
+  const discount =
+    typeof (order as any).discountAmount === "number"
+      ? (order as any).discountAmount
+      : typeof (order as any).totalBeforeDiscount === "number"
+        ? Math.max(0, (order as any).totalBeforeDiscount - order.total)
+        : 0;
+  const inferredIncludeDeliveryFeeInTotal =
+    Math.abs(order.total - Math.max(0, order.subtotal + effectiveDeliveryFee - discount)) <
+    0.000001;
+  const includeDeliveryFeeInTotal =
+    typeof (order as any)?.includeDeliveryFeeInTotal === "boolean"
+      ? Boolean((order as any).includeDeliveryFeeInTotal)
+      : typeof metadata?.includeDeliveryFeeInTotal === "boolean"
+        ? Boolean(metadata.includeDeliveryFeeInTotal)
+        : inferredIncludeDeliveryFeeInTotal;
+  const metadataImportedBaseTotal =
+    typeof metadata?.importedBaseTotal === "number"
+      ? metadata.importedBaseTotal
+      : null;
+  const importedBaseTotal =
+    metadataImportedBaseTotal !== null
+      ? metadataImportedBaseTotal
+      : Math.max(
+          0,
+          order.total + discount - (includeDeliveryFeeInTotal ? effectiveDeliveryFee : 0),
+        );
+  const usesImportedBasePricing =
+    isManualImport &&
+    (metadataImportedBaseTotal !== null || !inferredIncludeDeliveryFeeInTotal);
 
   return {
     id: order._id,
@@ -169,15 +206,13 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     })),
 
     subtotal: order.subtotal,
-    deliveryFee: order.deliveryFee,
-    discount:
-      typeof (order as any).discountAmount === "number"
-        ? (order as any).discountAmount
-        : typeof (order as any).totalBeforeDiscount === "number"
-          ? Math.max(0, (order as any).totalBeforeDiscount - order.total)
-          : 0,
+    deliveryFee: effectiveDeliveryFee,
+    discount,
     total: order.total,
     amountPaid: typeof (order as any).amountPaid === "number" ? (order as any).amountPaid : undefined,
+    importedBaseTotal,
+    includeDeliveryFeeInTotal,
+    usesImportedBasePricing,
 
     deliveryStatus: order.deliveryStatus,
     paymentStatus: order.status,
@@ -494,9 +529,13 @@ const refresh = useCallback(
   const updateOrderItems = async (
     orderId: string,
     items: { variantId: string; quantity: number }[],
+    pricing?: {
+      importedBaseTotal?: number;
+      includeDeliveryFee?: boolean;
+    },
   ) => {
     try {
-      const adminOrder = await updateOrderItemsApi(orderId, items);
+      const adminOrder = await updateOrderItemsApi(orderId, items, pricing);
       const uiOrder = mapAdminOrderToUi(adminOrder);
       setSelectedOrder(uiOrder);
       showToast({ title: "Order items updated", type: "success" });

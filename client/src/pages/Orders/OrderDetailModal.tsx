@@ -31,6 +31,8 @@ const OrderDetailModal = ({
 
   const [isEditingItems, setIsEditingItems] = useState(false);
   const [isSavingItems, setIsSavingItems] = useState(false);
+  const [includeDeliveryFeeInTotal, setIncludeDeliveryFeeInTotal] =
+    useState(true);
   const [draftItems, setDraftItems] = useState<
     {
       variantId: string;
@@ -65,10 +67,13 @@ const OrderDetailModal = ({
     !isRefundPending;
 
   const itemEditBlockedReason = useMemo(() => {
-    if (!canUpdatePermission) return "";
+    if (!canUpdatePermission)
+      return "You do not have permission to edit orders";
     if (!selectedOrder?.id) return "Order is not loaded";
+    if (!selectedOrder?.isManualImport)
+      return "Only imported orders can be edited";
     return "";
-  }, [canUpdatePermission, selectedOrder?.id]);
+  }, [canUpdatePermission, selectedOrder?.id, selectedOrder?.isManualImport]);
 
   const canEditItems = canUpdatePermission && !itemEditBlockedReason;
 
@@ -85,6 +90,7 @@ const OrderDetailModal = ({
     if (!isDetailModalOpen) {
       setIsEditingItems(false);
       setIsSavingItems(false);
+      setIncludeDeliveryFeeInTotal(true);
       setDraftItems([]);
       variantSearch.setQuery("");
       return;
@@ -93,10 +99,17 @@ const OrderDetailModal = ({
     // If modal is open but the order changes, reset edit state.
     setIsEditingItems(false);
     setIsSavingItems(false);
+    setIncludeDeliveryFeeInTotal(
+      Boolean(selectedOrder?.includeDeliveryFeeInTotal ?? true),
+    );
     setDraftItems([]);
     variantSearch.setQuery("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDetailModalOpen, selectedOrder?.id]);
+  }, [
+    isDetailModalOpen,
+    selectedOrder?.id,
+    selectedOrder?.includeDeliveryFeeInTotal,
+  ]);
 
   const draftSubtotal = useMemo(() => {
     return draftItems.reduce(
@@ -106,11 +119,40 @@ const OrderDetailModal = ({
     );
   }, [draftItems]);
 
+  const draftImportedBaseTotal = useMemo(() => {
+    if (!selectedOrder?.isManualImport) return draftSubtotal;
+    if (selectedOrder.usesImportedBasePricing) {
+      const importedAdjustment =
+        Number(selectedOrder.importedBaseTotal || 0) -
+        Number(selectedOrder.subtotal || 0);
+      return Math.max(0, draftSubtotal + importedAdjustment);
+    }
+    return draftSubtotal;
+  }, [
+    draftSubtotal,
+    selectedOrder?.importedBaseTotal,
+    selectedOrder?.isManualImport,
+    selectedOrder?.subtotal,
+    selectedOrder?.usesImportedBasePricing,
+  ]);
+
   const draftTotal = useMemo(() => {
-    const deliveryFee = Number(selectedOrder?.deliveryFee || 0);
+    const deliveryFee = includeDeliveryFeeInTotal
+      ? Number(selectedOrder?.deliveryFee || 0)
+      : 0;
     const discount = Number(selectedOrder?.discount || 0);
-    return Math.max(0, draftSubtotal + deliveryFee - Math.max(0, discount));
-  }, [draftSubtotal, selectedOrder?.deliveryFee, selectedOrder?.discount]);
+    const totalBase = selectedOrder?.isManualImport
+      ? draftImportedBaseTotal
+      : draftSubtotal;
+    return Math.max(0, totalBase + deliveryFee - Math.max(0, discount));
+  }, [
+    draftImportedBaseTotal,
+    draftSubtotal,
+    includeDeliveryFeeInTotal,
+    selectedOrder?.deliveryFee,
+    selectedOrder?.discount,
+    selectedOrder?.isManualImport,
+  ]);
 
   const proofUrl =
     typeof selectedOrder?.deliveryProofUrl === "string"
@@ -378,7 +420,9 @@ const OrderDetailModal = ({
                     </span>
                   ) : !isEditingItems ? (
                     <span className={styles.itemsEditHint}>
-                      Change quantities, remove lines, or add new items.
+                      {selectedOrder?.isManualImport
+                        ? "Change quantities, remove lines, or add new items."
+                        : "Only imported orders can be edited."}
                     </span>
                   ) : null}
 
@@ -417,6 +461,11 @@ const OrderDetailModal = ({
                               quantity: Number(i.quantity || 1),
                             })),
                         );
+                        setIncludeDeliveryFeeInTotal(
+                          Boolean(
+                            selectedOrder?.includeDeliveryFeeInTotal ?? true,
+                          ),
+                        );
                         setIsEditingItems(true);
                       }}
                     >
@@ -442,6 +491,13 @@ const OrderDetailModal = ({
                             const updated = await updateOrderItems?.(
                               selectedOrder.id,
                               payload,
+                              selectedOrder.isManualImport
+                                ? {
+                                    importedBaseTotal: draftImportedBaseTotal,
+                                    includeDeliveryFee:
+                                      includeDeliveryFeeInTotal,
+                                  }
+                                : undefined,
                             );
                             if (updated) {
                               setIsEditingItems(false);
@@ -474,8 +530,28 @@ const OrderDetailModal = ({
               </div>
               <div className={styles.totalRow}>
                 <span>Delivery Fee</span>
-                <span>£{selectedOrder.deliveryFee.toFixed(2)}</span>
+                <span>
+                  £{selectedOrder.deliveryFee.toFixed(2)}
+                  {isEditingItems && selectedOrder.isManualImport
+                    ? includeDeliveryFeeInTotal
+                      ? " included"
+                      : " excluded"
+                    : ""}
+                </span>
               </div>
+              {isEditingItems && selectedOrder.isManualImport ? (
+                <label className={styles.checkboxFilter}>
+                  <input
+                    type="checkbox"
+                    checked={includeDeliveryFeeInTotal}
+                    onChange={(e) =>
+                      setIncludeDeliveryFeeInTotal(e.target.checked)
+                    }
+                    disabled={isSavingItems}
+                  />
+                  Include delivery fee in imported total
+                </label>
+              ) : null}
               {selectedOrder.discount > 0 && (
                 <div className={styles.totalRow}>
                   <span>Discount</span>
@@ -484,6 +560,14 @@ const OrderDetailModal = ({
                   </span>
                 </div>
               )}
+              {isEditingItems &&
+              selectedOrder.isManualImport &&
+              selectedOrder.usesImportedBasePricing ? (
+                <div className={styles.totalRow}>
+                  <span>Imported Base Total</span>
+                  <span>£{draftImportedBaseTotal.toFixed(2)}</span>
+                </div>
+              ) : null}
               <div className={`${styles.totalRow} ${styles.grandTotal}`}>
                 <span>Total</span>
                 <span>
