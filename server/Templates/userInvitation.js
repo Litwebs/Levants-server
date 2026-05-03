@@ -4,7 +4,7 @@ module.exports = ({
   invitedBy = "an admin",
   acceptLink,
   expiresInMinutes = 60,
-  logoSrc = "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png",
+  logoSrc = "https://res.cloudinary.com/deonzcviy/image/upload/v1777833005/logo_znwpja.png",
 }) => `
 <!doctype html>
 <html>

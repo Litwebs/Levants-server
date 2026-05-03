@@ -84,6 +84,8 @@ const updateOrderItemsSchema = Joi.object({
     )
     .min(1)
     .required(),
+  importedBaseTotal: Joi.number().min(0).optional(),
+  includeDeliveryFee: Joi.boolean().optional(),
 }).unknown(false);
 
 const bulkDeleteOrdersSchema = Joi.object({

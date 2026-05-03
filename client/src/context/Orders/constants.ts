@@ -101,6 +101,8 @@ export type AdminOrder = {
 
   /** Amount collected — set for partially_paid imported orders */
   amountPaid?: number;
+  importedBaseTotal?: number;
+  includeDeliveryFeeInTotal?: boolean;
 
   stripeCheckoutSessionId?: string;
   stripePaymentIntentId?: string;

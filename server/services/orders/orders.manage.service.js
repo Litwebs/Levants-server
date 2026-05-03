@@ -7,6 +7,8 @@ const ProductVariant = require("../../models/variant.model");
 
 const { buildActiveOrderIdQuery } = require("../../utils/ordersAdmin.util");
 
+const MANUAL_IMPORT_DELIVERY_FEE = 1;
+
 async function GetOrderById({ orderId }) {
   const order = await Order.findOne(buildActiveOrderIdQuery(orderId)).populate(
     "customer",
@@ -106,7 +108,13 @@ async function UpdateOrderPaymentStatus({
   return { success: true, data: order };
 }
 
-async function UpdateOrderItems({ orderId, items, actorUserId } = {}) {
+async function UpdateOrderItems({
+  orderId,
+  items,
+  importedBaseTotal,
+  includeDeliveryFee,
+  actorUserId,
+} = {}) {
   if (!orderId) {
     return { success: false, statusCode: 400, message: "orderId is required" };
   }
@@ -119,6 +127,8 @@ async function UpdateOrderItems({ orderId, items, actorUserId } = {}) {
   if (!order) {
     return { success: false, statusCode: 404, message: "Order not found" };
   }
+
+  const isManualImport = Boolean(order?.metadata?.manualImport);
 
   const resolvedItems = [];
   let subtotal = 0;
@@ -175,13 +185,78 @@ async function UpdateOrderItems({ orderId, items, actorUserId } = {}) {
     };
   }
 
-  const deliveryFee = Number(order.deliveryFee || 0);
+  const deliveryFee = isManualImport
+    ? MANUAL_IMPORT_DELIVERY_FEE
+    : Number(order.deliveryFee || 0);
   const discountAmount = Math.max(0, Number(order.discountAmount || 0));
-  const totalBeforeDiscount = Math.max(0, subtotal + deliveryFee);
+  const parsedImportedBaseTotal =
+    importedBaseTotal === undefined || importedBaseTotal === null
+      ? null
+      : Number(importedBaseTotal);
+
+  if (
+    parsedImportedBaseTotal !== null &&
+    !Number.isFinite(parsedImportedBaseTotal)
+  ) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid importedBaseTotal",
+    };
+  }
+
+  const inferredIncludedDeliveryFee =
+    Math.abs(
+      Number(order.total || 0) -
+        Math.max(0, Number(order.subtotal || 0) + deliveryFee - discountAmount),
+    ) < 0.000001;
+  const hasSavedImportedBaseTotal = Number.isFinite(
+    Number(order?.metadata?.importedBaseTotal),
+  );
+  const previousIncludedDeliveryFee =
+    typeof order?.metadata?.includeDeliveryFeeInTotal === "boolean"
+      ? order.metadata.includeDeliveryFeeInTotal
+      : inferredIncludedDeliveryFee;
+  // If the frontend sent an explicit importedBaseTotal it already includes any
+  // item-subtotal delta, so use it directly.  Only re-derive via delta when no
+  // value is supplied (e.g. first edit of a legacy order).
+  const resolvedImportedBaseTotal = (() => {
+    if (parsedImportedBaseTotal !== null) return parsedImportedBaseTotal;
+    const savedBase = hasSavedImportedBaseTotal
+      ? Math.max(0, Number(order.metadata.importedBaseTotal || 0))
+      : Math.max(
+          0,
+          Number(order.total || 0) -
+            (previousIncludedDeliveryFee ? deliveryFee : 0),
+        );
+    const adjustment = Math.max(
+      0 - subtotal,
+      savedBase - Math.max(0, Number(order.subtotal || 0)),
+    );
+    return Math.max(0, subtotal + adjustment);
+  })();
+  const shouldIncludeDeliveryFee =
+    typeof includeDeliveryFee === "boolean"
+      ? includeDeliveryFee
+      : previousIncludedDeliveryFee;
+  const shouldUseImportedPricing =
+    isManualImport &&
+    (parsedImportedBaseTotal !== null ||
+      hasSavedImportedBaseTotal ||
+      !inferredIncludedDeliveryFee);
+
+  const totalBeforeDiscount = shouldUseImportedPricing
+    ? Math.max(
+        0,
+        resolvedImportedBaseTotal +
+          (shouldIncludeDeliveryFee ? deliveryFee : 0),
+      )
+    : Math.max(0, subtotal + deliveryFee);
   const total = Math.max(0, totalBeforeDiscount - discountAmount);
 
   order.items = resolvedItems;
   order.subtotal = subtotal;
+  order.deliveryFee = deliveryFee;
   order.totalBeforeDiscount = totalBeforeDiscount;
   order.total = total;
   order.isDiscounted = discountAmount > 0;
@@ -189,6 +264,14 @@ async function UpdateOrderItems({ orderId, items, actorUserId } = {}) {
   const now = new Date();
   if (!order.metadata || typeof order.metadata !== "object")
     order.metadata = {};
+  if (isManualImport) {
+    order.metadata.includeDeliveryFeeInTotal = shouldIncludeDeliveryFee;
+    if (Math.abs(resolvedImportedBaseTotal - subtotal) < 0.000001) {
+      delete order.metadata.importedBaseTotal;
+    } else {
+      order.metadata.importedBaseTotal = resolvedImportedBaseTotal;
+    }
+  }
   order.metadata.itemsUpdatedAt = now;
   if (actorUserId) order.metadata.itemsUpdatedBy = String(actorUserId);
   order.markModified("metadata");

@@ -167,6 +167,8 @@ const UpdateOrderItems = async (req, res) => {
   const result = await service.UpdateOrderItems({
     orderId: req.params.orderId,
     items: req.body.items,
+    importedBaseTotal: req.body.importedBaseTotal,
+    includeDeliveryFee: req.body.includeDeliveryFee,
     actorUserId: req.user?._id || req.user?.id,
   });
 
