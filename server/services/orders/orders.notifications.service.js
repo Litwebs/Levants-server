@@ -75,7 +75,9 @@ async function sendNewOrderAlertEmailToUsers({ orderId }) {
     total: order.total,
     currency: order.currency || "GBP",
     orderDate: order.createdAt
-      ? new Date(order.createdAt).toLocaleString("en-GB")
+      ? new Date(order.createdAt).toLocaleString("en-GB", {
+          timeZone: "Europe/London",
+        })
       : undefined,
     items: (order.items || []).map((i) => ({
       name: i.name,
@@ -188,7 +190,9 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
     currency: order.currency || "GBP",
     orderDate:
       order.paidAt || order.createdAt
-        ? new Date(order.paidAt || order.createdAt).toLocaleString("en-GB")
+        ? new Date(order.paidAt || order.createdAt).toLocaleString("en-GB", {
+            timeZone: "Europe/London",
+          })
         : undefined,
     // Addresses are currently not persisted on the order/customer model
     billingAddress: undefined,
