@@ -35,7 +35,7 @@ module.exports = ({
             <tr>
               <td style="background:#244233; padding:30px;" align="left">
                 <img
-                  src="https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png"
+                  src="https://res.cloudinary.com/deonzcviy/image/upload/v1777833005/logo_znwpja.png"
                   alt="Levants"
                   width="60"
                   style="display:block; border:0; outline:none; text-decoration:none; margin-bottom:12px; max-width:100%; height:auto;"

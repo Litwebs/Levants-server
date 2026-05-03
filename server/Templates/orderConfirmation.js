@@ -38,7 +38,7 @@ style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
 <td style="background:#244233;padding:24px;text-align:left;">
 
 <!-- Logo -->
-<img src="https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png"
+<img src="https://res.cloudinary.com/deonzcviy/image/upload/v1777833005/logo_znwpja.png"
      alt="Levants"
      width="60"
      style="display:block;margin-bottom:12px;max-width:100%;height:auto;" />

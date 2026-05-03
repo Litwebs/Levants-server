@@ -49,7 +49,7 @@ style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
 <td style="background:#244233;padding:24px;text-align:left;">
 
 <!-- Logo -->
-<img src="${String(logoSrc || "").trim()}" alt="Levants" width="60"
+<img src="https://res.cloudinary.com/deonzcviy/image/upload/v1777833005/logo_znwpja.png" alt="Levants" width="60"
      style="display:block;margin-bottom:12px;max-width:100%;height:auto;" />
 
 <div style="font-size:13px;color:#e8e4dd;">Delivery Confirmation</div>
