@@ -6,3 +6,4 @@ export { MapView } from './MapView';
 export { ManifestTables } from './ManifestTables';
 export { RouteDrawer } from './RouteDrawer';
 export { PrintLayout } from './PrintLayouts';
+export { RouteStopsList } from './RouteStopsList';

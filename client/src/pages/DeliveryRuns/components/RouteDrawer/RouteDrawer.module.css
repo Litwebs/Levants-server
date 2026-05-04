@@ -257,6 +257,61 @@
   gap: var(--space-3);
 }
 
+.reorderToggleBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gray-200);
+  background: var(--color-white);
+  color: var(--color-gray-600);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.reorderToggleBtn:hover {
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-300);
+}
+
+.reorderToggleActive {
+  background: var(--color-primary-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.reorderHint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+  font-style: italic;
+}
+
+.stopDraggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.stopDraggable:active {
+  cursor: grabbing;
+}
+
+.stopDraggable:hover {
+  background: var(--color-primary-bg);
+  border-left: 2px solid var(--color-primary);
+}
+
+.dragHandle {
+  color: var(--color-gray-400);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: grab;
+}
+
 .emptySearch {
   padding: var(--space-8);
   text-align: center;
@@ -267,6 +322,75 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.reorderToggleBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gray-200);
+  background: var(--color-white);
+  color: var(--color-gray-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.reorderToggleBtn:hover {
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-300);
+  color: var(--color-gray-900);
+}
+
+.reorderToggleBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reorderToggleActive {
+  background: var(--color-primary-bg);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.reorderToggleActive:hover {
+  background: var(--color-primary-bg);
+  border-color: var(--color-primary);
+}
+
+.reorderHint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-primary);
+  font-weight: var(--font-medium);
+  text-align: center;
+  padding: var(--space-1) 0;
+}
+
+.stopDraggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.stopDraggable:active {
+  cursor: grabbing;
+  background: var(--color-primary-bg);
+  opacity: 0.85;
+}
+
+.dragHandle {
+  display: flex;
+  align-items: center;
+  color: var(--color-gray-400);
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.dragHandle:hover {
+  color: var(--color-gray-600);
 }
 
 .reassignModalText {

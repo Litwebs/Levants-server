@@ -2,7 +2,15 @@ import React, { useMemo, useRef, useState, useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { ExternalLink, Loader2, Pencil } from "lucide-react";
+import {
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Clock,
+  Phone,
+  MapPin,
+  Package,
+} from "lucide-react";
 import { useAuth } from "@/context/Auth/AuthContext";
 import { useToast } from "@/components/common/Toast";
 import { useOrdersApi } from "@/context/Orders";
@@ -52,25 +60,34 @@ interface MapViewProps {
 
 // Create numbered marker icons
 const createNumberedIcon = (number: number, color: string, filled: boolean) => {
+  // CSS custom properties don't resolve inside Leaflet divIcon HTML strings,
+  // so we use resolved hex values that match the theme palette.
+  const bg = filled ? color : "#ffffff";
+  const fg = filled ? "#ffffff" : color;
+  // Darken the colour slightly for the border to give a crisp outline.
+  const border = filled ? "rgba(0,0,0,0.25)" : color;
+
   return L.divIcon({
     className: "custom-marker",
     html: `<div style="
-      background: ${filled ? color : "var(--color-white)"};
-      color: ${filled ? "#ffffff" : color};
-      width: 28px;
-      height: 28px;
+      background: ${bg};
+      color: ${fg};
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 12px;
-      font-weight: bold;
-      border: 2px solid ${filled ? "var(--color-gray-900)" : color};
-      box-shadow: var(--shadow-sm);
+      font-weight: 700;
+      border: 2.5px solid ${border};
+      box-shadow: 0 2px 6px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.15);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      letter-spacing: -0.5px;
     ">${number}</div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -16],
   });
 };
 
@@ -164,26 +181,28 @@ const isDeliveredStop = (
   return stopStatus === "delivered" || normalizedOrder === "delivered";
 };
 
-// Depot icon
+// Depot icon — uses theme primary colour (#1a5f4a) as the fill
 const depotIcon = L.divIcon({
   className: "depot-marker",
   html: `<div style="
-    background: var(--color-gray-900);
-    color: var(--color-white);
-    width: 36px;
-    height: 36px;
+    background: #1a5f4a;
+    color: #ffffff;
+    width: 38px;
+    height: 38px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    font-weight: bold;
-    border: 3px solid var(--color-white);
-    box-shadow: var(--shadow-md);
+    font-size: 13px;
+    font-weight: 700;
+    border: 3px solid #ffffff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.55), 0 0 0 1.5px rgba(26,95,74,0.6);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    letter-spacing: -0.5px;
   ">D</div>`,
-  iconSize: [36, 36],
-  iconAnchor: [18, 18],
-  popupAnchor: [0, -18],
+  iconSize: [38, 38],
+  iconAnchor: [19, 19],
+  popupAnchor: [0, -19],
 });
 
 // Fit bounds component
@@ -875,38 +894,79 @@ export const MapView: React.FC<MapViewProps> = ({
                 }}
               >
                 <Popup>
-                  <div className={styles.popupTitle}>{stop.customerName}</div>
-                  <div className={styles.popupDetail}>{stop.addressLine1}</div>
-                  <div className={styles.popupDetail}>{stop.postcode}</div>
-                  <div className={styles.popupDetail}>
-                    Order: {stop.orderId}
-                  </div>
-                  {stop.notes && (
-                    <div className={styles.popupDetail}>📝 {stop.notes}</div>
-                  )}
-                  <div className={styles.popupDetail}>
-                    Delivery status:{" "}
-                    {getStatusBadge(
-                      (
-                        getEffectiveDeliveryStatus(stop) ||
-                        stopStatusLabel(stop, runStatus)
-                      )
-                        .toLowerCase()
-                        .replace(/\s+/g, " "),
-                    )}
-                  </div>
-                  {stop.phone && (
-                    <div className={styles.popupDetail}>{stop.phone}</div>
-                  )}
-                  <div className={styles.popupDetail}>
-                    ETA: {formatEtaTime(getStopEta(stop)) ?? "—"}
-                  </div>
-                  <div className={styles.popupItems}>
-                    {stop.items.map((item, i) => (
-                      <div key={i}>
-                        {item.qty}x {formatManifestItemSku(item)}
+                  <div className={styles.popup}>
+                    {/* Header */}
+                    <div
+                      className={styles.popupHeader}
+                      style={{ borderLeftColor: getVanColor(van.vanId) }}
+                    >
+                      <div className={styles.popupName}>
+                        {stop.customerName}
                       </div>
-                    ))}
+                      <div className={styles.popupAddress}>
+                        <MapPin size={11} />
+                        {stop.addressLine1}, {stop.postcode}
+                      </div>
+                    </div>
+
+                    {/* Body */}
+                    <div className={styles.popupBody}>
+                      {/* Order + ETA row */}
+                      <div className={styles.popupMeta}>
+                        <span className={styles.popupOrderTag}>
+                          #{stop.orderId}
+                        </span>
+                        {formatEtaTime(getStopEta(stop)) && (
+                          <span className={styles.popupEta}>
+                            <Clock size={11} />
+                            ETA {formatEtaTime(getStopEta(stop))}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Phone */}
+                      {stop.phone && (
+                        <div className={styles.popupPhone}>
+                          <Phone size={11} />
+                          {stop.phone}
+                        </div>
+                      )}
+
+                      {/* Delivery status */}
+                      <div className={styles.popupStatusRow}>
+                        {getStatusBadge(
+                          (
+                            getEffectiveDeliveryStatus(stop) ||
+                            stopStatusLabel(stop, runStatus)
+                          )
+                            .toLowerCase()
+                            .replace(/\s+/g, " "),
+                        )}
+                      </div>
+
+                      {/* Notes */}
+                      {stop.notes && (
+                        <div className={styles.popupNotes}>{stop.notes}</div>
+                      )}
+
+                      {/* Items */}
+                      {stop.items.length > 0 && (
+                        <div className={styles.popupItems}>
+                          <div className={styles.popupItemsHeader}>
+                            <Package size={11} />
+                            {stop.items.reduce((s, i) => s + i.qty, 0)} items
+                          </div>
+                          {stop.items.map((item, i) => (
+                            <div key={i} className={styles.popupItem}>
+                              <span className={styles.popupItemQty}>
+                                {item.qty}×
+                              </span>
+                              <span>{formatManifestItemSku(item)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </Popup>
               </Marker>

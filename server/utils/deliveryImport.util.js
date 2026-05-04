@@ -172,6 +172,7 @@ const buildManualRow = (obj) => {
       deliveryFee: "",
       total: "",
       paid: "",
+      notes: "",
       _raw: obj,
     };
   }
@@ -241,6 +242,9 @@ const buildManualRow = (obj) => {
       "paidstatus",
     ]),
   );
+  const notes = str(
+    pick(["notes", "note", "instructions", "customerinstructions", "customer instructions", "comments", "comment"]),
+  );
 
   return {
     name,
@@ -252,6 +256,7 @@ const buildManualRow = (obj) => {
     deliveryFee,
     total,
     paid,
+    notes,
     _raw: obj,
   };
 };

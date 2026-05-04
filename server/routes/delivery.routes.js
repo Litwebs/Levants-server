@@ -19,6 +19,7 @@ const {
   getRouteStock,
   deleteBatch,
   reassignStopDriver,
+  reorderRouteStops,
 } = require("../controllers/delivery.controller");
 
 // Replace with your real auth middleware
@@ -191,6 +192,17 @@ router.patch(
   requireAuth,
   requirePermission("delivery.routes.update"),
   reassignStopDriver,
+);
+
+/**
+ * PATCH /api/admin/delivery/route/:routeId/stops/reorder
+ * Reorder stops within a route by providing an ordered array of stopIds
+ */
+router.patch(
+  "/route/:routeId/stops/reorder",
+  requireAuth,
+  requirePermission("delivery.routes.update"),
+  reorderRouteStops,
 );
 
 module.exports = router;

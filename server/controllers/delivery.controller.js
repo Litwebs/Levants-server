@@ -15,6 +15,7 @@ const {
   getOrdersStockRequirements: getOrdersStockRequirementsService,
   deleteBatch: deleteBatchService,
   reassignStopDriver: reassignStopDriverService,
+  reorderRouteStops: reorderRouteStopsService,
 } = require("../services/delivery.service");
 
 const { spreadsheetUploadToRows } = require("../utils/ordersSpreadsheet.util");
@@ -364,6 +365,30 @@ async function reassignStopDriver(req, res) {
   return res.status(200).json(result);
 }
 
+async function reorderRouteStops(req, res) {
+  if (isDriverUser(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Drivers cannot manage delivery runs",
+    });
+  }
+
+  const { routeId } = req.params;
+  const { stopIds } = req.body;
+
+  if (!Array.isArray(stopIds)) {
+    return res
+      .status(400)
+      .json({ success: false, message: "stopIds must be an array" });
+  }
+
+  const result = await reorderRouteStopsService({ routeId, stopIds });
+  if (!result.success) {
+    return res.status(result.statusCode || 400).json(result);
+  }
+  return res.status(200).json(result);
+}
+
 module.exports = {
   listBatches,
   listEligibleOrders,
@@ -381,4 +406,5 @@ module.exports = {
   getRouteStock,
   deleteBatch,
   reassignStopDriver,
+  reorderRouteStops,
 };

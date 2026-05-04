@@ -355,6 +355,7 @@ async function createDeliveryBatch({
               deliveryDate: startOfDay,
               deliveryAddress: geo.deliveryAddress,
               location: geo.location,
+              ...(row.notes ? { customerInstructions: row.notes } : {}),
               metadata: {
                 manualImport: true,
                 importSource: "spreadsheet",
