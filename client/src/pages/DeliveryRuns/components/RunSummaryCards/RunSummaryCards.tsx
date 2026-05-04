@@ -2,11 +2,10 @@ import React from "react";
 import {
   CheckCircle,
   Package,
-  MapPin,
-  AlertTriangle,
   Route,
   Clock,
   RefreshCw,
+  Truck,
 } from "lucide-react";
 import type { DeliveryRun, RunStatus } from "@/context/DeliveryRuns";
 import { Badge } from "@/components/common";
@@ -52,7 +51,17 @@ const formatDuration = (minutes: number) => {
   return mins > 0 ? `${hours}h ${mins.toFixed(2)}m` : `${hours}h`;
 };
 
+const isStopDelivered = (stop: DeliveryRun["vans"][0]["stops"][0]) => {
+  const ss = String(stop.stopStatus ?? "").toLowerCase();
+  const os = String(stop.orderDeliveryStatus ?? "").toLowerCase();
+  return ss === "delivered" || os === "delivered";
+};
+
 export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
+  const allStops = run.vans.flatMap((v) => v.stops);
+  const deliveredCount = allStops.filter(isStopDelivered).length;
+  const totalStops = allStops.length;
+
   return (
     <div className={styles.grid}>
       <div className={styles.card}>
@@ -75,26 +84,6 @@ export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
           <span className={styles.cardLabel}>Orders</span>
         </div>
         <div className={styles.cardValue}>{run.totals.ordersCount}</div>
-      </div>
-
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={`${styles.cardIcon} ${styles.drops}`}>
-            <MapPin size={18} />
-          </div>
-          <span className={styles.cardLabel}>Drops</span>
-        </div>
-        <div className={styles.cardValue}>{run.totals.dropsCount}</div>
-      </div>
-
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <div className={`${styles.cardIcon} ${styles.unassigned}`}>
-            <AlertTriangle size={18} />
-          </div>
-          <span className={styles.cardLabel}>Unassigned</span>
-        </div>
-        <div className={styles.cardValue}>{run.totals.unassignedCount}</div>
       </div>
 
       <div className={styles.card}>
@@ -122,6 +111,19 @@ export const RunSummaryCards: React.FC<RunSummaryCardsProps> = ({ run }) => {
           {run.totals.estimatedDurationMin > 0
             ? formatDuration(run.totals.estimatedDurationMin)
             : "—"}
+        </div>
+      </div>
+
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div className={`${styles.cardIcon} ${styles.delivered}`}>
+            <Truck size={18} />
+          </div>
+          <span className={styles.cardLabel}>Delivered</span>
+        </div>
+        <div className={styles.cardValue}>
+          {deliveredCount}
+          <span className={styles.cardValueSub}> / {totalStops}</span>
         </div>
       </div>
 

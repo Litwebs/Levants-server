@@ -641,6 +641,23 @@ export const reassignStopDriver = async (
   }
 };
 
+export const reorderRouteStops = async (
+  routeId: string,
+  stopIds: string[],
+): Promise<void> => {
+  try {
+    await api.patch(`/admin/delivery/route/${routeId}/stops/reorder`, { stopIds });
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const message = (err.response?.data as any)?.message;
+      if (typeof message === "string" && message.trim()) {
+        throw new Error(message);
+      }
+    }
+    throw err;
+  }
+};
+
 export const getDepotLocation = async (): Promise<DepotLocation | null> => {
   const res = await api.get("/admin/delivery/depot");
   const data = unwrap<DepotLocation>(res.data);

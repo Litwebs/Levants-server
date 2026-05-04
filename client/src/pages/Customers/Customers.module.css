@@ -384,6 +384,48 @@
   white-space: nowrap;
 }
 
+@media (max-width: 768px) {
+  .container {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .tableArea {
+    overflow: visible;
+  }
+
+  .tableScroll {
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Target the inner <table> rendered by the Table component */
+  .tableScroll table {
+    min-width: 640px;
+  }
+
+  .paginationFooter {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .paginationControls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pageSizeSelect {
+    min-width: 120px;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .detailSection h3 {
   font-size: var(--text-sm);
   font-weight: 600;

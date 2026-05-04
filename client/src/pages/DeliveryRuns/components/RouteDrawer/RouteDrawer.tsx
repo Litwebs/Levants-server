@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   X,
   Truck,
@@ -6,6 +6,9 @@ import {
   Pencil,
   Loader2,
   ArrowRightLeft,
+  GripVertical,
+  ArrowUpDown,
+  Check,
 } from "lucide-react";
 import {
   type VanRoute,
@@ -16,6 +19,7 @@ import {
   formatManifestItemSku,
   listDrivers as listDeliveryDrivers,
   reassignStopDriver as reassignDeliveryStopDriver,
+  reorderRouteStops as reorderDeliveryRouteStops,
 } from "@/context/DeliveryRuns";
 import { Button, Modal, ModalFooter, Select } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
@@ -78,6 +82,13 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
     roleName.toLowerCase() === "driver" ||
     (hasPermission("delivery.routes.read") &&
       !hasPermission("delivery.routes.update"));
+
+  // Reorder state
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [reorderedStops, setReorderedStops] = useState<VanRoute["stops"]>([]);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const dragIndexRef = useRef<number | null>(null);
+  const dragOverIndexRef = useRef<number | null>(null);
 
   const [statusResolveStopId, setStatusResolveStopId] = useState<string | null>(
     null,
@@ -178,6 +189,71 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
         stop.addressLine1.toLowerCase().includes(term),
     );
   }, [van.stops, search]);
+
+  const displayStops = isReorderMode ? reorderedStops : filteredStops;
+
+  const enterReorderMode = () => {
+    setReorderedStops([...van.stops]);
+    setSearch("");
+    setIsReorderMode(true);
+  };
+
+  const cancelReorderMode = () => {
+    setIsReorderMode(false);
+    setReorderedStops([]);
+    dragIndexRef.current = null;
+    dragOverIndexRef.current = null;
+  };
+
+  const handleDragStart = (index: number) => {
+    dragIndexRef.current = index;
+  };
+
+  const handleDragEnter = (index: number) => {
+    dragOverIndexRef.current = index;
+    if (dragIndexRef.current === null || dragIndexRef.current === index) return;
+
+    setReorderedStops((prev) => {
+      const updated = [...prev];
+      const [dragged] = updated.splice(dragIndexRef.current!, 1);
+      updated.splice(index, 0, dragged);
+      dragIndexRef.current = index;
+      return updated;
+    });
+  };
+
+  const handleDragEnd = () => {
+    dragIndexRef.current = null;
+    dragOverIndexRef.current = null;
+  };
+
+  const handleSaveOrder = async () => {
+    if (!van.routeId) {
+      showToast({ type: "error", title: "Route ID not available" });
+      return;
+    }
+    setIsSavingOrder(true);
+    try {
+      await reorderDeliveryRouteStops(
+        van.routeId,
+        reorderedStops.map((s) => s.stopId),
+      );
+      await onRunUpdated();
+      showToast({ type: "success", title: "Stop order saved" });
+      setIsReorderMode(false);
+      setReorderedStops([]);
+    } catch (err) {
+      showToast({
+        type: "error",
+        title:
+          err instanceof Error && err.message
+            ? err.message
+            : "Failed to save stop order",
+      });
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
 
   const getEffectiveDeliveryStatus = (stop: VanRoute["stops"][0]) => {
     const override = deliveryStatusOverrides[stop.stopId];
@@ -382,32 +458,67 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
               {formatDuration(van.stats.durationMin)}
             </div>
           </div>
+          {!isDriver && (
+            <button
+              className={`${styles.reorderToggleBtn} ${isReorderMode ? styles.reorderToggleActive : ""}`}
+              onClick={isReorderMode ? cancelReorderMode : enterReorderMode}
+              disabled={isSavingOrder}
+              title={isReorderMode ? "Cancel reordering" : "Reorder stops"}
+            >
+              <ArrowUpDown size={16} />
+            </button>
+          )}
           <button className={styles.closeBtn} onClick={onClose}>
             <X size={20} />
           </button>
         </div>
 
         <div className={styles.searchBar}>
-          <input
-            type="text"
-            className={styles.searchInput}
-            placeholder="Search by customer, postcode, or order..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          {isReorderMode ? (
+            <p className={styles.reorderHint}>
+              Drag stops to reorder, then save.
+            </p>
+          ) : (
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="Search by customer, postcode, or order..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          )}
         </div>
 
         <div className={styles.stopsList}>
-          {filteredStops.length === 0 ? (
+          {displayStops.length === 0 ? (
             <div className={styles.emptySearch}>No stops match your search</div>
           ) : (
-            filteredStops.map((stop) => (
-              <div key={stop.stopId} className={styles.stop}>
+            displayStops.map((stop, index) => (
+              <div
+                key={stop.stopId}
+                className={`${styles.stop} ${isReorderMode ? styles.stopDraggable : ""}`}
+                draggable={isReorderMode}
+                onDragStart={
+                  isReorderMode ? () => handleDragStart(index) : undefined
+                }
+                onDragEnter={
+                  isReorderMode ? () => handleDragEnter(index) : undefined
+                }
+                onDragEnd={isReorderMode ? handleDragEnd : undefined}
+                onDragOver={
+                  isReorderMode ? (e) => e.preventDefault() : undefined
+                }
+              >
                 <div className={styles.stopHeader}>
+                  {isReorderMode && (
+                    <div className={styles.dragHandle} title="Drag to reorder">
+                      <GripVertical size={16} />
+                    </div>
+                  )}
                   <span
                     className={`${styles.stopSequence} ${styles[getVanStyleKey(van.vanId)]}`}
                   >
-                    {stop.sequence}
+                    {isReorderMode ? index + 1 : stop.sequence}
                   </span>
                   <div className={styles.stopInfo}>
                     <div className={styles.stopName}>{stop.customerName}</div>
@@ -436,8 +547,9 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
                     </div>
                   </div>
 
-                  {(hasPermission("orders.update") ||
-                    hasPermission("delivery.routes.update")) &&
+                  {!isReorderMode &&
+                    (hasPermission("orders.update") ||
+                      hasPermission("delivery.routes.update")) &&
                     (() => {
                       const effectiveStatus =
                         getEffectiveDeliveryStatus(stop) || "ordered";
@@ -501,10 +613,34 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
         </div>
 
         <div className={styles.footer}>
-          <Button variant="primary" onClick={onPrint}>
-            <Printer size={16} />
-            Print
-          </Button>
+          {isReorderMode ? (
+            <>
+              <Button
+                variant="ghost"
+                onClick={cancelReorderMode}
+                disabled={isSavingOrder}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void handleSaveOrder()}
+                disabled={isSavingOrder}
+              >
+                {isSavingOrder ? (
+                  <Loader2 size={16} className={styles.btnSpinner} />
+                ) : (
+                  <Check size={16} />
+                )}
+                {isSavingOrder ? "Saving..." : "Save Order"}
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" onClick={onPrint}>
+              <Printer size={16} />
+              Print
+            </Button>
+          )}
         </div>
       </div>
 

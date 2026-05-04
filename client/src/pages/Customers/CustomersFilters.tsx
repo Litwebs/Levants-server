@@ -12,6 +12,7 @@ const CustomersFilters = ({ searchQuery, setSearchQuery }: any) => (
     <PageToolbar>
       <ToolbarStart>
         <Input
+          fullWidth
           placeholder="Search by name, email, phone, or postcode..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}

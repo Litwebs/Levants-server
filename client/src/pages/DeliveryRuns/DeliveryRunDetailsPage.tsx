@@ -13,6 +13,7 @@ import {
   ManifestTables,
   RouteDrawer,
   PrintLayout,
+  RouteStopsList,
 } from "./components";
 import { Button } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
@@ -206,8 +207,7 @@ export const DeliveryRunDetailsPage: React.FC = () => {
                 Delivery Run: {formatDate(run.deliveryDate)}
               </h1>
               <p className={styles.subtitle}>
-                Run ID: {run.id} • Created:{" "}
-                {new Date(run.createdAt).toLocaleString("en-GB")}
+                Created: {new Date(run.createdAt).toLocaleString("en-GB")}
               </p>
             </div>
           </div>
@@ -369,14 +369,20 @@ export const DeliveryRunDetailsPage: React.FC = () => {
                     </div>
                   )}
 
-                  {run.issues.length === 0 &&
+                  {run.vans.length > 0 ? (
+                    <div className={styles.routeStopsSection}>
+                      <h3 className={styles.sectionTitle}>Route Stops</h3>
+                      <RouteStopsList vans={run.vans} onRunUpdated={refetch} />
+                    </div>
+                  ) : (
+                    run.issues.length === 0 &&
                     run.unassignedOrders.length === 0 && (
                       <div className={styles.emptyTab}>
-                        {run.vans.length === 0
-                          ? "No routes generated yet. Lock the run and optimize to create routes."
-                          : "All orders assigned. No issues detected."}
+                        No routes generated yet. Lock the run and optimize to
+                        create routes.
                       </div>
-                    )}
+                    )
+                  )}
                 </>
               )}
 

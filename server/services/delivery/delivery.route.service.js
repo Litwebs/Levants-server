@@ -512,10 +512,91 @@ async function reassignStopDriver({ stopId, driverId } = {}) {
   }
 }
 
+async function reorderRouteStops({ routeId, stopIds } = {}) {
+  const normalizedRouteId = String(routeId || "").trim();
+
+  if (!normalizedRouteId) {
+    return { success: false, statusCode: 400, message: "routeId is required" };
+  }
+
+  if (!Array.isArray(stopIds) || stopIds.length === 0) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "stopIds must be a non-empty array",
+    };
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(normalizedRouteId)) {
+    return { success: false, statusCode: 400, message: "Invalid routeId" };
+  }
+
+  const invalidIds = stopIds.filter(
+    (id) => !mongoose.Types.ObjectId.isValid(String(id || "")),
+  );
+  if (invalidIds.length > 0) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "One or more invalid stopIds",
+    };
+  }
+
+  try {
+    const existingCount = await Stop.countDocuments({
+      route: normalizedRouteId,
+    });
+    if (existingCount !== stopIds.length) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "stopIds must include all stops for the route",
+      };
+    }
+
+    const matching = await Stop.find({
+      _id: { $in: stopIds },
+      route: normalizedRouteId,
+    })
+      .select("_id")
+      .lean();
+
+    if (matching.length !== stopIds.length) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Some stops not found or do not belong to this route",
+      };
+    }
+
+    const bulkOps = stopIds.map((stopId, index) => ({
+      updateOne: {
+        filter: { _id: stopId, route: normalizedRouteId },
+        update: { $set: { sequence: index + 1 } },
+      },
+    }));
+
+    await Stop.bulkWrite(bulkOps);
+
+    return {
+      success: true,
+      data: { routeId: normalizedRouteId, count: stopIds.length },
+    };
+  } catch (err) {
+    console.error("Reorder route stops error:", err);
+    return {
+      success: false,
+      statusCode: 500,
+      message: "Failed to reorder stops",
+    };
+  }
+}
+
 module.exports = {
   generateRoutes,
   getBatch,
   getRoute,
   getRouteStock,
   reassignStopDriver,
+  reorderRouteStops,
 };

@@ -37,14 +37,9 @@
   color: var(--color-primary);
 }
 
-.cardIcon.drops {
+.cardIcon.delivered {
   background: var(--color-success-bg);
   color: var(--color-success);
-}
-
-.cardIcon.unassigned {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
 }
 
 .cardIcon.distance {
@@ -73,6 +68,12 @@
   font-size: var(--text-2xl);
   font-weight: var(--font-bold);
   color: var(--color-gray-900);
+}
+
+.cardValueSub {
+  font-size: var(--text-lg);
+  font-weight: var(--font-normal);
+  color: var(--color-gray-400);
 }
 
 .cardSubtext {

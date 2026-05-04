@@ -225,6 +225,10 @@
   margin-top: var(--space-4);
 }
 
+.routeStopsSection {
+  margin-top: var(--space-5);
+}
+
 .unassignedGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
