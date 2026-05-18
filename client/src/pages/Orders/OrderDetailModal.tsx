@@ -63,6 +63,7 @@ const OrderDetailModal = ({
   const canRefund =
     canRefundPermission &&
     Boolean(selectedOrder?.id) &&
+    !selectedOrder?.isManualImport &&
     !isAlreadyRefunded &&
     !isRefundPending;
 
@@ -577,6 +578,46 @@ const OrderDetailModal = ({
                   )}
                 </span>
               </div>
+              {selectedOrder.paymentStatus === "partially_paid" &&
+                typeof selectedOrder.amountPaid === "number" && (
+                  <>
+                    <div className={styles.totalRow}>
+                      <span>Amount Paid</span>
+                      <span>£{selectedOrder.amountPaid.toFixed(2)}</span>
+                    </div>
+                    <div className={styles.totalRow}>
+                      <span>Remaining</span>
+                      <span
+                        style={{ color: "var(--color-warning-600, #b45309)" }}
+                      >
+                        £
+                        {Math.max(
+                          0,
+                          selectedOrder.total - selectedOrder.amountPaid,
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                  </>
+                )}
+              {typeof selectedOrder.amountRefunded === "number" &&
+                selectedOrder.amountRefunded > 0 && (
+                  <>
+                    <div className={styles.totalRow}>
+                      <span>Amount Refunded</span>
+                      <span>-£{selectedOrder.amountRefunded.toFixed(2)}</span>
+                    </div>
+                    <div className={`${styles.totalRow} ${styles.grandTotal}`}>
+                      <span>After Refund</span>
+                      <span>
+                        £
+                        {Math.max(
+                          0,
+                          selectedOrder.total - selectedOrder.amountRefunded,
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                  </>
+                )}
             </div>
 
             {(selectedOrder.customerNotes ||

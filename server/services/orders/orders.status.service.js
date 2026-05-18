@@ -354,7 +354,7 @@ async function bulkAssignDeliveryDate({ orderIds, deliveryDate }) {
   const result = await Order.updateMany(
     {
       _id: { $in: ids },
-      status: "paid",
+      status: { $in: ["paid", "partially_refunded", "partially_paid"] },
     },
     {
       $set: { deliveryDate: date, updatedAt: new Date() },

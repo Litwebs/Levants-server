@@ -117,7 +117,7 @@ async function createDeliveryBatch({
 
     const found = await Order.find({
       _id: { $in: validIds },
-      status: "paid",
+      status: { $in: ["paid", "partially_refunded", "partially_paid"] },
       deliveryDate: { $gte: startOfDay, $lte: endOfDay },
     }).select("_id");
 
@@ -135,7 +135,7 @@ async function createDeliveryBatch({
         $gte: startOfDay,
         $lte: endOfDay,
       },
-      status: "paid",
+      status: { $in: ["paid", "partially_refunded", "partially_paid"] },
     }).select("_id");
 
     if (eligibleOrders.length === 0) {
@@ -598,7 +598,7 @@ async function listEligibleOrders({ deliveryDate } = {}) {
 
     const orders = await Order.find({
       deliveryDate: { $gte: startOfDay, $lte: endOfDay },
-      status: "paid",
+      status: { $in: ["paid", "partially_refunded", "partially_paid"] },
     })
       .populate("customer", "firstName lastName phone")
       .select("orderId deliveryAddress location items")

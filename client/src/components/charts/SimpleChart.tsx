@@ -108,6 +108,7 @@ export const DonutChart: React.FC<DonutChartProps> = ({
   showLegendValues = false,
 }) => {
   const total = data.reduce((sum, item) => sum + item.value, 0);
+  const visibleCount = data.filter((item) => item.value > 0).length;
   let cumulativePercentage = 0;
 
   const segments = data.map((item) => {
@@ -159,7 +160,9 @@ export const DonutChart: React.FC<DonutChartProps> = ({
             key={index}
             d={createArcPath(
               segment.startAngle,
-              segment.endAngle - 0.5,
+              visibleCount > 1
+                ? segment.endAngle - 0.5
+                : segment.endAngle - 0.001,
               45,
               30,
             )}

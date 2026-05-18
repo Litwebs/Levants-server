@@ -40,6 +40,7 @@ export type Order = {
   discount: number;
   total: number;
   amountPaid?: number;
+  amountRefunded?: number;
   importedBaseTotal?: number;
   includeDeliveryFeeInTotal?: boolean;
   usesImportedBasePricing?: boolean;
@@ -210,6 +211,11 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     discount,
     total: order.total,
     amountPaid: typeof (order as any).amountPaid === "number" ? (order as any).amountPaid : undefined,
+    amountRefunded: Array.isArray((order as any).refunds)
+      ? (order as any).refunds
+          .filter((r: any) => r.status === "succeeded" && typeof r.amount === "number")
+          .reduce((sum: number, r: any) => sum + r.amount, 0) || undefined
+      : undefined,
     importedBaseTotal,
     includeDeliveryFeeInTotal,
     usesImportedBasePricing,

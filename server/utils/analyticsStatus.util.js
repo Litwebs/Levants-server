@@ -2,6 +2,7 @@ const createAnalyticsCounts = () => ({
   pending: 0,
   unpaid: 0,
   paid: 0,
+  partially_paid: 0,
   failed: 0,
   cancelled: 0,
   refund_pending: 0,
