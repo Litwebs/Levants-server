@@ -121,6 +121,7 @@ const OrdersFilters = ({
                 { value: "all", label: "All Payment Statuses" },
                 { value: "unpaid", label: "Unpaid" },
                 { value: "paid", label: "Paid" },
+                { value: "partially_paid", label: "Partially Paid" },
                 { value: "refund_pending", label: "Refund Pending" },
                 { value: "partially_refunded", label: "Partially Refunded" },
                 { value: "refunded", label: "Refunded" },
