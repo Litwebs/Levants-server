@@ -118,6 +118,14 @@ const PERMISSIONS = [
   "announcements.delete",
 
   // =========================
+  // Categories
+  // =========================
+  "categories.read",
+  "categories.create",
+  "categories.update",
+  "categories.delete",
+
+  // =========================
   // Users / Auth
   // =========================
   "users.read",

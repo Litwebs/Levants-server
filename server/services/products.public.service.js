@@ -1,5 +1,6 @@
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
+const Category = require("../models/category.model");
 
 function parseCommaSeparatedList(value) {
   if (!value) return null;
@@ -44,10 +45,8 @@ async function listProducts({
   if (sort === "name_asc") productSort = { name: 1 };
   if (sort === "name_desc") productSort = { name: -1 };
 
-  const [categories, products] = await Promise.all([
-    // Return all categories for active products (not limited by current
-    // `category` filter/search/pagination).
-    Product.distinct("category", { status: "active" }),
+  const [categoryDocs, products] = await Promise.all([
+    Category.find().populate("image").sort({ title: 1 }).lean(),
     Product.find(productFilter)
       .populate("thumbnailImage")
       .populate("galleryImages")
@@ -58,9 +57,11 @@ async function listProducts({
       .lean(),
   ]);
 
-  const allCategories = Array.isArray(categories)
-    ? categories.filter(Boolean).sort()
-    : [];
+  const allCategories = categoryDocs.map((doc) => ({
+    title: doc.title,
+    subtitle: doc.subtitle || "",
+    image: doc.image || null,
+  }));
 
   if (products.length === 0) {
     return {

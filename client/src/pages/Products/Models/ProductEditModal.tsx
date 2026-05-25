@@ -57,6 +57,7 @@ const ProductEditModal = ({
           <input
             id="edit-category"
             type="text"
+            list="edit-category-list"
             value={editForm.category || ""}
             onChange={(e) =>
               setEditForm((p: any) => ({
@@ -65,6 +66,11 @@ const ProductEditModal = ({
               }))
             }
           />
+          <datalist id="edit-category-list">
+            {(apiCategories || []).map((c: string) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
         </FormRow>
 
         <FormRow label="Description" htmlFor="edit-description">

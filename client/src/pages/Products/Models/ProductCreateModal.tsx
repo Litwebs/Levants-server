@@ -50,11 +50,17 @@ const ProductCreateModal = ({
         <FormRow label="Category">
           <input
             type="text"
+            list="create-category-list"
             value={editForm.category || ""}
             onChange={(e) =>
               setEditForm((p: any) => ({ ...p, category: e.target.value }))
             }
           />
+          <datalist id="create-category-list">
+            {(apiCategories || []).map((c: string) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
         </FormRow>
 
         <FormRow label="Description">

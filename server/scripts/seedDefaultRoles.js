@@ -22,6 +22,8 @@ const DEFAULT_ROLES = [
       "business.info.read",
       "business.info.update",
       "audit.read",
+      "categories.*",
+      "announcements.*",
     ],
     isSystem: true,
   },

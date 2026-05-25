@@ -15,6 +15,7 @@ export function useProducts() {
   const { showToast } = useToast();
 
   const [products, setProducts] = useState<AdminProduct[]>([]);
+  const [apiCategories, setApiCategories] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,6 +55,7 @@ export function useProducts() {
 
       const next = (res.data?.data?.products || []) as AdminProduct[];
       setProducts(next);
+      setApiCategories((res.data?.meta?.categories || []) as string[]);
     } catch (e: any) {
       showToast({
         type: "error",
@@ -105,13 +107,10 @@ export function useProducts() {
     return { total: products.length, active, lowStock, outOfStock };
   }, [products]);
 
-  const categoryOptions = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.category) set.add(p.category);
-    });
-    return ["All", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
-  }, [products]);
+  const categoryOptions = useMemo(
+    () => ["All", ...apiCategories],
+    [apiCategories],
+  );
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
@@ -401,6 +400,7 @@ export function useProducts() {
     paginationMeta,
 
     categoryOptions,
+    apiCategories,
 
     searchQuery,
     setSearchQuery,

@@ -1,0 +1,116 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-gray-900);
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+  margin-top: var(--space-1);
+}
+
+.tableWrapper {
+  overflow: auto;
+}
+
+.muted {
+  color: var(--color-gray-500);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.thumbnail {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gray-200);
+}
+
+.noImage {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gray-200);
+  background: var(--color-gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-gray-400);
+  font-size: var(--text-xs);
+}
+
+.imageUploadArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.imagePreview {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-gray-200);
+}
+
+.imagePreviewPlaceholder {
+  width: 120px;
+  height: 120px;
+  border-radius: var(--radius-lg);
+  border: 2px dashed var(--color-gray-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-gray-400);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: center;
+  padding: var(--space-2);
+}
+
+.imagePreviewPlaceholder:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.uploadHint {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-gray-600);
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

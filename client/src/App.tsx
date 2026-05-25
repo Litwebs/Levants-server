@@ -31,10 +31,12 @@ import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
+import { RequireEmailDomain } from "./components/auth/RequireEmailDomain";
 import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
+import { CategoriesPage } from "./pages/Categories";
 import "./styles/global.css";
 
 const AdminShell = () => (
@@ -231,9 +233,21 @@ const App = () => (
                       <Route
                         path="/announcements"
                         element={
-                          <RequirePermission permission="announcements.read">
-                            <AnnouncementsPage />
-                          </RequirePermission>
+                          <RequireEmailDomain domain="@litwebs.co.uk">
+                            <RequirePermission permission="announcements.read">
+                              <AnnouncementsPage />
+                            </RequirePermission>
+                          </RequireEmailDomain>
+                        }
+                      />
+                      <Route
+                        path="/categories"
+                        element={
+                          <RequireEmailDomain domain="@litwebs.co.uk">
+                            <RequirePermission permission="categories.read">
+                              <CategoriesPage />
+                            </RequirePermission>
+                          </RequireEmailDomain>
                         }
                       />
                       <Route

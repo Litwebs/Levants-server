@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   Megaphone,
+  LayoutList,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -81,6 +82,14 @@ const navItems = [
     label: "Announcements",
     icon: Megaphone,
     requiredAny: ["announcements.read"],
+    requireEmailDomain: "@litwebs.co.uk",
+  },
+  {
+    path: "/categories",
+    label: "Categories",
+    icon: LayoutList,
+    requiredAny: ["categories.read"],
+    requireEmailDomain: "@litwebs.co.uk",
   },
   {
     path: "/settings",
@@ -146,6 +155,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.path === "/orders" && String(roleLabel || "") === "driver") {
+      return false;
+    }
+    const requireEmailDomain = (item as any).requireEmailDomain as
+      | string
+      | undefined;
+    if (requireEmailDomain && !user?.email?.endsWith(requireEmailDomain)) {
       return false;
     }
     const requiredAny = (item as any).requiredAny as string[] | undefined;
