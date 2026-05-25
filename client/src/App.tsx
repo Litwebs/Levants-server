@@ -34,6 +34,7 @@ import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
+import { AnnouncementsPage } from "./pages/Announcements";
 import "./styles/global.css";
 
 const AdminShell = () => (
@@ -153,7 +154,10 @@ const App = () => (
                         path="/orders"
                         element={
                           <RequirePermission permission="orders.read">
-                            <RequireNotRole role="driver" fallbackPath="/delivery-runs">
+                            <RequireNotRole
+                              role="driver"
+                              fallbackPath="/delivery-runs"
+                            >
                               <Orders />
                             </RequireNotRole>
                           </RequirePermission>
@@ -221,6 +225,14 @@ const App = () => (
                         element={
                           <RequirePermission permission="promotions.read">
                             <DiscountsPage />
+                          </RequirePermission>
+                        }
+                      />
+                      <Route
+                        path="/announcements"
+                        element={
+                          <RequirePermission permission="announcements.read">
+                            <AnnouncementsPage />
                           </RequirePermission>
                         }
                       />

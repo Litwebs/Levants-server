@@ -38,6 +38,8 @@ const adminDiscountRoutes = require("./routes/discounts.admin.routes");
 const publicDiscountRoutes = require("./routes/discounts.public.routes");
 const deliveryRoutes = require("./routes/delivery.routes");
 const publicDeliveryRoutes = require("./routes/delivery.public.routes");
+const adminAnnouncementRoutes = require("./routes/announcements.admin.routes");
+const publicAnnouncementRoutes = require("./routes/announcements.public.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -167,6 +169,10 @@ app.use("/api/admin/discounts", adminDiscountRoutes);
 
 // Delivery
 app.use("/api/admin/delivery", deliveryRoutes);
+
+// Announcements
+app.use("/api/announcements", publicAnnouncementRoutes);
+app.use("/api/admin/announcements", adminAnnouncementRoutes);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");

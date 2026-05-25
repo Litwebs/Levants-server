@@ -110,6 +110,14 @@ const PERMISSIONS = [
   "analytics.read",
 
   // =========================
+  // Announcements
+  // =========================
+  "announcements.read",
+  "announcements.create",
+  "announcements.update",
+  "announcements.delete",
+
+  // =========================
   // Users / Auth
   // =========================
   "users.read",

@@ -18,6 +18,7 @@ import {
   Sun,
   Menu,
   X,
+  Megaphone,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -74,6 +75,12 @@ const navItems = [
     label: "Discounts",
     icon: Tag,
     requiredAny: ["promotions.read"],
+  },
+  {
+    path: "/announcements",
+    label: "Announcements",
+    icon: Megaphone,
+    requiredAny: ["announcements.read"],
   },
   {
     path: "/settings",
