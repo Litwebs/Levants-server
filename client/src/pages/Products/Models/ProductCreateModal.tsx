@@ -26,6 +26,7 @@ const ProductCreateModal = ({
   handleRemoveGalleryImage,
   handleCreate,
   isSaving,
+  apiCategories,
 }: any) => {
   const { hasPermission } = usePermissions();
   if (!hasPermission("products.create")) return null;
@@ -48,19 +49,19 @@ const ProductCreateModal = ({
         </FormRow>
 
         <FormRow label="Category">
-          <input
-            type="text"
-            list="create-category-list"
+          <select
             value={editForm.category || ""}
             onChange={(e) =>
               setEditForm((p: any) => ({ ...p, category: e.target.value }))
             }
-          />
-          <datalist id="create-category-list">
+          >
+            <option value="">— Select category —</option>
             {(apiCategories || []).map((c: string) => (
-              <option key={c} value={c} />
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
-          </datalist>
+          </select>
         </FormRow>
 
         <FormRow label="Description">

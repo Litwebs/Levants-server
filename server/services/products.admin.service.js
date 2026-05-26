@@ -1,5 +1,6 @@
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
+const Category = require("../models/category.model");
 const slugify = require("slugify");
 const mongoose = require("mongoose");
 
@@ -158,7 +159,7 @@ async function ListProducts({
 
   const skip = (page - 1) * pageSize;
 
-  const [total, products, categories] = await Promise.all([
+  const [total, products, categories, categoryDocs] = await Promise.all([
     Product.countDocuments(query),
     Product.find(query)
       .sort({ createdAt: -1 })
@@ -168,11 +169,18 @@ async function ListProducts({
       .populate("galleryImages")
       .lean(),
     Product.distinct("category", categoriesQuery),
+    Category.find().select("title").sort({ title: 1 }).lean(),
   ]);
 
-  const allCategories = Array.isArray(categories)
-    ? categories.filter(Boolean).sort()
-    : [];
+  const categoryDocTitles = categoryDocs.map((d) => d.title);
+  const allCategories = Array.from(
+    new Set(
+      [
+        ...categoryDocTitles,
+        ...(Array.isArray(categories) ? categories.filter(Boolean) : []),
+      ].map((c) => c),
+    ),
+  ).sort();
 
   if (!products.length) {
     return {

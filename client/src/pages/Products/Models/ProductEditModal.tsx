@@ -30,6 +30,7 @@ const ProductEditModal = ({
 
   handleSaveEdit,
   isSaving,
+  apiCategories,
 }: any) => {
   const { hasPermission } = usePermissions();
   if (!hasPermission("products.update")) return null;
@@ -54,10 +55,8 @@ const ProductEditModal = ({
         </FormRow>
 
         <FormRow label="Category" htmlFor="edit-category">
-          <input
+          <select
             id="edit-category"
-            type="text"
-            list="edit-category-list"
             value={editForm.category || ""}
             onChange={(e) =>
               setEditForm((p: any) => ({
@@ -65,12 +64,14 @@ const ProductEditModal = ({
                 category: e.target.value,
               }))
             }
-          />
-          <datalist id="edit-category-list">
+          >
+            <option value="">— Select category —</option>
             {(apiCategories || []).map((c: string) => (
-              <option key={c} value={c} />
+              <option key={c} value={c}>
+                {c}
+              </option>
             ))}
-          </datalist>
+          </select>
         </FormRow>
 
         <FormRow label="Description" htmlFor="edit-description">
