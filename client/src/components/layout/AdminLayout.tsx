@@ -20,6 +20,7 @@ import {
   X,
   Megaphone,
   LayoutList,
+  Star,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -90,6 +91,12 @@ const navItems = [
     icon: LayoutList,
     requiredAny: ["categories.read"],
     requireEmailDomain: "@litwebs.co.uk",
+  },
+  {
+    path: "/reviews",
+    label: "Reviews",
+    icon: Star,
+    requiredAny: ["reviews.read"],
   },
   {
     path: "/settings",

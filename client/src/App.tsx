@@ -37,6 +37,7 @@ import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
 import { CategoriesPage } from "./pages/Categories";
+import { ReviewsPage } from "./pages/Reviews";
 import "./styles/global.css";
 
 const AdminShell = () => (
@@ -248,6 +249,14 @@ const App = () => (
                               <CategoriesPage />
                             </RequirePermission>
                           </RequireEmailDomain>
+                        }
+                      />
+                      <Route
+                        path="/reviews"
+                        element={
+                          <RequirePermission permission="reviews.read">
+                            <ReviewsPage />
+                          </RequirePermission>
                         }
                       />
                       <Route

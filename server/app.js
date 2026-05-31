@@ -42,6 +42,8 @@ const adminAnnouncementRoutes = require("./routes/announcements.admin.routes");
 const publicAnnouncementRoutes = require("./routes/announcements.public.routes");
 const adminCategoryRoutes = require("./routes/categories.admin.routes");
 const publicCategoryRoutes = require("./routes/categories.public.routes");
+const publicReviewRoutes = require("./routes/reviews.public.routes");
+const adminReviewRoutes = require("./routes/reviews.admin.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -179,6 +181,10 @@ app.use("/api/admin/announcements", adminAnnouncementRoutes);
 // Categories
 app.use("/api/categories", publicCategoryRoutes);
 app.use("/api/admin/categories", adminCategoryRoutes);
+
+// Reviews
+app.use("/api/reviews", publicReviewRoutes);
+app.use("/api/admin/reviews", adminReviewRoutes);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");

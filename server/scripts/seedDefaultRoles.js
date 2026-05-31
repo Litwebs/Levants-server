@@ -24,6 +24,7 @@ const DEFAULT_ROLES = [
       "audit.read",
       "categories.*",
       "announcements.*",
+      "reviews.*",
     ],
     isSystem: true,
   },
