@@ -173,6 +173,13 @@ async function UpdateOrderStatus({
         const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
         const note = String(order.metadata?.deliveryNote || "").trim();
         const subject = `Your order ${order.orderId || ""} was delivered`;
+        const frontendBaseUrl =
+          process.env.FRONTEND_URL_PROD ||
+          process.env.CLIENT_FRONT_URL_DEV ||
+          "https://levantsdairy.co.uk";
+        const reviewsUrl = order.orderId
+          ? `${frontendBaseUrl}/reviews?orderId=${encodeURIComponent(order.orderId)}`
+          : null;
         console.log(
           `Sending delivery proof email to ${to} with proof URL: ${proofUrl}`,
         );
@@ -186,6 +193,7 @@ async function UpdateOrderStatus({
             proofUrl,
             deliveryNote: note,
             deliveredAt: new Date().toLocaleString("en-GB"),
+            reviewsUrl,
           },
           {
             fromName: "Levants",
@@ -281,6 +289,13 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
         const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
         const note = String(order.metadata?.deliveryNote || "").trim();
         const subject = `Your order ${order.orderId || ""} was delivered`;
+        const frontendBaseUrl =
+          process.env.FRONTEND_URL_PROD ||
+          process.env.FRONTEND_URL_DEV ||
+          "https://levantsdairy.co.uk";
+        const reviewsUrl = order.orderId
+          ? `${frontendBaseUrl}/reviews?orderId=${encodeURIComponent(order.orderId)}`
+          : null;
 
         const emailRes = await sendEmail(
           to,
@@ -292,6 +307,7 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
             proofUrl,
             deliveryNote: note,
             deliveredAt: new Date().toLocaleString("en-GB"),
+            reviewsUrl,
           },
           { fromName: "Levants" },
         );

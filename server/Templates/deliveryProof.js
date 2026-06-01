@@ -4,6 +4,7 @@ module.exports = ({
   proofUrl,
   deliveryNote,
   deliveredAt,
+  reviewsUrl,
   logoSrc = "./assets/logo.png",
 }) => {
   const safeProofUrl = String(proofUrl || "").trim();
@@ -123,6 +124,26 @@ ${
 
 </td>
 </tr>
+
+<!-- Feedback CTA -->
+${
+  reviewsUrl
+    ? `
+<tr>
+<td style="padding:0 20px 24px 20px;text-align:center;">
+  <div style="border-top:1px solid #ece6dc;margin-bottom:24px;"></div>
+  <p style="margin:0 0 14px 0;font-size:14px;line-height:1.6;color:#444;">
+    We hope your order arrived perfectly! We'd love to hear your feedback.
+  </p>
+  <a href="${reviewsUrl}"
+     style="display:inline-block;background:#244233;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:12px;">
+    Leave Feedback
+  </a>
+</td>
+</tr>
+`
+    : ""
+}
 
 <!-- Footer -->
 <tr>
