@@ -20,6 +20,9 @@ import {
   X,
   Megaphone,
   LayoutList,
+  RefreshCw,
+  HeadphonesIcon,
+  CreditCard,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -70,6 +73,24 @@ const navItems = [
     label: "Customers",
     icon: Users,
     requiredAny: ["customers.read"],
+  },
+  {
+    path: "/subscriptions",
+    label: "Subscriptions",
+    icon: RefreshCw,
+    requiredAny: ["orders.read"],
+  },
+  {
+    path: "/support-requests",
+    label: "Support",
+    icon: HeadphonesIcon,
+    requiredAny: ["customers.read"],
+  },
+  {
+    path: "/payments",
+    label: "Payments",
+    icon: CreditCard,
+    requiredAny: ["orders.read"],
   },
   {
     path: "/discounts",

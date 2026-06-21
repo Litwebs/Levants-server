@@ -13,6 +13,8 @@
     "seed-business-info": "node scripts/seedBusinessInfo.js",
     "seed-products": "node scripts/seedProducts.js",
     "seed-customers": "node scripts/seedCustomers.js",
+    "seed-portal": "node scripts/seedPortalData.js",
+    "seed-portal:fresh": "node scripts/seedPortalData.js --fresh",
     "seed-orders:bradford": "node scripts/generateBradfordOrders.js",
     "stripe:recreate-products": "node scripts/recreateStripeProducts.js"
   },

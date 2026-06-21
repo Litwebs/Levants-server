@@ -2,16 +2,35 @@ const mongoose = require("mongoose");
 
 const addressSchema = new mongoose.Schema(
   {
+    label: { type: String, default: null, trim: true, maxlength: 60 },
+    fullName: { type: String, default: null, trim: true, maxlength: 100 },
+    phone: { type: String, default: null, trim: true, maxlength: 30 },
     line1: { type: String, required: true, trim: true },
     line2: { type: String, default: null, trim: true },
     city: { type: String, required: true, trim: true },
     postcode: { type: String, required: true, trim: true },
     country: { type: String, required: true, trim: true },
+    deliveryInstructions: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 500,
+    },
 
     isDefault: {
       type: Boolean,
       default: false,
     },
+  },
+  { timestamps: true },
+);
+
+const notificationPreferencesSchema = new mongoose.Schema(
+  {
+    orderUpdates: { type: Boolean, default: true },
+    subscriptionUpdates: { type: Boolean, default: true },
+    deliveryUpdates: { type: Boolean, default: true },
+    promotions: { type: Boolean, default: false },
   },
   { _id: false },
 );
@@ -58,7 +77,42 @@ const customerSchema = new mongoose.Schema(
       index: true,
     },
 
-    // 🔮 Future: link to User if they register
+    // ===== Portal auth fields (populated when isGuest: false) =====
+    passwordHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    status: {
+      type: String,
+      enum: ["active", "disabled"],
+      default: "active",
+      index: true,
+    },
+
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+
+    // Password reset
+    passwordResetTokenHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+    passwordResetTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
+
+    notificationPreferences: {
+      type: notificationPreferencesSchema,
+      default: () => ({}),
+    },
+
+    // 🔮 Future: link to admin User if needed
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

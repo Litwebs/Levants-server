@@ -121,4 +121,42 @@ module.exports = {
   ListCustomers,
   UpdateCustomer,
   ListOrdersByCustomer,
+  ListSubscriptionsByCustomer,
+  ListSupportRequestsByCustomer,
 };
+
+async function ListSubscriptionsByCustomer(req, res) {
+  const Subscription = require("../models/subscription.model");
+  const { sendOk } = require("../utils/response.util");
+  const { customerId } = req.params;
+  const page = Number(req.query.page) || 1;
+  const pageSize = Number(req.query.pageSize) || 20;
+
+  const total = await Subscription.countDocuments({ customer: customerId });
+  const subscriptions = await Subscription.find({ customer: customerId })
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .lean();
+
+  return sendOk(res, { subscriptions }, { meta: { page, pageSize, total } });
+}
+
+async function ListSupportRequestsByCustomer(req, res) {
+  const SupportRequest = require("../models/supportRequest.model");
+  const { sendOk } = require("../utils/response.util");
+  const { customerId } = req.params;
+  const page = Number(req.query.page) || 1;
+  const pageSize = Number(req.query.pageSize) || 20;
+
+  const total = await SupportRequest.countDocuments({ customer: customerId });
+  const requests = await SupportRequest.find({ customer: customerId })
+    .populate("relatedOrder", "orderId status")
+    .populate("relatedSubscription", "subscriptionNumber status")
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .lean();
+
+  return sendOk(res, { requests }, { meta: { page, pageSize, total } });
+}

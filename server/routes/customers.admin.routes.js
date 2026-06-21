@@ -55,4 +55,20 @@ router.get(
   asyncHandler(controller.ListOrdersByCustomer),
 );
 
+// Get subscriptions by customer (admin)
+router.get(
+  "/:customerId/subscriptions",
+  requirePermission(["customers.read", "orders.read"]),
+  validateParams(customerIdParamSchema),
+  asyncHandler(controller.ListSubscriptionsByCustomer),
+);
+
+// Get support requests by customer (admin)
+router.get(
+  "/:customerId/support-requests",
+  requirePermission("customers.read"),
+  validateParams(customerIdParamSchema),
+  asyncHandler(controller.ListSupportRequestsByCustomer),
+);
+
 module.exports = router;

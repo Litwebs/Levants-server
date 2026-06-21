@@ -322,6 +322,38 @@ const orderSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+
+    // ===== Customer portal additions =====
+    orderType: {
+      type: String,
+      enum: ["one_time", "subscription_generated"],
+      default: "one_time",
+      index: true,
+    },
+
+    subscription: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Subscription",
+      default: null,
+      index: true,
+    },
+
+    // Delivery status extended for portal (extends existing deliveryStatus)
+    // We keep the existing deliveryStatus field and add portal-specific delivery tracking
+    portalDeliveryStatus: {
+      type: String,
+      enum: [
+        "scheduled",
+        "preparing",
+        "out_for_delivery",
+        "delivered",
+        "failed",
+        "rescheduled",
+        "cancelled",
+      ],
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,

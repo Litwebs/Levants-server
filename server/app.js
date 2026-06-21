@@ -21,6 +21,9 @@ const {
 const {
   startInvitationCleanupCron,
 } = require("./scripts/userInvitation.scheduler");
+const {
+  startSubscriptionGenerationCron,
+} = require("./scripts/subscriptionGeneration.scheduler");
 
 // Routes
 const authRoutes = require("./routes/auth.routes");
@@ -42,6 +45,24 @@ const adminAnnouncementRoutes = require("./routes/announcements.admin.routes");
 const publicAnnouncementRoutes = require("./routes/announcements.public.routes");
 const adminCategoryRoutes = require("./routes/categories.admin.routes");
 const publicCategoryRoutes = require("./routes/categories.public.routes");
+
+// ===== Customer portal routes =====
+const portalAuthRoutes = require("./routes/portal/customerAuth.routes");
+const portalProductRoutes = require("./routes/portal/customerProducts.routes");
+const portalOrderRoutes = require("./routes/portal/customerOrders.routes");
+const portalAddressRoutes = require("./routes/portal/customerAddresses.routes");
+const portalSubscriptionRoutes = require("./routes/portal/customerSubscriptions.routes");
+const {
+  notifRouter,
+  supportRouter,
+  paymentRouter,
+} = require("./routes/portal/customerMisc.routes");
+const adminSubscriptionRoutes = require("./routes/portal/adminSubscriptions.routes");
+const {
+  supportRouter: adminSupportRouter,
+  paymentsRouter: adminPaymentsRouter,
+  reportsRouter: adminReportsRouter,
+} = require("./routes/portal/adminMisc.routes");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -121,6 +142,7 @@ app.use(
     // ⏰ START CRON JOBS
     startOrderExpirationCron();
     startInvitationCleanupCron();
+    startSubscriptionGenerationCron();
   } catch (err) {
     logger.error("Startup failed", err);
     process.exit(1);
@@ -179,6 +201,22 @@ app.use("/api/admin/announcements", adminAnnouncementRoutes);
 // Categories
 app.use("/api/categories", publicCategoryRoutes);
 app.use("/api/admin/categories", adminCategoryRoutes);
+
+// ===== Customer Portal =====
+app.use("/api/portal/auth", portalAuthRoutes);
+app.use("/api/portal/products", portalProductRoutes);
+app.use("/api/portal/orders", portalOrderRoutes);
+app.use("/api/portal/addresses", portalAddressRoutes);
+app.use("/api/portal/subscriptions", portalSubscriptionRoutes);
+app.use("/api/portal/notifications", notifRouter);
+app.use("/api/portal/support-requests", supportRouter);
+app.use("/api/portal/payments", paymentRouter);
+
+// ===== Admin Portal Extensions =====
+app.use("/api/admin/subscriptions", adminSubscriptionRoutes);
+app.use("/api/admin/support-requests", adminSupportRouter);
+app.use("/api/admin/payments", adminPaymentsRouter);
+app.use("/api/admin/reports", adminReportsRouter);
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");
