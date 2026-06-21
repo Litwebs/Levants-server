@@ -96,6 +96,35 @@ const customerSchema = new mongoose.Schema(
       default: null,
     },
 
+    emailVerificationCodeHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    emailVerificationCodeExpiresAt: {
+      type: Date,
+      default: null,
+    },
+
+    pendingEmail: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      default: null,
+    },
+
+    pendingEmailTokenHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    pendingEmailTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
+
     // Password reset
     passwordResetTokenHash: {
       type: String,
@@ -110,6 +139,12 @@ const customerSchema = new mongoose.Schema(
     notificationPreferences: {
       type: notificationPreferencesSchema,
       default: () => ({}),
+    },
+
+    themePreference: {
+      type: String,
+      enum: ["light", "dark"],
+      default: "light",
     },
 
     // 🔮 Future: link to admin User if needed

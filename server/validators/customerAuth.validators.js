@@ -44,10 +44,32 @@ const resetPasswordSchema = Joi.object({
     .messages({ "any.only": "Passwords do not match" }),
 }).unknown(false);
 
+const emailVerificationConfirmSchema = Joi.object({
+  email: Joi.string().trim().email().lowercase().required(),
+  code: Joi.string()
+    .trim()
+    .pattern(/^\d{6}$/)
+    .required()
+    .messages({
+      "string.pattern.base": "Verification code must be a 6-digit number",
+    }),
+}).unknown(false);
+
+const emailVerificationResendSchema = Joi.object({
+  email: Joi.string().trim().email().lowercase().required(),
+}).unknown(false);
+
+const confirmEmailChangeSchema = Joi.object({
+  userId: Joi.string().trim().required(),
+  token: Joi.string().trim().required(),
+}).unknown(false);
+
 const updateProfileSchema = Joi.object({
   firstName: Joi.string().trim().min(1).max(100).optional(),
   lastName: Joi.string().trim().min(1).max(100).optional(),
+  email: Joi.string().trim().email().lowercase().optional(),
   phone: Joi.string().trim().min(7).max(30).allow(null, "").optional(),
+  themePreference: Joi.string().valid("light", "dark").optional(),
   notificationPreferences: Joi.object({
     orderUpdates: Joi.boolean().optional(),
     subscriptionUpdates: Joi.boolean().optional(),
@@ -70,6 +92,9 @@ module.exports = {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  emailVerificationConfirmSchema,
+  emailVerificationResendSchema,
+  confirmEmailChangeSchema,
   updateProfileSchema,
   changePasswordSchema,
 };

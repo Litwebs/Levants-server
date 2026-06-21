@@ -17,6 +17,9 @@ const {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  emailVerificationConfirmSchema,
+  emailVerificationResendSchema,
+  confirmEmailChangeSchema,
   updateProfileSchema,
   changePasswordSchema,
 } = require("../../validators/customerAuth.validators");
@@ -54,6 +57,27 @@ router.post(
   authLimiter,
   validateBody(resetPasswordSchema),
   asyncHandler(controller.ResetPassword),
+);
+
+router.post(
+  "/email-verification/confirm",
+  authLimiter,
+  validateBody(emailVerificationConfirmSchema),
+  asyncHandler(controller.VerifyEmailCode),
+);
+
+router.post(
+  "/email-verification/resend",
+  authLimiter,
+  validateBody(emailVerificationResendSchema),
+  asyncHandler(controller.ResendVerificationCode),
+);
+
+router.post(
+  "/email-change/confirm",
+  authLimiter,
+  validateBody(confirmEmailChangeSchema),
+  asyncHandler(controller.ConfirmEmailChange),
 );
 
 // ===== Authenticated routes =====

@@ -21,8 +21,16 @@ const Login = async (req, res) => {
     userAgent: req.get("user-agent"),
   });
 
-  if (!result.success)
+  if (!result.success) {
+    if (result.data?.requiresEmailVerification) {
+      return res.status(403).json({
+        success: false,
+        message: result.message,
+        data: result.data,
+      });
+    }
     return sendErr(res, { statusCode: 401, message: result.message });
+  }
 
   const { accessToken, refreshToken, customer } = result.data;
 
@@ -98,6 +106,30 @@ const ResetPassword = async (req, res) => {
   return sendOk(res, null, { message: result.message });
 };
 
+const VerifyEmailCode = async (req, res) => {
+  const result = await service.VerifyEmailCode(req.body);
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
+const ResendVerificationCode = async (req, res) => {
+  const result = await service.ResendVerificationCode(req.body);
+  return sendOk(res, null, { message: result.message });
+};
+
+const ConfirmEmailChange = async (req, res) => {
+  const result = await service.ConfirmEmailChange(req.body);
+  if (!result.success) {
+    const statusCode =
+      result.message === "An account with this email already exists"
+        ? 409
+        : 400;
+    return sendErr(res, { statusCode, message: result.message });
+  }
+  return sendOk(res, result.data, { message: result.message });
+};
+
 const GetMe = async (req, res) => {
   const result = await service.GetMe({ customerId: req.customer._id });
   if (!result.success)
@@ -110,8 +142,13 @@ const UpdateProfile = async (req, res) => {
     customerId: req.customer._id,
     ...req.body,
   });
-  if (!result.success)
-    return sendErr(res, { statusCode: 404, message: result.message });
+  if (!result.success) {
+    const statusCode =
+      result.message === "An account with this email already exists"
+        ? 409
+        : 404;
+    return sendErr(res, { statusCode, message: result.message });
+  }
   return sendOk(res, result.data, { message: result.message });
 };
 
@@ -134,6 +171,9 @@ module.exports = {
   RefreshToken,
   ForgotPassword,
   ResetPassword,
+  VerifyEmailCode,
+  ResendVerificationCode,
+  ConfirmEmailChange,
   GetMe,
   UpdateProfile,
   ChangePassword,

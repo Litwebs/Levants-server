@@ -13,6 +13,68 @@ const { Response } = require("../../utils/response.util");
 const PORTAL_COOKIE_NAME = "customerAccessToken";
 const PORTAL_REFRESH_COOKIE_NAME = "customerRefreshToken";
 const SESSION_USER_TYPE = "customer";
+const EMAIL_VERIFICATION_TTL_MINUTES = 10;
+const EMAIL_CHANGE_TOKEN_TTL_MINUTES = 60;
+
+function getCustomerPortalBaseUrl() {
+  const env = process.env.NODE_ENV;
+  const base =
+    env === "production"
+      ? process.env.CUSTOMER_PORTAL_URL_PROD ||
+        process.env.CLIENT_FRONT_URL_PROD ||
+        process.env.FRONTEND_URL_PROD
+      : process.env.CUSTOMER_PORTAL_URL_DEV ||
+        process.env.CLIENT_FRONT_URL_DEV ||
+        process.env.FRONTEND_URL_DEV ||
+        "http://localhost:8080";
+
+  return String(base || "").replace(/\/$/, "");
+}
+
+function buildCustomerEmailChangeConfirmLink(userId, token) {
+  const base = getCustomerPortalBaseUrl();
+  if (!base) return "";
+  return `${base}/confirm-email-change?userId=${userId}&token=${token}`;
+}
+
+function generateSixDigitCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function setAndSendVerificationCode(customer, reason = "registration") {
+  const code = generateSixDigitCode();
+  customer.emailVerificationCodeHash = cryptoUtil.hashToken(code);
+  customer.emailVerificationCodeExpiresAt = new Date(
+    Date.now() + EMAIL_VERIFICATION_TTL_MINUTES * 60 * 1000,
+  );
+  await customer.save();
+
+  try {
+    const emailResult = await sendEmail(
+      customer.email,
+      "Your Levants Dairy verification code",
+      "login2FA",
+      {
+        name: customer.firstName,
+        code,
+        expiresMinutes: EMAIL_VERIFICATION_TTL_MINUTES,
+      },
+    );
+
+    if (!emailResult?.success) {
+      const reasonText =
+        emailResult?.error?.message || "Unknown provider error";
+      console.error(
+        `[CustomerAuth] Failed to send ${reason} verification code: ${reasonText}`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[CustomerAuth] Failed to send ${reason} verification code:`,
+      err.message,
+    );
+  }
+}
 
 function buildCookieOptions({
   rememberMe = false,
@@ -59,6 +121,7 @@ async function Register({ firstName, lastName, email, phone, password } = {}) {
           passwordHash,
           isGuest: false,
           status: "active",
+          emailVerifiedAt: null,
         },
       },
       { new: true },
@@ -72,12 +135,20 @@ async function Register({ firstName, lastName, email, phone, password } = {}) {
       passwordHash,
       isGuest: false,
       status: "active",
+      emailVerifiedAt: null,
     });
   }
 
-  return Response(true, "Registration successful", {
-    customer: sanitizeCustomer(customer),
-  });
+  await setAndSendVerificationCode(customer, "registration");
+
+  return Response(
+    true,
+    "Registration successful. Verify your email to continue.",
+    {
+      customer: sanitizeCustomer(customer),
+      requiresEmailVerification: true,
+    },
+  );
 }
 
 /**
@@ -108,6 +179,17 @@ async function Login({
       false,
       "Your account has been disabled. Please contact support.",
       null,
+    );
+  }
+
+  if (!customer.emailVerifiedAt) {
+    await setAndSendVerificationCode(customer, "login");
+    return Response(
+      false,
+      "Your email is not verified yet. Enter the 6-digit code sent to your email.",
+      {
+        requiresEmailVerification: true,
+      },
     );
   }
 
@@ -243,18 +325,26 @@ async function ForgotPassword({ email } = {}) {
         process.env.CLIENT_FRONT_URL_PROD
       : process.env.CUSTOMER_PORTAL_URL_DEV || "http://localhost:5173";
 
-  const resetLink = `${frontendUrl}/portal/reset-password?token=${rawToken}`;
+  const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
 
   try {
-    await sendEmail(
+    const emailResult = await sendEmail(
       customer.email,
       "Reset your Levants Dairy password",
-      "portalPasswordReset",
+      "resetPassword",
       {
-        firstName: customer.firstName,
+        name: customer.firstName,
         resetLink,
       },
     );
+
+    if (!emailResult?.success) {
+      const reasonText =
+        emailResult?.error?.message || "Unknown provider error";
+      console.error(
+        `[CustomerAuth] Failed to send password reset email: ${reasonText}`,
+      );
+    }
   } catch (err) {
     console.error(
       "[CustomerAuth] Failed to send password reset email:",
@@ -313,23 +403,231 @@ async function UpdateProfile({
   customerId,
   firstName,
   lastName,
+  email,
   phone,
+  themePreference,
   notificationPreferences,
 } = {}) {
-  const updates = {};
-  if (firstName !== undefined) updates.firstName = String(firstName).trim();
-  if (lastName !== undefined) updates.lastName = String(lastName).trim();
-  if (phone !== undefined) updates.phone = phone ? String(phone).trim() : null;
-  if (notificationPreferences !== undefined)
-    updates.notificationPreferences = notificationPreferences;
-
-  const customer = await Customer.findByIdAndUpdate(
-    customerId,
-    { $set: updates },
-    { new: true },
+  let emailChangeRequested = false;
+  const customer = await Customer.findById(customerId).select(
+    "+pendingEmailTokenHash",
   );
   if (!customer) return Response(false, "Customer not found", null);
-  return Response(true, "Profile updated", {
+
+  if (firstName !== undefined) customer.firstName = String(firstName).trim();
+  if (lastName !== undefined) customer.lastName = String(lastName).trim();
+  if (phone !== undefined) customer.phone = phone ? String(phone).trim() : null;
+  if (themePreference !== undefined) customer.themePreference = themePreference;
+  if (notificationPreferences !== undefined)
+    customer.notificationPreferences = notificationPreferences;
+
+  if (email !== undefined) {
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    const existing = await Customer.findOne({
+      email: normalizedEmail,
+      isGuest: false,
+      _id: { $ne: customerId },
+    }).lean();
+    if (existing) {
+      return Response(false, "An account with this email already exists", null);
+    }
+
+    if (normalizedEmail !== customer.email) {
+      emailChangeRequested = true;
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      customer.pendingEmail = normalizedEmail;
+      customer.pendingEmailTokenHash = cryptoUtil.hashToken(rawToken);
+      customer.pendingEmailTokenExpiresAt = new Date(
+        Date.now() + EMAIL_CHANGE_TOKEN_TTL_MINUTES * 60 * 1000,
+      );
+
+      const verifyLink = buildCustomerEmailChangeConfirmLink(
+        customer._id,
+        rawToken,
+      );
+
+      try {
+        if (verifyLink) {
+          const emailResult = await sendEmail(
+            normalizedEmail,
+            "Confirm your new email",
+            "verifyEmailChange",
+            {
+              name: customer.firstName,
+              verifyLink,
+              expiresInMinutes: EMAIL_CHANGE_TOKEN_TTL_MINUTES,
+            },
+          );
+
+          if (!emailResult?.success) {
+            const reasonText =
+              emailResult?.error?.message || "Unknown provider error";
+            console.error(
+              `[CustomerAuth] Failed to send email change verification: ${reasonText}`,
+            );
+          }
+        }
+      } catch (err) {
+        console.error(
+          "[CustomerAuth] Failed to send email change verification:",
+          err.message,
+        );
+      }
+    }
+  }
+
+  await customer.save();
+
+  const message = emailChangeRequested
+    ? "Profile updated. Confirm your new email from the verification link we sent."
+    : "Profile updated";
+
+  return Response(true, message, {
+    customer: sanitizeCustomer(customer),
+  });
+}
+
+async function VerifyEmailCode({ email, code } = {}) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+
+  const customer = await Customer.findOne({
+    email: normalizedEmail,
+    isGuest: false,
+  }).select("+emailVerificationCodeHash");
+
+  if (!customer) {
+    return Response(false, "Invalid verification code", null);
+  }
+
+  if (
+    !customer.emailVerificationCodeHash ||
+    !customer.emailVerificationCodeExpiresAt
+  ) {
+    return Response(
+      false,
+      "No verification code found. Please request a new code.",
+      null,
+    );
+  }
+
+  if (customer.emailVerificationCodeExpiresAt <= new Date()) {
+    return Response(
+      false,
+      "Verification code expired. Please request a new code.",
+      null,
+    );
+  }
+
+  const submittedHash = cryptoUtil.hashToken(String(code || ""));
+  if (submittedHash !== customer.emailVerificationCodeHash) {
+    return Response(false, "Invalid verification code", null);
+  }
+
+  customer.emailVerifiedAt = new Date();
+  customer.emailVerificationCodeHash = null;
+  customer.emailVerificationCodeExpiresAt = null;
+  await customer.save();
+
+  return Response(true, "Email verified successfully", {
+    customer: sanitizeCustomer(customer),
+  });
+}
+
+async function ResendVerificationCode({ email } = {}) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+
+  const genericMessage =
+    "If an account exists, a verification code has been sent.";
+
+  const customer = await Customer.findOne({
+    email: normalizedEmail,
+    isGuest: false,
+  });
+
+  if (!customer || customer.status === "disabled" || customer.emailVerifiedAt) {
+    return Response(true, genericMessage, null);
+  }
+
+  await setAndSendVerificationCode(customer, "resend");
+  return Response(true, genericMessage, null);
+}
+
+async function ConfirmEmailChange({ userId, token } = {}) {
+  if (!mongoose.Types.ObjectId.isValid(String(userId || ""))) {
+    return Response(false, "Invalid request", null);
+  }
+
+  const customer = await Customer.findById(userId).select(
+    "+pendingEmailTokenHash",
+  );
+  if (!customer) return Response(false, "Customer not found", null);
+
+  if (
+    !customer.pendingEmail ||
+    !customer.pendingEmailTokenHash ||
+    !customer.pendingEmailTokenExpiresAt
+  ) {
+    return Response(false, "No pending email change found", null);
+  }
+
+  if (customer.pendingEmailTokenExpiresAt <= new Date()) {
+    return Response(false, "Email change confirmation link has expired", null);
+  }
+
+  const tokenHash = cryptoUtil.hashToken(String(token || ""));
+  if (tokenHash !== customer.pendingEmailTokenHash) {
+    return Response(false, "Invalid email change confirmation token", null);
+  }
+
+  const existing = await Customer.findOne({
+    _id: { $ne: customer._id },
+    email: customer.pendingEmail,
+    isGuest: false,
+  }).lean();
+  if (existing) {
+    return Response(false, "An account with this email already exists", null);
+  }
+
+  const oldEmail = customer.email;
+  const newEmail = customer.pendingEmail;
+
+  customer.email = newEmail;
+  customer.pendingEmail = null;
+  customer.pendingEmailTokenHash = null;
+  customer.pendingEmailTokenExpiresAt = null;
+  customer.emailVerifiedAt = new Date();
+  await customer.save();
+
+  try {
+    const emailResult = await sendEmail(
+      newEmail,
+      "Your email was changed",
+      "emailChanged",
+      {
+        name: customer.firstName,
+        oldEmail,
+        newEmail,
+        when: new Date().toISOString(),
+      },
+    );
+
+    if (!emailResult?.success) {
+      const reasonText =
+        emailResult?.error?.message || "Unknown provider error";
+      console.error(
+        `[CustomerAuth] Failed to send email changed notice: ${reasonText}`,
+      );
+    }
+  } catch {
+    // no-op
+  }
+
+  return Response(true, "Email address updated successfully", {
     customer: sanitizeCustomer(customer),
   });
 }
@@ -371,6 +669,8 @@ function sanitizeCustomer(c) {
   delete obj.passwordHash;
   delete obj.passwordResetTokenHash;
   delete obj.passwordResetTokenExpiresAt;
+  delete obj.emailVerificationCodeHash;
+  delete obj.pendingEmailTokenHash;
   delete obj.__v;
   return obj;
 }
@@ -382,6 +682,9 @@ module.exports = {
   Logout,
   ForgotPassword,
   ResetPassword,
+  VerifyEmailCode,
+  ResendVerificationCode,
+  ConfirmEmailChange,
   GetMe,
   UpdateProfile,
   ChangePassword,
