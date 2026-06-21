@@ -2,7 +2,7 @@
 
 :root {
   /* Primary Colors - Dairy Farm Theme */
-  --color-primary: #1a5f4a;
+  --color-primary: #2da380;
   --color-primary-light: #2d8268;
   --color-primary-dark: #134436;
   --color-primary-bg: rgba(26, 95, 74, 0.08);
@@ -14,7 +14,7 @@
   
   /* Neutral Colors */
   --color-white: #ffffff;
-  --color-cream: #fdfbf7;
+  --color-cream: #fafafa;
   --color-cream-dark: #f5f0e8;
   --color-gray-50: #f9fafb;
   --color-gray-100: #f3f4f6;
@@ -28,10 +28,10 @@
   --color-gray-900: #111827;
   
   /* Sidebar Colors */
-  --sidebar-bg: #0f172a;
-  --sidebar-hover: #1e293b;
-  --sidebar-active: rgba(26, 95, 74, 0.3);
-  --sidebar-text: #94a3b8;
+  --sidebar-bg: #151414;
+  --sidebar-hover: #252628;
+  --sidebar-active:#252628;
+  --sidebar-text: #7e7e7e;
   --sidebar-text-active: #ffffff;
   --sidebar-border: #1e293b;
   

@@ -2,7 +2,6 @@ import styles from "./Orders.module.css";
 import { useOrders } from "./useOrders";
 
 import OrdersHeader from "./OrdersHeader";
-import OrdersStatusTabs from "./OrdersStatusTabs";
 import OrdersFilters from "./OrdersFilters";
 import OrdersBulkActions from "./OrdersBulkActions";
 import OrdersTable from "./OrdersTable";
@@ -17,7 +16,6 @@ const Orders = () => {
       className={`${styles.page} ${ordersState.showFilters ? styles.pageWithFilters : ""}`}
     >
       <OrdersHeader {...ordersState} />
-      {/* <OrdersStatusTabs {...ordersState} /> */}
       <OrdersFilters {...ordersState} />
       <OrdersBulkActions {...ordersState} />
       <OrdersTable {...ordersState} />

@@ -44,12 +44,6 @@ const navItems = [
     icon: LayoutDashboard,
     requiredAny: ["analytics.read"],
   },
-  // {
-  //   path: "/deliveries",
-  //   label: "Deliveries",
-  //   icon: Truck,
-  //   requiredAny: ["delivery.routes.read"],
-  // },
   {
     path: "/delivery-runs",
     label: "Delivery Runs",

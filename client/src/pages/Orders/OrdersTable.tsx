@@ -184,15 +184,16 @@ const OrdersTable = ({
                     </td>
 
                     <td data-label="Items">
-                      <span className={styles.itemCount}>
-                        {order.items.reduce(
-                          (sum: number, item: any) => sum + item.quantity,
-                          0,
-                        )}{" "}
-                        items
-                      </span>
+                      <div className={styles.itemsCell}>
+                        <span className={styles.itemCount}>
+                          {order.items.reduce(
+                            (sum: number, item: any) => sum + item.quantity,
+                            0,
+                          )}
+                        </span>
+                        <span>items</span>
+                      </div>
                     </td>
-
                     <td data-label="Source">
                       {getOrderSourceBadge(order.isManualImport)}
                     </td>
@@ -222,12 +223,7 @@ const OrdersTable = ({
                       data-label="Delivery Date"
                     >
                       <div className={styles.deliveryCell}>
-                        <span className={styles.deliveryDate}>
-                          {formatDeliveryDate(order.deliverySlot.date)}
-                        </span>
-                        <span className={styles.deliveryTime}>
-                          {order.deliverySlot.timeWindow}
-                        </span>
+                        {formatDeliveryDate(order.deliverySlot.date)}
                       </div>
                     </td>
 
@@ -319,9 +315,9 @@ const OrdersTable = ({
               setPage(1);
             }}
             options={[
-              { value: "50", label: "50 / page" },
-              { value: "100", label: "100 / page" },
-              { value: "200", label: "200 / page" },
+              { value: "50", label: "50 - page" },
+              { value: "100", label: "100 - page" },
+              { value: "200", label: "200 - page" },
             ]}
           />
 

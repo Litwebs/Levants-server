@@ -7,20 +7,16 @@ const OrdersFilters = ({
   setSearchQuery,
   showFilters,
   setShowFilters,
-
-  // rename these in parent if you can:
   deliveryStatusFilter,
   setDeliveryStatusFilter,
   paymentStatusFilter,
   setPaymentStatusFilter,
   orderSourceFilter,
   setOrderSourceFilter,
-
   dateFilter,
   setDateFilter,
   sortBy,
   setSortBy,
-
   minTotal,
   setMinTotal,
   maxTotal,
@@ -31,7 +27,6 @@ const OrdersFilters = ({
   setDateTo,
   refundedOnly,
   setRefundedOnly,
-  expiredOnly,
   setExpiredOnly,
 }: any) => {
   return (
@@ -79,155 +74,155 @@ const OrdersFilters = ({
         />
       </div>
 
-      {showFilters && (
-        <div className={styles.filtersRow}>
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Delivery Status</label>
-            <Select
-              value={deliveryStatusFilter}
-              onChange={setDeliveryStatusFilter}
-              options={[
-                { value: "all", label: "All Delivery Statuses" },
-                { value: "ordered", label: "Ordered" },
-                { value: "dispatched", label: "Dispatched" },
-                { value: "in_transit", label: "In Transit" },
-                { value: "delivered", label: "Delivered" },
-                { value: "returned", label: "Returned" },
-              ]}
-            />
-          </div>
+      <div
+        className={`${styles.filtersRowWrap} ${
+          showFilters ? styles.filtersRowOpen : ""
+        }`}
+      >
+        <div className={styles.filtersRowInner}>
+          <div className={styles.filtersRow}>
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Delivery Status</label>
+              <Select
+                value={deliveryStatusFilter}
+                onChange={setDeliveryStatusFilter}
+                options={[
+                  { value: "all", label: "All Delivery Statuses" },
+                  { value: "ordered", label: "Ordered" },
+                  { value: "dispatched", label: "Dispatched" },
+                  { value: "in_transit", label: "In Transit" },
+                  { value: "delivered", label: "Delivered" },
+                  { value: "returned", label: "Returned" },
+                ]}
+              />
+            </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Created</label>
-            <Select
-              value={dateFilter}
-              onChange={setDateFilter}
-              options={[
-                { value: "all", label: "All Time" },
-                { value: "today", label: "Today" },
-                { value: "week", label: "Last 7 Days" },
-                { value: "month", label: "Last 30 Days" },
-                { value: "custom", label: "Custom Range" },
-              ]}
-            />
-          </div>
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Created</label>
+              <Select
+                value={dateFilter}
+                onChange={setDateFilter}
+                options={[
+                  { value: "all", label: "All Time" },
+                  { value: "today", label: "Today" },
+                  { value: "week", label: "Last 7 Days" },
+                  { value: "month", label: "Last 30 Days" },
+                  { value: "custom", label: "Custom Range" },
+                ]}
+              />
+            </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Payment Status</label>
-            <Select
-              value={paymentStatusFilter}
-              onChange={setPaymentStatusFilter}
-              options={[
-                { value: "all", label: "All Payment Statuses" },
-                { value: "unpaid", label: "Unpaid" },
-                { value: "paid", label: "Paid" },
-                { value: "partially_paid", label: "Partially Paid" },
-                { value: "refund_pending", label: "Refund Pending" },
-                { value: "partially_refunded", label: "Partially Refunded" },
-                { value: "refunded", label: "Refunded" },
-              ]}
-            />
-          </div>
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Payment Status</label>
+              <Select
+                value={paymentStatusFilter}
+                onChange={setPaymentStatusFilter}
+                options={[
+                  { value: "all", label: "All Payment Statuses" },
+                  { value: "unpaid", label: "Unpaid" },
+                  { value: "paid", label: "Paid" },
+                  { value: "partially_paid", label: "Partially Paid" },
+                  { value: "refund_pending", label: "Refund Pending" },
+                  {
+                    value: "partially_refunded",
+                    label: "Partially Refunded",
+                  },
+                  { value: "refunded", label: "Refunded" },
+                ]}
+              />
+            </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Order Source</label>
-            <Select
-              value={orderSourceFilter}
-              onChange={setOrderSourceFilter}
-              options={[
-                { value: "all", label: "All Sources" },
-                { value: "website", label: "Website" },
-                { value: "imported", label: "Imported" },
-              ]}
-            />
-          </div>
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Order Source</label>
+              <Select
+                value={orderSourceFilter}
+                onChange={setOrderSourceFilter}
+                options={[
+                  { value: "all", label: "All Sources" },
+                  { value: "website", label: "Website" },
+                  { value: "imported", label: "Imported" },
+                ]}
+              />
+            </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Date From</label>
-            <input
-              type="date"
-              className={styles.filterInput}
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setDateFilter("custom");
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Date From</label>
+              <input
+                type="date"
+                className={styles.filterInput}
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setDateFilter("custom");
+                }}
+              />
+            </div>
+
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Date To</label>
+              <input
+                type="date"
+                className={styles.filterInput}
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setDateFilter("custom");
+                }}
+              />
+            </div>
+
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Min Total</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={minTotal}
+                onChange={(e) => setMinTotal(e.target.value)}
+                className={styles.filterInput}
+              />
+            </div>
+
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Max Total</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={maxTotal}
+                onChange={(e) => setMaxTotal(e.target.value)}
+                className={styles.filterInput}
+              />
+            </div>
+
+            <label className={styles.checkboxFilter}>
+              <input
+                type="checkbox"
+                checked={refundedOnly}
+                onChange={(e) => setRefundedOnly(e.target.checked)}
+              />
+              Refunded only
+            </label>
+
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDeliveryStatusFilter("all");
+                setPaymentStatusFilter("all");
+                setOrderSourceFilter("all");
+                setDateFilter("all");
+                setSearchQuery("");
+                setMinTotal("");
+                setMaxTotal("");
+                setDateFrom("");
+                setDateTo("");
+                setRefundedOnly(false);
+                setExpiredOnly(false);
               }}
-            />
+            >
+              Clear Filters
+            </Button>
           </div>
-
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Date To</label>
-            <input
-              type="date"
-              className={styles.filterInput}
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setDateFilter("custom");
-              }}
-            />
-          </div>
-
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Min Total</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={minTotal}
-              onChange={(e) => setMinTotal(e.target.value)}
-              className={styles.filterInput}
-            />
-          </div>
-
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Max Total</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={maxTotal}
-              onChange={(e) => setMaxTotal(e.target.value)}
-              className={styles.filterInput}
-            />
-          </div>
-
-          <label className={styles.checkboxFilter}>
-            <input
-              type="checkbox"
-              checked={refundedOnly}
-              onChange={(e) => setRefundedOnly(e.target.checked)}
-            />
-            Refunded only
-          </label>
-
-          {/* <label className={styles.checkboxFilter}>
-            <input
-              type="checkbox"
-              checked={expiredOnly}
-              onChange={(e) => setExpiredOnly(e.target.checked)}
-            />
-            Expired only
-          </label> */}
-
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setDeliveryStatusFilter("all");
-              setPaymentStatusFilter("all");
-              setOrderSourceFilter("all");
-              setDateFilter("all");
-              setSearchQuery("");
-              setMinTotal("");
-              setMaxTotal("");
-              setDateFrom("");
-              setDateTo("");
-              setRefundedOnly(false);
-              setExpiredOnly(false);
-            }}
-          >
-            Clear Filters
-          </Button>
         </div>
-      )}
+      </div>
     </Card>
   );
 };

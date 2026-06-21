@@ -366,3 +366,9 @@
     padding: 0;
   }
 }
+
+@media (max-width: 768px) {
+  .content{
+    padding: var(--space-3);
+  }
+}
