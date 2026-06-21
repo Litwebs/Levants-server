@@ -58,12 +58,14 @@ async function DeletePaymentMethod({ customerId, paymentMethodId } = {}) {
 
 async function AdminListPayments({
   customerId,
+  subscriptionId,
   status,
   page = 1,
   pageSize = 20,
 } = {}) {
   const filter = {};
   if (customerId) filter.customer = customerId;
+  if (subscriptionId) filter.subscription = subscriptionId;
   if (status) filter.status = status;
 
   const total = await Payment.countDocuments(filter);

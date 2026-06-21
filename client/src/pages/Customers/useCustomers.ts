@@ -28,6 +28,8 @@ export const useCustomers = () => {
   } = useCustomersContext();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
+  const [customerTypeFilter, setCustomerTypeFilter] = useState("all");
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -49,7 +51,6 @@ export const useCustomers = () => {
     };
   }>({});
 
-  // Fetch customers (server-side pagination + search)
   useEffect(() => {
     const handle = window.setTimeout(() => {
       listCustomers({ page, pageSize, search: searchQuery || undefined }).catch(
@@ -62,20 +63,51 @@ export const useCustomers = () => {
     return () => window.clearTimeout(handle);
   }, [listCustomers, page, pageSize, searchQuery]);
 
-  // Reset to page 1 when search changes
   useEffect(() => {
     setPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, customerTypeFilter, sortBy]);
 
   const stats = useMemo(() => {
-    // Backend doesn't currently provide marketing/revenue stats.
     const total = meta?.total ?? customers.length;
     return { total, withMarketing: 0, totalRevenue: 0 };
   }, [customers.length, meta?.total]);
 
-  const filteredCustomers = customers;
+  const filteredCustomers = useMemo(() => {
+    const byType = customers.filter((customer) => {
+      if (customerTypeFilter === "all") return true;
+      if (customerTypeFilter === "guest") return Boolean(customer.isGuest);
+      if (customerTypeFilter === "customer") return !customer.isGuest;
+      return true;
+    });
 
-  // Orders are not wired for admin customers yet.
+    const sorted = [...byType];
+    switch (sortBy) {
+      case "oldest":
+        sorted.sort((a, b) => {
+          const at = new Date(a.createdAt || 0).getTime();
+          const bt = new Date(b.createdAt || 0).getTime();
+          return at - bt;
+        });
+        break;
+      case "name-asc":
+        sorted.sort((a, b) => getFullName(a).localeCompare(getFullName(b)));
+        break;
+      case "name-desc":
+        sorted.sort((a, b) => getFullName(b).localeCompare(getFullName(a)));
+        break;
+      case "newest":
+      default:
+        sorted.sort((a, b) => {
+          const at = new Date(a.createdAt || 0).getTime();
+          const bt = new Date(b.createdAt || 0).getTime();
+          return bt - at;
+        });
+        break;
+    }
+
+    return sorted;
+  }, [customers, customerTypeFilter, sortBy]);
+
   const getCustomerOrders = (_customerId: string) => [];
 
   const handleViewCustomer = (customer: Customer) => {
@@ -184,6 +216,10 @@ export const useCustomers = () => {
 
     searchQuery,
     setSearchQuery,
+    sortBy,
+    setSortBy,
+    customerTypeFilter,
+    setCustomerTypeFilter,
 
     selectedCustomer,
     isViewModalOpen,

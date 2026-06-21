@@ -14,6 +14,43 @@ const FREQUENCY_DAYS = {
   monthly: 30,
 };
 
+async function enrichSubscriptionWithVariantImages(subscriptionLike) {
+  if (!subscriptionLike) return subscriptionLike;
+
+  const subscription =
+    typeof subscriptionLike.toObject === "function"
+      ? subscriptionLike.toObject()
+      : { ...subscriptionLike };
+
+  const items = Array.isArray(subscription.items) ? subscription.items : [];
+  if (items.length === 0) return subscription;
+
+  const variantIds = items
+    .map((item) => String(item?.variant || ""))
+    .filter(Boolean);
+
+  if (variantIds.length === 0) return subscription;
+
+  const variants = await ProductVariant.find({ _id: { $in: variantIds } })
+    .populate("thumbnailImage", "url")
+    .select("thumbnailImage")
+    .lean();
+
+  const imageByVariantId = new Map(
+    variants.map((variant) => [
+      String(variant._id),
+      variant.thumbnailImage?.url || null,
+    ]),
+  );
+
+  subscription.items = items.map((item) => ({
+    ...item,
+    imageUrl: imageByVariantId.get(String(item?.variant || "")) || null,
+  }));
+
+  return subscription;
+}
+
 /**
  * Calculate the next delivery date given a preferred day and frequency.
  * @param {number} preferredDay - 0-6 (Sun-Sat)
@@ -162,7 +199,8 @@ async function CreateSubscription({
     relatedSubscription: subscription._id,
   });
 
-  return Response(true, "Subscription created", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Subscription created", { subscription: enriched });
 }
 
 /**
@@ -199,7 +237,8 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
     customer: customerId,
   }).lean();
   if (!subscription) return Response(false, "Subscription not found", null);
-  return Response(true, null, { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, null, { subscription: enriched });
 }
 
 /**
@@ -262,7 +301,8 @@ async function UpdateSubscription({
     relatedSubscription: subscription._id,
   });
 
-  return Response(true, "Subscription updated", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Subscription updated", { subscription: enriched });
 }
 
 /**
@@ -297,7 +337,8 @@ async function PauseSubscription({ customerId, subscriptionId } = {}) {
     relatedSubscription: subscription._id,
   });
 
-  return Response(true, "Subscription paused", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Subscription paused", { subscription: enriched });
 }
 
 /**
@@ -331,7 +372,8 @@ async function ResumeSubscription({ customerId, subscriptionId } = {}) {
     relatedSubscription: subscription._id,
   });
 
-  return Response(true, "Subscription resumed", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Subscription resumed", { subscription: enriched });
 }
 
 /**
@@ -366,7 +408,8 @@ async function CancelSubscription({ customerId, subscriptionId, reason } = {}) {
     relatedSubscription: subscription._id,
   });
 
-  return Response(true, "Subscription cancelled", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Subscription cancelled", { subscription: enriched });
 }
 
 /**
@@ -420,7 +463,8 @@ async function AddSubscriptionItem({
   }
 
   await subscription.save();
-  return Response(true, "Item added", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Item added", { subscription: enriched });
 }
 
 /**
@@ -446,7 +490,8 @@ async function UpdateSubscriptionItem({
 
   item.quantity = quantity;
   await subscription.save();
-  return Response(true, "Item updated", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Item updated", { subscription: enriched });
 }
 
 /**
@@ -479,7 +524,8 @@ async function RemoveSubscriptionItem({
 
   item.deleteOne();
   await subscription.save();
-  return Response(true, "Item removed", { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, "Item removed", { subscription: enriched });
 }
 
 /**

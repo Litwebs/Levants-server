@@ -6,7 +6,7 @@ import {
   formatManifestItemSku,
   formatProductNameWithSku,
 } from "@/context/DeliveryRuns";
-import { Button, Modal, ModalFooter } from "@/components/common";
+import { Button, Modal, ModalFooter, Table } from "@/components/common";
 import styles from "./PrintLayouts.module.css";
 
 interface PrintLayoutProps {
@@ -170,7 +170,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
           </div>
 
           {type === "stops" ? (
-            <table className={styles.printTable}>
+            <Table withWrapper={false} tableClassName={styles.printTable}>
               <thead>
                 <tr>
                   <th style={{ width: "40px" }}>#</th>
@@ -217,9 +217,12 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           ) : (
-            <table className={styles.printManifestTable}>
+            <Table
+              withWrapper={false}
+              tableClassName={styles.printManifestTable}
+            >
               <thead>
                 <tr>
                   <th>SKU</th>
@@ -251,7 +254,7 @@ export const PrintLayout: React.FC<PrintLayoutProps> = ({
                   <td></td>
                 </tr>
               </tfoot>
-            </table>
+            </Table>
           )}
 
           <div className={styles.printFooter}>

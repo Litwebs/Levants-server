@@ -1,35 +1,21 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   useSubscriptions,
   type Subscription,
 } from "../../context/Subscriptions";
-import { useToast } from "../../components/common/Toast";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
+  DataTableCard,
+  FiltersCardLayout,
+  Button,
+  Select as CommonSelect,
+  Badge,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { RefreshCw, Pause, Play, X as XIcon, Search } from "lucide-react";
+} from "../../components/common";
+import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
+import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
+import styles from "./Subscriptions.module.css";
+import { RefreshCw, X as XIcon, Search, Filter } from "lucide-react";
 
 const FREQUENCY_LABELS: Record<string, string> = {
   weekly: "Weekly",
@@ -39,10 +25,10 @@ const FREQUENCY_LABELS: Record<string, string> = {
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const STATUS_COLORS: Record<string, string> = {
-  active: "bg-green-100 text-green-800",
-  paused: "bg-yellow-100 text-yellow-800",
-  cancelled: "bg-red-100 text-red-800",
+const STATUS_VARIANTS: Record<string, "success" | "warning" | "error"> = {
+  active: "success",
+  paused: "warning",
+  cancelled: "error",
 };
 
 const getCustomerName = (customer: Subscription["customer"]) => {
@@ -56,29 +42,16 @@ const getCustomerEmail = (customer: Subscription["customer"]) => {
 };
 
 export default function SubscriptionsPage() {
-  const { showToast } = useToast();
-  const {
-    subscriptions,
-    meta,
-    loading,
-    error,
-    listSubscriptions,
-    pauseSubscription,
-    resumeSubscription,
-    cancelSubscription,
-  } = useSubscriptions();
+  const navigate = useNavigate();
+  const { subscriptions, meta, loading, error, listSubscriptions } =
+    useSubscriptions();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [frequencyFilter, setFrequencyFilter] = useState("all");
-
-  const [confirmDialog, setConfirmDialog] = useState<{
-    action: "pause" | "resume" | "cancel";
-    subscription: Subscription;
-  } | null>(null);
-  const [cancelReason, setCancelReason] = useState("");
-  const [actionLoading, setActionLoading] = useState(false);
+  const [sortBy, setSortBy] = useState("next-delivery");
+  const [showFilters, setShowFilters] = useState(false);
 
   const fetchSubscriptions = useCallback(() => {
     listSubscriptions({
@@ -97,300 +70,241 @@ export default function SubscriptionsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, frequencyFilter]);
+  }, [search, statusFilter, frequencyFilter, sortBy]);
 
-  const handleAction = async () => {
-    if (!confirmDialog) return;
-    setActionLoading(true);
-    try {
-      const { action, subscription } = confirmDialog;
-      if (action === "pause") await pauseSubscription(subscription._id);
-      else if (action === "resume") await resumeSubscription(subscription._id);
-      else if (action === "cancel")
-        await cancelSubscription(subscription._id, cancelReason || undefined);
-
-      showToast({
-        title: `Subscription ${action === "pause" ? "paused" : action === "resume" ? "resumed" : "cancelled"}`,
-        type: "success",
-      });
-      setConfirmDialog(null);
-      setCancelReason("");
-    } catch {
-      showToast({ title: "Action failed", type: "error" });
-    } finally {
-      setActionLoading(false);
+  const sortedSubscriptions = useMemo(() => {
+    const next = [...subscriptions];
+    switch (sortBy) {
+      case "newest":
+        next.sort((a, b) => {
+          const at = new Date(a.createdAt || a.startDate || 0).getTime();
+          const bt = new Date(b.createdAt || b.startDate || 0).getTime();
+          return bt - at;
+        });
+        break;
+      case "oldest":
+        next.sort((a, b) => {
+          const at = new Date(a.createdAt || a.startDate || 0).getTime();
+          const bt = new Date(b.createdAt || b.startDate || 0).getTime();
+          return at - bt;
+        });
+        break;
+      case "next-delivery":
+      default:
+        next.sort((a, b) => {
+          const at = new Date(a.nextDeliveryDate || 0).getTime();
+          const bt = new Date(b.nextDeliveryDate || 0).getTime();
+          return at - bt;
+        });
+        break;
     }
-  };
+    return next;
+  }, [subscriptions, sortBy]);
 
   const totalPages = meta ? Math.ceil(meta.total / 20) : 1;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className={styles.container}>
+      <div className={styles.header}>
         <div>
           <h1 className="text-2xl font-semibold">Subscriptions</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {meta?.total ?? 0} total subscriptions
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchSubscriptions}>
-          <RefreshCw className="h-4 w-4 mr-2" />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={fetchSubscriptions}
+          leftIcon={<RefreshCw size={16} />}
+        >
           Refresh
         </Button>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search customer…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="All statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="paused">Paused</SelectItem>
-            <SelectItem value="cancelled">Cancelled</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={frequencyFilter} onValueChange={setFrequencyFilter}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All frequencies" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All frequencies</SelectItem>
-            <SelectItem value="weekly">Weekly</SelectItem>
-            <SelectItem value="every_two_weeks">Every 2 weeks</SelectItem>
-            <SelectItem value="monthly">Monthly</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <FiltersCardLayout
+        className={sharedFilterStyles.filtersCard}
+        topRow={
+          <div className={sharedFilterStyles.searchRow}>
+            <div className={sharedFilterStyles.searchInput}>
+              <Search size={18} className={sharedFilterStyles.searchIcon} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search customer..."
+                className={sharedFilterStyles.search}
+              />
+              {search && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={sharedFilterStyles.clearSearch}
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                >
+                  <XIcon size={16} />
+                </Button>
+              )}
+            </div>
+
+            <Button
+              variant="outline"
+              leftIcon={<Filter size={16} />}
+              onClick={() => setShowFilters(!showFilters)}
+              className={sharedFilterStyles.filtersToggleBtn}
+            >
+              Filters
+            </Button>
+
+            <CommonSelect
+              value={sortBy}
+              onChange={setSortBy}
+              className={sharedFilterStyles.sortSelect}
+              options={[
+                { value: "next-delivery", label: "Next Delivery" },
+                { value: "newest", label: "Newest First" },
+                { value: "oldest", label: "Oldest First" },
+              ]}
+            />
+          </div>
+        }
+        isExpanded={showFilters}
+        expandedWrapClassName={sharedFilterStyles.filtersRowWrap}
+        expandedOpenClassName={sharedFilterStyles.filtersRowOpen}
+        expandedInnerClassName={sharedFilterStyles.filtersRowInner}
+        expandedContent={
+          <div className={sharedFilterStyles.filtersRow}>
+            <div className={sharedFilterStyles.filterGroup}>
+              <label className={sharedFilterStyles.filterLabel}>Status</label>
+              <CommonSelect
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={[
+                  { value: "all", label: "All statuses" },
+                  { value: "active", label: "Active" },
+                  { value: "paused", label: "Paused" },
+                  { value: "cancelled", label: "Cancelled" },
+                ]}
+              />
+            </div>
+
+            <div className={sharedFilterStyles.filterGroup}>
+              <label className={sharedFilterStyles.filterLabel}>
+                Frequency
+              </label>
+              <CommonSelect
+                value={frequencyFilter}
+                onChange={setFrequencyFilter}
+                options={[
+                  { value: "all", label: "All frequencies" },
+                  { value: "weekly", label: "Weekly" },
+                  { value: "every_two_weeks", label: "Every 2 weeks" },
+                  { value: "monthly", label: "Monthly" },
+                ]}
+              />
+            </div>
+
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+                setFrequencyFilter("all");
+                setSortBy("next-delivery");
+              }}
+            >
+              Clear Filters
+            </Button>
+          </div>
+        }
+      />
 
       {/* Table */}
       {error ? (
         <p className="text-destructive">{error}</p>
       ) : (
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ref</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Frequency</TableHead>
-                <TableHead>Delivery Day</TableHead>
-                <TableHead>Next Delivery</TableHead>
-                <TableHead>Items</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+        <DataTableCard
+          className={styles.tableCard}
+          pagination={{
+            page,
+            pageSize: 20,
+            total: meta?.total ?? subscriptions.length,
+            totalPages,
+            setPage,
+            setPageSize: () => undefined,
+            pageSizeOptions: [{ value: "20", label: "20 - page" }],
+            loading,
+          }}
+        >
+          <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
+            <thead>
+              <tr>
+                <th>Ref</th>
+                <th>Customer</th>
+                <th>Status</th>
+                <th>Frequency</th>
+                <th>Delivery Day</th>
+                <th>Next Delivery</th>
+                <th>Items</th>
+              </tr>
+            </thead>
+            <tbody>
               {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={8}
-                    className="text-center py-8 text-muted-foreground"
-                  >
+                <tr className={sharedTableStyles.emptyStateRow}>
+                  <td colSpan={7} className={sharedTableStyles.emptyTableCell}>
                     Loading…
-                  </TableCell>
-                </TableRow>
-              ) : subscriptions.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={8}
-                    className="text-center py-8 text-muted-foreground"
-                  >
+                  </td>
+                </tr>
+              ) : sortedSubscriptions.length === 0 ? (
+                <tr className={sharedTableStyles.emptyStateRow}>
+                  <td colSpan={7} className={sharedTableStyles.emptyTableCell}>
                     No subscriptions found
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ) : (
-                subscriptions.map((sub) => (
-                  <TableRow key={sub._id}>
-                    <TableCell className="font-mono text-xs">
+                sortedSubscriptions.map((sub) => (
+                  <tr
+                    key={sub._id}
+                    className={styles.clickableRow}
+                    onClick={() => navigate(`/subscriptions/${sub._id}`)}
+                  >
+                    <td className="font-mono text-xs">
                       {sub.subscriptionNumber}
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td>
                       <div className="font-medium">
                         {getCustomerName(sub.customer)}
                       </div>
                       <div className="text-xs text-muted-foreground">
                         {getCustomerEmail(sub.customer)}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[sub.status] ?? ""}`}
-                      >
+                    </td>
+                    <td>
+                      <Badge variant={STATUS_VARIANTS[sub.status] ?? "default"}>
                         {sub.status}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-sm">
+                      </Badge>
+                    </td>
+                    <td className="text-sm">
                       {FREQUENCY_LABELS[sub.frequency] ?? sub.frequency}
-                    </TableCell>
-                    <TableCell className="text-sm">
+                    </td>
+                    <td className="text-sm">
                       {DAY_LABELS[sub.preferredDeliveryDay] ??
                         sub.preferredDeliveryDay}
-                    </TableCell>
-                    <TableCell className="text-sm">
+                    </td>
+                    <td className="text-sm">
                       {new Date(sub.nextDeliveryDate).toLocaleDateString(
                         "en-GB",
                       )}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {sub.items.length}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        {sub.status === "active" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setConfirmDialog({
-                                action: "pause",
-                                subscription: sub,
-                              })
-                            }
-                          >
-                            <Pause className="h-3 w-3 mr-1" />
-                            Pause
-                          </Button>
-                        )}
-                        {sub.status === "paused" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              setConfirmDialog({
-                                action: "resume",
-                                subscription: sub,
-                              })
-                            }
-                          >
-                            <Play className="h-3 w-3 mr-1" />
-                            Resume
-                          </Button>
-                        )}
-                        {sub.status !== "cancelled" && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() =>
-                              setConfirmDialog({
-                                action: "cancel",
-                                subscription: sub,
-                              })
-                            }
-                          >
-                            <XIcon className="h-3 w-3 mr-1" />
-                            Cancel
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                    </td>
+                    <td className="text-sm">{sub.items.length}</td>
+                  </tr>
                 ))
               )}
-            </TableBody>
+            </tbody>
           </Table>
-        </div>
+        </DataTableCard>
       )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-end gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
-            Previous
-          </Button>
-          <span className="flex items-center text-sm px-2">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Next
-          </Button>
-        </div>
-      )}
-
-      {/* Confirm Dialog */}
-      <Dialog
-        open={!!confirmDialog}
-        onOpenChange={() => {
-          setConfirmDialog(null);
-          setCancelReason("");
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {confirmDialog?.action === "pause"
-                ? "Pause Subscription"
-                : confirmDialog?.action === "resume"
-                  ? "Resume Subscription"
-                  : "Cancel Subscription"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {confirmDialog && (
-              <p className="text-sm text-muted-foreground">
-                Subscription{" "}
-                <span className="font-mono font-medium">
-                  {confirmDialog.subscription.subscriptionNumber}
-                </span>{" "}
-                for{" "}
-                <span className="font-medium">
-                  {getCustomerName(confirmDialog.subscription.customer)}
-                </span>
-                .
-              </p>
-            )}
-            {confirmDialog?.action === "cancel" && (
-              <Input
-                placeholder="Reason (optional)"
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-              />
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setConfirmDialog(null);
-                setCancelReason("");
-              }}
-            >
-              Back
-            </Button>
-            <Button
-              variant={
-                confirmDialog?.action === "cancel" ? "destructive" : "default"
-              }
-              disabled={actionLoading}
-              onClick={handleAction}
-            >
-              {actionLoading ? "Processing…" : "Confirm"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

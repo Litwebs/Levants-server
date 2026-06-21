@@ -6,6 +6,7 @@ const { sendOk, sendErr } = require("../../utils/response.util");
 const ListPayments = async (req, res) => {
   const result = await paymentService.AdminListPayments({
     customerId: req.query.customerId,
+    subscriptionId: req.query.subscriptionId,
     status: req.query.status,
     page: Number(req.query.page) || 1,
     pageSize: Number(req.query.pageSize) || 20,

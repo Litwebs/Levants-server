@@ -38,6 +38,7 @@ import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
 import { CategoriesPage } from "./pages/Categories";
 import SubscriptionsPage from "./pages/Subscriptions/Subscriptions";
+import SubscriptionDetailsPage from "./pages/Subscriptions/SubscriptionDetails";
 import SupportRequestsPage from "./pages/SupportRequests/SupportRequests";
 import PaymentsPage from "./pages/Payments/Payments";
 import { SubscriptionsProvider } from "./context/Subscriptions";
@@ -230,6 +231,14 @@ const App = () => (
                               element={
                                 <RequirePermission permission="orders.read">
                                   <SubscriptionsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/subscriptions/:subscriptionId"
+                              element={
+                                <RequirePermission permission="orders.read">
+                                  <SubscriptionDetailsPage />
                                 </RequirePermission>
                               }
                             />

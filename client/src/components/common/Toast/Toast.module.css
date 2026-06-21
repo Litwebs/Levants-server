@@ -16,7 +16,7 @@
   padding: var(--space-4);
   background-color: var(--color-white);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: none;
   border-left: 4px solid;
   animation: slideIn 0.3s ease;
 }

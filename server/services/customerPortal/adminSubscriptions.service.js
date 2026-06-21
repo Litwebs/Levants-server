@@ -5,6 +5,7 @@ const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
 const CustomerNotification = require("../../models/customerNotification.model");
+const ProductVariant = require("../../models/variant.model");
 const {
   PauseSubscription,
   ResumeSubscription,
@@ -16,6 +17,37 @@ const {
   GetSubscriptionDeliveries,
 } = require("./customerSubscriptions.service");
 const { Response } = require("../../utils/response.util");
+
+async function enrichSubscriptionWithVariantImages(subscription) {
+  if (!subscription) return subscription;
+  const items = Array.isArray(subscription.items) ? subscription.items : [];
+  if (items.length === 0) return subscription;
+
+  const variantIds = items
+    .map((item) => String(item?.variant || ""))
+    .filter(Boolean);
+  if (variantIds.length === 0) return subscription;
+
+  const variants = await ProductVariant.find({ _id: { $in: variantIds } })
+    .populate("thumbnailImage", "url")
+    .select("thumbnailImage")
+    .lean();
+
+  const imageByVariantId = new Map(
+    variants.map((variant) => [
+      String(variant._id),
+      variant.thumbnailImage?.url || null,
+    ]),
+  );
+
+  return {
+    ...subscription,
+    items: items.map((item) => ({
+      ...item,
+      imageUrl: imageByVariantId.get(String(item?.variant || "")) || null,
+    })),
+  };
+}
 
 /**
  * List all subscriptions (admin).
@@ -66,7 +98,8 @@ async function AdminGetSubscription({ subscriptionId } = {}) {
     .lean();
 
   if (!subscription) return Response(false, "Subscription not found", null);
-  return Response(true, null, { subscription });
+  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  return Response(true, null, { subscription: enriched });
 }
 
 /**

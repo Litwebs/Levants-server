@@ -4,13 +4,28 @@ import styles from "./Table.module.css";
 interface TableProps {
   children: React.ReactNode;
   className?: string;
+  tableClassName?: string;
+  withWrapper?: boolean;
 }
 
-export const Table: React.FC<TableProps> = ({ children, className = "" }) => (
-  <div className={`${styles.tableWrapper} ${className}`}>
-    <table className={styles.table}>{children}</table>
-  </div>
-);
+export const Table: React.FC<TableProps> = ({
+  children,
+  className = "",
+  tableClassName = "",
+  withWrapper = true,
+}) => {
+  if (!withWrapper) {
+    return (
+      <table className={`${styles.table} ${tableClassName}`}>{children}</table>
+    );
+  }
+
+  return (
+    <div className={`${styles.tableWrapper} ${className}`}>
+      <table className={`${styles.table} ${tableClassName}`}>{children}</table>
+    </div>
+  );
+};
 
 export const TableHeader: React.FC<{ children: React.ReactNode }> = ({
   children,
