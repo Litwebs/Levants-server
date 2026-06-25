@@ -8,12 +8,14 @@ const {
 const {
   validateBody,
   validateParams,
+  validateQuery,
 } = require("../../middleware/validate.middleware");
 
 const controller = require("../../controllers/portal/customerOrders.controller");
 const {
   customerPortalOrderSchema,
   cancelOrderSchema,
+  portalListQuerySchema,
 } = require("../../validators/portal.validators");
 const { orderIdParamSchema } = require("../../validators/common.validators");
 
@@ -27,7 +29,11 @@ router.post(
   asyncHandler(controller.PlaceOrder),
 );
 
-router.get("/", asyncHandler(controller.ListOrders));
+router.get(
+  "/",
+  validateQuery(portalListQuerySchema),
+  asyncHandler(controller.ListOrders),
+);
 
 router.get(
   "/:orderId",

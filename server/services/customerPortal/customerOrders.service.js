@@ -11,6 +11,13 @@ const { geocodeAddress } = require("../../Integration/google.geocode");
 const { Response } = require("../../utils/response.util");
 
 const ALLOWED_CANCEL_STATUSES = ["pending", "unpaid"];
+const DELIVERY_STATUS_FILTERS = new Set([
+  "ordered",
+  "dispatched",
+  "in_transit",
+  "delivered",
+  "returned",
+]);
 
 /**
  * Place a one-time order for an authenticated portal customer.
@@ -185,20 +192,37 @@ async function ListOrders({
   page = 1,
   pageSize = 20,
   status,
+  search,
 } = {}) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 20));
+
   const filter = { customer: customerId };
-  if (status) filter.status = status;
+  if (status) {
+    if (DELIVERY_STATUS_FILTERS.has(status)) {
+      filter.deliveryStatus = status;
+    } else {
+      filter.status = status;
+    }
+  }
+
+  const trimmedSearch = String(search || "").trim();
+  if (trimmedSearch) {
+    const escaped = trimmedSearch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(escaped, "i");
+    filter.$or = [{ orderId: regex }, { "items.name": regex }];
+  }
 
   const total = await Order.countDocuments(filter);
   const orders = await Order.find(filter)
     .sort({ createdAt: -1 })
-    .skip((page - 1) * pageSize)
-    .limit(pageSize)
+    .skip((safePage - 1) * safePageSize)
+    .limit(safePageSize)
     .lean();
 
   return Response(true, null, {
     orders,
-    meta: { page, pageSize, total },
+    meta: { page: safePage, pageSize: safePageSize, total },
   });
 }
 
@@ -211,10 +235,30 @@ async function GetOrder({ customerId, orderId } = {}) {
     customer: customerId,
   })
     .populate("subscription", "subscriptionNumber")
+    .populate("customer", "firstName lastName email phone")
     .lean();
 
   if (!order) return Response(false, "Order not found", null);
-  return Response(true, null, { order });
+
+  const customerDoc =
+    order.customer && typeof order.customer === "object"
+      ? order.customer
+      : null;
+
+  const normalizedOrder = {
+    ...order,
+    customer: customerDoc?._id || order.customer,
+    customerDetails: customerDoc
+      ? {
+          firstName: customerDoc.firstName || null,
+          lastName: customerDoc.lastName || null,
+          email: customerDoc.email || null,
+          phone: customerDoc.phone || null,
+        }
+      : null,
+  };
+
+  return Response(true, null, { order: normalizedOrder });
 }
 
 /**

@@ -14,12 +14,13 @@ const PlaceOrder = async (req, res) => {
 };
 
 const ListOrders = async (req, res) => {
-  const { page, pageSize, status } = req.query;
+  const { page, pageSize, status, search } = req.query;
   const result = await ordersService.ListOrders({
     customerId: req.customer._id,
     page: Number(page) || 1,
     pageSize: Number(pageSize) || 20,
     status,
+    search,
   });
   return sendOk(res, result.data);
 };
