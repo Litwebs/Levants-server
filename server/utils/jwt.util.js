@@ -107,7 +107,7 @@ const CUSTOMER_ACCESS_EXPIRES_IN =
 const CUSTOMER_REFRESH_EXPIRES_IN =
   process.env.JWT_CUSTOMER_REFRESH_EXPIRES_IN ||
   process.env.JWT_REFRESH_EXPIRES_IN ||
-  "7d";
+  "30d";
 
 function signCustomerAccessToken(customer) {
   const payload = {

@@ -15,6 +15,7 @@ const PORTAL_REFRESH_COOKIE_NAME = "customerRefreshToken";
 const SESSION_USER_TYPE = "customer";
 const EMAIL_VERIFICATION_TTL_MINUTES = 10;
 const EMAIL_CHANGE_TOKEN_TTL_MINUTES = 60;
+const CUSTOMER_SESSION_DAYS = Number(process.env.CUSTOMER_SESSION_DAYS || 30);
 
 function getCustomerPortalBaseUrl() {
   const env = process.env.NODE_ENV;
@@ -81,14 +82,14 @@ function buildCookieOptions({
   refreshCookie = false,
 } = {}) {
   const isProduction = process.env.NODE_ENV === "production";
-  const maxAgeSec = rememberMe ? 30 * 24 * 60 * 60 : 7 * 24 * 60 * 60;
+  const sessionMaxAgeSec = CUSTOMER_SESSION_DAYS * 24 * 60 * 60;
   return {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? "strict" : "lax",
     path: "/",
     ...(refreshCookie
-      ? { maxAge: maxAgeSec * 1000 }
+      ? { maxAge: sessionMaxAgeSec * 1000 }
       : { maxAge: 15 * 60 * 1000 }),
   };
 }
@@ -157,7 +158,7 @@ async function Register({ firstName, lastName, email, phone, password } = {}) {
 async function Login({
   email,
   password,
-  rememberMe = false,
+  rememberMe = true,
   ip,
   userAgent,
 } = {}) {
@@ -208,7 +209,7 @@ async function Login({
     userAgent: userAgent || null,
     ip: ip || null,
     expiresAt: new Date(
-      Date.now() + (rememberMe ? 30 : 7) * 24 * 60 * 60 * 1000,
+      Date.now() + CUSTOMER_SESSION_DAYS * 24 * 60 * 60 * 1000,
     ),
   });
 

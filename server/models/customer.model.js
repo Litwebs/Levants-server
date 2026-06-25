@@ -22,7 +22,7 @@ const addressSchema = new mongoose.Schema(
       default: false,
     },
   },
-  { timestamps: true },
+  { timestamps: true, _id: true, id: true },
 );
 
 const notificationPreferencesSchema = new mongoose.Schema(
@@ -168,6 +168,16 @@ const customerSchema = new mongoose.Schema(
 
 // Helpful compound index
 customerSchema.index({ email: 1, isGuest: 1 });
+
+customerSchema.pre("save", function ensureEmbeddedAddressIds() {
+  if (!Array.isArray(this.addresses)) return;
+
+  this.addresses.forEach((address) => {
+    if (!address._id) {
+      address._id = new mongoose.Types.ObjectId();
+    }
+  });
+});
 
 // Clean output
 customerSchema.method("toJSON", function () {
