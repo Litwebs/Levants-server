@@ -51,6 +51,13 @@ const subscriptionSchema = new mongoose.Schema(
       index: true,
     },
 
+    paymentMethod: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PaymentMethod",
+      default: null,
+      index: true,
+    },
+
     status: {
       type: String,
       enum: ["active", "paused", "cancelled"],
@@ -128,6 +135,54 @@ const subscriptionSchema = new mongoose.Schema(
       trim: true,
       maxlength: 500,
       default: null,
+    },
+
+    stripeSubscriptionId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    stripeProductId: {
+      type: String,
+      default: null,
+    },
+
+    stripePriceId: {
+      type: String,
+      default: null,
+    },
+
+    // Edits made AFTER the cut-off for the upcoming delivery are staged here and
+    // promoted onto `items` once that delivery has been generated, so they take
+    // effect from the following delivery instead of the imminent one.
+    pendingChanges: {
+      type: new mongoose.Schema(
+        {
+          items: { type: [subscriptionItemSchema], default: undefined },
+          deliveryAddress: {
+            line1: { type: String },
+            line2: { type: String, default: null },
+            city: { type: String },
+            postcode: { type: String },
+            country: { type: String },
+            deliveryInstructions: { type: String, default: null },
+          },
+          frequency: { type: String, default: undefined },
+          preferredDeliveryDay: { type: Number, default: undefined },
+          effectiveFrom: { type: Date, default: null },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+
+    // When true, the Stripe recurring price update is deferred until the next
+    // invoice is paid (used when an increase was charged immediately so the
+    // upcoming invoice is not double-charged).
+    pendingPriceSync: {
+      type: Boolean,
+      default: false,
     },
   },
   {

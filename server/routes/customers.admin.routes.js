@@ -13,6 +13,7 @@ const controller = require("../controllers/customers.controller");
 const {
   updateCustomerSchema,
   listCustomersQuerySchema,
+  adjustCustomerCreditSchema,
 } = require("../validators/customer.validators");
 
 const { customerIdParamSchema } = require("../validators/common.validators");
@@ -69,6 +70,24 @@ router.get(
   requirePermission("customers.read"),
   validateParams(customerIdParamSchema),
   asyncHandler(controller.ListSupportRequestsByCustomer),
+);
+
+// Get a customer's store-credit balance + ledger (admin)
+router.get(
+  "/:customerId/credit",
+  requirePermission("customers.credit.read"),
+  validateParams(customerIdParamSchema),
+  validateQuery(listCustomersQuerySchema),
+  asyncHandler(controller.GetCustomerCredit),
+);
+
+// Manually adjust a customer's store credit (admin)
+router.post(
+  "/:customerId/credit/adjust",
+  requirePermission("customers.credit.update"),
+  validateParams(customerIdParamSchema),
+  validateBody(adjustCustomerCreditSchema),
+  asyncHandler(controller.AdjustCustomerCredit),
 );
 
 module.exports = router;

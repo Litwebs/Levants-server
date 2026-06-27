@@ -393,4 +393,81 @@ module.exports = {
   ListCustomers,
   UpdateCustomer,
   ListOrdersByCustomer,
+  GetCustomerCredit,
+  AdjustCustomerCredit,
 };
+
+/**
+ * Get a customer's store-credit balance + paginated ledger history (admin).
+ */
+async function GetCustomerCredit({ customerId, page = 1, pageSize = 20 } = {}) {
+  if (!mongoose.isValidObjectId(customerId)) {
+    return { success: false, statusCode: 400, message: "Invalid customerId" };
+  }
+
+  const customer = await Customer.findById(customerId).select("creditBalance");
+  if (!customer) {
+    return { success: false, statusCode: 404, message: "Customer not found" };
+  }
+
+  const storeCreditService = require("./storeCredit.service");
+  const ledger = await storeCreditService.listTransactions({
+    customerId,
+    page,
+    pageSize,
+  });
+
+  return {
+    success: true,
+    data: {
+      balance: customer.creditBalance || 0,
+      transactions: ledger.transactions,
+    },
+    meta: { page, pageSize, total: ledger.meta.total },
+  };
+}
+
+/**
+ * Manually adjust a customer's store credit (admin). `amount` is in POUNDS and
+ * may be negative to deduct credit.
+ */
+async function AdjustCustomerCredit({
+  customerId,
+  amount,
+  reason,
+  actorUserId,
+} = {}) {
+  if (!mongoose.isValidObjectId(customerId)) {
+    return { success: false, statusCode: 400, message: "Invalid customerId" };
+  }
+
+  const amountMinor = Math.round(Number(amount) * 100);
+  if (!Number.isFinite(amountMinor) || amountMinor === 0) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Amount must be a non-zero number",
+    };
+  }
+
+  const storeCreditService = require("./storeCredit.service");
+  const result = await storeCreditService.adjust({
+    customerId,
+    amountMinor,
+    reason,
+    actorUserId,
+  });
+
+  if (!result.ok) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: result.message || "Failed to adjust credit",
+    };
+  }
+
+  return {
+    success: true,
+    data: { balance: result.balance, transaction: result.transaction },
+  };
+}

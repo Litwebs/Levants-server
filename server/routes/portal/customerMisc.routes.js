@@ -43,7 +43,16 @@ supportRouter.get(
 
 const paymentRouter = express.Router();
 paymentRouter.use(requireCustomerAuth);
+paymentRouter.get("/config", asyncHandler(paymentController.GetStripeConfig));
 paymentRouter.get("/", asyncHandler(paymentController.ListPayments));
+paymentRouter.post(
+  "/payment-methods/setup-intent",
+  asyncHandler(paymentController.CreateSetupIntent),
+);
+paymentRouter.post(
+  "/payment-methods/attach",
+  asyncHandler(paymentController.AttachPaymentMethod),
+);
 paymentRouter.get(
   "/payment-methods",
   asyncHandler(paymentController.ListPaymentMethods),

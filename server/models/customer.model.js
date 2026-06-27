@@ -65,6 +65,19 @@ const customerSchema = new mongoose.Schema(
       trim: true,
     },
 
+    stripeCustomerId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
+    // Store credit / wallet balance, held in MINOR units (pence). 100 = £1.00
+    creditBalance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     addresses: {
       type: [addressSchema],
       default: [],

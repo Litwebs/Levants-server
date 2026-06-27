@@ -3,6 +3,33 @@
 const paymentService = require("../../services/customerPortal/customerPayments.service");
 const { sendOk, sendErr } = require("../../utils/response.util");
 
+const GetStripeConfig = async (req, res) => {
+  const result = await paymentService.GetStripeConfig();
+  if (!result.success)
+    return sendErr(res, { statusCode: 500, message: result.message });
+  return sendOk(res, result.data);
+};
+
+const CreateSetupIntent = async (req, res) => {
+  const result = await paymentService.CreateSetupIntent({
+    customerId: req.customer._id,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data);
+};
+
+const AttachPaymentMethod = async (req, res) => {
+  const result = await paymentService.AttachPaymentMethod({
+    customerId: req.customer._id,
+    stripePaymentMethodId: req.body?.stripePaymentMethodId,
+    setDefault: req.body?.setDefault,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
 const ListPayments = async (req, res) => {
   const result = await paymentService.ListPayments({
     customerId: req.customer._id,
@@ -40,6 +67,9 @@ const DeletePaymentMethod = async (req, res) => {
 };
 
 module.exports = {
+  GetStripeConfig,
+  CreateSetupIntent,
+  AttachPaymentMethod,
   ListPayments,
   ListPaymentMethods,
   SetDefaultPaymentMethod,

@@ -5,6 +5,7 @@ const {
 
 const Order = require("../../models/order.model");
 const { recordRedemption } = require("../discounts.public.service");
+const storeCreditService = require("../storeCredit.service");
 const {
   sendNewOrderAlertEmailToUsers,
   sendOrderConfirmationEmailToCustomer,
@@ -97,6 +98,27 @@ async function HandlePaymentSuccess(session) {
     stripePaymentIntentId: paymentIntentId,
     stripePricing: getStripePricingFromSession(session),
   });
+
+  // Redeem any store credit applied to this order (best-effort, idempotent:
+  // the early return above prevents re-running once the order is paid).
+  try {
+    const creditAppliedMinor = Math.round(Number(order.creditApplied) || 0);
+    if (creditAppliedMinor > 0) {
+      await storeCreditService.redeemCredit({
+        customerId: order.customer,
+        amountMinor: creditAppliedMinor,
+        type: "order_redemption",
+        orderId: order._id,
+        reason: `Order ${order.orderId}`,
+      });
+    }
+  } catch (e) {
+    // Don't fail webhook processing due to credit redemption bookkeeping.
+    console.error("Failed to redeem store credit for paid order", {
+      orderId: String(order._id),
+      error: e?.message,
+    });
+  }
 
   // Record discount redemption (best-effort, idempotent)
   try {

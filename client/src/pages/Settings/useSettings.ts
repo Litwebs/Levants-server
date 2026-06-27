@@ -311,6 +311,122 @@ export const useSettings = () => {
     }
   };
 
+  /* -------------------- SUBSCRIPTION SETTINGS -------------------- */
+  type SubscriptionSettings = {
+    deliveryDays: number[];
+    cutoffDaysBefore: number;
+    cutoffTime: string;
+  };
+
+  const emptySubscriptionSettings: SubscriptionSettings = {
+    deliveryDays: [],
+    cutoffDaysBefore: 2,
+    cutoffTime: "22:00",
+  };
+
+  const [subscriptionSettings, setSubscriptionSettings] =
+    useState<SubscriptionSettings>(emptySubscriptionSettings);
+  const [subscriptionSettingsLoading, setSubscriptionSettingsLoading] = useState({
+    loading: false,
+    saving: false,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    if (!canReadBusinessInfo) return;
+
+    setSubscriptionSettingsLoading((prev) => ({ ...prev, loading: true }));
+    void api
+      .get("/admin/subscription-settings")
+      .then((res) => {
+        const settings = (res.data as any)?.data?.settings;
+        if (!settings) return;
+        setSubscriptionSettings({
+          deliveryDays: Array.isArray(settings.deliveryDays)
+            ? settings.deliveryDays
+            : [],
+          cutoffDaysBefore:
+            typeof settings.cutoffDaysBefore === "number"
+              ? settings.cutoffDaysBefore
+              : 2,
+          cutoffTime: settings.cutoffTime || "22:00",
+        });
+      })
+      .catch((err: any) => {
+        showToast({
+          type: "error",
+          title:
+            err?.response?.data?.message ||
+            "Failed to load subscription settings",
+        });
+      })
+      .finally(() => {
+        setSubscriptionSettingsLoading((prev) => ({ ...prev, loading: false }));
+      });
+  }, [canReadBusinessInfo, showToast, user]);
+
+  const toggleDeliveryDay = (day: number) => {
+    setSubscriptionSettings((prev) => {
+      const has = prev.deliveryDays.includes(day);
+      const deliveryDays = has
+        ? prev.deliveryDays.filter((d) => d !== day)
+        : [...prev.deliveryDays, day].sort((a, b) => a - b);
+      return { ...prev, deliveryDays };
+    });
+  };
+
+  const handleSaveSubscriptionSettings = async () => {
+    if (!canUpdateBusinessInfo) {
+      showToast({ type: "error", title: "You do not have access to update this" });
+      return;
+    }
+    if (subscriptionSettingsLoading.saving) return;
+
+    if (!subscriptionSettings.deliveryDays.length) {
+      showToast({
+        type: "error",
+        title: "Select at least one delivery day",
+      });
+      return;
+    }
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(subscriptionSettings.cutoffTime)) {
+      showToast({ type: "error", title: "Cut-off time must be in HH:MM format" });
+      return;
+    }
+
+    setSubscriptionSettingsLoading((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await api.put("/admin/subscription-settings", {
+        deliveryDays: subscriptionSettings.deliveryDays,
+        cutoffDaysBefore: subscriptionSettings.cutoffDaysBefore,
+        cutoffTime: subscriptionSettings.cutoffTime,
+      });
+      const settings = (res.data as any)?.data?.settings;
+      if (settings) {
+        setSubscriptionSettings({
+          deliveryDays: Array.isArray(settings.deliveryDays)
+            ? settings.deliveryDays
+            : subscriptionSettings.deliveryDays,
+          cutoffDaysBefore:
+            typeof settings.cutoffDaysBefore === "number"
+              ? settings.cutoffDaysBefore
+              : subscriptionSettings.cutoffDaysBefore,
+          cutoffTime: settings.cutoffTime || subscriptionSettings.cutoffTime,
+        });
+      }
+      showToast({ type: "success", title: "Subscription settings updated" });
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title:
+          err?.response?.data?.message ||
+          "Failed to update subscription settings",
+      });
+    } finally {
+      setSubscriptionSettingsLoading((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
   /* -------------------- USERS -------------------- */
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -746,6 +862,12 @@ export const useSettings = () => {
     setCompanySettings,
     handleSaveGeneral,
     generalLoading,
+
+    subscriptionSettings,
+    setSubscriptionSettings,
+    toggleDeliveryDay,
+    handleSaveSubscriptionSettings,
+    subscriptionSettingsLoading,
 
     users: managedUsers,
     roles,

@@ -149,6 +149,14 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Store credit applied to this order, in MINOR units (pence).
+    // Redeemed from the customer's balance when the order is paid.
+    creditApplied: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     status: {
       type: String,
       enum: [
@@ -197,6 +205,12 @@ const orderSchema = new mongoose.Schema(
     stripePaymentIntentId: {
       type: String,
       index: true,
+    },
+
+    stripeInvoiceId: {
+      type: String,
+      index: true,
+      sparse: true,
     },
 
     paidAt: {

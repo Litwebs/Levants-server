@@ -1,4 +1,5 @@
 export { CustomersProvider, useCustomers } from "./CustomersContext";
+export type { CreditTransaction } from "./CustomersContext";
 export type {
 	Customer,
 	CustomerAddress,

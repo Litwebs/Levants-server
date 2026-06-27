@@ -18,6 +18,12 @@ const DELIVERY_STATUS_FILTERS = new Set([
   "delivered",
   "returned",
 ]);
+const RECEIPT_ELIGIBLE_STATUSES = new Set([
+  "paid",
+  "partially_paid",
+  "partially_refunded",
+  "refunded",
+]);
 
 /**
  * Place a one-time order for an authenticated portal customer.
@@ -262,6 +268,61 @@ async function GetOrder({ customerId, orderId } = {}) {
 }
 
 /**
+ * Get order data required to render a custom receipt template.
+ */
+async function GetOrderReceiptData({ customerId, orderId } = {}) {
+  const order = await Order.findOne({
+    _id: orderId,
+    customer: customerId,
+  })
+    .populate("customer", "firstName lastName email phone")
+    .lean();
+
+  if (!order) return Response(false, "Order not found", null);
+
+  const hasPaymentEvidence =
+    Boolean(order.paidAt) || RECEIPT_ELIGIBLE_STATUSES.has(order.status);
+
+  if (!hasPaymentEvidence) {
+    return Response(false, "Receipt is not available for this order yet", null);
+  }
+
+  const customerDoc =
+    order.customer && typeof order.customer === "object"
+      ? order.customer
+      : null;
+
+  const receiptOrder = {
+    ...order,
+    customer: customerDoc?._id || order.customer,
+    customerDetails: customerDoc
+      ? {
+          firstName: customerDoc.firstName || null,
+          lastName: customerDoc.lastName || null,
+          email: customerDoc.email || null,
+          phone: customerDoc.phone || null,
+        }
+      : null,
+  };
+
+  return Response(true, null, { order: receiptOrder });
+}
+
+/**
+ * Get Stripe receipt URL for a customer order.
+ */
+async function GetOrderReceiptUrl({ customerId, orderId } = {}) {
+  const receiptDataResult = await GetOrderReceiptData({ customerId, orderId });
+  if (!receiptDataResult.success) {
+    return receiptDataResult;
+  }
+
+  return Response(true, null, {
+    receiptUrl: `/api/portal/orders/${orderId}/receipt/custom`,
+  });
+}
+
+/**
  * Cancel an order (customer-initiated, limited statuses).
  */
 async function CancelOrder({ customerId, orderId, reason } = {}) {
@@ -330,6 +391,8 @@ module.exports = {
   PlaceOrder,
   ListOrders,
   GetOrder,
+  GetOrderReceiptData,
+  GetOrderReceiptUrl,
   CancelOrder,
   Reorder,
 };

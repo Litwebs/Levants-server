@@ -42,6 +42,20 @@ const unwrapData = <T,>(payload: unknown): T | null => {
   return payload as T;
 };
 
+export type CreditTransaction = {
+  _id: string;
+  /** Signed amount in MINOR units (pence). */
+  amount: number;
+  balanceAfter: number;
+  type:
+    | "subscription_refund"
+    | "order_redemption"
+    | "order_redemption_reversal"
+    | "admin_adjustment";
+  reason?: string | null;
+  createdAt: string;
+};
+
 type CustomersContextType = {
   customers: CustomersState["customers"];
   meta: CustomersState["meta"];
@@ -70,6 +84,20 @@ type CustomersContextType = {
       address?: CustomerAddress;
     },
   ) => Promise<Customer>;
+
+  getCustomerCredit: (
+    customerId: string,
+    params?: { page?: number; pageSize?: number },
+  ) => Promise<{
+    balance: number;
+    transactions: CreditTransaction[];
+    meta: CustomersListMeta | null;
+  }>;
+
+  adjustCustomerCredit: (
+    customerId: string,
+    body: { amount: number; reason: string },
+  ) => Promise<{ balance: number; transaction: CreditTransaction }>;
 };
 
 const CustomersContext = createContext<CustomersContextType | null>(null);
@@ -195,6 +223,53 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const getCustomerCredit = useCallback(
+    async (
+      customerId: string,
+      params?: { page?: number; pageSize?: number },
+    ) => {
+      const res = await api.get(`/admin/customers/${customerId}/credit`, {
+        params: {
+          page: params?.page,
+          pageSize: params?.pageSize,
+        },
+      });
+      const data = unwrapData<{
+        balance: number;
+        transactions: CreditTransaction[];
+      }>(res.data);
+      const meta = (res.data as ApiEnvelope<unknown>)
+        ?.meta as CustomersListMeta | null;
+      return {
+        balance: Number(data?.balance || 0),
+        transactions: Array.isArray(data?.transactions)
+          ? data!.transactions
+          : [],
+        meta: meta ?? null,
+      };
+    },
+    [],
+  );
+
+  const adjustCustomerCredit = useCallback(
+    async (customerId: string, body: { amount: number; reason: string }) => {
+      const res = await api.post(
+        `/admin/customers/${customerId}/credit/adjust`,
+        body,
+      );
+      const data = unwrapData<{
+        balance: number;
+        transaction: CreditTransaction;
+      }>(res.data);
+      if (!data) throw new Error("Failed to adjust credit");
+      return {
+        balance: Number(data.balance || 0),
+        transaction: data.transaction,
+      };
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       customers: state.customers,
@@ -205,8 +280,18 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
       listCustomerOrders,
       getCustomerById,
       updateCustomer,
+      getCustomerCredit,
+      adjustCustomerCredit,
     }),
-    [state, listCustomers, listCustomerOrders, getCustomerById, updateCustomer],
+    [
+      state,
+      listCustomers,
+      listCustomerOrders,
+      getCustomerById,
+      updateCustomer,
+      getCustomerCredit,
+      adjustCustomerCredit,
+    ],
   );
 
   return (

@@ -123,7 +123,51 @@ module.exports = {
   ListOrdersByCustomer,
   ListSubscriptionsByCustomer,
   ListSupportRequestsByCustomer,
+  GetCustomerCredit,
+  AdjustCustomerCredit,
 };
+
+/**
+ * Get a customer's store-credit balance + ledger history (admin)
+ */
+async function GetCustomerCredit(req, res) {
+  const result = await service.GetCustomerCredit({
+    customerId: req.params.customerId,
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 20,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message,
+    });
+  }
+
+  return sendOk(res, result.data, { meta: result.meta });
+}
+
+/**
+ * Manually adjust a customer's store credit (admin). `amount` is in POUNDS and
+ * may be negative to deduct.
+ */
+async function AdjustCustomerCredit(req, res) {
+  const result = await service.AdjustCustomerCredit({
+    customerId: req.params.customerId,
+    amount: req.body.amount,
+    reason: req.body.reason,
+    actorUserId: req.user?._id || req.user?.id || null,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message,
+    });
+  }
+
+  return sendOk(res, result.data);
+}
 
 async function ListSubscriptionsByCustomer(req, res) {
   const Subscription = require("../models/subscription.model");

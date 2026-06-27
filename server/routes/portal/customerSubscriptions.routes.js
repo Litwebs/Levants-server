@@ -32,6 +32,8 @@ router.post(
 
 router.get("/", asyncHandler(controller.ListSubscriptions));
 
+router.get("/settings", asyncHandler(controller.GetSubscriptionSettings));
+
 router.get(
   "/:subscriptionId",
   validateParams(subscriptionIdParamSchema),

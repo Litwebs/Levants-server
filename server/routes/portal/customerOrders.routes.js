@@ -41,6 +41,24 @@ router.get(
   asyncHandler(controller.GetOrder),
 );
 
+router.get(
+  "/:orderId/receipt",
+  validateParams(orderIdParamSchema),
+  asyncHandler(controller.DownloadReceipt),
+);
+
+router.get(
+  "/:orderId/receipt-url",
+  validateParams(orderIdParamSchema),
+  asyncHandler(controller.GetReceiptUrl),
+);
+
+router.get(
+  "/:orderId/receipt/custom",
+  validateParams(orderIdParamSchema),
+  asyncHandler(controller.RenderCustomReceipt),
+);
+
 router.post(
   "/:orderId/cancel",
   validateParams(orderIdParamSchema),

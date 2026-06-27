@@ -53,10 +53,12 @@ const updateSubscriptionSchema = Joi.object({
 const subscriptionItemSchema = Joi.object({
   variantId: objectId.required(),
   quantity: Joi.number().integer().min(1).required(),
+  refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
 const updateSubscriptionItemSchema = Joi.object({
   quantity: Joi.number().integer().min(1).required(),
+  refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
 const subscriptionIdParamSchema = Joi.object({

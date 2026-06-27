@@ -80,6 +80,8 @@ const PERMISSIONS = [
   "customers.read",
   "customers.update",
   "customers.delete",
+  "customers.credit.read",
+  "customers.credit.update",
 
   // =========================
   // Delivery / Routes

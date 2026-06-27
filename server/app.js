@@ -29,6 +29,7 @@ const {
 const authRoutes = require("./routes/auth.routes");
 const accessRoutes = require("./routes/access.routes");
 const businessInfoRoutes = require("./routes/businessInfo.routes");
+const subscriptionSettingsRoutes = require("./routes/subscriptionSettings.routes");
 const publicProductRoutes = require("./routes/products.public.routes");
 const adminProductRoutes = require("./routes/products.admin.routes");
 const adminVariantRoutes = require("./routes/variants.admin.routes");
@@ -52,6 +53,7 @@ const portalProductRoutes = require("./routes/portal/customerProducts.routes");
 const portalOrderRoutes = require("./routes/portal/customerOrders.routes");
 const portalAddressRoutes = require("./routes/portal/customerAddresses.routes");
 const portalSubscriptionRoutes = require("./routes/portal/customerSubscriptions.routes");
+const portalCreditRoutes = require("./routes/portal/customerCredits.routes");
 const {
   notifRouter,
   supportRouter,
@@ -163,6 +165,7 @@ app.get("/health", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/access", accessRoutes);
 app.use("/api/business-info", businessInfoRoutes);
+app.use("/api/admin/subscription-settings", subscriptionSettingsRoutes);
 
 // 🟢 PUBLIC (frontend)
 app.use("/api/products", publicProductRoutes);
@@ -208,6 +211,7 @@ app.use("/api/portal/products", portalProductRoutes);
 app.use("/api/portal/orders", portalOrderRoutes);
 app.use("/api/portal/addresses", portalAddressRoutes);
 app.use("/api/portal/subscriptions", portalSubscriptionRoutes);
+app.use("/api/portal/credits", portalCreditRoutes);
 app.use("/api/portal/notifications", notifRouter);
 app.use("/api/portal/support-requests", supportRouter);
 app.use("/api/portal/payments", paymentRouter);

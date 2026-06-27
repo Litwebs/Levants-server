@@ -32,12 +32,13 @@ const STATUS_VARIANTS: Record<string, "success" | "warning" | "error"> = {
 };
 
 const getCustomerName = (customer: Subscription["customer"]) => {
+  if (!customer) return "Unknown customer";
   if (typeof customer === "string") return customer;
   return `${customer.firstName} ${customer.lastName}`;
 };
 
 const getCustomerEmail = (customer: Subscription["customer"]) => {
-  if (typeof customer === "string") return "";
+  if (!customer || typeof customer === "string") return "";
   return customer.email;
 };
 

@@ -1,0 +1,22 @@
+scenario 1:
+
+Customer adds item before cut-off time = works, charges the custoemr immeadiantly, and updated subscription price for next invoice  ✅
+Customer increases quantity before cut-off time = works, charges the custoemr immeadiantly, and updated subscription price for next invoice  ✅
+Customer adds item after cut-off time = works, updates subscription price for next invoice  ✅
+Customer increases after  cut-off time = works, updates subscription price for next invoice  ✅
+
+scenario 2:
+
+Customer removes item before cut-off time = ?
+Customer decreases quantity before cut-off time = ? 
+Customer removes item after cut-off time = 
+Customer decreases after before cut-off time =
+
+
+scenario 3:
+
+Customer cancels subscription before cut-off time =
+Customer puases before cut-off time =
+Customer cancels item after cut-off time =
+Customer puases after before cut-off time =
+

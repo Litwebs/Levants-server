@@ -23,6 +23,11 @@ const ListSubscriptions = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetSubscriptionSettings = async (req, res) => {
+  const result = await service.GetSubscriptionSettingsForCustomer();
+  return sendOk(res, result.data);
+};
+
 const GetSubscription = async (req, res) => {
   const result = await service.GetSubscription({
     customerId: req.customer._id,
@@ -81,6 +86,7 @@ const AddSubscriptionItem = async (req, res) => {
     subscriptionId: req.params.subscriptionId,
     variantId: req.body.variantId,
     quantity: req.body.quantity,
+    refundMethod: req.body.refundMethod,
   });
   if (!result.success)
     return sendErr(res, { statusCode: 400, message: result.message });
@@ -93,6 +99,7 @@ const UpdateSubscriptionItem = async (req, res) => {
     subscriptionId: req.params.subscriptionId,
     itemId: req.params.itemId,
     quantity: req.body.quantity,
+    refundMethod: req.body.refundMethod,
   });
   if (!result.success)
     return sendErr(res, { statusCode: 400, message: result.message });
@@ -104,6 +111,7 @@ const RemoveSubscriptionItem = async (req, res) => {
     customerId: req.customer._id,
     subscriptionId: req.params.subscriptionId,
     itemId: req.params.itemId,
+    refundMethod: req.body?.refundMethod,
   });
   if (!result.success)
     return sendErr(res, { statusCode: 400, message: result.message });
@@ -126,6 +134,7 @@ module.exports = {
   CreateSubscription,
   ListSubscriptions,
   GetSubscription,
+  GetSubscriptionSettings,
   UpdateSubscription,
   PauseSubscription,
   ResumeSubscription,

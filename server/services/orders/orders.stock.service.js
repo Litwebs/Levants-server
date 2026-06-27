@@ -163,7 +163,11 @@ async function finalizeStockForOrder(orderId, stripeRefs = {}) {
       order,
     );
 
-    if (normalizedStripePricing) {
+    // When store credit was applied, Stripe's totals reflect the reduced
+    // (post-credit) charge, and the credit shows up as a Stripe discount.
+    // Keep our own order totals so the credit is recorded separately and the
+    // order value isn't mislabelled as a discount.
+    if (normalizedStripePricing && !(Number(order.creditApplied) > 0)) {
       order.currency = normalizedStripePricing.currency;
       order.subtotal = normalizedStripePricing.subtotal;
       order.total = normalizedStripePricing.total;
@@ -172,7 +176,10 @@ async function finalizeStockForOrder(orderId, stripeRefs = {}) {
       order.isDiscounted = normalizedStripePricing.isDiscounted;
       order.paidAt = normalizedStripePricing.paidAt;
     } else {
-      order.paidAt = new Date();
+      order.paidAt =
+        normalizedStripePricing?.paidAt instanceof Date
+          ? normalizedStripePricing.paidAt
+          : new Date();
     }
 
     order.status = "paid";
