@@ -3,6 +3,10 @@
 const mongoose = require("mongoose");
 const Customer = require("../../models/customer.model");
 const { Response } = require("../../utils/response.util");
+const {
+  DELIVERABLE_OUTWARD_CODES,
+} = require("../../constants/deliveryCoverage.constants");
+const { normalizePostcode } = require("../../utils/postcode.util");
 
 const toClientAddress = (address) => {
   const plain =
@@ -53,6 +57,26 @@ const getAddressIndexById = (customer, addressId) => {
   });
 };
 
+const validateDeliverablePostcode = (postcode) => {
+  const parsed = normalizePostcode(postcode);
+  if (
+    !parsed.outwardCode ||
+    !DELIVERABLE_OUTWARD_CODES.has(parsed.outwardCode)
+  ) {
+    return Response(
+      false,
+      "We do not currently deliver to that postcode.",
+      null,
+    );
+  }
+
+  return {
+    ok: true,
+    formatted:
+      parsed.formatted || parsed.normalized || String(postcode || "").trim(),
+  };
+};
+
 /**
  * Get all addresses for a customer.
  */
@@ -88,6 +112,9 @@ async function AddAddress({
   const customer = await Customer.findById(customerId);
   if (!customer) return Response(false, "Customer not found", null);
 
+  const postcodeCheck = validateDeliverablePostcode(postcode);
+  if (!postcodeCheck.ok) return postcodeCheck;
+
   if (ensureAddressIds(customer)) {
     await customer.save();
   }
@@ -117,7 +144,7 @@ async function AddAddress({
     line1,
     line2: line2 || null,
     city,
-    postcode,
+    postcode: postcodeCheck.formatted,
     country,
     deliveryInstructions: deliveryInstructions || null,
     isDefault,
@@ -137,6 +164,12 @@ async function AddAddress({
 async function UpdateAddress({ customerId, addressId, ...fields } = {}) {
   const customer = await Customer.findById(customerId);
   if (!customer) return Response(false, "Customer not found", null);
+
+  if (fields.postcode !== undefined) {
+    const postcodeCheck = validateDeliverablePostcode(fields.postcode);
+    if (!postcodeCheck.ok) return postcodeCheck;
+    fields.postcode = postcodeCheck.formatted;
+  }
 
   if (ensureAddressIds(customer)) {
     await customer.save();

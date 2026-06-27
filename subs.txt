@@ -7,10 +7,10 @@ Customer increases after  cut-off time = works, updates subscription price for n
 
 scenario 2:
 
-Customer removes item before cut-off time = ?
-Customer decreases quantity before cut-off time = ? 
-Customer removes item after cut-off time = 
-Customer decreases after before cut-off time =
+Customer removes item before cut-off time = works, refunds the custoemr immeadiantly, and updated subscription price for next invoice  ✅
+Customer decreases quantity before cut-off time =  refunds the custoemr immeadiantly, and updated subscription price for next invoice  ✅
+Customer removes item after cut-off time = works, updates subscription price for next invoice  ✅
+Customer decreases after before cut-off time = works, updates subscription price for next invoice  ✅
 
 
 scenario 3:

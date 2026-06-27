@@ -137,6 +137,9 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
           orderId: order.orderId,
           status: order.status,
           total: order.total,
+          amountPaid: order.amountPaid ?? null,
+          refunds: order.refunds || [],
+          refund: order.refund || null,
         },
         subscription: order.subscription || null,
       };
