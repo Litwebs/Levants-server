@@ -108,9 +108,12 @@ async function AdminGetSubscription({ subscriptionId } = {}) {
 async function AdminPauseSubscription({ subscriptionId } = {}) {
   const subscription = await Subscription.findById(subscriptionId);
   if (!subscription) return Response(false, "Subscription not found", null);
+  const defaultResumeOn = new Date();
+  defaultResumeOn.setDate(defaultResumeOn.getDate() + 28);
   return PauseSubscription({
     customerId: String(subscription.customer),
     subscriptionId,
+    resumeOn: defaultResumeOn.toISOString().slice(0, 10),
   });
 }
 

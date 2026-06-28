@@ -192,7 +192,10 @@ const OrdersTable = ({
                   </div>
                 </td>
                 <td data-label="Source">
-                  {getOrderSourceBadge(order.isManualImport)}
+                  {getOrderSourceBadge(
+                    order.isManualImport,
+                    order.isSubscriptionGenerated,
+                  )}
                 </td>
 
                 <td data-label="Total">

@@ -113,9 +113,11 @@ function calculateNextDeliveryDate(preferredDay, frequency, from = new Date()) {
   const currentDay = start.getDay();
   let daysUntilPreferred = (preferredDay - currentDay + 7) % 7;
 
-  // If today is the preferred day, push to next occurrence
+  // For the FIRST scheduled delivery, use the next weekday occurrence.
+  // Frequency controls the cadence AFTER that first delivery; it should not
+  // cause a brand-new fortnightly subscription created today to skip two weeks.
   if (daysUntilPreferred === 0) {
-    daysUntilPreferred = FREQUENCY_DAYS[frequency] || 7;
+    daysUntilPreferred = 7;
   }
 
   const next = new Date(start);
@@ -240,6 +242,145 @@ async function getCutoffStatus(subscription) {
   const cutoffAt = computeCutoffDate(subscription.nextDeliveryDate, settings);
   const isPastCutoff = cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
   return { settings, cutoffAt, isPastCutoff };
+}
+
+function startOfDay(value) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function formatDateLabel(value) {
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function parsePauseResumeDate(resumeOn) {
+  if (!resumeOn) {
+    return {
+      ok: false,
+      message: "Please choose when the subscription should resume.",
+    };
+  }
+
+  const requested = startOfDay(resumeOn);
+  if (Number.isNaN(requested.getTime())) {
+    return { ok: false, message: "Please choose a valid resume date." };
+  }
+
+  const today = startOfDay(new Date());
+  const minResume = new Date(today);
+  minResume.setDate(minResume.getDate() + 1);
+
+  const maxResume = new Date(today);
+  maxResume.setDate(maxResume.getDate() + 28);
+
+  if (requested < minResume) {
+    return {
+      ok: false,
+      message: "Resume date must be at least tomorrow.",
+    };
+  }
+
+  if (requested > maxResume) {
+    return {
+      ok: false,
+      message: "A subscription can only be paused for up to 28 days.",
+    };
+  }
+
+  return { ok: true, resumeDate: requested };
+}
+
+async function getResumeNextDeliveryDate(
+  subscription,
+  referenceDate = new Date(),
+) {
+  const retainedDelivery = await SubscriptionDelivery.findOne({
+    subscription: subscription._id,
+    status: "scheduled",
+    scheduledDate: { $gte: startOfDay(referenceDate) },
+  })
+    .sort({ scheduledDate: 1 })
+    .lean();
+
+  return retainedDelivery?.scheduledDate
+    ? new Date(retainedDelivery.scheduledDate)
+    : calculateNextDeliveryDate(
+        subscription.preferredDeliveryDay,
+        subscription.frequency,
+        referenceDate,
+      );
+}
+
+async function activatePausedSubscription(
+  subscription,
+  {
+    notificationType = "subscription_resumed",
+    notificationTitle = "Subscription resumed",
+    notificationMessage,
+  } = {},
+) {
+  if (subscription.stripeSubscriptionId) {
+    try {
+      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        pause_collection: "",
+      });
+    } catch (err) {
+      console.error("[ResumeSubscription] Stripe resume failed:", err.message);
+    }
+  }
+
+  subscription.status = "active";
+  subscription.pausedAt = null;
+  subscription.pausedUntil = null;
+  subscription.nextDeliveryDate = await getResumeNextDeliveryDate(subscription);
+  await subscription.save();
+
+  await scheduleUpcomingDeliveries(subscription);
+
+  await CustomerNotification.create({
+    customer: subscription.customer,
+    type: notificationType,
+    title: notificationTitle,
+    message:
+      notificationMessage ||
+      `Your subscription is active again. Next delivery: ${formatDateLabel(subscription.nextDeliveryDate)}.`,
+    relatedSubscription: subscription._id,
+  });
+
+  return subscription;
+}
+
+async function AutoResumePausedSubscriptions({
+  subscriptionId,
+  customerId,
+} = {}) {
+  const filter = {
+    status: "paused",
+    pausedUntil: { $ne: null, $lte: new Date() },
+  };
+
+  if (subscriptionId) filter._id = subscriptionId;
+  if (customerId) filter.customer = customerId;
+
+  const pausedSubscriptions = await Subscription.find(filter);
+  let resumed = 0;
+
+  for (const subscription of pausedSubscriptions) {
+    await activatePausedSubscription(subscription, {
+      notificationType: "subscription_auto_resumed",
+      notificationTitle: "Subscription resumed automatically",
+      notificationMessage:
+        "Your pause period has ended, so your subscription has resumed automatically.",
+    });
+    resumed += 1;
+  }
+
+  return resumed;
 }
 
 function itemsToPlain(items = []) {
@@ -636,6 +777,10 @@ async function CreateSubscription({
 } = {}) {
   const customer = await Customer.findById(customerId);
   if (!customer) return Response(false, "Customer not found", null);
+  const customerDisplayName =
+    [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim() ||
+    customer.email ||
+    "Customer";
 
   // Delivery day must be one the business actually delivers on.
   const settings = await subscriptionSettingsService.getOrCreateSettings();
@@ -727,10 +872,7 @@ async function CreateSubscription({
   const { interval, interval_count } = STRIPE_INTERVALS[frequency];
 
   const stripeProduct = await stripe.products.create({
-    name: `Levants Subscription – ${subscriptionItems.map((i) => i.name).join(", ")}`.slice(
-      0,
-      255,
-    ),
+    name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
     metadata: { customerId: String(customer._id) },
   });
 
@@ -823,6 +965,8 @@ async function ListSubscriptions({
   page = 1,
   pageSize = 20,
 } = {}) {
+  await AutoResumePausedSubscriptions({ customerId });
+
   const filter = { customer: customerId };
   if (status) filter.status = status;
 
@@ -843,6 +987,8 @@ async function ListSubscriptions({
  * Get single subscription.
  */
 async function GetSubscription({ customerId, subscriptionId } = {}) {
+  await AutoResumePausedSubscriptions({ customerId, subscriptionId });
+
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
     customer: customerId,
@@ -883,8 +1029,12 @@ async function UpdateSubscription({
   });
   if (!subscription) return Response(false, "Subscription not found", null);
 
-  if (subscription.status === "cancelled") {
-    return Response(false, "Cannot update a cancelled subscription", null);
+  if (subscription.status !== "active") {
+    return Response(
+      false,
+      "Paused or cancelled subscriptions cannot be changed.",
+      null,
+    );
   }
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
@@ -966,7 +1116,11 @@ async function UpdateSubscription({
 /**
  * Pause a subscription.
  */
-async function PauseSubscription({ customerId, subscriptionId } = {}) {
+async function PauseSubscription({
+  customerId,
+  subscriptionId,
+  resumeOn,
+} = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
     customer: customerId,
@@ -974,6 +1128,11 @@ async function PauseSubscription({ customerId, subscriptionId } = {}) {
   if (!subscription) return Response(false, "Subscription not found", null);
   if (subscription.status !== "active") {
     return Response(false, "Only active subscriptions can be paused", null);
+  }
+
+  const pauseResume = parsePauseResumeDate(resumeOn);
+  if (!pauseResume.ok) {
+    return Response(false, pauseResume.message, null);
   }
 
   // Pause billing in Stripe (void invoices while paused)
@@ -990,25 +1149,39 @@ async function PauseSubscription({ customerId, subscriptionId } = {}) {
 
   subscription.status = "paused";
   subscription.pausedAt = new Date();
+  subscription.pausedUntil = pauseResume.resumeDate;
   await subscription.save();
 
-  // Cancel upcoming scheduled deliveries
-  await SubscriptionDelivery.updateMany(
-    { subscription: subscription._id, status: "scheduled" },
-    { $set: { status: "cancelled" } },
-  );
+  // Keep the already-billed upcoming delivery (nextDeliveryDate) and stop
+  // only future scheduled deliveries while paused.
+  const pauseDeliveryFilter = subscription.nextDeliveryDate
+    ? {
+        subscription: subscription._id,
+        status: "scheduled",
+        scheduledDate: { $gt: new Date(subscription.nextDeliveryDate) },
+      }
+    : { subscription: subscription._id, status: "scheduled" };
+
+  await SubscriptionDelivery.updateMany(pauseDeliveryFilter, {
+    $set: { status: "cancelled" },
+  });
 
   await CustomerNotification.create({
     customer: customerId,
     type: "subscription_paused",
     title: "Subscription paused",
-    message:
-      "Your subscription has been paused. No more deliveries will be scheduled until you resume.",
+    message: `Your subscription has been paused until ${formatDateLabel(
+      pauseResume.resumeDate,
+    )}. Any already-billed upcoming delivery remains scheduled, and no changes can be made while paused.`,
     relatedSubscription: subscription._id,
   });
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
-  return Response(true, "Subscription paused", { subscription: enriched });
+  return Response(
+    true,
+    `Subscription paused until ${formatDateLabel(pauseResume.resumeDate)}.`,
+    { subscription: enriched },
+  );
 }
 
 /**
@@ -1024,34 +1197,7 @@ async function ResumeSubscription({ customerId, subscriptionId } = {}) {
     return Response(false, "Only paused subscriptions can be resumed", null);
   }
 
-  // Resume billing in Stripe (clear pause_collection)
-  if (subscription.stripeSubscriptionId) {
-    try {
-      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        pause_collection: "",
-      });
-    } catch (err) {
-      console.error("[ResumeSubscription] Stripe resume failed:", err.message);
-    }
-  }
-
-  subscription.status = "active";
-  subscription.pausedAt = null;
-  subscription.nextDeliveryDate = calculateNextDeliveryDate(
-    subscription.preferredDeliveryDay,
-    subscription.frequency,
-  );
-  await subscription.save();
-
-  await scheduleUpcomingDeliveries(subscription);
-
-  await CustomerNotification.create({
-    customer: customerId,
-    type: "subscription_resumed",
-    title: "Subscription resumed",
-    message: `Your subscription is active again. Next delivery: ${subscription.nextDeliveryDate.toLocaleDateString("en-GB")}.`,
-    relatedSubscription: subscription._id,
-  });
+  await activatePausedSubscription(subscription);
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
   return Response(true, "Subscription resumed", { subscription: enriched });
@@ -1068,6 +1214,74 @@ async function CancelSubscription({ customerId, subscriptionId, reason } = {}) {
   if (!subscription) return Response(false, "Subscription not found", null);
   if (subscription.status === "cancelled") {
     return Response(false, "Subscription is already cancelled", null);
+  }
+
+  const { isPastCutoff } = await getCutoffStatus(subscription);
+  let refundedMinor = 0;
+  let stripeRefundId = null;
+
+  // Before cut-off, the upcoming delivery is still changeable and should be
+  // refunded immediately when the customer cancels.
+  if (!isPastCutoff) {
+    const refundableOrder = await Order.findOne({
+      subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded"] },
+      deliveryStatus: "ordered",
+      stripePaymentIntentId: { $ne: null },
+    })
+      .sort({ deliveryDate: 1, createdAt: 1 })
+      .exec();
+
+    if (!refundableOrder?.stripePaymentIntentId) {
+      return Response(
+        false,
+        "We couldn't find a paid upcoming delivery to refund. Please contact support.",
+        null,
+      );
+    }
+
+    const amountPaid = Number(
+      refundableOrder.amountPaid ?? refundableOrder.total ?? 0,
+    );
+    const refundAmountMinor = Math.max(0, Math.round(amountPaid * 100));
+
+    if (refundAmountMinor <= 0) {
+      return Response(
+        false,
+        "No refundable amount was found for the upcoming delivery.",
+        null,
+      );
+    }
+
+    try {
+      const refund = await stripe.refunds.create({
+        payment_intent: refundableOrder.stripePaymentIntentId,
+        amount: refundAmountMinor,
+        metadata: {
+          subscriptionId: String(subscription._id),
+          subscriptionNumber: subscription.subscriptionNumber,
+          type: "subscription_cancel_refund",
+        },
+      });
+
+      refundedMinor = refundAmountMinor;
+      stripeRefundId = refund.id;
+
+      refundableOrder.status = "refunded";
+      refundableOrder.refund = {
+        ...(refundableOrder.refund || {}),
+        refundedAt: new Date(),
+        reason: reason || "Subscription cancelled before cut-off",
+        stripeRefundId: refund.id,
+      };
+      await refundableOrder.save();
+    } catch (err) {
+      return Response(
+        false,
+        err?.message || "We couldn't refund your upcoming delivery payment.",
+        null,
+      );
+    }
   }
 
   // Cancel the Stripe Subscription so no further charges occur
@@ -1088,24 +1302,53 @@ async function CancelSubscription({ customerId, subscriptionId, reason } = {}) {
   subscription.status = "cancelled";
   subscription.cancelledAt = new Date();
   subscription.cancelReason = reason || null;
+  subscription.isCancellationScheduled = Boolean(
+    isPastCutoff && subscription.nextDeliveryDate,
+  );
+  subscription.cancellationEffectiveAfter =
+    isPastCutoff && subscription.nextDeliveryDate
+      ? new Date(subscription.nextDeliveryDate)
+      : null;
   await subscription.save();
 
-  // Cancel upcoming scheduled deliveries
-  await SubscriptionDelivery.updateMany(
-    { subscription: subscription._id, status: "scheduled" },
-    { $set: { status: "cancelled" } },
-  );
+  // Before cut-off: cancel all scheduled deliveries.
+  // After cut-off: keep the already-committed upcoming delivery and cancel only later ones.
+  const deliveryCancelFilter =
+    isPastCutoff && subscription.nextDeliveryDate
+      ? {
+          subscription: subscription._id,
+          status: "scheduled",
+          scheduledDate: { $gt: new Date(subscription.nextDeliveryDate) },
+        }
+      : { subscription: subscription._id, status: "scheduled" };
+
+  await SubscriptionDelivery.updateMany(deliveryCancelFilter, {
+    $set: { status: "cancelled" },
+  });
 
   await CustomerNotification.create({
     customer: customerId,
     type: "subscription_cancelled",
     title: "Subscription cancelled",
-    message: "Your subscription has been cancelled.",
+    message: isPastCutoff
+      ? "Your subscription is scheduled for cancellation. Your next scheduled delivery will still arrive, and all future deliveries have been stopped."
+      : "Your subscription has been cancelled and your upcoming delivery has been refunded.",
     relatedSubscription: subscription._id,
   });
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
-  return Response(true, "Subscription cancelled", { subscription: enriched });
+  return Response(
+    true,
+    isPastCutoff
+      ? "Subscription scheduled for cancellation. Your next delivery remains scheduled; future deliveries are stopped."
+      : `Subscription cancelled and ${formatMinor(refundedMinor)} refunded immediately.`,
+    {
+      subscription: enriched,
+      refundedMinor,
+      stripeRefundId,
+      appliedTo: isPastCutoff ? "future_only" : "upcoming_and_future",
+    },
+  );
 }
 
 /**
@@ -1123,8 +1366,12 @@ async function AddSubscriptionItem({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
-  if (subscription.status === "cancelled") {
-    return Response(false, "Cannot modify a cancelled subscription", null);
+  if (subscription.status !== "active") {
+    return Response(
+      false,
+      "Paused or cancelled subscriptions cannot be changed.",
+      null,
+    );
   }
 
   const variant = await ProductVariant.findById(variantId).populate(
@@ -1194,8 +1441,12 @@ async function UpdateSubscriptionItem({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
-  if (subscription.status === "cancelled") {
-    return Response(false, "Cannot modify a cancelled subscription", null);
+  if (subscription.status !== "active") {
+    return Response(
+      false,
+      "Paused or cancelled subscriptions cannot be changed.",
+      null,
+    );
   }
 
   const item = subscription.items.id(itemId);
@@ -1237,8 +1488,12 @@ async function RemoveSubscriptionItem({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
-  if (subscription.status === "cancelled") {
-    return Response(false, "Cannot modify a cancelled subscription", null);
+  if (subscription.status !== "active") {
+    return Response(
+      false,
+      "Paused or cancelled subscriptions cannot be changed.",
+      null,
+    );
   }
 
   const item = subscription.items.id(itemId);
@@ -1331,6 +1586,7 @@ module.exports = {
   ListSubscriptions,
   GetSubscription,
   UpdateSubscription,
+  AutoResumePausedSubscriptions,
   PauseSubscription,
   ResumeSubscription,
   CancelSubscription,

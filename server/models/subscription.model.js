@@ -125,6 +125,12 @@ const subscriptionSchema = new mongoose.Schema(
       default: null,
     },
 
+    pausedUntil: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
     cancelledAt: {
       type: Date,
       default: null,
@@ -134,6 +140,19 @@ const subscriptionSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: 500,
+      default: null,
+    },
+
+    // True when cancelled after cut-off: upcoming delivery is still scheduled,
+    // and cancellation fully takes effect after that delivery.
+    isCancellationScheduled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    cancellationEffectiveAfter: {
+      type: Date,
       default: null,
     },
 

@@ -15,8 +15,8 @@ Customer decreases after before cut-off time = works, updates subscription price
 
 scenario 3:
 
-Customer cancels subscription before cut-off time =
+Customer cancels subscription before cut-off time = works, refunds customer immeadiantly, cancels future subscsriptions ✅
 Customer puases before cut-off time =
-Customer cancels item after cut-off time =
+Customer cancels subscription after cut-off time = works, cancels the subscription stops charging the customer, cancels all future deliveries
 Customer puases after before cut-off time =
 

@@ -13,6 +13,7 @@ const cron = require("node-cron");
 const Subscription = require("../models/subscription.model");
 const logger = require("../utils/logger.util");
 const {
+  AutoResumePausedSubscriptions,
   scheduleUpcomingDeliveries,
 } = require("../services/customerPortal/customerSubscriptions.service");
 
@@ -23,6 +24,7 @@ const {
  * pre-created in the SubscriptionDelivery collection (for UI visibility).
  */
 async function ScheduleUpcomingSlots() {
+  const resumed = await AutoResumePausedSubscriptions();
   const subscriptions = await Subscription.find({ status: "active" });
   let scheduled = 0;
 
@@ -38,7 +40,7 @@ async function ScheduleUpcomingSlots() {
   }
 
   logger.info(
-    `[SubscriptionCron] Scheduled upcoming slots for ${scheduled} subscriptions`,
+    `[SubscriptionCron] Auto-resumed ${resumed} paused subscriptions and scheduled upcoming slots for ${scheduled} subscriptions`,
   );
 }
 

@@ -53,6 +53,7 @@ const PauseSubscription = async (req, res) => {
   const result = await service.PauseSubscription({
     customerId: req.customer._id,
     subscriptionId: req.params.subscriptionId,
+    resumeOn: req.body?.resumeOn,
   });
   if (!result.success)
     return sendErr(res, { statusCode: 400, message: result.message });
