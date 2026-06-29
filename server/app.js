@@ -222,6 +222,9 @@ app.use("/api/admin/support-requests", adminSupportRouter);
 app.use("/api/admin/payments", adminPaymentsRouter);
 app.use("/api/admin/reports", adminReportsRouter);
 
+// ===== Admin Broadcast Routes =====
+app.use("/api/admin/broadcasts", require("./routes/broadcasts.routes"));
+
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");
 app.use(express.static(buildPath));

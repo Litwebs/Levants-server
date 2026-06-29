@@ -11,7 +11,7 @@ const {
 const resend = new Resend(RESEND_EMAIL_KEY);
 
 const FALLBACK_LOGO_URL =
-  "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png";
+  "https://res.cloudinary.com/deonzcviy/image/upload/v1782736410/logo_tpfgpa.png";
 
 const DEFAULT_FROM = "no-reply@litwebs.co.uk";
 const DEFAULT_FALLBACK_FROM = "contact@litwebs.co.uk";

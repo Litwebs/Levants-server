@@ -36,6 +36,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
+import { BroadcastsPage } from "./pages/Broadcasts/BroadcastsPage";
 import { CategoriesPage } from "./pages/Categories";
 import SubscriptionsPage from "./pages/Subscriptions/Subscriptions";
 import SubscriptionDetailsPage from "./pages/Subscriptions/SubscriptionDetails";
@@ -283,6 +284,16 @@ const App = () => (
                                     <AnnouncementsPage />
                                   </RequirePermission>
                                 </RequireEmailDomain>
+                              }
+                            />
+                            <Route
+                              path="/broadcasts"
+                              element={
+                                // <RequireEmailDomain domain="@litwebs.co.uk">
+                                <RequirePermission permission="broadcasts.read">
+                                  <BroadcastsPage />
+                                </RequirePermission>
+                                // </RequireEmailDomain>
                               }
                             />
                             <Route

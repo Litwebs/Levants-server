@@ -120,6 +120,15 @@ const PERMISSIONS = [
   "announcements.delete",
 
   // =========================
+  // Broadcasts
+  // =========================
+  "broadcasts.read",
+  "broadcasts.create",
+  "broadcasts.update",
+  "broadcasts.delete",
+  "broadcasts.send",
+
+  // =========================
   // Categories
   // =========================
   "categories.read",
