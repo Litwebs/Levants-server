@@ -24,6 +24,58 @@ const FREQUENCY_DAYS = {
   monthly: 30,
 };
 
+function normalizeWeekdays(days = []) {
+  const cleaned = (Array.isArray(days) ? days : [])
+    .map((d) => Number(d))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  return [...new Set(cleaned)].sort((a, b) => a - b);
+}
+
+function resolveDeliveryDays({
+  frequency,
+  preferredDeliveryDay,
+  preferredDeliveryDays,
+} = {}) {
+  const normalizedDays = normalizeWeekdays(preferredDeliveryDays || []);
+  const legacyDay = Number(preferredDeliveryDay);
+  const hasLegacyDay =
+    Number.isInteger(legacyDay) && legacyDay >= 0 && legacyDay <= 6;
+
+  if (frequency === "weekly") {
+    const weeklyDays =
+      normalizedDays.length > 0
+        ? normalizedDays
+        : hasLegacyDay
+          ? [legacyDay]
+          : [];
+    return {
+      ok: weeklyDays.length > 0,
+      days: weeklyDays,
+      primaryDay: weeklyDays[0],
+    };
+  }
+
+  const singleDay = hasLegacyDay
+    ? legacyDay
+    : normalizedDays.length > 0
+      ? normalizedDays[0]
+      : null;
+  return {
+    ok: singleDay !== null,
+    days: singleDay === null ? [] : [singleDay],
+    primaryDay: singleDay,
+  };
+}
+
+function getEffectiveDeliveryDays(subscription) {
+  const resolved = resolveDeliveryDays({
+    frequency: subscription?.frequency,
+    preferredDeliveryDay: subscription?.preferredDeliveryDay,
+    preferredDeliveryDays: subscription?.preferredDeliveryDays,
+  });
+  return resolved.ok ? resolved.days : [2];
+}
+
 function calculateSubscriptionTotalMinor(items = []) {
   return items.reduce((sum, item) => {
     const unitPriceMinor = Math.round(Number(item?.unitPrice || 0) * 100);
@@ -72,9 +124,24 @@ async function enrichSubscriptionWithVariantImages(subscriptionLike) {
       : { ...subscriptionLike };
 
   const items = Array.isArray(subscription.items) ? subscription.items : [];
-  if (items.length === 0) return subscription;
+  const dayPlans = Array.isArray(subscription.deliveryDayPlans)
+    ? subscription.deliveryDayPlans
+    : [];
+  const pendingItems = Array.isArray(subscription.pendingChanges?.items)
+    ? subscription.pendingChanges.items
+    : [];
+  const pendingDayPlans = Array.isArray(
+    subscription.pendingChanges?.deliveryDayPlans,
+  )
+    ? subscription.pendingChanges.deliveryDayPlans
+    : [];
 
-  const variantIds = items
+  const variantIds = [
+    ...items,
+    ...pendingItems,
+    ...dayPlans.flatMap((plan) => plan?.items || []),
+    ...pendingDayPlans.flatMap((plan) => plan?.items || []),
+  ]
     .map((item) => String(item?.variant || ""))
     .filter(Boolean);
 
@@ -92,10 +159,31 @@ async function enrichSubscriptionWithVariantImages(subscriptionLike) {
     ]),
   );
 
-  subscription.items = items.map((item) => ({
+  const withImage = (item) => ({
     ...item,
     imageUrl: imageByVariantId.get(String(item?.variant || "")) || null,
-  }));
+  });
+
+  subscription.items = items.map(withImage);
+  if (dayPlans.length) {
+    subscription.deliveryDayPlans = dayPlans.map((plan) => ({
+      ...plan,
+      items: (plan.items || []).map(withImage),
+    }));
+  }
+  if (subscription.pendingChanges) {
+    if (pendingItems.length) {
+      subscription.pendingChanges.items = pendingItems.map(withImage);
+    }
+    if (pendingDayPlans.length) {
+      subscription.pendingChanges.deliveryDayPlans = pendingDayPlans.map(
+        (plan) => ({
+          ...plan,
+          items: (plan.items || []).map(withImage),
+        }),
+      );
+    }
+  }
 
   return subscription;
 }
@@ -106,18 +194,32 @@ async function enrichSubscriptionWithVariantImages(subscriptionLike) {
  * @param {string} frequency
  * @param {Date} [from] - reference date, defaults to now
  */
-function calculateNextDeliveryDate(preferredDay, frequency, from = new Date()) {
+function calculateNextDeliveryDate(
+  preferredDay,
+  frequency,
+  from = new Date(),
+  preferredDays = [],
+) {
   const start = new Date(from);
   start.setHours(0, 0, 0, 0);
 
-  const currentDay = start.getDay();
-  let daysUntilPreferred = (preferredDay - currentDay + 7) % 7;
+  const deliveryDays = resolveDeliveryDays({
+    frequency,
+    preferredDeliveryDay: preferredDay,
+    preferredDeliveryDays: preferredDays,
+  }).days;
+  if (!deliveryDays.length) {
+    return new Date(start);
+  }
 
-  // For the FIRST scheduled delivery, use the next weekday occurrence.
-  // Frequency controls the cadence AFTER that first delivery; it should not
-  // cause a brand-new fortnightly subscription created today to skip two weeks.
-  if (daysUntilPreferred === 0) {
-    daysUntilPreferred = 7;
+  const currentDay = start.getDay();
+  let daysUntilPreferred = 7;
+  for (const day of deliveryDays) {
+    let distance = (day - currentDay + 7) % 7;
+    // For the FIRST scheduled delivery, use the next weekday occurrence.
+    // Frequency controls the cadence AFTER that first delivery.
+    if (distance === 0) distance = 7;
+    if (distance < daysUntilPreferred) daysUntilPreferred = distance;
   }
 
   const next = new Date(start);
@@ -125,7 +227,16 @@ function calculateNextDeliveryDate(preferredDay, frequency, from = new Date()) {
   return next;
 }
 
-function addFrequencyDays(date, frequency) {
+function addFrequencyDays(date, frequency, preferredDays = []) {
+  if (frequency === "weekly") {
+    return calculateNextDeliveryDate(
+      preferredDays[0] ?? 2,
+      frequency,
+      date,
+      preferredDays,
+    );
+  }
+
   const d = new Date(date);
   d.setDate(d.getDate() + (FREQUENCY_DAYS[frequency] || 7));
   return d;
@@ -137,6 +248,7 @@ function addFrequencyDays(date, frequency) {
 async function scheduleUpcomingDeliveries(subscription, session) {
   const slots = [];
   let nextDate = new Date(subscription.nextDeliveryDate);
+  const deliveryDays = getEffectiveDeliveryDays(subscription);
 
   for (let i = 0; i < 3; i++) {
     // Check if a slot for this date already exists
@@ -153,7 +265,7 @@ async function scheduleUpcomingDeliveries(subscription, session) {
         status: "scheduled",
       });
     }
-    nextDate = addFrequencyDays(nextDate, subscription.frequency);
+    nextDate = addFrequencyDays(nextDate, subscription.frequency, deliveryDays);
   }
 
   if (slots.length > 0) {
@@ -313,6 +425,7 @@ async function getResumeNextDeliveryDate(
         subscription.preferredDeliveryDay,
         subscription.frequency,
         referenceDate,
+        subscription.preferredDeliveryDays,
       );
 }
 
@@ -561,7 +674,11 @@ async function applyItemChange(
 
   if (isPastCutoff) {
     const effectiveFrom = subscription.nextDeliveryDate
-      ? addFrequencyDays(subscription.nextDeliveryDate, subscription.frequency)
+      ? addFrequencyDays(
+          subscription.nextDeliveryDate,
+          subscription.frequency,
+          getEffectiveDeliveryDays(subscription),
+        )
       : null;
     subscription.pendingChanges = {
       ...(subscription.pendingChanges
@@ -737,6 +854,12 @@ async function promotePendingChanges(subscription) {
     subscription.items = pending.items;
     changed = true;
   }
+  if (Array.isArray(pending.deliveryDayPlans)) {
+    subscription.deliveryDayPlans = pending.deliveryDayPlans.length
+      ? pending.deliveryDayPlans
+      : undefined;
+    changed = true;
+  }
   if (pending.deliveryAddress && pending.deliveryAddress.line1) {
     subscription.deliveryAddress = pending.deliveryAddress;
     changed = true;
@@ -750,6 +873,13 @@ async function promotePendingChanges(subscription) {
     pending.preferredDeliveryDay !== null
   ) {
     subscription.preferredDeliveryDay = pending.preferredDeliveryDay;
+    changed = true;
+  }
+  if (Array.isArray(pending.preferredDeliveryDays)) {
+    const cleanedDays = normalizeWeekdays(pending.preferredDeliveryDays);
+    subscription.preferredDeliveryDays = cleanedDays.length
+      ? cleanedDays
+      : undefined;
     changed = true;
   }
 
@@ -771,6 +901,8 @@ async function CreateSubscription({
   customerId,
   frequency,
   preferredDeliveryDay,
+  preferredDeliveryDays,
+  deliveryDayPlans,
   deliveryAddressId,
   notes,
   items,
@@ -782,12 +914,27 @@ async function CreateSubscription({
     customer.email ||
     "Customer";
 
-  // Delivery day must be one the business actually delivers on.
+  // Delivery day(s) must be days the business actually delivers on.
   const settings = await subscriptionSettingsService.getOrCreateSettings();
-  if (!settings.deliveryDays.includes(Number(preferredDeliveryDay))) {
+  const resolvedDays = resolveDeliveryDays({
+    frequency,
+    preferredDeliveryDay,
+    preferredDeliveryDays,
+  });
+  if (!resolvedDays.ok) {
     return Response(
       false,
-      "Selected delivery day is not available. Please choose an available day.",
+      "Please choose at least one valid delivery day.",
+      null,
+    );
+  }
+  const hasUnavailableDay = resolvedDays.days.some(
+    (day) => !settings.deliveryDays.includes(Number(day)),
+  );
+  if (hasUnavailableDay) {
+    return Response(
+      false,
+      "One or more selected delivery days are not available. Please choose available days.",
       null,
     );
   }
@@ -820,14 +967,25 @@ async function CreateSubscription({
   const address = customer.addresses.id(deliveryAddressId);
   if (!address) return Response(false, "Delivery address not found", null);
 
+  const baseItems = Array.isArray(items) ? items : [];
+  const rawDayPlans = Array.isArray(deliveryDayPlans) ? deliveryDayPlans : [];
+  const planItems = rawDayPlans.flatMap((plan) => plan.items || []);
+  const allInputItems = [...baseItems, ...planItems];
+
+  if (allInputItems.length === 0) {
+    return Response(false, "Please select at least one product.", null);
+  }
+
   // Resolve variants
-  const variantIds = items.map((i) => new mongoose.Types.ObjectId(i.variantId));
+  const variantIds = allInputItems.map(
+    (i) => new mongoose.Types.ObjectId(i.variantId),
+  );
   const variants = await ProductVariant.find({
     _id: { $in: variantIds },
     status: "active",
   }).populate("product", "name status isSubscriptionEligible");
 
-  if (variants.length !== items.length) {
+  if (variants.length !== new Set(variantIds.map(String)).size) {
     return Response(false, "One or more products are unavailable", null);
   }
 
@@ -845,7 +1003,7 @@ async function CreateSubscription({
   }
 
   const variantMap = new Map(variants.map((v) => [String(v._id), v]));
-  const subscriptionItems = items.map((item) => {
+  const toSnapshotItem = (item) => {
     const variant = variantMap.get(String(item.variantId));
     return {
       product: variant.product._id,
@@ -855,14 +1013,85 @@ async function CreateSubscription({
       quantity: item.quantity,
       unitPrice: variant.price,
     };
-  });
+  };
+
+  let resolvedDayPlans;
+  if (frequency === "weekly" && resolvedDays.days.length > 1) {
+    if (rawDayPlans.length > 0) {
+      const selectedDaySet = new Set(resolvedDays.days.map(Number));
+      const seen = new Set();
+      let dayPlanError = null;
+      resolvedDayPlans = rawDayPlans.map((plan) => {
+        const day = Number(plan.day);
+        if (!selectedDaySet.has(day)) {
+          dayPlanError =
+            "One or more day plans use an unavailable delivery day.";
+          return { day, items: [] };
+        }
+        if (seen.has(day)) {
+          dayPlanError = "Duplicate day plans are not allowed.";
+          return { day, items: [] };
+        }
+        seen.add(day);
+        const dayItems = (plan.items || []).map(toSnapshotItem);
+        if (dayItems.length === 0) {
+          dayPlanError = "Each selected day must have at least one product.";
+          return { day, items: [] };
+        }
+        return { day, items: dayItems };
+      });
+      if (dayPlanError) {
+        return Response(false, dayPlanError, null);
+      }
+      for (const day of resolvedDays.days) {
+        if (!seen.has(Number(day))) {
+          return Response(
+            false,
+            "Please configure products for each selected delivery day.",
+            null,
+          );
+        }
+      }
+    } else {
+      const defaultItems = baseItems.map(toSnapshotItem);
+      resolvedDayPlans = resolvedDays.days.map((day) => ({
+        day,
+        items: defaultItems,
+      }));
+    }
+  }
+
+  let subscriptionItems;
+  if (resolvedDayPlans?.length) {
+    const mergedByVariant = new Map();
+    for (const plan of resolvedDayPlans) {
+      for (const item of plan.items) {
+        const key = String(item.variant);
+        const existing = mergedByVariant.get(key);
+        if (existing) {
+          existing.quantity += Number(item.quantity || 0);
+        } else {
+          mergedByVariant.set(key, {
+            ...item,
+            quantity: Number(item.quantity || 0),
+          });
+        }
+      }
+    }
+    subscriptionItems = Array.from(mergedByVariant.values()).filter(
+      (item) => item.quantity > 0,
+    );
+  } else {
+    subscriptionItems = baseItems.map(toSnapshotItem);
+  }
 
   const effectiveNowMs = await getEffectiveNowMs(customer.stripeCustomerId);
 
   const nextDeliveryDate = calculateNextDeliveryDate(
-    preferredDeliveryDay,
+    resolvedDays.primaryDay,
     frequency,
     new Date(effectiveNowMs),
+    resolvedDays.days,
   );
   const startDate = new Date(effectiveNowMs);
 
@@ -915,7 +1144,9 @@ async function CreateSubscription({
   const subscription = await Subscription.create({
     customer: customer._id,
     frequency,
-    preferredDeliveryDay,
+    preferredDeliveryDay: resolvedDays.primaryDay,
+    preferredDeliveryDays:
+      frequency === "weekly" ? resolvedDays.days : undefined,
     nextDeliveryDate,
     startDate,
     deliveryAddress: {
@@ -927,6 +1158,7 @@ async function CreateSubscription({
       deliveryInstructions: address.deliveryInstructions || null,
     },
     items: subscriptionItems,
+    deliveryDayPlans: resolvedDayPlans,
     notes: notes || null,
     status: "active",
     stripeSubscriptionId: stripeSub.id,
@@ -1020,6 +1252,8 @@ async function UpdateSubscription({
   subscriptionId,
   frequency,
   preferredDeliveryDay,
+  preferredDeliveryDays,
+  deliveryDayPlans,
   deliveryAddressId,
   notes,
 } = {}) {
@@ -1038,22 +1272,226 @@ async function UpdateSubscription({
   }
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
-  if (
-    preferredDeliveryDay !== undefined &&
-    !settings.deliveryDays.includes(Number(preferredDeliveryDay))
-  ) {
+
+  const targetFrequency = frequency ?? subscription.frequency;
+  const targetDayValue =
+    preferredDeliveryDay ?? subscription.preferredDeliveryDay;
+  const targetDaysValue =
+    preferredDeliveryDays !== undefined
+      ? preferredDeliveryDays
+      : preferredDeliveryDay !== undefined && targetFrequency === "weekly"
+        ? [preferredDeliveryDay]
+        : subscription.preferredDeliveryDays;
+  const resolvedDays = resolveDeliveryDays({
+    frequency: targetFrequency,
+    preferredDeliveryDay: targetDayValue,
+    preferredDeliveryDays: targetDaysValue,
+  });
+  if (!resolvedDays.ok) {
     return Response(
       false,
-      "Selected delivery day is not available. Please choose an available day.",
+      "Please choose at least one valid delivery day.",
+      null,
+    );
+  }
+  const hasUnavailableDay = resolvedDays.days.some(
+    (day) => !settings.deliveryDays.includes(Number(day)),
+  );
+  if (hasUnavailableDay) {
+    return Response(
+      false,
+      "One or more selected delivery days are not available. Please choose available days.",
       null,
     );
   }
 
   const { isPastCutoff } = await getCutoffStatus(subscription);
 
-  if (frequency !== undefined) subscription.frequency = frequency;
-  if (preferredDeliveryDay !== undefined)
-    subscription.preferredDeliveryDay = preferredDeliveryDay;
+  const dayPlanChangeRequested = deliveryDayPlans !== undefined;
+  const shouldUseDayPlans =
+    targetFrequency === "weekly" && resolvedDays.days.length > 1;
+  let resolvedDeliveryDayPlans;
+  let resolvedSubscriptionItems;
+
+  if (dayPlanChangeRequested) {
+    if (!shouldUseDayPlans) {
+      return Response(
+        false,
+        "Day-specific plans are only available for weekly subscriptions with multiple delivery days.",
+        null,
+      );
+    }
+
+    const rawDayPlans = Array.isArray(deliveryDayPlans) ? deliveryDayPlans : [];
+    if (!rawDayPlans.length) {
+      return Response(
+        false,
+        "Please configure products for each selected delivery day.",
+        null,
+      );
+    }
+
+    const allInputItems = rawDayPlans.flatMap((plan) => plan.items || []);
+    if (!allInputItems.length) {
+      return Response(false, "Please select at least one product.", null);
+    }
+
+    const variantIds = allInputItems.map(
+      (item) => new mongoose.Types.ObjectId(item.variantId),
+    );
+    const variants = await ProductVariant.find({
+      _id: { $in: variantIds },
+      status: "active",
+    }).populate("product", "name status isSubscriptionEligible");
+
+    if (variants.length !== new Set(variantIds.map(String)).size) {
+      return Response(false, "One or more products are unavailable", null);
+    }
+
+    for (const variant of variants) {
+      if (!variant.product || variant.product.status !== "active") {
+        return Response(
+          false,
+          `Product "${variant.name}" is not available`,
+          null,
+        );
+      }
+      if (!variant.product.isSubscriptionEligible) {
+        return Response(
+          false,
+          `"${variant.product.name}" is not eligible for subscriptions`,
+          null,
+        );
+      }
+    }
+
+    const variantMap = new Map(variants.map((v) => [String(v._id), v]));
+    const toSnapshotItem = (item) => {
+      const variant = variantMap.get(String(item.variantId));
+      return {
+        product: variant.product._id,
+        variant: variant._id,
+        name: `${variant.product.name} – ${variant.name}`,
+        sku: variant.sku,
+        quantity: item.quantity,
+        unitPrice: variant.price,
+      };
+    };
+
+    const selectedDaySet = new Set(resolvedDays.days.map(Number));
+    const seen = new Set();
+    let dayPlanError = null;
+    resolvedDeliveryDayPlans = rawDayPlans.map((plan) => {
+      const day = Number(plan.day);
+      if (!selectedDaySet.has(day)) {
+        dayPlanError = "One or more day plans use an unavailable delivery day.";
+        return { day, items: [] };
+      }
+      if (seen.has(day)) {
+        dayPlanError = "Duplicate day plans are not allowed.";
+        return { day, items: [] };
+      }
+      seen.add(day);
+      const dayItems = (plan.items || []).map(toSnapshotItem);
+      if (dayItems.length === 0) {
+        dayPlanError = "Each selected day must have at least one product.";
+        return { day, items: [] };
+      }
+      return { day, items: dayItems };
+    });
+
+    if (dayPlanError) {
+      return Response(false, dayPlanError, null);
+    }
+
+    for (const day of resolvedDays.days) {
+      if (!seen.has(Number(day))) {
+        return Response(
+          false,
+          "Please configure products for each selected delivery day.",
+          null,
+        );
+      }
+    }
+
+    const mergedByVariant = new Map();
+    for (const plan of resolvedDeliveryDayPlans) {
+      for (const item of plan.items) {
+        const key = String(item.variant);
+        const existing = mergedByVariant.get(key);
+        if (existing) {
+          existing.quantity += Number(item.quantity || 0);
+        } else {
+          mergedByVariant.set(key, {
+            ...item,
+            quantity: Number(item.quantity || 0),
+          });
+        }
+      }
+    }
+
+    resolvedSubscriptionItems = Array.from(mergedByVariant.values()).filter(
+      (item) => item.quantity > 0,
+    );
+    if (!resolvedSubscriptionItems.length) {
+      return Response(false, "Please select at least one product.", null);
+    }
+  }
+
+  const scheduleChangeRequested =
+    frequency !== undefined ||
+    preferredDeliveryDay !== undefined ||
+    preferredDeliveryDays !== undefined;
+  const effectiveFromDate = subscription.nextDeliveryDate
+    ? addFrequencyDays(
+        subscription.nextDeliveryDate,
+        subscription.frequency,
+        getEffectiveDeliveryDays(subscription),
+      )
+    : null;
+  let shouldSyncStripePrice = false;
+
+  if (scheduleChangeRequested && isPastCutoff) {
+    subscription.pendingChanges = {
+      ...(subscription.pendingChanges
+        ? subscription.pendingChanges.toObject?.() ||
+          subscription.pendingChanges
+        : {}),
+      frequency: targetFrequency,
+      preferredDeliveryDay: resolvedDays.primaryDay,
+      preferredDeliveryDays:
+        targetFrequency === "weekly" ? resolvedDays.days : undefined,
+      deliveryDayPlans: !shouldUseDayPlans ? [] : undefined,
+      effectiveFrom: effectiveFromDate,
+    };
+  } else {
+    if (frequency !== undefined) subscription.frequency = frequency;
+    if (scheduleChangeRequested) {
+      subscription.preferredDeliveryDay = resolvedDays.primaryDay;
+      subscription.preferredDeliveryDays =
+        targetFrequency === "weekly" ? resolvedDays.days : undefined;
+      if (!shouldUseDayPlans && !dayPlanChangeRequested) {
+        subscription.deliveryDayPlans = undefined;
+      }
+    }
+  }
+
+  if (dayPlanChangeRequested && isPastCutoff) {
+    subscription.pendingChanges = {
+      ...(subscription.pendingChanges
+        ? subscription.pendingChanges.toObject?.() ||
+          subscription.pendingChanges
+        : {}),
+      items: resolvedSubscriptionItems,
+      deliveryDayPlans: resolvedDeliveryDayPlans,
+      effectiveFrom: effectiveFromDate,
+    };
+  } else if (dayPlanChangeRequested) {
+    subscription.items = resolvedSubscriptionItems;
+    subscription.deliveryDayPlans = resolvedDeliveryDayPlans;
+    shouldSyncStripePrice = true;
+  }
+
   if (notes !== undefined) subscription.notes = notes || null;
 
   if (deliveryAddressId !== undefined) {
@@ -1077,12 +1515,7 @@ async function UpdateSubscription({
             subscription.pendingChanges
           : {}),
         deliveryAddress: newAddress,
-        effectiveFrom: subscription.nextDeliveryDate
-          ? addFrequencyDays(
-              subscription.nextDeliveryDate,
-              subscription.frequency,
-            )
-          : null,
+        effectiveFrom: effectiveFromDate,
       };
     } else {
       subscription.deliveryAddress = newAddress;
@@ -1090,16 +1523,21 @@ async function UpdateSubscription({
   }
 
   // Recalculate next delivery date if frequency or day changed
-  if (frequency !== undefined || preferredDeliveryDay !== undefined) {
+  if (scheduleChangeRequested && !isPastCutoff) {
     subscription.nextDeliveryDate = calculateNextDeliveryDate(
       subscription.preferredDeliveryDay,
       subscription.frequency,
+      new Date(),
+      subscription.preferredDeliveryDays,
     );
     // Generate new upcoming delivery slots
     await scheduleUpcomingDeliveries(subscription);
   }
 
   await subscription.save();
+  if (shouldSyncStripePrice) {
+    await syncStripeSubscriptionPrice(subscription);
+  }
 
   await CustomerNotification.create({
     customer: customerId,

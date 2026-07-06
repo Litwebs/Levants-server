@@ -100,6 +100,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     subscription.nextDeliveryDate = addFrequencyDays(
       subscription.nextDeliveryDate,
       subscription.frequency,
+      subscription.preferredDeliveryDays || [subscription.preferredDeliveryDay],
     );
   }
 
@@ -126,8 +127,21 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     );
   }
 
-  // Build order items from the (possibly just-promoted) subscription snapshot
-  const orderItems = subscription.items.map((item) => ({
+  const deliveryWeekday = new Date(deliveryDate).getDay();
+  const dayPlan = Array.isArray(subscription.deliveryDayPlans)
+    ? subscription.deliveryDayPlans.find(
+        (plan) => Number(plan?.day) === Number(deliveryWeekday),
+      )
+    : null;
+
+  // Build order items from the (possibly just-promoted) subscription snapshot.
+  // For multi-day weekly plans, use the day-specific item plan.
+  const sourceItems =
+    dayPlan?.items && dayPlan.items.length > 0
+      ? dayPlan.items
+      : subscription.items;
+
+  const orderItems = sourceItems.map((item) => ({
     product: item.product,
     variant: item.variant,
     name: item.name,

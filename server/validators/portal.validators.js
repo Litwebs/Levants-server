@@ -27,7 +27,12 @@ const createSubscriptionSchema = Joi.object({
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
     .required(),
-  preferredDeliveryDay: Joi.number().integer().min(0).max(6).required(),
+  preferredDeliveryDay: Joi.number().integer().min(0).max(6).optional(),
+  preferredDeliveryDays: Joi.array()
+    .items(Joi.number().integer().min(0).max(6))
+    .min(1)
+    .unique()
+    .optional(),
   deliveryAddressId: objectId.required(),
   notes: Joi.string().trim().max(1000).allow(null, "").optional(),
   items: Joi.array()
@@ -38,14 +43,56 @@ const createSubscriptionSchema = Joi.object({
       }),
     )
     .min(1)
-    .required(),
-}).unknown(false);
+    .optional(),
+  deliveryDayPlans: Joi.array()
+    .items(
+      Joi.object({
+        day: Joi.number().integer().min(0).max(6).required(),
+        items: Joi.array()
+          .items(
+            Joi.object({
+              variantId: objectId.required(),
+              quantity: Joi.number().integer().min(1).required(),
+            }),
+          )
+          .min(1)
+          .required(),
+      }).unknown(false),
+    )
+    .min(1)
+    .optional(),
+})
+  .or("items", "deliveryDayPlans")
+  .or("preferredDeliveryDay", "preferredDeliveryDays")
+  .unknown(false);
 
 const updateSubscriptionSchema = Joi.object({
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
     .optional(),
   preferredDeliveryDay: Joi.number().integer().min(0).max(6).optional(),
+  preferredDeliveryDays: Joi.array()
+    .items(Joi.number().integer().min(0).max(6))
+    .min(1)
+    .unique()
+    .optional(),
+  deliveryDayPlans: Joi.array()
+    .items(
+      Joi.object({
+        day: Joi.number().integer().min(0).max(6).required(),
+        items: Joi.array()
+          .items(
+            Joi.object({
+              variantId: objectId.required(),
+              quantity: Joi.number().integer().min(1).required(),
+            }),
+          )
+          .min(1)
+          .required(),
+      }).unknown(false),
+    )
+    .min(1)
+    .optional(),
   deliveryAddressId: objectId.optional(),
   notes: Joi.string().trim().max(1000).allow(null, "").optional(),
 }).unknown(false);

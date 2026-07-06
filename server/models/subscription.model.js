@@ -79,6 +79,27 @@ const subscriptionSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Weekly subscriptions can target multiple weekdays.
+    preferredDeliveryDays: {
+      type: [
+        {
+          type: Number,
+          min: 0,
+          max: 6,
+        },
+      ],
+      default: undefined,
+      validate: {
+        validator: (arr) => {
+          if (arr === undefined || arr === null) return true;
+          if (!Array.isArray(arr) || arr.length === 0) return false;
+          return new Set(arr).size === arr.length;
+        },
+        message:
+          "preferredDeliveryDays must be a non-empty list of unique weekdays (0-6)",
+      },
+    },
+
     nextDeliveryDate: {
       type: Date,
       default: null,
@@ -110,6 +131,43 @@ const subscriptionSchema = new mongoose.Schema(
       validate: {
         validator: (arr) => arr.length > 0,
         message: "Subscription must contain at least one item",
+      },
+    },
+
+    // Optional day-specific plans for multi-day weekly subscriptions.
+    deliveryDayPlans: {
+      type: [
+        new mongoose.Schema(
+          {
+            day: {
+              type: Number,
+              min: 0,
+              max: 6,
+              required: true,
+            },
+            items: {
+              type: [subscriptionItemSchema],
+              validate: {
+                validator: (arr) => Array.isArray(arr) && arr.length > 0,
+                message:
+                  "Each delivery day plan must contain at least one item",
+              },
+            },
+          },
+          { _id: false },
+        ),
+      ],
+      default: undefined,
+      validate: {
+        validator: (arr) => {
+          if (arr === undefined || arr === null) return true;
+          if (!Array.isArray(arr) || arr.length === 0) return false;
+          const days = arr
+            .map((entry) => entry?.day)
+            .filter((d) => d !== undefined);
+          return new Set(days).size === days.length;
+        },
+        message: "deliveryDayPlans must contain unique weekdays",
       },
     },
 
@@ -179,6 +237,30 @@ const subscriptionSchema = new mongoose.Schema(
       type: new mongoose.Schema(
         {
           items: { type: [subscriptionItemSchema], default: undefined },
+          deliveryDayPlans: {
+            type: [
+              new mongoose.Schema(
+                {
+                  day: {
+                    type: Number,
+                    min: 0,
+                    max: 6,
+                    required: true,
+                  },
+                  items: {
+                    type: [subscriptionItemSchema],
+                    validate: {
+                      validator: (arr) => Array.isArray(arr) && arr.length > 0,
+                      message:
+                        "Each pending delivery day plan must contain at least one item",
+                    },
+                  },
+                },
+                { _id: false },
+              ),
+            ],
+            default: undefined,
+          },
           deliveryAddress: {
             line1: { type: String },
             line2: { type: String, default: null },
@@ -189,6 +271,16 @@ const subscriptionSchema = new mongoose.Schema(
           },
           frequency: { type: String, default: undefined },
           preferredDeliveryDay: { type: Number, default: undefined },
+          preferredDeliveryDays: {
+            type: [
+              {
+                type: Number,
+                min: 0,
+                max: 6,
+              },
+            ],
+            default: undefined,
+          },
           effectiveFrom: { type: Date, default: null },
         },
         { _id: false },

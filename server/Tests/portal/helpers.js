@@ -25,6 +25,8 @@ async function createPortalCustomer({
     passwordHash,
     isGuest: false,
     status: "active",
+    emailVerifiedAt: new Date(),
+    stripeCustomerId: `cus_test_${crypto.randomUUID().replace(/-/g, "")}`,
     addresses: [
       {
         label: "Home",
