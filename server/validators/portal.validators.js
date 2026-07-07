@@ -95,6 +95,7 @@ const updateSubscriptionSchema = Joi.object({
     .optional(),
   deliveryAddressId: objectId.optional(),
   notes: Joi.string().trim().max(1000).allow(null, "").optional(),
+  refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
 const subscriptionItemSchema = Joi.object({

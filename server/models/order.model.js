@@ -210,7 +210,6 @@ const orderSchema = new mongoose.Schema(
     stripeInvoiceId: {
       type: String,
       index: true,
-      sparse: true,
     },
 
     paidAt: {
@@ -371,6 +370,14 @@ const orderSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+  },
+);
+
+orderSchema.index(
+  { stripeInvoiceId: 1, subscription: 1, deliveryDate: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { stripeInvoiceId: { $type: "string" } },
   },
 );
 

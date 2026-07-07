@@ -44,6 +44,53 @@ const {
   syncStripeSubscriptionPrice,
 } = require("../customerPortal/customerSubscriptions.service");
 
+const BILLING_WINDOW_DAYS = {
+  weekly: 7,
+  every_two_weeks: 14,
+  monthly: 30,
+};
+
+function startOfDay(value) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function endOfDay(value) {
+  const date = startOfDay(value);
+  date.setDate(date.getDate() + 1);
+  return date;
+}
+
+function addBillingWindowDays(date, frequency) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + (BILLING_WINDOW_DAYS[frequency] || 7));
+  return next;
+}
+
+function resolveOrderItemsForDelivery(subscription, deliveryDate) {
+  const deliveryWeekday = new Date(deliveryDate).getDay();
+  const dayPlan = Array.isArray(subscription.deliveryDayPlans)
+    ? subscription.deliveryDayPlans.find(
+        (plan) => Number(plan?.day) === Number(deliveryWeekday),
+      )
+    : null;
+
+  return dayPlan?.items && dayPlan.items.length > 0
+    ? dayPlan.items
+    : subscription.items;
+}
+
+async function findDeliverySlot(subscriptionId, deliveryDate) {
+  return SubscriptionDelivery.findOne({
+    subscription: subscriptionId,
+    scheduledDate: {
+      $gte: startOfDay(deliveryDate),
+      $lt: endOfDay(deliveryDate),
+    },
+  });
+}
+
 /**
  * invoice.payment_succeeded
  *
@@ -72,11 +119,13 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     return;
   }
 
-  // Idempotency guard — skip if order already created for this invoice
-  const existing = await Order.findOne({ stripeInvoiceId: invoice.id });
-  if (existing) {
+  const alreadyProcessed = await Order.exists({
+    stripeInvoiceId: invoice.id,
+    subscription: subscription._id,
+  });
+  if (alreadyProcessed) {
     logger.info(
-      `[SubscriptionWebhook] Order already exists for invoice ${invoice.id}, skipping`,
+      `[SubscriptionWebhook] Invoice ${invoice.id} already processed for subscription ${subscription.subscriptionNumber}`,
     );
     return;
   }
@@ -90,135 +139,151 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     // Non-fatal
   }
 
-  // The first invoice (subscription_create) pre-pays the upcoming delivery, so
-  // nextDeliveryDate already points at it — leave it as-is. Every later
-  // (recurring) invoice pays for the FOLLOWING delivery, so advance first. The
-  // order created below is always for the current nextDeliveryDate, which stays
-  // pointing at the upcoming, pre-paid, editable delivery.
-  const isCreateInvoice = invoice.billing_reason === "subscription_create";
-  if (!isCreateInvoice && subscription.nextDeliveryDate) {
-    subscription.nextDeliveryDate = addFrequencyDays(
-      subscription.nextDeliveryDate,
-      subscription.frequency,
-      subscription.preferredDeliveryDays || [subscription.preferredDeliveryDay],
-    );
+  const billingWindowStart = subscription.nextDeliveryDate
+    ? new Date(subscription.nextDeliveryDate)
+    : new Date((invoice.period_start || Math.floor(Date.now() / 1000)) * 1000);
+  const billingWindowEnd = addBillingWindowDays(
+    billingWindowStart,
+    subscription.frequency,
+  );
+
+  const deliverySlots = await SubscriptionDelivery.find({
+    subscription: subscription._id,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: {
+      $gte: startOfDay(billingWindowStart),
+      $lt: startOfDay(billingWindowEnd),
+    },
+  }).sort({ scheduledDate: 1 });
+
+  if (deliverySlots.length === 0) {
+    deliverySlots.push({
+      subscription: subscription._id,
+      customer: subscription.customer._id,
+      scheduledDate: new Date(billingWindowStart),
+      status: "scheduled",
+    });
   }
-
-  const deliveryDate =
-    subscription.nextDeliveryDate ||
-    new Date((invoice.period_end || Math.floor(Date.now() / 1000)) * 1000);
-
-  // Promote any post-cut-off edits that take effect from THIS delivery BEFORE we
-  // snapshot the order items, so the order reflects exactly what was billed. The
-  // Stripe price was already updated when the change was staged, so this
-  // invoice already charged the new amount.
-  try {
-    const pendingEffectiveFrom = subscription.pendingChanges?.effectiveFrom;
-    if (
-      subscription.pendingChanges &&
-      (!pendingEffectiveFrom ||
-        new Date(pendingEffectiveFrom).getTime() <= deliveryDate.getTime())
-    ) {
-      await promotePendingChanges(subscription);
-    }
-  } catch (err) {
-    logger.error(
-      `[SubscriptionWebhook] Promoting pending changes failed for ${subscription.subscriptionNumber}: ${err.message}`,
-    );
-  }
-
-  const deliveryWeekday = new Date(deliveryDate).getDay();
-  const dayPlan = Array.isArray(subscription.deliveryDayPlans)
-    ? subscription.deliveryDayPlans.find(
-        (plan) => Number(plan?.day) === Number(deliveryWeekday),
-      )
-    : null;
-
-  // Build order items from the (possibly just-promoted) subscription snapshot.
-  // For multi-day weekly plans, use the day-specific item plan.
-  const sourceItems =
-    dayPlan?.items && dayPlan.items.length > 0
-      ? dayPlan.items
-      : subscription.items;
-
-  const orderItems = sourceItems.map((item) => ({
-    product: item.product,
-    variant: item.variant,
-    name: item.name,
-    sku: item.sku,
-    price: item.unitPrice,
-    quantity: item.quantity,
-    subtotal: item.unitPrice * item.quantity,
-  }));
-
-  const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
-  const total = subtotal;
-
-  const amountPaid =
-    typeof invoice.amount_paid === "number" ? invoice.amount_paid / 100 : total;
-
-  const stripePaymentIntentId =
-    typeof invoice.payment_intent === "string" ? invoice.payment_intent : null;
 
   const paidAt = invoice.status_transitions?.paid_at
     ? new Date(invoice.status_transitions.paid_at * 1000)
     : new Date();
+  const stripePaymentIntentId =
+    typeof invoice.payment_intent === "string" ? invoice.payment_intent : null;
 
-  const order = await Order.create({
-    customer: subscription.customer._id,
-    items: orderItems,
-    deliveryAddress: {
-      line1: subscription.deliveryAddress.line1,
-      line2: subscription.deliveryAddress.line2 || null,
-      city: subscription.deliveryAddress.city,
-      postcode: subscription.deliveryAddress.postcode,
-      country: subscription.deliveryAddress.country,
-    },
-    customerInstructions:
-      subscription.deliveryAddress.deliveryInstructions || "",
-    location,
-    deliveryDate,
-    deliveryFee: 0,
-    subtotal,
-    total,
-    amountPaid,
-    status: "paid",
-    deliveryStatus: "ordered",
-    orderType: "subscription_generated",
-    subscription: subscription._id,
-    stripePaymentIntentId,
-    stripeInvoiceId: invoice.id,
-    paidAt,
-    reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-  });
+  const createdOrders = [];
+  for (const slot of deliverySlots.sort(
+    (a, b) =>
+      new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime(),
+  )) {
+    const deliveryDate = new Date(slot.scheduledDate);
 
-  // Update or create delivery slot
-  const deliverySlot = await SubscriptionDelivery.findOne({
-    subscription: subscription._id,
-    scheduledDate: {
-      $gte: new Date(deliveryDate.getTime() - 12 * 60 * 60 * 1000),
-      $lte: new Date(deliveryDate.getTime() + 12 * 60 * 60 * 1000),
-    },
-  });
+    try {
+      const pendingEffectiveFrom = subscription.pendingChanges?.effectiveFrom;
+      if (
+        subscription.pendingChanges &&
+        (!pendingEffectiveFrom ||
+          new Date(pendingEffectiveFrom).getTime() <= deliveryDate.getTime())
+      ) {
+        await promotePendingChanges(subscription);
+      }
+    } catch (err) {
+      logger.error(
+        `[SubscriptionWebhook] Promoting pending changes failed for ${subscription.subscriptionNumber}: ${err.message}`,
+      );
+    }
 
-  if (deliverySlot) {
-    deliverySlot.status = "generated";
-    deliverySlot.order = order._id;
-    deliverySlot.generatedAt = new Date();
-    await deliverySlot.save();
-  } else {
-    await SubscriptionDelivery.create({
+    const existing = await Order.findOne({
+      stripeInvoiceId: invoice.id,
       subscription: subscription._id,
-      customer: subscription.customer._id,
-      order: order._id,
-      scheduledDate: deliveryDate,
-      status: "generated",
-      generatedAt: new Date(),
+      deliveryDate: {
+        $gte: startOfDay(deliveryDate),
+        $lt: endOfDay(deliveryDate),
+      },
     });
+
+    if (existing) {
+      const existingSlot = await findDeliverySlot(
+        subscription._id,
+        deliveryDate,
+      );
+      if (existingSlot && !existingSlot.order) {
+        existingSlot.status = "generated";
+        existingSlot.order = existing._id;
+        existingSlot.generatedAt = existingSlot.generatedAt || new Date();
+        await existingSlot.save();
+      }
+      createdOrders.push(existing);
+      continue;
+    }
+
+    const sourceItems = resolveOrderItemsForDelivery(
+      subscription,
+      deliveryDate,
+    );
+    const orderItems = sourceItems.map((item) => ({
+      product: item.product,
+      variant: item.variant,
+      name: item.name,
+      sku: item.sku,
+      price: item.unitPrice,
+      quantity: item.quantity,
+      subtotal: item.unitPrice * item.quantity,
+    }));
+
+    const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
+    const total = subtotal;
+    const amountPaid = total;
+
+    const order = await Order.create({
+      customer: subscription.customer._id,
+      items: orderItems,
+      deliveryAddress: {
+        line1: subscription.deliveryAddress.line1,
+        line2: subscription.deliveryAddress.line2 || null,
+        city: subscription.deliveryAddress.city,
+        postcode: subscription.deliveryAddress.postcode,
+        country: subscription.deliveryAddress.country,
+      },
+      customerInstructions:
+        subscription.deliveryAddress.deliveryInstructions || "",
+      location,
+      deliveryDate,
+      deliveryFee: 0,
+      subtotal,
+      total,
+      amountPaid,
+      status: "paid",
+      deliveryStatus: "ordered",
+      orderType: "subscription_generated",
+      subscription: subscription._id,
+      stripePaymentIntentId,
+      stripeInvoiceId: invoice.id,
+      paidAt,
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    const deliverySlot = await findDeliverySlot(subscription._id, deliveryDate);
+    if (deliverySlot) {
+      deliverySlot.status = "generated";
+      deliverySlot.order = order._id;
+      deliverySlot.generatedAt = new Date();
+      await deliverySlot.save();
+    } else {
+      await SubscriptionDelivery.create({
+        subscription: subscription._id,
+        customer: subscription.customer._id,
+        order: order._id,
+        scheduledDate: deliveryDate,
+        status: "generated",
+        generatedAt: new Date(),
+      });
+    }
+
+    createdOrders.push(order);
   }
 
-  // nextDeliveryDate was already advanced above for recurring invoices (and
-  // intentionally left in place for the first, pre-paid invoice).
+  subscription.nextDeliveryDate = billingWindowEnd;
 
   // Safety net: if a deferred price sync was ever queued, apply it now so
   // future deliveries bill the new amount.
@@ -243,13 +308,16 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     customer: subscription.customer._id,
     type: "subscription_upcoming_delivery",
     title: "Subscription order confirmed",
-    message: `Your subscription order #${order.orderId} has been created for ${deliveryDate.toLocaleDateString("en-GB")}.`,
-    relatedOrder: order._id,
+    message:
+      createdOrders.length > 1
+        ? `Your subscription orders have been created for ${createdOrders.length} delivery days in this billing cycle.`
+        : `Your subscription order #${createdOrders[0].orderId} has been created for ${createdOrders[0].deliveryDate.toLocaleDateString("en-GB")}.`,
+    relatedOrder: createdOrders[0]?._id,
     relatedSubscription: subscription._id,
   });
 
   logger.info(
-    `[SubscriptionWebhook] Created order ${order.orderId} from invoice ${invoice.id} (subscription ${subscription.subscriptionNumber})`,
+    `[SubscriptionWebhook] Created ${createdOrders.length} order(s) from invoice ${invoice.id} (subscription ${subscription.subscriptionNumber})`,
   );
 }
 

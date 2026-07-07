@@ -24,6 +24,16 @@ const FREQUENCY_DAYS = {
   monthly: 30,
 };
 
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 function normalizeWeekdays(days = []) {
   const cleaned = (Array.isArray(days) ? days : [])
     .map((d) => Number(d))
@@ -76,12 +86,34 @@ function getEffectiveDeliveryDays(subscription) {
   return resolved.ok ? resolved.days : [2];
 }
 
+async function getUpcomingDeliveryDate(
+  subscriptionId,
+  referenceDate = new Date(),
+) {
+  const delivery = await SubscriptionDelivery.findOne({
+    subscription: subscriptionId,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: { $gte: startOfDay(referenceDate) },
+  })
+    .sort({ scheduledDate: 1 })
+    .lean();
+
+  return delivery?.scheduledDate ? new Date(delivery.scheduledDate) : null;
+}
+
 function calculateSubscriptionTotalMinor(items = []) {
   return items.reduce((sum, item) => {
     const unitPriceMinor = Math.round(Number(item?.unitPrice || 0) * 100);
     const quantity = Math.max(0, Number(item?.quantity || 0));
     return sum + unitPriceMinor * quantity;
   }, 0);
+}
+
+function calculateDayPlanTotalMinor(dayPlans = []) {
+  return (Array.isArray(dayPlans) ? dayPlans : []).reduce(
+    (sum, plan) => sum + calculateSubscriptionTotalMinor(plan?.items || []),
+    0,
+  );
 }
 
 /**
@@ -1209,8 +1241,29 @@ async function ListSubscriptions({
     .limit(pageSize)
     .lean();
 
+  const subscriptionsWithScheduleLabels = await Promise.all(
+    subscriptions.map(async (subscription) => {
+      const effectiveDays = getEffectiveDeliveryDays(subscription);
+      const preferredDeliveryDaysLabel = effectiveDays
+        .map((day) => WEEKDAY_NAMES[day])
+        .filter(Boolean)
+        .join(", ");
+      const upcomingDeliveryDate = await getUpcomingDeliveryDate(
+        subscription._id,
+      );
+
+      return {
+        ...subscription,
+        preferredDeliveryDaysLabel,
+        upcomingDeliveryDate: upcomingDeliveryDate
+          ? upcomingDeliveryDate.toISOString()
+          : null,
+      };
+    }),
+  );
+
   return Response(true, null, {
-    subscriptions,
+    subscriptions: subscriptionsWithScheduleLabels,
     meta: { page, pageSize, total },
   });
 }
@@ -1227,13 +1280,19 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
   }).lean();
   if (!subscription) return Response(false, "Subscription not found", null);
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  const upcomingDeliveryDate = await getUpcomingDeliveryDate(subscription._id);
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const cutoffAt = computeCutoffDate(enriched.nextDeliveryDate, settings);
   const isPastCutoff = cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
 
   return Response(true, null, {
-    subscription: enriched,
+    subscription: {
+      ...enriched,
+      upcomingDeliveryDate: upcomingDeliveryDate
+        ? upcomingDeliveryDate.toISOString()
+        : null,
+    },
     cutoff: {
       cutoffAt,
       isPastCutoff,
@@ -1256,6 +1315,7 @@ async function UpdateSubscription({
   deliveryDayPlans,
   deliveryAddressId,
   notes,
+  refundMethod = "credit",
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -1438,6 +1498,114 @@ async function UpdateSubscription({
     }
   }
 
+  const effectiveIsPastCutoff =
+    dayPlanChangeRequested && shouldUseDayPlans
+      ? resolvedDays.days.every((day) => {
+          const deliveryDateForDay = calculateNextDeliveryDate(
+            day,
+            targetFrequency,
+            new Date(),
+            [day],
+          );
+          const cutoffForDay = computeCutoffDate(deliveryDateForDay, settings);
+          return cutoffForDay ? Date.now() >= cutoffForDay.getTime() : false;
+        })
+      : isPastCutoff;
+
+  const dayPlanAggregateCurrentMinor = dayPlanChangeRequested
+    ? shouldUseDayPlans && Array.isArray(subscription.deliveryDayPlans)
+      ? calculateDayPlanTotalMinor(subscription.deliveryDayPlans)
+      : calculateSubscriptionTotalMinor(subscription.items)
+    : 0;
+  const dayPlanAggregateNewMinor = dayPlanChangeRequested
+    ? shouldUseDayPlans
+      ? calculateDayPlanTotalMinor(resolvedDeliveryDayPlans)
+      : calculateSubscriptionTotalMinor(resolvedSubscriptionItems)
+    : 0;
+
+  const dayPlanDeltaMinor =
+    dayPlanAggregateNewMinor - dayPlanAggregateCurrentMinor;
+  const dayPlanChargeMinor = Math.max(dayPlanDeltaMinor, 0);
+  const dayPlanRefundOwedMinor = Math.max(-dayPlanDeltaMinor, 0);
+
+  let dayPlanCreditedMinor = 0;
+  let dayPlanRefundedMinor = 0;
+  let dayPlanStripeRefundId = null;
+  let updateMessage = "Subscription updated";
+
+  if (
+    dayPlanChangeRequested &&
+    !effectiveIsPastCutoff &&
+    dayPlanChargeMinor > 0
+  ) {
+    const customer = await Customer.findById(customerId);
+    const charge = await chargeDeltaNow(
+      subscription,
+      customer,
+      dayPlanChargeMinor,
+      `Subscription change – ${subscription.subscriptionNumber}`,
+    );
+    if (!charge.ok) {
+      return Response(false, charge.message, null);
+    }
+  }
+
+  if (
+    dayPlanChangeRequested &&
+    !effectiveIsPastCutoff &&
+    dayPlanRefundOwedMinor > 0
+  ) {
+    if (refundMethod === "refund") {
+      const refundableOrder = await Order.findOne({
+        subscription: subscription._id,
+        status: { $in: ["paid", "partially_refunded"] },
+        stripePaymentIntentId: { $ne: null },
+      })
+        .sort({ paidAt: -1, createdAt: -1 })
+        .select("_id")
+        .lean();
+
+      if (!refundableOrder) {
+        return Response(
+          false,
+          "We couldn't find a captured payment to refund to your card. Please choose store credit instead.",
+          null,
+        );
+      }
+    }
+
+    if (refundMethod === "refund") {
+      const refundResult = await refundSubscriptionToCard(
+        subscription,
+        dayPlanRefundOwedMinor,
+      );
+      dayPlanRefundedMinor = refundResult.refundedMinor;
+      dayPlanStripeRefundId = refundResult.stripeRefundId;
+    }
+
+    const remainderMinor = dayPlanRefundOwedMinor - dayPlanRefundedMinor;
+    if (remainderMinor > 0) {
+      const creditResult = await storeCreditService.addCredit({
+        customerId,
+        amountMinor: remainderMinor,
+        type: "subscription_refund",
+        reason: `Refund for reducing ${subscription.subscriptionNumber}`,
+        subscriptionId: subscription._id,
+      });
+      if (creditResult.ok) {
+        dayPlanCreditedMinor = remainderMinor;
+      }
+    }
+
+    if (dayPlanRefundedMinor > 0 && dayPlanCreditedMinor > 0) {
+      updateMessage = `We've refunded ${formatMinor(dayPlanRefundedMinor)} to your card and added ${formatMinor(dayPlanCreditedMinor)} as store credit.`;
+    } else if (dayPlanRefundedMinor > 0) {
+      updateMessage = `We've refunded ${formatMinor(dayPlanRefundedMinor)} to your card.`;
+    } else if (dayPlanCreditedMinor > 0) {
+      updateMessage = `We've added ${formatMinor(dayPlanCreditedMinor)} of store credit to your account.`;
+    }
+  }
+
   const scheduleChangeRequested =
     frequency !== undefined ||
     preferredDeliveryDay !== undefined ||
@@ -1451,7 +1619,7 @@ async function UpdateSubscription({
     : null;
   let shouldSyncStripePrice = false;
 
-  if (scheduleChangeRequested && isPastCutoff) {
+  if (scheduleChangeRequested && effectiveIsPastCutoff) {
     subscription.pendingChanges = {
       ...(subscription.pendingChanges
         ? subscription.pendingChanges.toObject?.() ||
@@ -1476,7 +1644,7 @@ async function UpdateSubscription({
     }
   }
 
-  if (dayPlanChangeRequested && isPastCutoff) {
+  if (dayPlanChangeRequested && effectiveIsPastCutoff) {
     subscription.pendingChanges = {
       ...(subscription.pendingChanges
         ? subscription.pendingChanges.toObject?.() ||
@@ -1507,7 +1675,7 @@ async function UpdateSubscription({
       deliveryInstructions: address.deliveryInstructions || null,
     };
 
-    if (isPastCutoff) {
+    if (effectiveIsPastCutoff) {
       // Cut-off passed for the upcoming delivery → apply from the next one.
       subscription.pendingChanges = {
         ...(subscription.pendingChanges
@@ -1523,7 +1691,7 @@ async function UpdateSubscription({
   }
 
   // Recalculate next delivery date if frequency or day changed
-  if (scheduleChangeRequested && !isPastCutoff) {
+  if (scheduleChangeRequested && !effectiveIsPastCutoff) {
     subscription.nextDeliveryDate = calculateNextDeliveryDate(
       subscription.preferredDeliveryDay,
       subscription.frequency,
@@ -1539,6 +1707,17 @@ async function UpdateSubscription({
     await syncStripeSubscriptionPrice(subscription);
   }
 
+  if (dayPlanChangeRequested && !effectiveIsPastCutoff) {
+    await updateUpcomingSubscriptionOrder(
+      subscription,
+      resolvedSubscriptionItems,
+      {
+        chargedMinor: dayPlanChargeMinor,
+        refundedMinor: dayPlanRefundedMinor,
+      },
+    );
+  }
+
   await CustomerNotification.create({
     customer: customerId,
     type: "subscription_updated",
@@ -1548,7 +1727,36 @@ async function UpdateSubscription({
   });
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
-  return Response(true, "Subscription updated", { subscription: enriched });
+  const responseData = {
+    subscription: {
+      ...enriched,
+      upcomingDeliveryDate: subscription.nextDeliveryDate
+        ? new Date(subscription.nextDeliveryDate).toISOString()
+        : null,
+    },
+  };
+
+  if (
+    dayPlanChangeRequested &&
+    !effectiveIsPastCutoff &&
+    dayPlanChargeMinor > 0
+  ) {
+    responseData.appliedTo = "upcoming";
+    responseData.chargedMinor = dayPlanChargeMinor;
+  }
+
+  if (
+    dayPlanChangeRequested &&
+    !effectiveIsPastCutoff &&
+    dayPlanRefundOwedMinor > 0
+  ) {
+    responseData.appliedTo = "upcoming";
+    responseData.refundedMinor = dayPlanRefundedMinor;
+    responseData.creditedMinor = dayPlanCreditedMinor;
+    responseData.stripeRefundId = dayPlanStripeRefundId;
+  }
+
+  return Response(true, updateMessage, responseData);
 }
 
 /**
