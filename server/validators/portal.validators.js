@@ -93,6 +93,11 @@ const updateSubscriptionSchema = Joi.object({
     )
     .min(1)
     .optional(),
+  changedDeliveryDays: Joi.array()
+    .items(Joi.number().integer().min(0).max(6))
+    .min(1)
+    .unique()
+    .optional(),
   deliveryAddressId: objectId.optional(),
   notes: Joi.string().trim().max(1000).allow(null, "").optional(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),

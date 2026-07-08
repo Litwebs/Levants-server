@@ -686,6 +686,59 @@ async function updateUpcomingSubscriptionOrder(
 }
 
 /**
+ * Multi-day variant: update the upcoming order for a SPECIFIC delivery weekday
+ * using only that day's plan items. Each delivery day has its own generated
+ * order, so a change to one day must not overwrite another day's order with the
+ * merged multi-day item list.
+ */
+async function updateUpcomingSubscriptionOrderForDay(
+  subscription,
+  weekday,
+  dayItems,
+  { chargedMinor = 0, refundedMinor = 0 } = {},
+) {
+  const orders = await Order.find({
+    subscription: subscription._id,
+    status: { $in: ["paid", "partially_refunded"] },
+    deliveryStatus: "ordered",
+  })
+    .sort({ deliveryDate: 1 })
+    .exec();
+
+  const order = orders.find(
+    (candidate) =>
+      candidate.deliveryDate &&
+      new Date(candidate.deliveryDate).getDay() === Number(weekday),
+  );
+
+  if (!order) return false;
+
+  order.items = (dayItems || []).map((item) => ({
+    product: item.product,
+    variant: item.variant,
+    name: item.name,
+    sku: item.sku,
+    price: item.unitPrice,
+    quantity: item.quantity,
+    subtotal: item.unitPrice * item.quantity,
+  }));
+
+  const newTotal = order.items.reduce((sum, i) => sum + i.subtotal, 0);
+  order.subtotal = newTotal;
+  order.total = newTotal + (order.deliveryFee || 0);
+
+  const deltaPounds = (chargedMinor - refundedMinor) / 100;
+  order.amountPaid = Math.max(0, (order.amountPaid || 0) + deltaPounds);
+
+  if (refundedMinor > 0) {
+    order.status = "partially_refunded";
+  }
+
+  await order.save();
+  return true;
+}
+
+/**
  * Apply a proposed new item list to a subscription, honouring the cut-off:
  *  - Before cut-off: changes affect the upcoming delivery. Increases are
  *    charged immediately and the recurring Stripe price is synced right away so
@@ -702,12 +755,27 @@ async function applyItemChange(
   actionLabel,
   refundMethod = "credit",
 ) {
-  const { isPastCutoff } = await getCutoffStatus(subscription);
+  const { isPastCutoff, settings } = await getCutoffStatus(subscription);
+  const upcomingDeliveryDate = await getUpcomingDeliveryDate(subscription._id);
+  const upcomingCutoffAt = computeCutoffDate(upcomingDeliveryDate, settings);
+  const isPastUpcomingCutoff = upcomingCutoffAt
+    ? Date.now() >= upcomingCutoffAt.getTime()
+    : false;
+  const effectiveIsPastCutoff = isPastCutoff || isPastUpcomingCutoff;
+  const hasStagedPendingItems =
+    Array.isArray(subscription.pendingChanges?.items) &&
+    subscription.pendingChanges.items.length > 0;
+  const shouldStageForNextInvoice =
+    effectiveIsPastCutoff || hasStagedPendingItems;
 
-  if (isPastCutoff) {
-    const effectiveFrom = subscription.nextDeliveryDate
+  if (shouldStageForNextInvoice) {
+    // Anchor on the delivery the customer actually sees as upcoming, so the
+    // staged change applies from the NEXT delivery after that one (not one
+    // cycle past the internal billing anchor, which can be a cycle later).
+    const stagingAnchor = upcomingDeliveryDate || subscription.nextDeliveryDate;
+    const effectiveFrom = stagingAnchor
       ? addFrequencyDays(
-          subscription.nextDeliveryDate,
+          stagingAnchor,
           subscription.frequency,
           getEffectiveDeliveryDays(subscription),
         )
@@ -1283,7 +1351,10 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
   const upcomingDeliveryDate = await getUpcomingDeliveryDate(subscription._id);
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
-  const cutoffAt = computeCutoffDate(enriched.nextDeliveryDate, settings);
+  const cutoffAt = computeCutoffDate(
+    upcomingDeliveryDate || enriched.nextDeliveryDate,
+    settings,
+  );
   const isPastCutoff = cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
 
   return Response(true, null, {
@@ -1313,6 +1384,7 @@ async function UpdateSubscription({
   preferredDeliveryDay,
   preferredDeliveryDays,
   deliveryDayPlans,
+  changedDeliveryDays: requestedChangedDeliveryDays,
   deliveryAddressId,
   notes,
   refundMethod = "credit",
@@ -1372,6 +1444,19 @@ async function UpdateSubscription({
     targetFrequency === "weekly" && resolvedDays.days.length > 1;
   let resolvedDeliveryDayPlans;
   let resolvedSubscriptionItems;
+  let changedDeliveryDays = [];
+  let openChangedDeliveryDays = [];
+  let lockedChangedDeliveryDays = [];
+  let currentLiveDayPlans = [];
+  let liveDeliveryDayPlans = null;
+  let liveSubscriptionItems = null;
+  let currentLiveSubscriptionItems = null;
+  let currentWorkingPlans = [];
+  let currentWorkingSubscriptionItems = [];
+  let openDayCurrentMinor = 0;
+  let openDayNewMinor = 0;
+  let shouldStageFutureDayPlan = false;
+  let hasExistingPendingDayPlan = false;
 
   if (dayPlanChangeRequested) {
     if (!shouldUseDayPlans) {
@@ -1496,30 +1581,172 @@ async function UpdateSubscription({
     if (!resolvedSubscriptionItems.length) {
       return Response(false, "Please select at least one product.", null);
     }
+
+    const toDayPlanArray = (plans, fallbackItems = []) => {
+      if (Array.isArray(plans) && plans.length > 0) {
+        return plans.map((plan) => ({
+          day: Number(plan.day),
+          items: itemsToPlain(plan.items || []),
+        }));
+      }
+
+      return resolvedDays.days.map((day) => ({
+        day: Number(day),
+        items: itemsToPlain(fallbackItems),
+      }));
+    };
+
+    const normalizePlanItems = (items = []) =>
+      (items || [])
+        .map((item) => ({
+          variant: String(item.variant || item.variantId || ""),
+          quantity: Number(item.quantity || 0),
+        }))
+        .filter((item) => item.variant && item.quantity > 0)
+        .sort((a, b) => a.variant.localeCompare(b.variant));
+
+    const mergeSubscriptionItemsFromPlans = (plans = []) => {
+      const mergedByVariant = new Map();
+      for (const plan of plans) {
+        for (const item of plan.items || []) {
+          const key = String(item.variant || "");
+          const quantity = Number(item.quantity || 0);
+          if (!key || quantity <= 0) continue;
+          const existing = mergedByVariant.get(key);
+          if (existing) {
+            existing.quantity += quantity;
+          } else {
+            mergedByVariant.set(key, { ...item, quantity });
+          }
+        }
+      }
+      return Array.from(mergedByVariant.values()).filter(
+        (item) => item.quantity > 0,
+      );
+    };
+
+    const isDayPastOwnCutoff = (day) => {
+      const deliveryDateForDay = calculateNextDeliveryDate(
+        day,
+        targetFrequency,
+        new Date(Date.now()),
+        [day],
+      );
+      const cutoffForDay = computeCutoffDate(deliveryDateForDay, settings);
+      return cutoffForDay ? Date.now() >= cutoffForDay.getTime() : false;
+    };
+
+    const currentLivePlans = toDayPlanArray(
+      subscription.deliveryDayPlans,
+      subscription.items,
+    );
+    currentLiveDayPlans = currentLivePlans;
+    currentWorkingPlans = currentLivePlans;
+    hasExistingPendingDayPlan =
+      Array.isArray(subscription.pendingChanges?.deliveryDayPlans) &&
+      subscription.pendingChanges.deliveryDayPlans.length > 0;
+    const baselinePlans = hasExistingPendingDayPlan
+      ? subscription.pendingChanges.deliveryDayPlans
+      : currentLivePlans;
+
+    const baselineByDay = new Map(
+      baselinePlans.map((plan) => [
+        Number(plan.day),
+        JSON.stringify(normalizePlanItems(plan.items || [])),
+      ]),
+    );
+
+    changedDeliveryDays = Array.isArray(requestedChangedDeliveryDays)
+      ? [...new Set(requestedChangedDeliveryDays.map(Number))].filter((day) =>
+          resolvedDays.days.includes(day),
+        )
+      : resolvedDeliveryDayPlans
+          .filter((plan) => {
+            const nextValue = JSON.stringify(
+              normalizePlanItems(plan.items || []),
+            );
+            return baselineByDay.get(Number(plan.day)) !== nextValue;
+          })
+          .map((plan) => Number(plan.day));
+
+    openChangedDeliveryDays = changedDeliveryDays.filter(
+      (day) => !isDayPastOwnCutoff(day),
+    );
+    lockedChangedDeliveryDays = changedDeliveryDays.filter((day) =>
+      isDayPastOwnCutoff(day),
+    );
+
+    const requestedByDay = new Map(
+      resolvedDeliveryDayPlans.map((plan) => [Number(plan.day), plan]),
+    );
+    const liveByDay = new Map(
+      currentLivePlans.map((plan) => [
+        Number(plan.day),
+        { ...plan, items: itemsToPlain(plan.items || []) },
+      ]),
+    );
+
+    for (const day of openChangedDeliveryDays) {
+      const requestedPlan = requestedByDay.get(Number(day));
+      if (requestedPlan) {
+        liveByDay.set(Number(day), {
+          day: Number(requestedPlan.day),
+          items: itemsToPlain(requestedPlan.items || []),
+        });
+      }
+    }
+
+    liveDeliveryDayPlans = resolvedDays.days.map(
+      (day) =>
+        liveByDay.get(Number(day)) || {
+          day: Number(day),
+          items: [],
+        },
+    );
+    currentLiveSubscriptionItems =
+      mergeSubscriptionItemsFromPlans(currentLivePlans);
+    currentWorkingSubscriptionItems =
+      mergeSubscriptionItemsFromPlans(currentWorkingPlans);
+    liveSubscriptionItems =
+      mergeSubscriptionItemsFromPlans(liveDeliveryDayPlans);
+    shouldStageFutureDayPlan =
+      lockedChangedDeliveryDays.length > 0 || hasExistingPendingDayPlan;
+
+    const dayPlanMinor = (items = []) =>
+      (items || []).reduce((daySum, item) => {
+        const unitPriceMinor = Math.round(Number(item?.unitPrice || 0) * 100);
+        const quantity = Math.max(0, Number(item?.quantity || 0));
+        return daySum + unitPriceMinor * quantity;
+      }, 0);
+
+    const currentLiveByDay = new Map(
+      currentLiveDayPlans.map((plan) => [Number(plan.day), plan]),
+    );
+
+    openDayCurrentMinor = openChangedDeliveryDays.reduce((sum, day) => {
+      const currentPlan = currentLiveByDay.get(Number(day));
+      return sum + dayPlanMinor(currentPlan?.items || []);
+    }, 0);
+
+    openDayNewMinor = openChangedDeliveryDays.reduce((sum, day) => {
+      const requestedPlan = requestedByDay.get(Number(day));
+      return sum + dayPlanMinor(requestedPlan?.items || []);
+    }, 0);
   }
 
   const effectiveIsPastCutoff =
     dayPlanChangeRequested && shouldUseDayPlans
-      ? resolvedDays.days.every((day) => {
-          const deliveryDateForDay = calculateNextDeliveryDate(
-            day,
-            targetFrequency,
-            new Date(),
-            [day],
-          );
-          const cutoffForDay = computeCutoffDate(deliveryDateForDay, settings);
-          return cutoffForDay ? Date.now() >= cutoffForDay.getTime() : false;
-        })
+      ? lockedChangedDeliveryDays.length > 0
       : isPastCutoff;
 
   const dayPlanAggregateCurrentMinor = dayPlanChangeRequested
-    ? shouldUseDayPlans && Array.isArray(subscription.deliveryDayPlans)
-      ? calculateDayPlanTotalMinor(subscription.deliveryDayPlans)
+    ? shouldUseDayPlans
+      ? openDayCurrentMinor
       : calculateSubscriptionTotalMinor(subscription.items)
     : 0;
   const dayPlanAggregateNewMinor = dayPlanChangeRequested
     ? shouldUseDayPlans
-      ? calculateDayPlanTotalMinor(resolvedDeliveryDayPlans)
+      ? openDayNewMinor
       : calculateSubscriptionTotalMinor(resolvedSubscriptionItems)
     : 0;
 
@@ -1535,7 +1762,7 @@ async function UpdateSubscription({
 
   if (
     dayPlanChangeRequested &&
-    !effectiveIsPastCutoff &&
+    openChangedDeliveryDays.length > 0 &&
     dayPlanChargeMinor > 0
   ) {
     const customer = await Customer.findById(customerId);
@@ -1552,7 +1779,7 @@ async function UpdateSubscription({
 
   if (
     dayPlanChangeRequested &&
-    !effectiveIsPastCutoff &&
+    openChangedDeliveryDays.length > 0 &&
     dayPlanRefundOwedMinor > 0
   ) {
     if (refundMethod === "refund") {
@@ -1644,7 +1871,7 @@ async function UpdateSubscription({
     }
   }
 
-  if (dayPlanChangeRequested && effectiveIsPastCutoff) {
+  if (dayPlanChangeRequested && shouldStageFutureDayPlan) {
     subscription.pendingChanges = {
       ...(subscription.pendingChanges
         ? subscription.pendingChanges.toObject?.() ||
@@ -1654,7 +1881,13 @@ async function UpdateSubscription({
       deliveryDayPlans: resolvedDeliveryDayPlans,
       effectiveFrom: effectiveFromDate,
     };
-  } else if (dayPlanChangeRequested) {
+  }
+
+  if (dayPlanChangeRequested && openChangedDeliveryDays.length > 0) {
+    subscription.items = liveSubscriptionItems;
+    subscription.deliveryDayPlans = liveDeliveryDayPlans;
+    shouldSyncStripePrice = true;
+  } else if (dayPlanChangeRequested && !shouldStageFutureDayPlan) {
     subscription.items = resolvedSubscriptionItems;
     subscription.deliveryDayPlans = resolvedDeliveryDayPlans;
     shouldSyncStripePrice = true;
@@ -1703,19 +1936,48 @@ async function UpdateSubscription({
   }
 
   await subscription.save();
-  if (shouldSyncStripePrice) {
+  if (dayPlanChangeRequested && shouldStageFutureDayPlan) {
+    await syncStripeSubscriptionPrice(subscription, resolvedSubscriptionItems);
+  } else if (shouldSyncStripePrice) {
     await syncStripeSubscriptionPrice(subscription);
   }
 
-  if (dayPlanChangeRequested && !effectiveIsPastCutoff) {
-    await updateUpcomingSubscriptionOrder(
-      subscription,
-      resolvedSubscriptionItems,
-      {
-        chargedMinor: dayPlanChargeMinor,
-        refundedMinor: dayPlanRefundedMinor,
-      },
+  if (dayPlanChangeRequested && openChangedDeliveryDays.length > 0) {
+    const currentItemsByDay = new Map(
+      (currentLiveDayPlans || []).map((plan) => [
+        Number(plan.day),
+        plan.items || [],
+      ]),
     );
+    const newItemsByDay = new Map(
+      (liveDeliveryDayPlans || []).map((plan) => [
+        Number(plan.day),
+        plan.items || [],
+      ]),
+    );
+    const itemsMinor = (items = []) =>
+      (items || []).reduce((sum, item) => {
+        const unitPriceMinor = Math.round(Number(item?.unitPrice || 0) * 100);
+        const quantity = Math.max(0, Number(item?.quantity || 0));
+        return sum + unitPriceMinor * quantity;
+      }, 0);
+
+    for (const day of openChangedDeliveryDays) {
+      const dayNewItems = newItemsByDay.get(Number(day)) || [];
+      const dayDeltaMinor =
+        itemsMinor(dayNewItems) -
+        itemsMinor(currentItemsByDay.get(Number(day)) || []);
+
+      await updateUpcomingSubscriptionOrderForDay(
+        subscription,
+        Number(day),
+        dayNewItems,
+        {
+          chargedMinor: Math.max(dayDeltaMinor, 0),
+          refundedMinor: Math.max(-dayDeltaMinor, 0),
+        },
+      );
+    }
   }
 
   await CustomerNotification.create({
@@ -1738,7 +2000,15 @@ async function UpdateSubscription({
 
   if (
     dayPlanChangeRequested &&
-    !effectiveIsPastCutoff &&
+    shouldStageFutureDayPlan &&
+    openChangedDeliveryDays.length === 0
+  ) {
+    responseData.appliedTo = "next";
+  }
+
+  if (
+    dayPlanChangeRequested &&
+    openChangedDeliveryDays.length > 0 &&
     dayPlanChargeMinor > 0
   ) {
     responseData.appliedTo = "upcoming";
@@ -1747,7 +2017,7 @@ async function UpdateSubscription({
 
   if (
     dayPlanChangeRequested &&
-    !effectiveIsPastCutoff &&
+    openChangedDeliveryDays.length > 0 &&
     dayPlanRefundOwedMinor > 0
   ) {
     responseData.appliedTo = "upcoming";
@@ -2036,11 +2306,9 @@ async function AddSubscriptionItem({
 
   const customer = await Customer.findById(customerId);
 
-  const { isPastCutoff } = await getCutoffStatus(subscription);
-  const baseline =
-    isPastCutoff && subscription.pendingChanges?.items?.length
-      ? itemsToPlain(subscription.pendingChanges.items)
-      : itemsToPlain(subscription.items);
+  const baseline = subscription.pendingChanges?.items?.length
+    ? itemsToPlain(subscription.pendingChanges.items)
+    : itemsToPlain(subscription.items);
 
   const nextItems = [...baseline];
   const existingIndex = nextItems.findIndex(
@@ -2101,11 +2369,9 @@ async function UpdateSubscriptionItem({
   const customer = await Customer.findById(customerId);
   const targetVariant = String(item.variant);
 
-  const { isPastCutoff } = await getCutoffStatus(subscription);
-  const baseline =
-    isPastCutoff && subscription.pendingChanges?.items?.length
-      ? itemsToPlain(subscription.pendingChanges.items)
-      : itemsToPlain(subscription.items);
+  const baseline = subscription.pendingChanges?.items?.length
+    ? itemsToPlain(subscription.pendingChanges.items)
+    : itemsToPlain(subscription.items);
 
   const nextItems = baseline.map((i) =>
     String(i.variant) === targetVariant ? { ...i, quantity } : i,
@@ -2156,11 +2422,9 @@ async function RemoveSubscriptionItem({
   const customer = await Customer.findById(customerId);
   const targetVariant = String(item.variant);
 
-  const { isPastCutoff } = await getCutoffStatus(subscription);
-  const baseline =
-    isPastCutoff && subscription.pendingChanges?.items?.length
-      ? itemsToPlain(subscription.pendingChanges.items)
-      : itemsToPlain(subscription.items);
+  const baseline = subscription.pendingChanges?.items?.length
+    ? itemsToPlain(subscription.pendingChanges.items)
+    : itemsToPlain(subscription.items);
 
   const nextItems = baseline.filter((i) => String(i.variant) !== targetVariant);
 

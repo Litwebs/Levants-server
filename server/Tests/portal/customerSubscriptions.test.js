@@ -1058,6 +1058,70 @@ describe("Portal Subscriptions", () => {
     expect(stored.pendingChanges).toBeTruthy();
   });
 
+  it("stages after cut-off from one frequency cycle past the upcoming delivery (every 2 weeks)", async () => {
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 3],
+        cutoffDaysBefore: 2,
+        cutoffTime: "22:00",
+      },
+      { upsert: true },
+    );
+
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "every_two_weeks",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+    const sub = createRes.body.data.subscription;
+    const { variant: secondVariant } = await createTestProduct();
+
+    // Upcoming delivery is tomorrow (cut-off already passed). The internal
+    // billing anchor sits a full two-week cycle later, which must NOT be used
+    // as the staging anchor.
+    const upcoming = new Date();
+    upcoming.setDate(upcoming.getDate() + 1);
+    upcoming.setHours(9, 0, 0, 0);
+
+    const billingAnchor = new Date(upcoming);
+    billingAnchor.setDate(billingAnchor.getDate() + 14);
+
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: billingAnchor,
+    });
+    await SubscriptionDelivery.create({
+      subscription: sub._id,
+      customer: customer._id,
+      scheduledDate: upcoming,
+      status: "scheduled",
+    });
+
+    const addRes = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ variantId: secondVariant._id.toString(), quantity: 1 });
+
+    expect(addRes.status).toBe(200);
+    expect(addRes.body.data.appliedTo).toBe("next");
+
+    const stored = await Subscription.findById(sub._id).lean();
+    expect(stored.pendingChanges).toBeTruthy();
+
+    const expectedEffectiveFrom = new Date(upcoming);
+    expectedEffectiveFrom.setDate(expectedEffectiveFrom.getDate() + 14);
+
+    expect(new Date(stored.pendingChanges.effectiveFrom).toDateString()).toBe(
+      expectedEffectiveFrom.toDateString(),
+    );
+  });
+
   it("rejects add item when variant is unavailable or product not eligible", async () => {
     const sub = await createBasicSubscription();
     const { product, variant: secondVariant } = await createTestProduct();
@@ -1130,6 +1194,42 @@ describe("Portal Subscriptions", () => {
     expect(res.body.data.appliedTo).toBe("next");
     const stored = await Subscription.findById(sub._id).lean();
     expect(stored.pendingChanges).toBeTruthy();
+  });
+
+  it("builds subsequent after-cutoff quantity updates on the staged pending baseline", async () => {
+    const sub = await createBasicSubscription();
+    const itemId = sub.items[0]._id;
+
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: tomorrow,
+    });
+
+    const firstRes = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}/items/${itemId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ quantity: 2 });
+
+    expect(firstRes.status).toBe(200);
+    expect(firstRes.body.data.appliedTo).toBe("next");
+
+    stripe.prices.create.mockClear();
+
+    const secondRes = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}/items/${itemId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ quantity: 3 });
+
+    expect(secondRes.status).toBe(200);
+    expect(secondRes.body.data.appliedTo).toBe("next");
+
+    const stored = await Subscription.findById(sub._id).lean();
+    expect(stored.pendingChanges).toBeTruthy();
+    expect(stored.pendingChanges.items[0].quantity).toBe(3);
+    expect(stripe.prices.create).toHaveBeenCalled();
+    expect(stripe.prices.create.mock.calls.at(-1)?.[0]?.unit_amount).toBe(750);
   });
 
   it("rejects update for non-existent subscription item", async () => {
@@ -1504,6 +1604,51 @@ describe("Portal Subscriptions", () => {
     expect(res.body.data.cutoff).toHaveProperty("cutoffDaysBefore");
   });
 
+  it("get subscription cutoff metadata follows the upcoming scheduled delivery for display", async () => {
+    const sub = await createBasicSubscription();
+
+    const upcomingDelivery = new Date();
+    upcomingDelivery.setDate(upcomingDelivery.getDate() + 1);
+    upcomingDelivery.setHours(9, 0, 0, 0);
+
+    const billingWindowStart = new Date();
+    billingWindowStart.setDate(billingWindowStart.getDate() + 8);
+    billingWindowStart.setHours(9, 0, 0, 0);
+
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: billingWindowStart,
+    });
+
+    await SubscriptionDelivery.create({
+      subscription: sub._id,
+      customer: customer._id,
+      scheduledDate: upcomingDelivery,
+      status: "scheduled",
+    });
+
+    const res = await request(app)
+      .get(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(res.status).toBe(200);
+    expect(
+      new Date(res.body.data.subscription.upcomingDeliveryDate).toISOString(),
+    ).toBe(upcomingDelivery.toISOString());
+
+    const cutoffAt = new Date(res.body.data.cutoff.cutoffAt);
+    const expectedCutoff = new Date(upcomingDelivery);
+    expectedCutoff.setDate(
+      expectedCutoff.getDate() - res.body.data.cutoff.cutoffDaysBefore,
+    );
+
+    const [hh, mm] = String(res.body.data.cutoff.cutoffTime || "00:00")
+      .split(":")
+      .map(Number);
+    expectedCutoff.setHours(hh || 0, mm || 0, 0, 0);
+
+    expect(cutoffAt.toISOString()).toBe(expectedCutoff.toISOString());
+  });
+
   it("cutoff status without nextDeliveryDate is not past cutoff", async () => {
     const sub = await createBasicSubscription();
     await Subscription.findByIdAndUpdate(sub._id, { nextDeliveryDate: null });
@@ -1654,6 +1799,21 @@ describe("Portal Subscriptions", () => {
   });
 
   it("multi-day update supports day plans before cutoff and rejects single-day day-plans", async () => {
+    const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(mixedCutoffNow.getTime());
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 3],
+        cutoffDaysBefore: 1,
+        cutoffTime: "10:00",
+      },
+      { upsert: true },
+    );
+
     const { variant: secondVariant } = await createTestProduct();
     const createRes = await request(app)
       .post("/api/portal/subscriptions")
@@ -1672,6 +1832,7 @@ describe("Portal Subscriptions", () => {
       .patch(`/api/portal/subscriptions/${subId}`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        changedDeliveryDays: [0, 3],
         deliveryDayPlans: [
           { day: 0, items: [{ variantId, quantity: 2 }] },
           {
@@ -1681,6 +1842,7 @@ describe("Portal Subscriptions", () => {
         ],
       });
     expect(updateOk.status).toBe(200);
+    expect(updateOk.body.data.appliedTo).toBe("upcoming");
     expect(updateOk.body.data.chargedMinor).toBe(250);
     expect(stripe.paymentIntents.create).toHaveBeenCalled();
 
@@ -1693,9 +1855,25 @@ describe("Portal Subscriptions", () => {
         deliveryDayPlans: [{ day: 0, items: [{ variantId, quantity: 1 }] }],
       });
     expect(invalidSingleDay.status).toBe(400);
+    nowSpy.mockRestore();
   });
 
   it("multi-day day-plan decrease before cutoff settles as refund/credit and does not charge", async () => {
+    const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(mixedCutoffNow.getTime());
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 3],
+        cutoffDaysBefore: 1,
+        cutoffTime: "10:00",
+      },
+      { upsert: true },
+    );
+
     const { variant: secondVariant } = await createTestProduct();
 
     const createRes = await request(app)
@@ -1716,6 +1894,7 @@ describe("Portal Subscriptions", () => {
       .patch(`/api/portal/subscriptions/${sub._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        changedDeliveryDays: [0, 3],
         deliveryDayPlans: [
           { day: 0, items: [{ variantId, quantity: 2 }] },
           {
@@ -1726,6 +1905,7 @@ describe("Portal Subscriptions", () => {
       });
 
     expect(increaseRes.status).toBe(200);
+    expect(increaseRes.body.data.appliedTo).toBe("upcoming");
     expect(increaseRes.body.data.chargedMinor).toBe(250);
 
     stripe.paymentIntents.create.mockClear();
@@ -1734,6 +1914,7 @@ describe("Portal Subscriptions", () => {
       .patch(`/api/portal/subscriptions/${sub._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        changedDeliveryDays: [0],
         deliveryDayPlans: [
           { day: 0, items: [{ variantId, quantity: 1 }] },
           {
@@ -1749,6 +1930,280 @@ describe("Portal Subscriptions", () => {
       (updateRes.body.data.refundedMinor || 0) +
         (updateRes.body.data.creditedMinor || 0),
     ).toBe(250);
+    nowSpy.mockRestore();
+  });
+
+  it("stages a changed locked delivery day in a multi-day plan without immediate charge and updates Stripe for the next invoice", async () => {
+    const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(mixedCutoffNow.getTime());
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 3],
+        cutoffDaysBefore: 1,
+        cutoffTime: "10:00",
+      },
+      { upsert: true },
+    );
+
+    const { variant: secondVariant } = await createTestProduct();
+
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDays: [0, 3],
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+    const subId = createRes.body.data.subscription._id;
+
+    stripe.paymentIntents.create.mockClear();
+    stripe.prices.create.mockClear();
+
+    const updateRes = await request(app)
+      .patch(`/api/portal/subscriptions/${subId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        changedDeliveryDays: [3],
+        deliveryDayPlans: [
+          { day: 0, items: [{ variantId, quantity: 1 }] },
+          {
+            day: 3,
+            items: [
+              { variantId, quantity: 1 },
+              { variantId: secondVariant._id.toString(), quantity: 1 },
+            ],
+          },
+        ],
+      });
+
+    expect(updateRes.status).toBe(200);
+    expect(updateRes.body.data.appliedTo).toBe("next");
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+
+    const stored = await Subscription.findById(subId).lean();
+    expect(stored.pendingChanges).toBeTruthy();
+    expect(Array.isArray(stored.pendingChanges.deliveryDayPlans)).toBe(true);
+    expect(
+      stored.pendingChanges.deliveryDayPlans.find(
+        (plan) => Number(plan.day) === 3,
+      )?.items.length,
+    ).toBe(2);
+
+    expect(stripe.prices.create).toHaveBeenCalled();
+    expect(stripe.prices.create.mock.calls.at(-1)?.[0]?.unit_amount).toBe(750);
+    nowSpy.mockRestore();
+  });
+
+  it("charges only the open-day delta immediately when a staged locked-day plan already exists", async () => {
+    const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(mixedCutoffNow.getTime());
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 3],
+        cutoffDaysBefore: 1,
+        cutoffTime: "10:00",
+      },
+      { upsert: true },
+    );
+
+    const { variant: sundayVariant } = await createTestProduct();
+    const { variant: wednesdayVariant } = await createTestProduct();
+
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDays: [0, 3],
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+    const subId = createRes.body.data.subscription._id;
+
+    const stageWednesdayRes = await request(app)
+      .patch(`/api/portal/subscriptions/${subId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        changedDeliveryDays: [3],
+        deliveryDayPlans: [
+          { day: 0, items: [{ variantId, quantity: 1 }] },
+          {
+            day: 3,
+            items: [
+              { variantId, quantity: 1 },
+              { variantId: wednesdayVariant._id.toString(), quantity: 1 },
+            ],
+          },
+        ],
+      });
+
+    expect(stageWednesdayRes.status).toBe(200);
+    expect(stageWednesdayRes.body.data.appliedTo).toBe("next");
+
+    stripe.paymentIntents.create.mockClear();
+
+    const sundayUpdateRes = await request(app)
+      .patch(`/api/portal/subscriptions/${subId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        changedDeliveryDays: [0],
+        deliveryDayPlans: [
+          {
+            day: 0,
+            items: [
+              { variantId, quantity: 1 },
+              { variantId: sundayVariant._id.toString(), quantity: 1 },
+            ],
+          },
+          {
+            day: 3,
+            items: [
+              { variantId, quantity: 1 },
+              { variantId: wednesdayVariant._id.toString(), quantity: 1 },
+            ],
+          },
+        ],
+      });
+
+    expect(sundayUpdateRes.status).toBe(200);
+    expect(sundayUpdateRes.body.data.appliedTo).toBe("upcoming");
+    expect(sundayUpdateRes.body.data.chargedMinor).toBe(250);
+    expect(stripe.paymentIntents.create).toHaveBeenCalled();
+
+    const stored = await Subscription.findById(subId).lean();
+    expect(stored.pendingChanges).toBeTruthy();
+    expect(
+      stored.pendingChanges.deliveryDayPlans.find(
+        (plan) => Number(plan.day) === 3,
+      )?.items.length,
+    ).toBe(2);
+    nowSpy.mockRestore();
+  });
+
+  it("increasing one day's item only updates that day's generated order", async () => {
+    const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(mixedCutoffNow.getTime());
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 3],
+        cutoffDaysBefore: 1,
+        cutoffTime: "10:00",
+      },
+      { upsert: true },
+    );
+
+    const { variant: extraVariant } = await createTestProduct();
+
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDays: [0, 3],
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+    const sub = createRes.body.data.subscription;
+
+    const baseOrderItem = {
+      product: sub.items[0].product,
+      variant: sub.items[0].variant,
+      name: sub.items[0].name,
+      sku: sub.items[0].sku,
+      price: sub.items[0].unitPrice,
+      quantity: 1,
+      subtotal: sub.items[0].unitPrice,
+    };
+
+    const orderCommon = {
+      customer: customer._id,
+      deliveryAddress: {
+        line1: "1 Test Street",
+        city: "London",
+        postcode: "SW1A 1AA",
+        country: "United Kingdom",
+      },
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryFee: 0,
+      subtotal: baseOrderItem.subtotal,
+      total: baseOrderItem.subtotal,
+      amountPaid: baseOrderItem.subtotal,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+    };
+
+    // Upcoming Sunday (2026-07-12) and Wednesday (2026-07-15) orders, one item each.
+    const sundayOrder = await Order.create({
+      ...orderCommon,
+      items: [{ ...baseOrderItem }],
+      deliveryDate: new Date("2026-07-12T09:00:00.000Z"),
+      stripePaymentIntentId: `pi_sun_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+    const wednesdayOrder = await Order.create({
+      ...orderCommon,
+      items: [{ ...baseOrderItem }],
+      deliveryDate: new Date("2026-07-15T09:00:00.000Z"),
+      stripePaymentIntentId: `pi_wed_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+
+    // Add an item to Sunday only, before Sunday's cut-off.
+    const updateRes = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        changedDeliveryDays: [0],
+        deliveryDayPlans: [
+          {
+            day: 0,
+            items: [
+              { variantId, quantity: 1 },
+              { variantId: extraVariant._id.toString(), quantity: 1 },
+            ],
+          },
+          { day: 3, items: [{ variantId, quantity: 1 }] },
+        ],
+      });
+
+    expect(updateRes.status).toBe(200);
+
+    const storedSunday = await Order.findById(sundayOrder._id).lean();
+    const storedWednesday = await Order.findById(wednesdayOrder._id).lean();
+
+    // Sunday order now has both items (its own plan), Wednesday order unchanged.
+    expect(storedSunday.items).toHaveLength(2);
+    expect(
+      storedSunday.items.every((item) => Number(item.quantity) === 1),
+    ).toBe(true);
+    expect(storedWednesday.items).toHaveLength(1);
+    expect(Number(storedWednesday.items[0].quantity)).toBe(1);
+
+    nowSpy.mockRestore();
   });
 
   it("reducing multi-day subscription to single day clears day plans", async () => {
