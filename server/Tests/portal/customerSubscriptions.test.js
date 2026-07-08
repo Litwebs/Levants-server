@@ -464,6 +464,12 @@ describe("Portal Subscriptions", () => {
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(9, 0, 0, 0);
     await Subscription.findByIdAndUpdate(subId, { nextDeliveryDate: tomorrow });
+    await SubscriptionDelivery.create({
+      subscription: subId,
+      customer: customer._id,
+      scheduledDate: tomorrow,
+      status: "scheduled",
+    });
 
     // Cancel
     const cancelRes = await request(app)
@@ -471,7 +477,9 @@ describe("Portal Subscriptions", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ reason: "No longer needed" });
     expect(cancelRes.status).toBe(200);
-    expect(cancelRes.body.data.subscription.status).toBe("cancelled");
+    expect(cancelRes.body.data.subscription.status).toBe("active");
+    expect(cancelRes.body.data.subscription.isCancellationScheduled).toBe(true);
+    expect(cancelRes.body.data.refundedMinor).toBe(0);
   });
 
   it("stages multi-day update after cut-off and keeps current live days unchanged", async () => {
@@ -1499,6 +1507,684 @@ describe("Portal Subscriptions", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ reason: "test cancel" });
     expect(cancelFail.status).toBe(400);
+  });
+
+  it("cancel before cut-off supports settling to store credit", async () => {
+    const sub = await createBasicSubscription();
+    const nextDelivery = new Date();
+    nextDelivery.setDate(nextDelivery.getDate() + 5);
+    nextDelivery.setHours(9, 0, 0, 0);
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: nextDelivery,
+    });
+
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+
+    const paidOrder = await Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.unitPrice * item.quantity,
+      })),
+      deliveryAddress: {
+        line1: "1 Test Street",
+        city: "London",
+        postcode: "SW1A 1AA",
+        country: "United Kingdom",
+      },
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: nextDelivery,
+      deliveryFee: 0,
+      subtotal,
+      total: subtotal,
+      amountPaid: subtotal,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: null,
+      paidAt: new Date(),
+    });
+
+    const cancelRes = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/cancel`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ reason: "prefer store credit", refundMethod: "credit" });
+
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.data.refundedMinor).toBe(0);
+    expect(cancelRes.body.data.creditedMinor).toBe(
+      Math.round(Number(subtotal || 0) * 100),
+    );
+    expect(cancelRes.body.message).toMatch(/store credit/i);
+
+    const refreshedCustomer = await Customer.findById(customer._id).lean();
+    expect(refreshedCustomer.creditBalance).toBe(
+      Math.round(Number(subtotal || 0) * 100),
+    );
+
+    const creditTx = await StoreCreditTransaction.findOne({
+      customer: customer._id,
+      type: "subscription_refund",
+      order: paidOrder._id,
+    }).lean();
+    expect(creditTx).toBeTruthy();
+
+    const refreshedOrder = await Order.findById(paidOrder._id).lean();
+    expect(refreshedOrder.status).toBe("refunded");
+  });
+
+  it("cancel before cutoff updates generated delivery order status to refunded", async () => {
+    const sub = await createBasicSubscription();
+
+    const nextDelivery = new Date();
+    nextDelivery.setDate(nextDelivery.getDate() + 2);
+    nextDelivery.setHours(9, 0, 0, 0);
+
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: nextDelivery,
+    });
+
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+
+    const paidOrder = await Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.unitPrice * item.quantity,
+      })),
+      deliveryAddress: {
+        line1: "1 Test Street",
+        city: "London",
+        postcode: "SW1A 1AA",
+        country: "United Kingdom",
+      },
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: nextDelivery,
+      deliveryFee: 0,
+      subtotal,
+      total: subtotal,
+      amountPaid: subtotal,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+
+    await SubscriptionDelivery.create({
+      subscription: sub._id,
+      customer: customer._id,
+      order: paidOrder._id,
+      scheduledDate: nextDelivery,
+      status: "generated",
+      generatedAt: new Date(),
+    });
+
+    const cancelRes = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/cancel`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ reason: "generated slot refund" });
+
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.data.refundedMinor).toBeGreaterThan(0);
+
+    const refreshedOrder = await Order.findById(paidOrder._id).lean();
+    expect(refreshedOrder.status).toBe("refunded");
+
+    const refreshedDelivery = await SubscriptionDelivery.findOne({
+      subscription: sub._id,
+      order: paidOrder._id,
+    }).lean();
+    expect(refreshedDelivery.status).toBe("cancelled");
+  });
+
+  it("multi-day cancel before cutoff for both orders refunds both and cancels immediately", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        preferredDeliveryDays: [0, 3],
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+    const sub = createRes.body.data.subscription;
+
+    const now = new Date();
+    const firstDelivery = new Date(now);
+    firstDelivery.setDate(firstDelivery.getDate() + 1);
+    firstDelivery.setHours(9, 0, 0, 0);
+    const secondDelivery = new Date(firstDelivery);
+    secondDelivery.setDate(secondDelivery.getDate() + 1);
+    const futureCutoffTime = `${String((now.getHours() + 1) % 24).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 1, 2, 3, 4, 5, 6],
+        cutoffDaysBefore: 0,
+        cutoffTime: futureCutoffTime,
+      },
+      { upsert: true },
+    );
+
+    await SubscriptionDelivery.create([
+      {
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate: firstDelivery,
+        status: "scheduled",
+      },
+      {
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate: secondDelivery,
+        status: "scheduled",
+      },
+    ]);
+
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+
+    const [firstOrder, secondOrder] = await Order.create([
+      {
+        customer: customer._id,
+        items: sub.items.map((item) => ({
+          product: item.product,
+          variant: item.variant,
+          name: item.name,
+          sku: item.sku,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        })),
+        deliveryAddress: {
+          line1: "1 Test Street",
+          city: "London",
+          postcode: "SW1A 1AA",
+          country: "United Kingdom",
+        },
+        customerInstructions: "",
+        location: { lat: 51.5, lng: -0.1 },
+        deliveryDate: firstDelivery,
+        deliveryFee: 0,
+        subtotal,
+        total: subtotal,
+        amountPaid: subtotal,
+        status: "paid",
+        deliveryStatus: "ordered",
+        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        orderType: "subscription_generated",
+        subscription: sub._id,
+        stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+        paidAt: new Date(),
+      },
+      {
+        customer: customer._id,
+        items: sub.items.map((item) => ({
+          product: item.product,
+          variant: item.variant,
+          name: item.name,
+          sku: item.sku,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        })),
+        deliveryAddress: {
+          line1: "1 Test Street",
+          city: "London",
+          postcode: "SW1A 1AA",
+          country: "United Kingdom",
+        },
+        customerInstructions: "",
+        location: { lat: 51.5, lng: -0.1 },
+        deliveryDate: secondDelivery,
+        deliveryFee: 0,
+        subtotal,
+        total: subtotal,
+        amountPaid: subtotal,
+        status: "paid",
+        deliveryStatus: "ordered",
+        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        orderType: "subscription_generated",
+        subscription: sub._id,
+        stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+        paidAt: new Date(),
+      },
+    ]);
+
+    const cancelRes = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/cancel`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ reason: "multi-day before both" });
+
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.data.refundedMinor).toBe(
+      Math.round(Number(subtotal || 0) * 100) * 2,
+    );
+    expect(cancelRes.body.data.subscription.status).toBe("cancelled");
+    expect(cancelRes.body.data.subscription.isCancellationScheduled).toBe(
+      false,
+    );
+
+    const refreshedFirst = await Order.findById(firstOrder._id).lean();
+    const refreshedSecond = await Order.findById(secondOrder._id).lean();
+    expect(refreshedFirst.status).toBe("refunded");
+    expect(refreshedSecond.status).toBe("refunded");
+
+    const deliveries = await SubscriptionDelivery.find({
+      subscription: sub._id,
+    }).lean();
+    expect(
+      deliveries.every((delivery) => delivery.status === "cancelled"),
+    ).toBe(true);
+  });
+
+  it("multi-day cancel before cutoff for one order refunds only that order", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        preferredDeliveryDays: [0, 3],
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+    const sub = createRes.body.data.subscription;
+
+    const now = new Date();
+    const firstDelivery = new Date(now);
+    firstDelivery.setHours(now.getHours() + 2, 0, 0, 0);
+    const secondDelivery = new Date(firstDelivery);
+    secondDelivery.setDate(secondDelivery.getDate() + 1);
+    const pastCutoffTime = `${String((now.getHours() + 23) % 24).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 1, 2, 3, 4, 5, 6],
+        cutoffDaysBefore: 0,
+        cutoffTime: pastCutoffTime,
+      },
+      { upsert: true },
+    );
+
+    await SubscriptionDelivery.create([
+      {
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate: firstDelivery,
+        status: "scheduled",
+      },
+      {
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate: secondDelivery,
+        status: "scheduled",
+      },
+    ]);
+
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+
+    const [firstOrder, secondOrder] = await Order.create([
+      {
+        customer: customer._id,
+        items: sub.items.map((item) => ({
+          product: item.product,
+          variant: item.variant,
+          name: item.name,
+          sku: item.sku,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        })),
+        deliveryAddress: {
+          line1: "1 Test Street",
+          city: "London",
+          postcode: "SW1A 1AA",
+          country: "United Kingdom",
+        },
+        customerInstructions: "",
+        location: { lat: 51.5, lng: -0.1 },
+        deliveryDate: firstDelivery,
+        deliveryFee: 0,
+        subtotal,
+        total: subtotal,
+        amountPaid: subtotal,
+        status: "paid",
+        deliveryStatus: "ordered",
+        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        orderType: "subscription_generated",
+        subscription: sub._id,
+        stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+        paidAt: new Date(),
+      },
+      {
+        customer: customer._id,
+        items: sub.items.map((item) => ({
+          product: item.product,
+          variant: item.variant,
+          name: item.name,
+          sku: item.sku,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        })),
+        deliveryAddress: {
+          line1: "1 Test Street",
+          city: "London",
+          postcode: "SW1A 1AA",
+          country: "United Kingdom",
+        },
+        customerInstructions: "",
+        location: { lat: 51.5, lng: -0.1 },
+        deliveryDate: secondDelivery,
+        deliveryFee: 0,
+        subtotal,
+        total: subtotal,
+        amountPaid: subtotal,
+        status: "paid",
+        deliveryStatus: "ordered",
+        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        orderType: "subscription_generated",
+        subscription: sub._id,
+        stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+        paidAt: new Date(),
+      },
+    ]);
+
+    const cancelRes = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/cancel`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ reason: "multi-day one open" });
+
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.data.refundedMinor).toBe(
+      Math.round(Number(subtotal || 0) * 100),
+    );
+    expect(cancelRes.body.data.subscription.status).toBe("active");
+    expect(cancelRes.body.data.subscription.isCancellationScheduled).toBe(true);
+
+    const refreshedFirst = await Order.findById(firstOrder._id).lean();
+    const refreshedSecond = await Order.findById(secondOrder._id).lean();
+    expect(refreshedFirst.status).toBe("paid");
+    expect(refreshedSecond.status).toBe("refunded");
+
+    const deliveries = await SubscriptionDelivery.find({
+      subscription: sub._id,
+    })
+      .sort({ scheduledDate: 1 })
+      .lean();
+    expect(deliveries[0].status).toBe("scheduled");
+    expect(deliveries[1].status).toBe("cancelled");
+  });
+
+  it("multi-day cancel after cutoff for both orders gives no refund and schedules cancellation", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        preferredDeliveryDays: [0, 3],
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+    const sub = createRes.body.data.subscription;
+
+    const now = new Date();
+    const firstDelivery = new Date(now);
+    firstDelivery.setHours(now.getHours() + 2, 0, 0, 0);
+    const secondDelivery = new Date(firstDelivery);
+    secondDelivery.setHours(now.getHours() + 4, 0, 0, 0);
+    const pastCutoffTime = `${String((now.getHours() + 23) % 24).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 1, 2, 3, 4, 5, 6],
+        cutoffDaysBefore: 0,
+        cutoffTime: pastCutoffTime,
+      },
+      { upsert: true },
+    );
+
+    await SubscriptionDelivery.create([
+      {
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate: firstDelivery,
+        status: "scheduled",
+      },
+      {
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate: secondDelivery,
+        status: "scheduled",
+      },
+    ]);
+
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+
+    const [firstOrder, secondOrder] = await Order.create([
+      {
+        customer: customer._id,
+        items: sub.items.map((item) => ({
+          product: item.product,
+          variant: item.variant,
+          name: item.name,
+          sku: item.sku,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        })),
+        deliveryAddress: {
+          line1: "1 Test Street",
+          city: "London",
+          postcode: "SW1A 1AA",
+          country: "United Kingdom",
+        },
+        customerInstructions: "",
+        location: { lat: 51.5, lng: -0.1 },
+        deliveryDate: firstDelivery,
+        deliveryFee: 0,
+        subtotal,
+        total: subtotal,
+        amountPaid: subtotal,
+        status: "paid",
+        deliveryStatus: "ordered",
+        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        orderType: "subscription_generated",
+        subscription: sub._id,
+        stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+        paidAt: new Date(),
+      },
+      {
+        customer: customer._id,
+        items: sub.items.map((item) => ({
+          product: item.product,
+          variant: item.variant,
+          name: item.name,
+          sku: item.sku,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        })),
+        deliveryAddress: {
+          line1: "1 Test Street",
+          city: "London",
+          postcode: "SW1A 1AA",
+          country: "United Kingdom",
+        },
+        customerInstructions: "",
+        location: { lat: 51.5, lng: -0.1 },
+        deliveryDate: secondDelivery,
+        deliveryFee: 0,
+        subtotal,
+        total: subtotal,
+        amountPaid: subtotal,
+        status: "paid",
+        deliveryStatus: "ordered",
+        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        orderType: "subscription_generated",
+        subscription: sub._id,
+        stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+        paidAt: new Date(),
+      },
+    ]);
+
+    const cancelRes = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/cancel`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ reason: "multi-day after both" });
+
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.data.refundedMinor).toBe(0);
+    expect(cancelRes.body.data.creditedMinor).toBe(0);
+    expect(cancelRes.body.data.subscription.status).toBe("active");
+    expect(cancelRes.body.data.subscription.isCancellationScheduled).toBe(true);
+
+    const refreshedFirst = await Order.findById(firstOrder._id).lean();
+    const refreshedSecond = await Order.findById(secondOrder._id).lean();
+    expect(refreshedFirst.status).toBe("paid");
+    expect(refreshedSecond.status).toBe("paid");
+
+    const deliveries = await SubscriptionDelivery.find({
+      subscription: sub._id,
+    }).lean();
+    const byDay = new Map(
+      deliveries.map((delivery) => [
+        new Date(delivery.scheduledDate).toISOString().slice(0, 10),
+        delivery,
+      ]),
+    );
+    expect(
+      byDay.get(new Date(firstDelivery).toISOString().slice(0, 10))?.status,
+    ).toBe("scheduled");
+    expect(
+      byDay.get(new Date(secondDelivery).toISOString().slice(0, 10))?.status,
+    ).toBe("scheduled");
+  });
+
+  it("after cut-off for upcoming delivery does not refund even if nextDeliveryDate cutoff is still open", async () => {
+    const sub = await createBasicSubscription();
+
+    const upcomingDelivery = new Date();
+    upcomingDelivery.setDate(upcomingDelivery.getDate() + 1);
+    upcomingDelivery.setHours(9, 0, 0, 0);
+
+    const laterBillingDate = new Date();
+    laterBillingDate.setDate(laterBillingDate.getDate() + 7);
+    laterBillingDate.setHours(9, 0, 0, 0);
+
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: laterBillingDate,
+    });
+
+    await SubscriptionDelivery.create({
+      subscription: sub._id,
+      customer: customer._id,
+      scheduledDate: upcomingDelivery,
+      status: "scheduled",
+    });
+
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+
+    const paidOrder = await Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.unitPrice * item.quantity,
+      })),
+      deliveryAddress: {
+        line1: "1 Test Street",
+        city: "London",
+        postcode: "SW1A 1AA",
+        country: "United Kingdom",
+      },
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: upcomingDelivery,
+      deliveryFee: 0,
+      subtotal,
+      total: subtotal,
+      amountPaid: subtotal,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+
+    stripe.refunds.create.mockClear();
+
+    const cancelRes = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/cancel`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ reason: "after upcoming cutoff" });
+
+    expect(cancelRes.status).toBe(200);
+    expect(cancelRes.body.data.refundedMinor).toBe(0);
+    expect(cancelRes.body.data.creditedMinor).toBe(0);
+    expect(cancelRes.body.data.subscription.status).toBe("active");
+    expect(cancelRes.body.data.subscription.isCancellationScheduled).toBe(true);
+    expect(
+      new Date(
+        cancelRes.body.data.subscription.cancellationEffectiveAfter,
+      ).toISOString(),
+    ).toBe(upcomingDelivery.toISOString());
+    expect(stripe.refunds.create).not.toHaveBeenCalled();
+
+    const refreshedOrder = await Order.findById(paidOrder._id).lean();
+    expect(refreshedOrder.status).toBe("paid");
   });
 
   it("cancel handles missing Stripe subscription gracefully", async () => {

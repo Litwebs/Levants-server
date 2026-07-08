@@ -2122,7 +2122,12 @@ async function ResumeSubscription({ customerId, subscriptionId } = {}) {
 /**
  * Cancel a subscription.
  */
-async function CancelSubscription({ customerId, subscriptionId, reason } = {}) {
+async function CancelSubscription({
+  customerId,
+  subscriptionId,
+  reason,
+  refundMethod = "refund",
+} = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
     customer: customerId,
@@ -2131,27 +2136,179 @@ async function CancelSubscription({ customerId, subscriptionId, reason } = {}) {
   if (subscription.status === "cancelled") {
     return Response(false, "Subscription is already cancelled", null);
   }
+  if (subscription.isCancellationScheduled) {
+    return Response(
+      false,
+      "Subscription is already scheduled for cancellation",
+      null,
+    );
+  }
 
-  const { isPastCutoff } = await getCutoffStatus(subscription);
+  const settlementMethod =
+    refundMethod === "credit" || refundMethod === "refund"
+      ? refundMethod
+      : "refund";
+
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const now = new Date();
+  const dayKey = (value) => {
+    const date = new Date(value);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  };
+
+  const scheduledDeliveries = await SubscriptionDelivery.find({
+    subscription: subscription._id,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: { $gte: startOfDay(now) },
+  })
+    .sort({ scheduledDate: 1 })
+    .lean();
+
+  const lockedDeliveries = scheduledDeliveries.filter((delivery) => {
+    const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
+    return cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
+  });
+  const openDeliveries = scheduledDeliveries.filter((delivery) => {
+    const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
+    return cutoffAt ? Date.now() < cutoffAt.getTime() : true;
+  });
+
+  const lockedDeliveryKeys = new Set(
+    lockedDeliveries.map((delivery) => dayKey(delivery.scheduledDate)),
+  );
+  const openDeliveryKeys = new Set(
+    openDeliveries.map((delivery) => dayKey(delivery.scheduledDate)),
+  );
+
+  const hasLockedDeliveries = lockedDeliveries.length > 0;
+  const scheduledCancellationDate = hasLockedDeliveries
+    ? new Date(
+        Math.max(
+          ...lockedDeliveries.map((delivery) =>
+            new Date(delivery.scheduledDate).getTime(),
+          ),
+        ),
+      )
+    : null;
   let refundedMinor = 0;
+  let creditedMinor = 0;
   let stripeRefundId = null;
 
-  // Before cut-off, the upcoming delivery is still changeable and should be
-  // refunded immediately when the customer cancels.
-  if (!isPastCutoff) {
+  const candidateOrders = await Order.find({
+    subscription: subscription._id,
+    status: { $in: ["paid", "partially_refunded"] },
+    deliveryStatus: "ordered",
+  })
+    .sort({ deliveryDate: 1, createdAt: 1 })
+    .exec();
+
+  const refundableOrders = candidateOrders.filter((order) => {
+    if (!order.deliveryDate) return false;
+
+    const orderKey = dayKey(order.deliveryDate);
+    if (openDeliveryKeys.size > 0) {
+      return openDeliveryKeys.has(orderKey);
+    }
+
+    const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
+    return cutoffAt ? Date.now() < cutoffAt.getTime() : true;
+  });
+
+  // Refund each open (before cut-off) delivery order. Locked deliveries are
+  // kept and cancellation is scheduled to apply after they are delivered.
+  if (refundableOrders.length > 0) {
+    if (
+      settlementMethod === "refund" &&
+      refundableOrders.some((order) => !order.stripePaymentIntentId)
+    ) {
+      return Response(
+        false,
+        "We couldn't find a captured payment to refund to your card. Please choose store credit instead.",
+        null,
+      );
+    }
+
+    for (const refundableOrder of refundableOrders) {
+      const amountPaid = Number(
+        refundableOrder.amountPaid ?? refundableOrder.total ?? 0,
+      );
+      const refundAmountMinor = Math.max(0, Math.round(amountPaid * 100));
+
+      if (refundAmountMinor <= 0) {
+        return Response(
+          false,
+          "No refundable amount was found for one or more upcoming deliveries.",
+          null,
+        );
+      }
+
+      if (settlementMethod === "refund") {
+        try {
+          const refund = await stripe.refunds.create({
+            payment_intent: refundableOrder.stripePaymentIntentId,
+            amount: refundAmountMinor,
+            metadata: {
+              subscriptionId: String(subscription._id),
+              subscriptionNumber: subscription.subscriptionNumber,
+              type: "subscription_cancel_refund",
+            },
+          });
+
+          refundedMinor += refundAmountMinor;
+          stripeRefundId = refund.id;
+        } catch (err) {
+          return Response(
+            false,
+            "We couldn't refund your card. Please choose store credit instead.",
+            null,
+          );
+        }
+      } else {
+        const creditResult = await storeCreditService.addCredit({
+          customerId,
+          amountMinor: refundAmountMinor,
+          type: "subscription_refund",
+          reason:
+            reason ||
+            `Refund for cancelling ${subscription.subscriptionNumber}`,
+          subscriptionId: subscription._id,
+          orderId: refundableOrder._id,
+        });
+
+        if (!creditResult.ok) {
+          return Response(false, creditResult.message, null);
+        }
+
+        creditedMinor += refundAmountMinor;
+      }
+
+      refundableOrder.status = "refunded";
+      refundableOrder.refund = {
+        ...(refundableOrder.refund || {}),
+        refundedAt: new Date(),
+        reason: reason || "Subscription cancelled before cut-off",
+        stripeRefundId,
+      };
+      await refundableOrder.save();
+    }
+  } else if (!hasLockedDeliveries) {
     const refundableOrder = await Order.findOne({
       subscription: subscription._id,
       status: { $in: ["paid", "partially_refunded"] },
       deliveryStatus: "ordered",
-      stripePaymentIntentId: { $ne: null },
+      ...(settlementMethod === "refund"
+        ? { stripePaymentIntentId: { $ne: null } }
+        : {}),
     })
       .sort({ deliveryDate: 1, createdAt: 1 })
       .exec();
 
-    if (!refundableOrder?.stripePaymentIntentId) {
+    if (!refundableOrder) {
       return Response(
         false,
-        "We couldn't find a paid upcoming delivery to refund. Please contact support.",
+        settlementMethod === "refund"
+          ? "We couldn't find a paid upcoming delivery to refund to your card. Please choose store credit instead."
+          : "We couldn't find a paid upcoming delivery to convert into store credit. Please contact support.",
         null,
       );
     }
@@ -2169,35 +2326,61 @@ async function CancelSubscription({ customerId, subscriptionId, reason } = {}) {
       );
     }
 
-    try {
-      const refund = await stripe.refunds.create({
-        payment_intent: refundableOrder.stripePaymentIntentId,
-        amount: refundAmountMinor,
-        metadata: {
-          subscriptionId: String(subscription._id),
-          subscriptionNumber: subscription.subscriptionNumber,
-          type: "subscription_cancel_refund",
-        },
+    if (settlementMethod === "refund") {
+      if (!refundableOrder.stripePaymentIntentId) {
+        return Response(
+          false,
+          "We couldn't find a captured payment to refund to your card. Please choose store credit instead.",
+          null,
+        );
+      }
+
+      try {
+        const refund = await stripe.refunds.create({
+          payment_intent: refundableOrder.stripePaymentIntentId,
+          amount: refundAmountMinor,
+          metadata: {
+            subscriptionId: String(subscription._id),
+            subscriptionNumber: subscription.subscriptionNumber,
+            type: "subscription_cancel_refund",
+          },
+        });
+
+        refundedMinor = refundAmountMinor;
+        stripeRefundId = refund.id;
+      } catch (err) {
+        return Response(
+          false,
+          "We couldn't refund your card. Please choose store credit instead.",
+          null,
+        );
+      }
+    } else {
+      const creditResult = await storeCreditService.addCredit({
+        customerId,
+        amountMinor: refundAmountMinor,
+        type: "subscription_refund",
+        reason:
+          reason || `Refund for cancelling ${subscription.subscriptionNumber}`,
+        subscriptionId: subscription._id,
+        orderId: refundableOrder._id,
       });
 
-      refundedMinor = refundAmountMinor;
-      stripeRefundId = refund.id;
+      if (!creditResult.ok) {
+        return Response(false, creditResult.message, null);
+      }
 
-      refundableOrder.status = "refunded";
-      refundableOrder.refund = {
-        ...(refundableOrder.refund || {}),
-        refundedAt: new Date(),
-        reason: reason || "Subscription cancelled before cut-off",
-        stripeRefundId: refund.id,
-      };
-      await refundableOrder.save();
-    } catch (err) {
-      return Response(
-        false,
-        err?.message || "We couldn't refund your upcoming delivery payment.",
-        null,
-      );
+      creditedMinor = refundAmountMinor;
     }
+
+    refundableOrder.status = "refunded";
+    refundableOrder.refund = {
+      ...(refundableOrder.refund || {}),
+      refundedAt: new Date(),
+      reason: reason || "Subscription cancelled before cut-off",
+      stripeRefundId,
+    };
+    await refundableOrder.save();
   }
 
   // Cancel the Stripe Subscription so no further charges occur
@@ -2215,54 +2398,66 @@ async function CancelSubscription({ customerId, subscriptionId, reason } = {}) {
     }
   }
 
-  subscription.status = "cancelled";
-  subscription.cancelledAt = new Date();
+  // When any delivery is past its own cut-off we keep the subscription active
+  // and schedule cancellation after the latest locked delivery.
+  subscription.status = hasLockedDeliveries ? "active" : "cancelled";
+  subscription.cancelledAt = hasLockedDeliveries ? null : new Date();
   subscription.cancelReason = reason || null;
-  subscription.isCancellationScheduled = Boolean(
-    isPastCutoff && subscription.nextDeliveryDate,
-  );
-  subscription.cancellationEffectiveAfter =
-    isPastCutoff && subscription.nextDeliveryDate
-      ? new Date(subscription.nextDeliveryDate)
-      : null;
+  subscription.isCancellationScheduled = Boolean(scheduledCancellationDate);
+  subscription.cancellationEffectiveAfter = scheduledCancellationDate
+    ? new Date(scheduledCancellationDate)
+    : null;
   await subscription.save();
 
-  // Before cut-off: cancel all scheduled deliveries.
-  // After cut-off: keep the already-committed upcoming delivery and cancel only later ones.
-  const deliveryCancelFilter =
-    isPastCutoff && subscription.nextDeliveryDate
-      ? {
-          subscription: subscription._id,
-          status: "scheduled",
-          scheduledDate: { $gt: new Date(subscription.nextDeliveryDate) },
-        }
-      : { subscription: subscription._id, status: "scheduled" };
+  const deliveryIdsToCancel = scheduledDeliveries
+    .filter(
+      (delivery) => !lockedDeliveryKeys.has(dayKey(delivery.scheduledDate)),
+    )
+    .map((delivery) => delivery._id);
 
-  await SubscriptionDelivery.updateMany(deliveryCancelFilter, {
-    $set: { status: "cancelled" },
-  });
+  if (deliveryIdsToCancel.length > 0) {
+    await SubscriptionDelivery.updateMany(
+      { _id: { $in: deliveryIdsToCancel } },
+      {
+        $set: { status: "cancelled" },
+      },
+    );
+  }
 
   await CustomerNotification.create({
     customer: customerId,
     type: "subscription_cancelled",
     title: "Subscription cancelled",
-    message: isPastCutoff
-      ? "Your subscription is scheduled for cancellation. Your next scheduled delivery will still arrive, and all future deliveries have been stopped."
-      : "Your subscription has been cancelled and your upcoming delivery has been refunded.",
+    message: hasLockedDeliveries
+      ? refundedMinor > 0 || creditedMinor > 0
+        ? "Your subscription is scheduled for cancellation. Deliveries before cut-off were refunded, and deliveries past cut-off remain scheduled."
+        : "Your subscription is scheduled for cancellation. Deliveries past cut-off remain scheduled and no refund is due."
+      : creditedMinor > 0
+        ? "Your subscription has been cancelled and your upcoming delivery value was added to your store credit balance."
+        : "Your subscription has been cancelled and your upcoming delivery value will be refunded to your original card within 3-5 working days.",
     relatedSubscription: subscription._id,
   });
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
   return Response(
     true,
-    isPastCutoff
-      ? "Subscription scheduled for cancellation. Your next delivery remains scheduled; future deliveries are stopped."
-      : `Subscription cancelled and ${formatMinor(refundedMinor)} refunded immediately.`,
+    hasLockedDeliveries
+      ? refundedMinor > 0
+        ? `Subscription scheduled for cancellation. ${formatMinor(refundedMinor)} was refunded for deliveries before cut-off; deliveries past cut-off remain scheduled.`
+        : creditedMinor > 0
+          ? `Subscription scheduled for cancellation. ${formatMinor(creditedMinor)} was added as store credit for deliveries before cut-off; deliveries past cut-off remain scheduled.`
+          : "Subscription scheduled for cancellation. Deliveries past cut-off remain scheduled; no refund is due."
+      : refundedMinor > 0
+        ? `Subscription cancelled. ${formatMinor(refundedMinor)} will be refunded to your original card within 3-5 working days.`
+        : creditedMinor > 0
+          ? `Subscription cancelled. ${formatMinor(creditedMinor)} has been added to your store credit balance.`
+          : "Subscription cancelled.",
     {
       subscription: enriched,
       refundedMinor,
+      creditedMinor,
       stripeRefundId,
-      appliedTo: isPastCutoff ? "future_only" : "upcoming_and_future",
+      appliedTo: hasLockedDeliveries ? "future_only" : "upcoming_and_future",
     },
   );
 }

@@ -18,6 +18,7 @@ const {
   updateSubscriptionItemSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
+  cancelSubscriptionSchema,
 } = require("../../validators/portal.validators");
 
 const router = express.Router();
@@ -62,6 +63,7 @@ router.post(
 router.post(
   "/:subscriptionId/cancel",
   validateParams(subscriptionIdParamSchema),
+  validateBody(cancelSubscriptionSchema),
   asyncHandler(controller.CancelSubscription),
 );
 

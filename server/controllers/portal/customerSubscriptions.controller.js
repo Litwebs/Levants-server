@@ -75,6 +75,7 @@ const CancelSubscription = async (req, res) => {
     customerId: req.customer._id,
     subscriptionId: req.params.subscriptionId,
     reason: req.body?.reason,
+    refundMethod: req.body?.refundMethod,
   });
   if (!result.success)
     return sendErr(res, { statusCode: 400, message: result.message });

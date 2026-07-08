@@ -123,6 +123,11 @@ const subscriptionItemIdParamSchema = Joi.object({
   itemId: objectId.required(),
 }).unknown(true);
 
+const cancelSubscriptionSchema = Joi.object({
+  reason: Joi.string().trim().max(500).allow(null, "").optional(),
+  refundMethod: Joi.string().valid("credit", "refund").optional(),
+}).unknown(false);
+
 const createSupportRequestSchema = Joi.object({
   issueType: Joi.string()
     .valid(
@@ -206,6 +211,7 @@ module.exports = {
   updateSubscriptionItemSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
+  cancelSubscriptionSchema,
   createSupportRequestSchema,
   supportRequestIdParamSchema,
   addSupportNoteSchema,
