@@ -8,6 +8,10 @@
   },
   "scripts": {
     "test": "jest --runInBand",
+    "test:e2e:subscriptions": "playwright test",
+    "test:e2e:subscriptions:ui": "playwright test portal-ui.spec.js --headed",
+    "test:e2e:subscriptions:webhooks": "E2E_USE_STRIPE_CLI=1 playwright test stripe-integrity.spec.js stripe-webhooks.spec.js",
+    "test:e2e:subscriptions:report": "playwright show-report",
     "dev": "nodemon src/server.js",
     "seed-admin": "node scripts/seedAdmin.js",
     "seed-business-info": "node scripts/seedBusinessInfo.js",
@@ -52,6 +56,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "jest": "^30.2.0",
     "mongodb-memory-server": "^11.0.1",
     "nodemon": "^3.1.11",
