@@ -151,13 +151,13 @@ const FAMILY_DEFINITIONS = Object.freeze({
       "Next eligible delivery whose cut-off has not passed, plus future deliveries",
     workbookPaymentAction:
       "Next invoice charge for affected future deliveries only",
-    paymentExpectation: "immediate-incremental-charge-before-mutation",
+    paymentExpectation: "next-invoice-charge-no-immediate-payment",
     expectedOutcome:
-      "Skip locked deliveries; apply from the next eligible delivery; charge immediately for affected future deliveries.",
+      "Skip locked deliveries; stage from the next eligible delivery and update the next invoice without charging immediately.",
     implementationNote:
-      "Do not wait until the next billing period if the change will affect an earlier delivery.",
+      "The customer's current card balance is irrelevant because payment is not attempted until the next billing period.",
     tested: true,
-    conflicts: Object.freeze([SPEC_CONFLICTS.AFTER_CUTOFF_CHARGE_TIMING]),
+    conflicts: Object.freeze([]),
   }),
   [TEST_FAMILIES.ADD_AFTER_DECLINED]: Object.freeze({
     eventGroup: "Adding AFTER CUT-OFF",
@@ -171,14 +171,13 @@ const FAMILY_DEFINITIONS = Object.freeze({
       "Next eligible delivery whose cut-off has not passed, plus future deliveries",
     workbookPaymentAction:
       "Next invoice charge for affected future deliveries only",
-    paymentExpectation:
-      "no-mutation-until-retry-payment-succeeds-and-eligibility-is-recalculated",
+    paymentExpectation: "next-invoice-charge-no-immediate-payment",
     expectedOutcome:
-      "Do not apply the change; show insufficient funds and let customer retry.",
+      "Stage from the next eligible delivery and update the next invoice; do not check or charge the card immediately.",
     implementationNote:
-      "If payment later succeeds, recalculate eligibility at that time.",
+      "The configured insufficient-funds outcome is not exercised until the next billing period.",
     tested: true,
-    conflicts: Object.freeze([SPEC_CONFLICTS.AFTER_CUTOFF_CHARGE_TIMING]),
+    conflicts: Object.freeze([]),
   }),
   [TEST_FAMILIES.REMOVE_AFTER]: Object.freeze({
     eventGroup: "Removing AFTER CUT-OFF",

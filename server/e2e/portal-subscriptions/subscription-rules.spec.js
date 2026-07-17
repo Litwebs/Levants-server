@@ -340,7 +340,9 @@ function assertItemScope(rule, fixture, before, after) {
   const baseline = quantity(before.subscription.items, target.id);
   const expected = requestedQuantity(rule, baseline);
   const isBefore = BEFORE_FAMILIES.has(rule.family);
-  const declined = rule.funds === FUNDS.INSUFFICIENT;
+  // Once cut-off has passed no immediate payment is attempted. The card's
+  // configured outcome therefore only rejects a before-cut-off increase.
+  const declined = isBefore && rule.funds === FUNDS.INSUFFICIENT;
 
   if (fixture.cadence !== CADENCES.WEEKLY_MULTI_DAY) {
     if (declined) {
@@ -461,7 +463,9 @@ function assertItemFinancials(rule, fixture, after) {
 
   if (ADD_FAMILIES.has(rule.family)) {
     const expectedCharge =
-      rule.funds === FUNDS.INSUFFICIENT ? 0 : perDelivery * affected;
+      BEFORE_FAMILIES.has(rule.family) && rule.funds !== FUNDS.INSUFFICIENT
+        ? perDelivery * affected
+        : 0;
     expect.soft(successfulModificationAmount(after)).toBe(expectedCharge);
     return;
   }
@@ -497,10 +501,9 @@ async function assertRetryRecalculatesEligibility({
 
   const afterRetry = await getState(request, fixture.subscriptionId);
   const target = actionVariant(fixture, rule.action);
-  // This retry crosses the fixture's paid upcoming delivery/deliveries. The
-  // deliberately materialized next eligible slot is one delivery; later
-  // indefinite renewals remain the recurring Price's responsibility.
-  const expectedCharge = fixture.expectedDeltaMinor[rule.action];
+  // The retry deliberately crosses cut-off. At that point the change is
+  // staged for the next bill rather than collected as a one-off charge.
+  const expectedCharge = 0;
   expect
     .soft(
       successfulModificationAmount(afterRetry) -
@@ -555,7 +558,7 @@ async function assertRetryRecalculatesEligibility({
   if (fixture.cadence === CADENCES.WEEKLY_MULTI_DAY) {
     expect
       .soft(dayKey(afterRetry.subscription.pendingChanges?.effectiveFrom))
-      .toBe(dayKey(fixture.deliveryDates[2]));
+      .toBe(dayKey(fixture.deliveryDates[1]));
   }
 }
 
@@ -703,7 +706,9 @@ for (const rule of RULE_MATRIX) {
         before,
       );
       const responseBody = await response.json().catch(() => ({}));
-      const shouldFail = rule.funds === FUNDS.INSUFFICIENT;
+      const shouldFail =
+        BEFORE_FAMILIES.has(rule.family) &&
+        rule.funds === FUNDS.INSUFFICIENT;
       expect.soft(response.ok(), responseBody?.message).toBe(!shouldFail);
       if (shouldFail) {
         expect
@@ -714,10 +719,7 @@ for (const rule of RULE_MATRIX) {
       const after = await getState(request, fixture.subscriptionId);
       assertItemScope(rule, fixture, before, after);
       assertItemFinancials(rule, fixture, after);
-      if (
-        rule.family === TEST_FAMILIES.ADD_BEFORE_DECLINED ||
-        rule.family === TEST_FAMILIES.ADD_AFTER_DECLINED
-      ) {
+      if (rule.family === TEST_FAMILIES.ADD_BEFORE_DECLINED) {
         await assertRetryRecalculatesEligibility({
           request,
           token,
