@@ -18,9 +18,13 @@ import {
   X,
   Megaphone,
   LayoutList,
+<<<<<<< HEAD
+  Star,
+=======
   RefreshCw,
   HeadphonesIcon,
   CreditCard,
+>>>>>>> origin/Portal
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -109,6 +113,12 @@ const navItems = [
     icon: LayoutList,
     requiredAny: ["categories.read"],
     requireEmailDomain: "@litwebs.co.uk",
+  },
+  {
+    path: "/reviews",
+    label: "Reviews",
+    icon: Star,
+    requiredAny: ["reviews.read"],
   },
   {
     path: "/settings",
