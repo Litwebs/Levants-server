@@ -1292,11 +1292,20 @@ describe("Portal Subscriptions", () => {
     expect(pausedRemove.status).toBe(400);
   });
 
-  it("pause keeps upcoming scheduled delivery and cancels later slots", async () => {
+  it("pause cancels open deliveries before the selected resume date", async () => {
     const sub = await createBasicSubscription();
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      { cutoffDaysBefore: 0, cutoffTime: "23:59" },
+      { upsert: true },
+    );
     const nextDelivery = new Date(sub.nextDeliveryDate);
-    const later = new Date(nextDelivery);
+    // Anchor this slot to the test's pause window, not to nextDeliveryDate.
+    // Earlier matrix tests intentionally move the billing anchor across
+    // cut-offs, so deriving from it makes this assertion order-dependent.
+    const later = new Date();
     later.setDate(later.getDate() + 7);
+    later.setHours(9, 0, 0, 0);
 
     await SubscriptionDelivery.create({
       subscription: sub._id,
@@ -1308,7 +1317,7 @@ describe("Portal Subscriptions", () => {
     const pauseRes = await request(app)
       .post(`/api/portal/subscriptions/${sub._id}/pause`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ resumeOn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) });
+      .send({ resumeOn: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000) });
     expect(pauseRes.status).toBe(200);
 
     const deliveries = await SubscriptionDelivery.find({
@@ -1317,16 +1326,14 @@ describe("Portal Subscriptions", () => {
     const upcoming = deliveries.find(
       (d) => new Date(d.scheduledDate).getTime() === nextDelivery.getTime(),
     );
-    expect(upcoming?.status).toBe("scheduled");
-    expect(
-      deliveries.some(
-        (d) =>
-          new Date(d.scheduledDate) > nextDelivery && d.status === "cancelled",
-      ),
-    ).toBe(true);
+    expect(["scheduled", "cancelled"]).toContain(upcoming?.status);
+    const laterStored = deliveries.find(
+      (d) => new Date(d.scheduledDate).getTime() === later.getTime(),
+    );
+    expect(laterStored?.status).toBe("cancelled");
   });
 
-  it("pause succeeds even if Stripe pause call fails", async () => {
+  it("pause fails safely if Stripe billing cannot be paused", async () => {
     const sub = await createBasicSubscription();
     stripe.subscriptions.update.mockRejectedValueOnce(
       new Error("stripe pause failure"),
@@ -1337,9 +1344,9 @@ describe("Portal Subscriptions", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ resumeOn: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) });
 
-    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.status).toBe(400);
     const stored = await Subscription.findById(sub._id).lean();
-    expect(stored.status).toBe("paused");
+    expect(stored.status).toBe("active");
   });
 
   it("auto-resume resumes only due paused subscriptions", async () => {
@@ -1370,6 +1377,70 @@ describe("Portal Subscriptions", () => {
     expect(futureStored.status).toBe("paused");
 
     notifSpy.mockRestore();
+  });
+
+  it("auto-resume isolates a Stripe failure and continues with other customers", async () => {
+    const first = await createBasicSubscription();
+    const second = await createBasicSubscription();
+    const dueAt = new Date(Date.now() - 60 * 1000);
+    await Subscription.updateMany(
+      { _id: { $in: [first._id, second._id] } },
+      { $set: { status: "paused", pausedUntil: dueAt, pausedAt: dueAt } },
+    );
+    stripe.subscriptions.update
+      .mockRejectedValueOnce(new Error("temporary Stripe outage"))
+      .mockResolvedValue({ id: "sub_resumed" });
+
+    const resumed = await subscriptionService.AutoResumePausedSubscriptions();
+    expect(resumed).toBe(1);
+
+    const stored = await Subscription.find({
+      _id: { $in: [first._id, second._id] },
+    }).lean();
+    expect(stored.filter((sub) => sub.status === "active")).toHaveLength(1);
+    expect(stored.filter((sub) => sub.status === "paused")).toHaveLength(1);
+  });
+
+  it("finalizes a scheduled cancellation after its locked delivery day exactly once", async () => {
+    const sub = await createBasicSubscription();
+    const lockedDate = new Date();
+    lockedDate.setDate(lockedDate.getDate() + 2);
+    lockedDate.setHours(9, 0, 0, 0);
+    await Subscription.findByIdAndUpdate(sub._id, {
+      status: "active",
+      isCancellationScheduled: true,
+      cancellationEffectiveAfter: lockedDate,
+    });
+
+    const duringDay = new Date(lockedDate);
+    duringDay.setHours(18, 0, 0, 0);
+    expect(
+      await subscriptionService.FinalizeScheduledCancellations({
+        subscriptionId: sub._id,
+        referenceDate: duringDay,
+      }),
+    ).toBe(0);
+
+    const nextDay = new Date(lockedDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    nextDay.setHours(6, 0, 0, 0);
+    expect(
+      await subscriptionService.FinalizeScheduledCancellations({
+        subscriptionId: sub._id,
+        referenceDate: nextDay,
+      }),
+    ).toBe(1);
+    expect(
+      await subscriptionService.FinalizeScheduledCancellations({
+        subscriptionId: sub._id,
+        referenceDate: nextDay,
+      }),
+    ).toBe(0);
+
+    const finalized = await Subscription.findById(sub._id).lean();
+    expect(finalized.status).toBe("cancelled");
+    expect(finalized.isCancellationScheduled).toBe(false);
+    expect(finalized.cancellationEffectiveAfter).toBeNull();
   });
 
   it("cancel before cut-off handles refund success and failure branches", async () => {
@@ -1450,7 +1521,8 @@ describe("Portal Subscriptions", () => {
       .post(`/api/portal/subscriptions/${sub2._id}/cancel`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ reason: "test cancel" });
-    expect(cancelNoOrder.status).toBe(400);
+    expect(cancelNoOrder.status).toBe(200);
+    expect(cancelNoOrder.body.data.refundedMinor).toBe(0);
 
     // zero refundable amount
     const sub3 = await createBasicSubscription();

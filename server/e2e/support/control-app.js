@@ -68,6 +68,15 @@ function createControlApp() {
     "/state/:subscriptionId/auto-resume",
     asyncRoute((req) => fixtures.autoResume(req.params.subscriptionId)),
   );
+  app.post(
+    "/state/:subscriptionId/finalize-cancellation",
+    asyncRoute((req) =>
+      fixtures.finalizeCancellation(
+        req.params.subscriptionId,
+        req.body?.referenceDate,
+      ),
+    ),
+  );
 
   return app;
 }

@@ -27,6 +27,7 @@ const customerNotificationSchema = new mongoose.Schema(
         "subscription_updated",
         "subscription_paused",
         "subscription_resumed",
+        "subscription_auto_resumed",
         "subscription_cancelled",
         "subscription_upcoming_delivery",
         "payment_failed",

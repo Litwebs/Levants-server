@@ -222,6 +222,31 @@ const orderSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Delivery-level allocation ledger. Multiple delivery orders may share one
+    // Stripe invoice/PaymentIntent, while later modifications can add separate
+    // intents. This ledger keeps each delivery independently auditable without
+    // splitting the customer's bill or transaction.
+    paymentAllocations: {
+      type: [
+        new mongoose.Schema(
+          {
+            paymentIntentId: { type: String, required: true, index: true },
+            stripeInvoiceId: { type: String, default: null, index: true },
+            source: {
+              type: String,
+              enum: ["subscription_invoice", "modification", "resume"],
+              required: true,
+            },
+            amountMinor: { type: Number, required: true, min: 0 },
+            idempotencyKey: { type: String, default: null },
+            createdAt: { type: Date, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+
     refund: {
       refundedAt: {
         type: Date,

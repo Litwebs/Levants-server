@@ -394,6 +394,11 @@ function startOfDay(value) {
   return date;
 }
 
+function deliveryDateKey(value) {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function formatDateLabel(value) {
   return new Date(value).toLocaleDateString("en-GB", {
     day: "2-digit",
@@ -443,22 +448,119 @@ async function getResumeNextDeliveryDate(
   subscription,
   referenceDate = new Date(),
 ) {
-  const retainedDelivery = await SubscriptionDelivery.findOne({
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const eligibilityStart = startOfDay(
+    subscription.pausedUntil && new Date(subscription.pausedUntil) > referenceDate
+      ? subscription.pausedUntil
+      : referenceDate,
+  );
+  const retainedDeliveries = await SubscriptionDelivery.find({
     subscription: subscription._id,
     status: "scheduled",
-    scheduledDate: { $gte: startOfDay(referenceDate) },
+    scheduledDate: { $gte: eligibilityStart },
   })
     .sort({ scheduledDate: 1 })
     .lean();
 
-  return retainedDelivery?.scheduledDate
-    ? new Date(retainedDelivery.scheduledDate)
-    : calculateNextDeliveryDate(
-        subscription.preferredDeliveryDay,
-        subscription.frequency,
-        referenceDate,
-        subscription.preferredDeliveryDays,
-      );
+  const retainedDelivery = retainedDeliveries.find((delivery) => {
+    const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
+    return !cutoffAt || referenceDate.getTime() < cutoffAt.getTime();
+  });
+
+  if (retainedDelivery?.scheduledDate) {
+    return new Date(retainedDelivery.scheduledDate);
+  }
+
+  let searchFrom = eligibilityStart;
+  // A calculated fallback is subject to exactly the same per-delivery cut-off
+  // rule as a retained slot. The bounded loop protects against malformed data.
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const candidate = calculateNextDeliveryDate(
+      subscription.preferredDeliveryDay,
+      subscription.frequency,
+      searchFrom,
+      subscription.preferredDeliveryDays,
+    );
+    const cutoffAt = computeCutoffDate(candidate, settings);
+    if (!cutoffAt || referenceDate.getTime() < cutoffAt.getTime()) {
+      return candidate;
+    }
+    searchFrom = new Date(candidate);
+    searchFrom.setDate(searchFrom.getDate() + 1);
+  }
+
+  throw new Error("No delivery date with an open modification window was found");
+}
+
+async function getResumeRequiredMinor(subscription, nextDeliveryDate) {
+  if (!subscription.stripeSubscriptionId || !stripe.invoices?.list) return 0;
+
+  // Prefer the payment that backs the actual delivery being resumed. This is
+  // essential for multi-day subscriptions where each delivery can have a
+  // different cut-off while billing remains consolidated.
+  const deliveryStart = startOfDay(nextDeliveryDate);
+  const deliveryEnd = new Date(deliveryStart);
+  deliveryEnd.setDate(deliveryEnd.getDate() + 1);
+  const order = await Order.findOne({
+    subscription: subscription._id,
+    deliveryDate: { $gte: deliveryStart, $lt: deliveryEnd },
+    stripePaymentIntentId: { $ne: null },
+  }).lean();
+
+  if (order?.stripePaymentIntentId && stripe.refunds?.list) {
+    const refunds = await stripe.refunds.list({
+      payment_intent: order.stripePaymentIntentId,
+      limit: 100,
+    });
+    const succeededRefunds = (refunds.data || []).filter(
+      (refund) => refund.status === "succeeded",
+    );
+    const deliveryTaggedRefunds = succeededRefunds.filter(
+      (refund) => String(refund.metadata?.orderId || "") === String(order._id),
+    );
+    const hasOrderTaggedRefunds = succeededRefunds.some(
+      (refund) => refund.metadata?.orderId,
+    );
+    const relevantRefunds = hasOrderTaggedRefunds
+      ? deliveryTaggedRefunds
+      : succeededRefunds;
+    const refundedMinor = relevantRefunds
+      .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+    const deliveryMinor = Math.max(
+      0,
+      Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
+    );
+    return Math.min(deliveryMinor, refundedMinor);
+  }
+
+  const invoices = await stripe.invoices.list({
+    subscription: subscription.stripeSubscriptionId,
+    status: "paid",
+    limit: 10,
+  });
+
+  for (const invoice of invoices.data || []) {
+    const paymentIntentId =
+      typeof invoice.payment_intent === "string"
+        ? invoice.payment_intent
+        : invoice.payment_intent?.id;
+    const paidMinor = Number(invoice.amount_paid || 0);
+    if (!paymentIntentId || paidMinor <= 0) continue;
+
+    const refunds = await stripe.refunds.list({
+      payment_intent: paymentIntentId,
+      limit: 100,
+    });
+    const refundedMinor = (refunds.data || [])
+      .filter((refund) => refund.status === "succeeded")
+      .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+
+    // Legacy orders may not yet identify their backing intent. Restore exactly
+    // the amount that was refunded (full or partial), capped at the invoice.
+    return Math.min(paidMinor, refundedMinor);
+  }
+
+  return 0;
 }
 
 async function activatePausedSubscription(
@@ -469,20 +571,50 @@ async function activatePausedSubscription(
     notificationMessage,
   } = {},
 ) {
+  const nextDeliveryDate = await getResumeNextDeliveryDate(subscription);
+  const resumeRequiredMinor = await getResumeRequiredMinor(
+    subscription,
+    nextDeliveryDate,
+  );
+
+  // Remote billing must be resumed before local state changes. A failed Stripe
+  // sync leaves the subscription paused and safe to retry.
   if (subscription.stripeSubscriptionId) {
-    try {
-      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        pause_collection: "",
-      });
-    } catch (err) {
-      console.error("[ResumeSubscription] Stripe resume failed:", err.message);
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+      pause_collection: "",
+    });
+  }
+
+  if (resumeRequiredMinor > 0) {
+    const customer = await Customer.findById(subscription.customer);
+    const charge = await chargeDeltaNow(
+      subscription,
+      customer,
+      resumeRequiredMinor,
+      `Subscription resumed – ${subscription.subscriptionNumber}`,
+      `subscription:${subscription._id}:resume:${deliveryDateKey(nextDeliveryDate)}:${resumeRequiredMinor}`,
+    );
+    if (!charge.ok) {
+      if (subscription.stripeSubscriptionId) {
+        try {
+          await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+            pause_collection: { behavior: "void" },
+          });
+        } catch (rollbackError) {
+          console.error(
+            "[ResumeSubscription] Failed to restore Stripe pause after declined payment:",
+            rollbackError?.message || rollbackError,
+          );
+        }
+      }
+      throw new Error(charge.message || "Payment is required to resume");
     }
   }
 
   subscription.status = "active";
   subscription.pausedAt = null;
   subscription.pausedUntil = null;
-  subscription.nextDeliveryDate = await getResumeNextDeliveryDate(subscription);
+  subscription.nextDeliveryDate = nextDeliveryDate;
   await subscription.save();
 
   await scheduleUpcomingDeliveries(subscription);
@@ -516,16 +648,94 @@ async function AutoResumePausedSubscriptions({
   let resumed = 0;
 
   for (const subscription of pausedSubscriptions) {
-    await activatePausedSubscription(subscription, {
-      notificationType: "subscription_auto_resumed",
-      notificationTitle: "Subscription resumed automatically",
-      notificationMessage:
-        "Your pause period has ended, so your subscription has resumed automatically.",
-    });
-    resumed += 1;
+    try {
+      await activatePausedSubscription(subscription, {
+        notificationType: "subscription_auto_resumed",
+        notificationTitle: "Subscription resumed automatically",
+        notificationMessage:
+          "Your pause period has ended, so your subscription has resumed automatically.",
+      });
+      resumed += 1;
+    } catch (error) {
+      // A declined card or a transient Stripe failure for one customer must not
+      // prevent other due subscriptions from resuming. The failed subscription
+      // remains paused and will be retried by the next scheduler run.
+      console.error(
+        `[AutoResumePausedSubscriptions] Failed for ${subscription.subscriptionNumber}:`,
+        error?.message || error,
+      );
+    }
   }
 
   return resumed;
+}
+
+/**
+ * Complete cancellations that were intentionally deferred because one or more
+ * deliveries had already crossed their cut-off. A delivery remains protected
+ * for its entire calendar day; finalisation is eligible from the next day.
+ *
+ * The update is conditional, making repeated or overlapping cron runs safe.
+ */
+async function FinalizeScheduledCancellations({
+  subscriptionId,
+  referenceDate = new Date(),
+} = {}) {
+  const filter = {
+    status: "active",
+    isCancellationScheduled: true,
+    cancellationEffectiveAfter: { $ne: null },
+  };
+  if (subscriptionId) filter._id = subscriptionId;
+
+  const candidates = await Subscription.find(filter);
+  let finalized = 0;
+
+  for (const candidate of candidates) {
+    try {
+      const eligibleAt = new Date(candidate.cancellationEffectiveAfter);
+      eligibleAt.setHours(23, 59, 59, 999);
+      if (referenceDate.getTime() <= eligibleAt.getTime()) continue;
+
+      // Cancel dependent slots first. If the subsequent conditional update
+      // fails, the candidate remains eligible and the next run safely retries.
+      await SubscriptionDelivery.updateMany(
+        {
+          subscription: candidate._id,
+          status: { $in: ["scheduled", "generated"] },
+          scheduledDate: { $gt: candidate.cancellationEffectiveAfter },
+        },
+        { $set: { status: "cancelled" } },
+      );
+
+      const updated = await Subscription.findOneAndUpdate(
+        {
+          _id: candidate._id,
+          status: "active",
+          isCancellationScheduled: true,
+          cancellationEffectiveAfter: candidate.cancellationEffectiveAfter,
+        },
+        {
+          $set: {
+            status: "cancelled",
+            cancelledAt: referenceDate,
+            isCancellationScheduled: false,
+            cancellationEffectiveAfter: null,
+            nextDeliveryDate: null,
+          },
+        },
+        { new: true },
+      );
+      if (updated) finalized += 1;
+    } catch (error) {
+      console.error(
+        `[FinalizeScheduledCancellations] Failed for ${candidate.subscriptionNumber}:`,
+        error?.message || error,
+      );
+    }
+  }
+
+  return finalized;
 }
 
 function itemsToPlain(items = []) {
@@ -552,6 +762,7 @@ async function chargeDeltaNow(
   customer,
   amountMinor,
   description,
+  idempotencyKey,
 ) {
   if (!amountMinor || amountMinor <= 0)
     return { ok: true, paymentIntent: null };
@@ -585,7 +796,7 @@ async function chargeDeltaNow(
         subscriptionNumber: subscription.subscriptionNumber,
         type: "subscription_modification",
       },
-    });
+    }, idempotencyKey ? { idempotencyKey } : undefined);
     return { ok: true, paymentIntent };
   } catch (err) {
     return {
@@ -594,6 +805,85 @@ async function chargeDeltaNow(
         err?.message || "We couldn't charge your card for the extra items",
     };
   }
+}
+
+async function refundAcrossSubscriptionPayments(
+  subscription,
+  customer,
+  primaryPaymentIntentId,
+  amountMinor,
+  metadataType,
+  operationKey,
+  orderId,
+) {
+  if (!stripe.paymentIntents?.list) {
+    const refund = await stripe.refunds.create({
+      payment_intent: primaryPaymentIntentId,
+      amount: amountMinor,
+      metadata: {
+        subscriptionId: String(subscription._id),
+        subscriptionNumber: subscription.subscriptionNumber,
+        type: metadataType,
+        ...(orderId ? { orderId: String(orderId) } : {}),
+      },
+    }, operationKey ? { idempotencyKey: `${operationKey}:primary` } : undefined);
+    return [refund];
+  }
+
+  const intentPage = await stripe.paymentIntents.list({
+    customer: customer.stripeCustomerId,
+    limit: 100,
+  });
+  const primary = intentPage.data.find(
+    (intent) => intent.id === primaryPaymentIntentId,
+  );
+  const modifications = intentPage.data
+    .filter(
+      (intent) =>
+        intent.id !== primaryPaymentIntentId &&
+        intent.status === "succeeded" &&
+        String(intent.metadata?.subscriptionId || "") ===
+          String(subscription._id) &&
+        intent.metadata?.type === "subscription_modification",
+    )
+    .sort((left, right) => Number(left.created) - Number(right.created));
+  const candidates = [primary, ...modifications].filter(Boolean);
+  let remainingMinor = amountMinor;
+  const refunds = [];
+
+  for (const intent of candidates) {
+    if (remainingMinor <= 0) break;
+    const existingRefunds = await stripe.refunds.list({
+      payment_intent: intent.id,
+      limit: 100,
+    });
+    const alreadyRefundedMinor = existingRefunds.data
+      .filter((refund) => refund.status === "succeeded")
+      .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+    const capturedMinor = Number(intent.amount_received || intent.amount || 0);
+    const availableMinor = Math.max(0, capturedMinor - alreadyRefundedMinor);
+    const refundMinor = Math.min(remainingMinor, availableMinor);
+    if (refundMinor <= 0) continue;
+
+    const refund = await stripe.refunds.create({
+      payment_intent: intent.id,
+      amount: refundMinor,
+      metadata: {
+        subscriptionId: String(subscription._id),
+        subscriptionNumber: subscription.subscriptionNumber,
+        type: metadataType,
+        ...(orderId ? { orderId: String(orderId) } : {}),
+      },
+    }, operationKey ? { idempotencyKey: `${operationKey}:${intent.id}` } : undefined);
+    refunds.push(refund);
+    remainingMinor -= refundMinor;
+  }
+
+  if (remainingMinor > 0) {
+    throw new Error("Insufficient captured payment balance to refund");
+  }
+
+  return refunds;
 }
 
 /**
@@ -613,7 +903,7 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
     stripePaymentIntentId: { $ne: null },
   })
     .sort({ paidAt: -1, createdAt: -1 })
-    .select("stripePaymentIntentId")
+    .select("_id stripePaymentIntentId deliveryDate")
     .lean();
 
   if (!lastPaidOrder?.stripePaymentIntentId) {
@@ -628,7 +918,10 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
         subscriptionId: String(subscription._id),
         subscriptionNumber: subscription.subscriptionNumber,
         type: "subscription_decrease_refund",
+        orderId: String(lastPaidOrder._id),
       },
+    }, {
+      idempotencyKey: `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
     });
     return { refundedMinor: amountMinor, stripeRefundId: refund.id };
   } catch (err) {
@@ -647,7 +940,7 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
 async function updateUpcomingSubscriptionOrder(
   subscription,
   nextItems,
-  { chargedMinor = 0, refundedMinor = 0 } = {},
+  { chargedMinor = 0, refundedMinor = 0, paymentIntent = null } = {},
 ) {
   const order = await Order.findOne({
     subscription: subscription._id,
@@ -677,6 +970,15 @@ async function updateUpcomingSubscriptionOrder(
   const deltaPounds = (chargedMinor - refundedMinor) / 100;
   order.amountPaid = Math.max(0, (order.amountPaid || 0) + deltaPounds);
 
+  if (chargedMinor > 0 && paymentIntent?.id) {
+    order.paymentAllocations.push({
+      paymentIntentId: paymentIntent.id,
+      source: "modification",
+      amountMinor: chargedMinor,
+      idempotencyKey: `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`,
+    });
+  }
+
   if (refundedMinor > 0) {
     order.status = "partially_refunded";
   }
@@ -695,7 +997,7 @@ async function updateUpcomingSubscriptionOrderForDay(
   subscription,
   weekday,
   dayItems,
-  { chargedMinor = 0, refundedMinor = 0 } = {},
+  { chargedMinor = 0, refundedMinor = 0, paymentIntent = null } = {},
 ) {
   const orders = await Order.find({
     subscription: subscription._id,
@@ -729,6 +1031,15 @@ async function updateUpcomingSubscriptionOrderForDay(
 
   const deltaPounds = (chargedMinor - refundedMinor) / 100;
   order.amountPaid = Math.max(0, (order.amountPaid || 0) + deltaPounds);
+
+  if (chargedMinor > 0 && paymentIntent?.id) {
+    order.paymentAllocations.push({
+      paymentIntentId: paymentIntent.id,
+      source: "modification",
+      amountMinor: chargedMinor,
+      idempotencyKey: `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`,
+    });
+  }
 
   if (refundedMinor > 0) {
     order.status = "partially_refunded";
@@ -828,6 +1139,7 @@ async function applyItemChange(
     await syncStripeSubscriptionPrice(subscription);
     await updateUpcomingSubscriptionOrder(subscription, nextItems, {
       chargedMinor: deltaMinor,
+      paymentIntent: charge.paymentIntent,
     });
     const enriched = await enrichSubscriptionWithVariantImages(subscription);
     return Response(
@@ -1758,6 +2070,7 @@ async function UpdateSubscription({
   let dayPlanCreditedMinor = 0;
   let dayPlanRefundedMinor = 0;
   let dayPlanStripeRefundId = null;
+  let dayPlanPaymentIntent = null;
   let updateMessage = "Subscription updated";
 
   if (
@@ -1775,6 +2088,7 @@ async function UpdateSubscription({
     if (!charge.ok) {
       return Response(false, charge.message, null);
     }
+    dayPlanPaymentIntent = charge.paymentIntent;
   }
 
   if (
@@ -1933,6 +2247,7 @@ async function UpdateSubscription({
     );
     // Generate new upcoming delivery slots
     await scheduleUpcomingDeliveries(subscription);
+    shouldSyncStripePrice = true;
   }
 
   await subscription.save();
@@ -1975,6 +2290,7 @@ async function UpdateSubscription({
         {
           chargedMinor: Math.max(dayDeltaMinor, 0),
           refundedMinor: Math.max(-dayDeltaMinor, 0),
+          paymentIntent: dayPlanPaymentIntent,
         },
       );
     }
@@ -2036,6 +2352,7 @@ async function PauseSubscription({
   customerId,
   subscriptionId,
   resumeOn,
+  refundMethod = "refund",
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -2051,16 +2368,140 @@ async function PauseSubscription({
     return Response(false, pauseResume.message, null);
   }
 
-  // Pause billing in Stripe (void invoices while paused)
+  const settlementMethod =
+    refundMethod === "credit" || refundMethod === "refund"
+      ? refundMethod
+      : "refund";
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const customer = await Customer.findById(customerId);
+  const now = new Date();
+  const resumeDate = new Date(pauseResume.resumeDate);
+  const deliveriesToConsider = await SubscriptionDelivery.find({
+    subscription: subscription._id,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: {
+      $gte: startOfDay(now),
+      $lt: resumeDate,
+    },
+  })
+    .sort({ scheduledDate: 1 })
+    .exec();
+
+  const openDeliveries = deliveriesToConsider.filter((delivery) => {
+    const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
+    return !cutoffAt || now.getTime() < cutoffAt.getTime();
+  });
+  const openDateKeys = new Set(
+    openDeliveries.map((delivery) => deliveryDateKey(delivery.scheduledDate)),
+  );
+  const refundableOrders = await Order.find({
+    subscription: subscription._id,
+    status: { $in: ["paid", "partially_refunded"] },
+    deliveryStatus: "ordered",
+    deliveryDate: { $gte: startOfDay(now), $lt: resumeDate },
+  })
+    .sort({ deliveryDate: 1 })
+    .exec();
+  const eligibleOrders = refundableOrders.filter((order) =>
+    openDateKeys.has(deliveryDateKey(order.deliveryDate)),
+  );
+  let refundedMinor = 0;
+  let creditedMinor = 0;
+
+  if (
+    settlementMethod === "refund" &&
+    eligibleOrders.some((order) => !order.stripePaymentIntentId)
+  ) {
+    return Response(
+      false,
+      "We couldn't find a captured payment to refund to your card. Please choose store credit instead.",
+      null,
+    );
+  }
+
+  let stripeWasPaused = false;
   if (subscription.stripeSubscriptionId) {
     try {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         pause_collection: { behavior: "void" },
       });
-    } catch (err) {
-      // Non-fatal: log and continue so our DB stays accurate
-      console.error("[PauseSubscription] Stripe pause failed:", err.message);
+      stripeWasPaused = true;
+    } catch (error) {
+      return Response(
+        false,
+        "We couldn't pause billing with the payment provider. Nothing was changed; please try again.",
+        null,
+      );
     }
+  }
+
+  const restoreStripeBilling = async () => {
+    if (!stripeWasPaused || !subscription.stripeSubscriptionId) return;
+    try {
+      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        pause_collection: "",
+      });
+    } catch (error) {
+      console.error(
+        "[PauseSubscription] Failed to restore Stripe after settlement failure:",
+        error?.message || error,
+      );
+    }
+  };
+
+  for (const order of eligibleOrders) {
+    const amountMinor = Math.max(
+      0,
+      Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
+    );
+    if (amountMinor <= 0) continue;
+
+    let stripeRefundId = null;
+    if (settlementMethod === "refund") {
+      try {
+        const refunds = await refundAcrossSubscriptionPayments(
+          subscription,
+          customer,
+          order.stripePaymentIntentId,
+          amountMinor,
+          "subscription_pause_refund",
+          `subscription:${subscription._id}:pause:${deliveryDateKey(order.deliveryDate)}:${order._id}`,
+          order._id,
+        );
+        stripeRefundId = refunds.at(-1)?.id || null;
+        refundedMinor += amountMinor;
+      } catch (error) {
+        await restoreStripeBilling();
+        return Response(
+          false,
+          "We couldn't refund your card. Please choose store credit instead.",
+          null,
+        );
+      }
+    } else {
+      const credit = await storeCreditService.addCredit({
+        customerId,
+        amountMinor,
+        type: "subscription_refund",
+        reason: `Refund for pausing ${subscription.subscriptionNumber}`,
+        subscriptionId: subscription._id,
+        orderId: order._id,
+      });
+      if (!credit.ok) {
+        await restoreStripeBilling();
+        return Response(false, credit.message, null);
+      }
+      creditedMinor += amountMinor;
+    }
+
+    order.status = "refunded";
+    order.refund = {
+      ...(order.refund || {}),
+      refundedAt: new Date(),
+      reason: "Subscription paused before cut-off",
+      stripeRefundId,
+    };
+    await order.save();
   }
 
   subscription.status = "paused";
@@ -2068,19 +2509,12 @@ async function PauseSubscription({
   subscription.pausedUntil = pauseResume.resumeDate;
   await subscription.save();
 
-  // Keep the already-billed upcoming delivery (nextDeliveryDate) and stop
-  // only future scheduled deliveries while paused.
-  const pauseDeliveryFilter = subscription.nextDeliveryDate
-    ? {
-        subscription: subscription._id,
-        status: "scheduled",
-        scheduledDate: { $gt: new Date(subscription.nextDeliveryDate) },
-      }
-    : { subscription: subscription._id, status: "scheduled" };
-
-  await SubscriptionDelivery.updateMany(pauseDeliveryFilter, {
-    $set: { status: "cancelled" },
-  });
+  await SubscriptionDelivery.updateMany(
+    { _id: { $in: openDeliveries.map((delivery) => delivery._id) } },
+    {
+      $set: { status: "cancelled" },
+    },
+  );
 
   await CustomerNotification.create({
     customer: customerId,
@@ -2088,7 +2522,7 @@ async function PauseSubscription({
     title: "Subscription paused",
     message: `Your subscription has been paused until ${formatDateLabel(
       pauseResume.resumeDate,
-    )}. Any already-billed upcoming delivery remains scheduled, and no changes can be made while paused.`,
+    )}. Deliveries past cut-off remain scheduled; eligible deliveries before the resume date have been skipped.`,
     relatedSubscription: subscription._id,
   });
 
@@ -2096,7 +2530,7 @@ async function PauseSubscription({
   return Response(
     true,
     `Subscription paused until ${formatDateLabel(pauseResume.resumeDate)}.`,
-    { subscription: enriched },
+    { subscription: enriched, refundedMinor, creditedMinor },
   );
 }
 
@@ -2150,6 +2584,7 @@ async function CancelSubscription({
       : "refund";
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const customer = await Customer.findById(customerId);
   const now = new Date();
   const dayKey = (value) => {
     const date = new Date(value);
@@ -2244,18 +2679,17 @@ async function CancelSubscription({
 
       if (settlementMethod === "refund") {
         try {
-          const refund = await stripe.refunds.create({
-            payment_intent: refundableOrder.stripePaymentIntentId,
-            amount: refundAmountMinor,
-            metadata: {
-              subscriptionId: String(subscription._id),
-              subscriptionNumber: subscription.subscriptionNumber,
-              type: "subscription_cancel_refund",
-            },
-          });
-
+          const refunds = await refundAcrossSubscriptionPayments(
+            subscription,
+            customer,
+            refundableOrder.stripePaymentIntentId,
+            refundAmountMinor,
+            "subscription_cancel_refund",
+            `subscription:${subscription._id}:cancel:${deliveryDateKey(refundableOrder.deliveryDate)}:${refundableOrder._id}`,
+            refundableOrder._id,
+          );
           refundedMinor += refundAmountMinor;
-          stripeRefundId = refund.id;
+          stripeRefundId = refunds.at(-1)?.id || stripeRefundId;
         } catch (err) {
           return Response(
             false,
@@ -2303,84 +2737,76 @@ async function CancelSubscription({
       .sort({ deliveryDate: 1, createdAt: 1 })
       .exec();
 
-    if (!refundableOrder) {
-      return Response(
-        false,
-        settlementMethod === "refund"
-          ? "We couldn't find a paid upcoming delivery to refund to your card. Please choose store credit instead."
-          : "We couldn't find a paid upcoming delivery to convert into store credit. Please contact support.",
-        null,
+    if (refundableOrder) {
+      const amountPaid = Number(
+        refundableOrder.amountPaid ?? refundableOrder.total ?? 0,
       );
-    }
+      const refundAmountMinor = Math.max(0, Math.round(amountPaid * 100));
 
-    const amountPaid = Number(
-      refundableOrder.amountPaid ?? refundableOrder.total ?? 0,
-    );
-    const refundAmountMinor = Math.max(0, Math.round(amountPaid * 100));
-
-    if (refundAmountMinor <= 0) {
-      return Response(
-        false,
-        "No refundable amount was found for the upcoming delivery.",
-        null,
-      );
-    }
-
-    if (settlementMethod === "refund") {
-      if (!refundableOrder.stripePaymentIntentId) {
+      if (refundAmountMinor <= 0) {
         return Response(
           false,
-          "We couldn't find a captured payment to refund to your card. Please choose store credit instead.",
+          "No refundable amount was found for the upcoming delivery.",
           null,
         );
       }
 
-      try {
-        const refund = await stripe.refunds.create({
-          payment_intent: refundableOrder.stripePaymentIntentId,
-          amount: refundAmountMinor,
-          metadata: {
-            subscriptionId: String(subscription._id),
-            subscriptionNumber: subscription.subscriptionNumber,
-            type: "subscription_cancel_refund",
-          },
+      if (settlementMethod === "refund") {
+        if (!refundableOrder.stripePaymentIntentId) {
+          return Response(
+            false,
+            "We couldn't find a captured payment to refund to your card. Please choose store credit instead.",
+            null,
+          );
+        }
+
+        try {
+          const refunds = await refundAcrossSubscriptionPayments(
+            subscription,
+            customer,
+            refundableOrder.stripePaymentIntentId,
+            refundAmountMinor,
+            "subscription_cancel_refund",
+            `subscription:${subscription._id}:cancel:${deliveryDateKey(refundableOrder.deliveryDate)}:${refundableOrder._id}`,
+            refundableOrder._id,
+          );
+          refundedMinor = refundAmountMinor;
+          stripeRefundId = refunds.at(-1)?.id || null;
+        } catch (err) {
+          return Response(
+            false,
+            "We couldn't refund your card. Please choose store credit instead.",
+            null,
+          );
+        }
+      } else {
+        const creditResult = await storeCreditService.addCredit({
+          customerId,
+          amountMinor: refundAmountMinor,
+          type: "subscription_refund",
+          reason:
+            reason ||
+            `Refund for cancelling ${subscription.subscriptionNumber}`,
+          subscriptionId: subscription._id,
+          orderId: refundableOrder._id,
         });
 
-        refundedMinor = refundAmountMinor;
-        stripeRefundId = refund.id;
-      } catch (err) {
-        return Response(
-          false,
-          "We couldn't refund your card. Please choose store credit instead.",
-          null,
-        );
-      }
-    } else {
-      const creditResult = await storeCreditService.addCredit({
-        customerId,
-        amountMinor: refundAmountMinor,
-        type: "subscription_refund",
-        reason:
-          reason || `Refund for cancelling ${subscription.subscriptionNumber}`,
-        subscriptionId: subscription._id,
-        orderId: refundableOrder._id,
-      });
+        if (!creditResult.ok) {
+          return Response(false, creditResult.message, null);
+        }
 
-      if (!creditResult.ok) {
-        return Response(false, creditResult.message, null);
+        creditedMinor = refundAmountMinor;
       }
 
-      creditedMinor = refundAmountMinor;
+      refundableOrder.status = "refunded";
+      refundableOrder.refund = {
+        ...(refundableOrder.refund || {}),
+        refundedAt: new Date(),
+        reason: reason || "Subscription cancelled before cut-off",
+        stripeRefundId,
+      };
+      await refundableOrder.save();
     }
-
-    refundableOrder.status = "refunded";
-    refundableOrder.refund = {
-      ...(refundableOrder.refund || {}),
-      refundedAt: new Date(),
-      reason: reason || "Subscription cancelled before cut-off",
-      stripeRefundId,
-    };
-    await refundableOrder.save();
   }
 
   // Cancel the Stripe Subscription so no further charges occur
@@ -2390,9 +2816,14 @@ async function CancelSubscription({
     } catch (err) {
       // If already cancelled in Stripe, that's fine
       if (!err?.message?.includes("No such subscription")) {
-        console.error(
-          "[CancelSubscription] Stripe cancel failed:",
-          err.message,
+        return Response(
+          false,
+          "Refunds were safely recorded, but the payment provider could not complete cancellation. Please retry; no duplicate refund will be created.",
+          {
+            retryable: true,
+            refundedMinor,
+            creditedMinor,
+          },
         );
       }
     }
@@ -2692,6 +3123,7 @@ module.exports = {
   GetSubscription,
   UpdateSubscription,
   AutoResumePausedSubscriptions,
+  FinalizeScheduledCancellations,
   PauseSubscription,
   ResumeSubscription,
   CancelSubscription,

@@ -14,6 +14,7 @@ const Subscription = require("../models/subscription.model");
 const logger = require("../utils/logger.util");
 const {
   AutoResumePausedSubscriptions,
+  FinalizeScheduledCancellations,
   scheduleUpcomingDeliveries,
 } = require("../services/customerPortal/customerSubscriptions.service");
 
@@ -24,8 +25,12 @@ const {
  * pre-created in the SubscriptionDelivery collection (for UI visibility).
  */
 async function ScheduleUpcomingSlots() {
+  const finalized = await FinalizeScheduledCancellations();
   const resumed = await AutoResumePausedSubscriptions();
-  const subscriptions = await Subscription.find({ status: "active" });
+  const subscriptions = await Subscription.find({
+    status: "active",
+    isCancellationScheduled: { $ne: true },
+  });
   let scheduled = 0;
 
   for (const sub of subscriptions) {
@@ -40,7 +45,7 @@ async function ScheduleUpcomingSlots() {
   }
 
   logger.info(
-    `[SubscriptionCron] Auto-resumed ${resumed} paused subscriptions and scheduled upcoming slots for ${scheduled} subscriptions`,
+    `[SubscriptionCron] Finalized ${finalized} cancellations, auto-resumed ${resumed} paused subscriptions, and scheduled upcoming slots for ${scheduled} subscriptions`,
   );
 }
 

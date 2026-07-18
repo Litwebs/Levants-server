@@ -50,9 +50,24 @@ const HandleStripeWebhook = async (req, res) => {
       }
       break;
 
-    case "charge.refunded":
+    case "charge.refunded": {
+      // charge.refunded contains a Charge, not a Refund. Process each embedded
+      // refund separately so its real re_ identifier and metadata are retained.
+      const charge = event.data.object;
+      for (const refund of charge.refunds?.data || []) {
+        if (refund.status === "succeeded") {
+          await orderService.HandleRefundSucceeded(refund);
+        }
+      }
+      break;
+    }
+
+    case "refund.created":
+    case "refund.updated":
     case "refund.succeeded":
-      await orderService.HandleRefundSucceeded(event.data.object);
+      if (event.data.object.status === "succeeded") {
+        await orderService.HandleRefundSucceeded(event.data.object);
+      }
       break;
 
     case "refund.failed":

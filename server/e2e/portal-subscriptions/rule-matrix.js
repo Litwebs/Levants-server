@@ -151,11 +151,12 @@ const FAMILY_DEFINITIONS = Object.freeze({
       "Next eligible delivery whose cut-off has not passed, plus future deliveries",
     workbookPaymentAction:
       "Next invoice charge for affected future deliveries only",
-    paymentExpectation: "next-invoice-charge-no-immediate-payment",
+    paymentExpectation:
+      "per-day-cutoff: charge open delivery days now; stage locked delivery days for the next invoice",
     expectedOutcome:
-      "Skip locked deliveries; stage from the next eligible delivery and update the next invoice without charging immediately.",
+      "For multi-day subscriptions, apply and charge open days while staging locked days; otherwise stage the change and update the next invoice without charging immediately.",
     implementationNote:
-      "The customer's current card balance is irrelevant because payment is not attempted until the next billing period.",
+      "A multi-day edit uses one settlement for the combined delta of its open affected days and keeps one recurring subscription bill.",
     tested: true,
     conflicts: Object.freeze([]),
   }),
@@ -171,11 +172,12 @@ const FAMILY_DEFINITIONS = Object.freeze({
       "Next eligible delivery whose cut-off has not passed, plus future deliveries",
     workbookPaymentAction:
       "Next invoice charge for affected future deliveries only",
-    paymentExpectation: "next-invoice-charge-no-immediate-payment",
+    paymentExpectation:
+      "per-day-cutoff: decline the atomic edit when an open-day settlement fails; otherwise stage without immediate payment",
     expectedOutcome:
-      "Stage from the next eligible delivery and update the next invoice; do not check or charge the card immediately.",
+      "For multi-day subscriptions, reject the atomic edit if payment for an open affected day fails; otherwise stage the change for the next invoice.",
     implementationNote:
-      "The configured insufficient-funds outcome is not exercised until the next billing period.",
+      "Locked and open delivery days remain independently cut off, but the customer has one subscription transaction rather than a separate bill per day.",
     tested: true,
     conflicts: Object.freeze([]),
   }),

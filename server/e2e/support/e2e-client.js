@@ -76,6 +76,18 @@ async function autoResume(request, subscriptionId) {
   };
 }
 
+async function finalizeCancellation(request, subscriptionId, referenceDate) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/finalize-cancellation`,
+    {
+      headers: controlHeaders,
+      data: { referenceDate },
+      timeout: 30_000,
+    },
+  );
+  return responseJson(response, "Scheduled cancellation finalization");
+}
+
 async function login(request, credentials) {
   const response = await request.post(`${API_ORIGIN}/api/portal/auth/login`, {
     data: credentials,
@@ -98,6 +110,7 @@ module.exports = {
   autoResume,
   createFixture,
   crossCutoff,
+  finalizeCancellation,
   getState,
   login,
   portalHeaders,

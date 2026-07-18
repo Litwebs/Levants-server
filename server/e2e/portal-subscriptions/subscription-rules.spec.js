@@ -13,12 +13,101 @@ const {
   autoResume,
   createFixture,
   crossCutoff,
+  finalizeCancellation,
   getState,
   login,
   portalHeaders,
   reset,
   setPaymentOutcome,
 } = require("../support/e2e-client");
+
+test("scheduled cancellation keeps the locked delivery, then finalizes once and only once", async ({
+  request,
+}) => {
+  await reset(request);
+  const fixture = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "after-cutoff",
+    action: ACTIONS.CANCEL,
+    funds: FUNDS.FUNDED,
+  });
+  const token = await login(request, fixture.credentials);
+
+  const response = await request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/cancel`,
+    {
+      headers: portalHeaders(token),
+      data: { reason: "lifecycle finalizer test", refundMethod: "refund" },
+    },
+  );
+  expect(response.ok()).toBe(true);
+
+  const scheduled = await getState(request, fixture.subscriptionId);
+  expect(scheduled.subscription.status).toBe("active");
+  expect(scheduled.subscription.isCancellationScheduled).toBe(true);
+  const locked = deliveryForDate(scheduled, fixture.lockedDeliveryDate);
+  expect(["generated", "scheduled"]).toContain(locked?.status);
+
+  const duringLockedDay = new Date(fixture.lockedDeliveryDate);
+  duringLockedDay.setHours(18, 0, 0, 0);
+  const early = await finalizeCancellation(
+    request,
+    fixture.subscriptionId,
+    duringLockedDay.toISOString(),
+  );
+  expect(early.finalized).toBe(0);
+
+  const nextDay = new Date(fixture.lockedDeliveryDate);
+  nextDay.setDate(nextDay.getDate() + 1);
+  nextDay.setHours(6, 0, 0, 0);
+  const first = await finalizeCancellation(
+    request,
+    fixture.subscriptionId,
+    nextDay.toISOString(),
+  );
+  const duplicate = await finalizeCancellation(
+    request,
+    fixture.subscriptionId,
+    nextDay.toISOString(),
+  );
+  expect(first.finalized).toBe(1);
+  expect(duplicate.finalized).toBe(0);
+
+  const finalized = await getState(request, fixture.subscriptionId);
+  expect(finalized.subscription.status).toBe("cancelled");
+  expect(finalized.subscription.isCancellationScheduled).toBe(false);
+  expect(finalized.subscription.cancellationEffectiveAfter).toBeNull();
+  expect(orderForDate(finalized, fixture.lockedDeliveryDate)?.status).toBe(
+    "paid",
+  );
+});
+
+test("resume restores only partially refunded payment backing", async ({
+  request,
+}) => {
+  await reset(request);
+  const partialRefundMinor = 400;
+  const fixture = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "resume-open",
+    lifecycle: "resume",
+    action: ACTIONS.RESUME,
+    funds: FUNDS.FUNDED,
+    resumeRequiresPayment: true,
+    resumeRefundMinor: partialRefundMinor,
+  });
+  const before = await getState(request, fixture.subscriptionId);
+
+  const result = await autoResume(request, fixture.subscriptionId);
+  expect(result.ok, result.error).toBe(true);
+  expect(result.resumed).toBe(1);
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(after.subscription.status).toBe("active");
+  expect(
+    successfulModificationAmount(after) - successfulModificationAmount(before),
+  ).toBe(partialRefundMinor);
+});
 
 const ADD_FAMILIES = new Set([
   TEST_FAMILIES.ADD_BEFORE_FUNDED,
@@ -340,9 +429,12 @@ function assertItemScope(rule, fixture, before, after) {
   const baseline = quantity(before.subscription.items, target.id);
   const expected = requestedQuantity(rule, baseline);
   const isBefore = BEFORE_FAMILIES.has(rule.family);
-  // Once cut-off has passed no immediate payment is attempted. The card's
-  // configured outcome therefore only rejects a before-cut-off increase.
-  const declined = isBefore && rule.funds === FUNDS.INSUFFICIENT;
+  // Multi-day changes are settled per open delivery day. A request spanning a
+  // locked and an open day therefore still has one immediate payment to make.
+  const hasImmediateSettlement =
+    isBefore || fixture.cadence === CADENCES.WEEKLY_MULTI_DAY;
+  const declined =
+    hasImmediateSettlement && rule.funds === FUNDS.INSUFFICIENT;
 
   if (fixture.cadence !== CADENCES.WEEKLY_MULTI_DAY) {
     if (declined) {
@@ -462,8 +554,11 @@ function assertItemFinancials(rule, fixture, after) {
   const affected = expectedAffectedDeliveryCount(rule, fixture);
 
   if (ADD_FAMILIES.has(rule.family)) {
+    const hasImmediateSettlement =
+      BEFORE_FAMILIES.has(rule.family) ||
+      fixture.cadence === CADENCES.WEEKLY_MULTI_DAY;
     const expectedCharge =
-      BEFORE_FAMILIES.has(rule.family) && rule.funds !== FUNDS.INSUFFICIENT
+      hasImmediateSettlement && rule.funds !== FUNDS.INSUFFICIENT
         ? perDelivery * affected
         : 0;
     expect.soft(successfulModificationAmount(after)).toBe(expectedCharge);
@@ -706,8 +801,11 @@ for (const rule of RULE_MATRIX) {
         before,
       );
       const responseBody = await response.json().catch(() => ({}));
+      const hasImmediateSettlement =
+        BEFORE_FAMILIES.has(rule.family) ||
+        fixture.cadence === CADENCES.WEEKLY_MULTI_DAY;
       const shouldFail =
-        BEFORE_FAMILIES.has(rule.family) &&
+        hasImmediateSettlement &&
         rule.funds === FUNDS.INSUFFICIENT;
       expect.soft(response.ok(), responseBody?.message).toBe(!shouldFail);
       if (shouldFail) {
@@ -719,7 +817,11 @@ for (const rule of RULE_MATRIX) {
       const after = await getState(request, fixture.subscriptionId);
       assertItemScope(rule, fixture, before, after);
       assertItemFinancials(rule, fixture, after);
-      if (rule.family === TEST_FAMILIES.ADD_BEFORE_DECLINED) {
+      if (
+        rule.family === TEST_FAMILIES.ADD_BEFORE_DECLINED ||
+        (rule.family === TEST_FAMILIES.ADD_AFTER_DECLINED &&
+          fixture.cadence === CADENCES.WEEKLY_MULTI_DAY)
+      ) {
         await assertRetryRecalculatesEligibility({
           request,
           token,

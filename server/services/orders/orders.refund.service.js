@@ -328,18 +328,35 @@ async function applyStripeRefundSucceeded({
   stripeRefundId,
   amountMinor,
   currency,
+  orderId,
 } = {}) {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const order = await Order.findOne({
+    const exactFilter = {
       stripePaymentIntentId: paymentIntentId,
       $or: [
         { "refunds.stripeRefundId": stripeRefundId },
         { "refund.stripeRefundId": stripeRefundId },
       ],
-    }).session(session);
+    };
+    let order = await Order.findOne(
+      orderId
+        ? { _id: orderId, stripePaymentIntentId: paymentIntentId }
+        : exactFilter,
+    ).session(session);
+
+    // Legacy refunds may not carry orderId and may not have been pre-recorded.
+    // A PaymentIntent is unambiguous for ordinary orders; subscription refunds
+    // now always carry orderId to disambiguate shared invoice payments.
+    if (!order && !orderId) {
+      order = await Order.findOne({
+        stripePaymentIntentId: paymentIntentId,
+      })
+        .sort({ deliveryDate: 1, createdAt: 1 })
+        .session(session);
+    }
 
     if (!order) {
       await session.commitTransaction();

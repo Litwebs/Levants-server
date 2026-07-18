@@ -259,6 +259,16 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       subscription: subscription._id,
       stripePaymentIntentId,
       stripeInvoiceId: invoice.id,
+      paymentAllocations: stripePaymentIntentId
+        ? [
+            {
+              paymentIntentId: stripePaymentIntentId,
+              stripeInvoiceId: invoice.id,
+              source: "subscription_invoice",
+              amountMinor: Math.round(amountPaid * 100),
+            },
+          ]
+        : [],
       paidAt,
       reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
@@ -365,6 +375,10 @@ async function HandleStripeSubscriptionUpdated(stripeSub) {
   let changed = false;
 
   if (stripeSub.status === "canceled") {
+    // Stripe is cancelled immediately to stop future invoices, while the local
+    // subscription deliberately stays active until its cut-off-locked delivery
+    // has completed. The daily finalizer owns that transition.
+    if (subscription.isCancellationScheduled) return;
     if (subscription.status !== "cancelled") {
       subscription.status = "cancelled";
       subscription.cancelledAt = subscription.cancelledAt || new Date();
@@ -402,6 +416,10 @@ async function HandleStripeSubscriptionDeleted(stripeSub) {
     stripeSubscriptionId: stripeSub.id,
   });
   if (!subscription) return;
+
+  // See HandleStripeSubscriptionUpdated: deletion is expected for a deferred
+  // cancellation and must not cancel the already committed delivery.
+  if (subscription.isCancellationScheduled) return;
 
   if (subscription.status !== "cancelled") {
     subscription.status = "cancelled";

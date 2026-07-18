@@ -514,8 +514,11 @@ async function createFixture(options = {}) {
   let resumeRequiredMinor = 0;
   let resumeFundingRefundId = null;
   if (options.resumeRequiresPayment) {
-    resumeRequiredMinor = Number(invoice.amount_paid || invoice.total || 0);
-    if (resumeRequiredMinor <= 0) {
+    const invoicePaidMinor = Number(invoice.amount_paid || invoice.total || 0);
+    resumeRequiredMinor = options.resumeRefundMinor
+      ? Math.min(Number(options.resumeRefundMinor), invoicePaidMinor)
+      : invoicePaidMinor;
+    if (resumeRequiredMinor <= 0 || invoicePaidMinor <= 0) {
       throw new Error("Resume-payment fixture requires a paid Stripe invoice");
     }
     const refund = await stripe.refunds.create({
@@ -678,6 +681,15 @@ async function autoResume(subscriptionId) {
   return { resumed };
 }
 
+async function finalizeCancellation(subscriptionId, referenceDate) {
+  const finalized =
+    await subscriptionService.FinalizeScheduledCancellations({
+      subscriptionId,
+      referenceDate: referenceDate ? new Date(referenceDate) : new Date(),
+    });
+  return { finalized };
+}
+
 async function stripeState(subscription, customer) {
   let remoteSubscription = null;
   try {
@@ -777,6 +789,7 @@ module.exports = {
   autoResume,
   createFixture,
   crossCutoff,
+  finalizeCancellation,
   getState,
   reset,
   setPaymentOutcome,

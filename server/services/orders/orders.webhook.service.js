@@ -174,6 +174,7 @@ async function HandleRefundSucceeded(refund) {
         stripeRefundId: refund.id,
         amountMinor: refund.amount,
         currency: refund.currency,
+        orderId: refund.metadata?.orderId,
       })
     : await finalizeRefundForOrderByPaymentIntent(refund.payment_intent);
 
