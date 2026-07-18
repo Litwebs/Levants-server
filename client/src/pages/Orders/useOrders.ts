@@ -30,6 +30,8 @@ export type OrderItem = {
 export type Order = {
   id: string;
   orderNumber: string;
+  orderType?: "one_time" | "subscription_generated" | (string & {});
+  isSubscriptionGenerated?: boolean;
   customer: { name: string; email: string; phone: string };
   deliveryAddress: { line1: string; line2?: string; city: string; postcode: string };
   deliverySlot: { date: string; timeWindow: string };
@@ -182,6 +184,10 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
   return {
     id: order._id,
     orderNumber: order.orderId,
+    orderType: (order as any).orderType,
+    isSubscriptionGenerated:
+      (order as any).orderType === "subscription_generated" ||
+      Boolean((order as any).subscription),
 
     customer: {
       name: customerName,

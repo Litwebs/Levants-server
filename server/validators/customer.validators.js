@@ -56,9 +56,16 @@ const listCustomersQuerySchema = Joi.object({
   search: Joi.string().trim().min(2).optional(),
 }).unknown(false);
 
+const adjustCustomerCreditSchema = Joi.object({
+  // Amount in POUNDS; positive adds credit, negative deducts. Non-zero.
+  amount: Joi.number().invalid(0).required(),
+  reason: Joi.string().trim().min(1).max(500).required(),
+}).unknown(false);
+
 module.exports = {
   createCustomerSchema,
   createGuestCustomerSchema,
   updateCustomerSchema,
   listCustomersQuerySchema,
+  adjustCustomerCreditSchema,
 };

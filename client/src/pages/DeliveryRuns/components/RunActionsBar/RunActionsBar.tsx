@@ -7,7 +7,7 @@ import type {
   ManualOrderAssignment,
   OrderSummary,
 } from "@/context/DeliveryRuns";
-import { Button, Modal, ModalFooter, Input } from "@/components/common";
+import { Button, Modal, ModalFooter, Input, Table } from "@/components/common";
 import { Checkbox } from "@/components/ui/checkbox";
 import { listDrivers } from "@/context/DeliveryRuns";
 import styles from "./RunActionsBar.module.css";
@@ -620,7 +620,10 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
 
                   {allOrders.length > 0 ? (
                     <div className={styles.ordersTableWrap}>
-                      <table className={styles.ordersTable}>
+                      <Table
+                        withWrapper={false}
+                        tableClassName={styles.ordersTable}
+                      >
                         <thead>
                           <tr>
                             <th>Order</th>
@@ -706,7 +709,7 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
                             );
                           })}
                         </tbody>
-                      </table>
+                      </Table>
                     </div>
                   ) : (
                     <div className={styles.emptyState}>

@@ -1,5 +1,5 @@
 import { Eye, Edit2, Trash2 } from "lucide-react";
-import { Badge, Button, TableCell, TableRow } from "../../components/common";
+import { Badge, Button } from "../../components/common";
 import { useNavigate } from "react-router-dom";
 import { getImageUrl, getStatusBadge } from "./product.utils";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -23,13 +23,13 @@ const ProductRow = ({
 
   const thumbnailUrl = getImageUrl(product?.thumbnailImage);
   return (
-    <TableRow
+    <tr
       onClick={() => {
         handleEditProduct(product);
       }}
       className={styles.clickableRow}
     >
-      <TableCell>
+      <td>
         <div className={styles.productCell}>
           <img
             src={thumbnailUrl}
@@ -41,15 +41,15 @@ const ProductRow = ({
             <span className={styles.productSku}>{product.slug}</span>
           </div>
         </div>
-      </TableCell>
+      </td>
 
-      <TableCell>
+      <td>
         <Badge variant="default">{product.category}</Badge>
-      </TableCell>
+      </td>
 
-      <TableCell>{getStatusBadge(product.status)}</TableCell>
+      <td>{getStatusBadge(product.status)}</td>
 
-      <TableCell>
+      <td>
         <div className={styles.badgesCell}>
           <Badge size="sm">{variantCount}</Badge>
           {lowCount > 0 ? (
@@ -63,9 +63,9 @@ const ProductRow = ({
             </Badge>
           ) : null}
         </div>
-      </TableCell>
+      </td>
 
-      <TableCell>
+      <td className={styles.actionsCell}>
         <div className={styles.actions}>
           <Button
             variant="ghost"
@@ -106,8 +106,8 @@ const ProductRow = ({
             </Button>
           ) : null}
         </div>
-      </TableCell>
-    </TableRow>
+      </td>
+    </tr>
   );
 };
 

@@ -36,8 +36,19 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
+import { BroadcastsPage } from "./pages/Broadcasts/BroadcastsPage";
 import { CategoriesPage } from "./pages/Categories";
+<<<<<<< HEAD
 import { ReviewsPage } from "./pages/Reviews";
+=======
+import SubscriptionsPage from "./pages/Subscriptions/Subscriptions";
+import SubscriptionDetailsPage from "./pages/Subscriptions/SubscriptionDetails";
+import SupportRequestsPage from "./pages/SupportRequests/SupportRequests";
+import PaymentsPage from "./pages/Payments/Payments";
+import { SubscriptionsProvider } from "./context/Subscriptions";
+import { SupportRequestsProvider } from "./context/SupportRequests";
+import { PaymentsProvider } from "./context/Payments";
+>>>>>>> origin/Portal
 import "./styles/global.css";
 
 const AdminShell = () => (
@@ -112,6 +123,7 @@ const App = () => (
         <AccessProvider>
           <CustomersProvider>
             <OrdersProvider>
+<<<<<<< HEAD
               <AnalyticsProvider>
                 <BrowserRouter
                   future={{
@@ -265,18 +277,216 @@ const App = () => (
                           <ComingSoon
                             title="Content Management"
                             description="Manage website content, banners, and marketing materials."
+=======
+              <SubscriptionsProvider>
+                <SupportRequestsProvider>
+                  <PaymentsProvider>
+                    <AnalyticsProvider>
+                      <BrowserRouter
+                        future={{
+                          v7_startTransition: true,
+                          v7_relativeSplatPath: true,
+                        }}
+                      >
+                        <AuthTransitionOverlay />
+                        <Routes>
+                          <Route
+                            path="/login"
+                            element={
+                              <PublicOnly>
+                                <Login />
+                              </PublicOnly>
+                            }
+>>>>>>> origin/Portal
                           />
-                        }
-                      />
-                      <Route
-                        path="/reports"
-                        element={<Navigate to="/" replace />}
-                      />
-                      <Route path="/settings" element={<Settings />} />
-                    </Route>
-                  </Routes>
-                </BrowserRouter>
-              </AnalyticsProvider>
+
+                          <Route
+                            path="/forgot-password"
+                            element={<ForgotPassword />}
+                          />
+                          <Route
+                            path="/accept-invitation"
+                            element={<AcceptInvitationPage />}
+                          />
+                          <Route
+                            path="/reset-password"
+                            element={<ResetPassword />}
+                          />
+                          <Route
+                            path="/verify-email-change"
+                            element={<VerifyEmailChange />}
+                          />
+                          <Route path="/2fa" element={<TwoFactor />} />
+
+                          <Route
+                            element={
+                              <RequireAuth>
+                                <AdminShell />
+                              </RequireAuth>
+                            }
+                          >
+                            <Route path="/" element={<HomeRoute />} />
+                            <Route
+                              path="/orders"
+                              element={
+                                <RequirePermission permission="orders.read">
+                                  <RequireNotRole
+                                    role="driver"
+                                    fallbackPath="/delivery-runs"
+                                  >
+                                    <Orders />
+                                  </RequireNotRole>
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/deliveries"
+                              element={
+                                <RequirePermission permission="delivery.routes.read">
+                                  <Deliveries />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/delivery-runs"
+                              element={
+                                <RequirePermission permission="delivery.routes.read">
+                                  <DeliveryRunsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/delivery-runs/:id"
+                              element={
+                                <RequirePermission permission="delivery.routes.read">
+                                  <DeliveryRunDetailsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/products"
+                              element={
+                                <RequirePermission permission="products.read">
+                                  <Products />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/products/:productId"
+                              element={
+                                <RequirePermission permission="products.read">
+                                  <ProductVariantsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/customers"
+                              element={
+                                <RequirePermission permission="customers.read">
+                                  <Customers />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/subscriptions"
+                              element={
+                                <RequirePermission permission="orders.read">
+                                  <SubscriptionsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/subscriptions/:subscriptionId"
+                              element={
+                                <RequirePermission permission="orders.read">
+                                  <SubscriptionDetailsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/support-requests"
+                              element={
+                                <RequirePermission permission="customers.read">
+                                  <SupportRequestsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/payments"
+                              element={
+                                <RequirePermission permission="orders.read">
+                                  <PaymentsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/promotions"
+                              element={
+                                <RequirePermission permission="promotions.read">
+                                  <Promotions />
+                                </RequirePermission>
+                              }
+                            />
+
+                            <Route
+                              path="/discounts"
+                              element={
+                                <RequirePermission permission="promotions.read">
+                                  <DiscountsPage />
+                                </RequirePermission>
+                              }
+                            />
+                            <Route
+                              path="/announcements"
+                              element={
+                                <RequireEmailDomain domain="@litwebs.co.uk">
+                                  <RequirePermission permission="announcements.read">
+                                    <AnnouncementsPage />
+                                  </RequirePermission>
+                                </RequireEmailDomain>
+                              }
+                            />
+                            <Route
+                              path="/broadcasts"
+                              element={
+                                // <RequireEmailDomain domain="@litwebs.co.uk">
+                                <RequirePermission permission="broadcasts.read">
+                                  <BroadcastsPage />
+                                </RequirePermission>
+                                // </RequireEmailDomain>
+                              }
+                            />
+                            <Route
+                              path="/categories"
+                              element={
+                                <RequireEmailDomain domain="@litwebs.co.uk">
+                                  <RequirePermission permission="categories.read">
+                                    <CategoriesPage />
+                                  </RequirePermission>
+                                </RequireEmailDomain>
+                              }
+                            />
+                            <Route
+                              path="/content"
+                              element={
+                                <ComingSoon
+                                  title="Content Management"
+                                  description="Manage website content, banners, and marketing materials."
+                                />
+                              }
+                            />
+                            <Route
+                              path="/reports"
+                              element={<Navigate to="/" replace />}
+                            />
+                            <Route path="/settings" element={<Settings />} />
+                          </Route>
+                        </Routes>
+                      </BrowserRouter>
+                    </AnalyticsProvider>
+                  </PaymentsProvider>
+                </SupportRequestsProvider>
+              </SubscriptionsProvider>
             </OrdersProvider>
           </CustomersProvider>
         </AccessProvider>

@@ -19,6 +19,7 @@ import {
   getVanColor,
   reorderRouteStops as reorderDeliveryRouteStops,
 } from "@/context/DeliveryRuns";
+import { Table } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
 import styles from "./RouteStopsList.module.css";
 
@@ -378,7 +379,10 @@ const RouteBlock: React.FC<RouteBlockProps> = ({
                         <span>{stop.notes}</span>
                       </div>
                     )}
-                    <table className={styles.itemsTable}>
+                    <Table
+                      withWrapper={false}
+                      tableClassName={styles.itemsTable}
+                    >
                       <thead>
                         <tr>
                           <th>SKU</th>
@@ -397,7 +401,7 @@ const RouteBlock: React.FC<RouteBlockProps> = ({
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </Table>
                   </div>
                 )}
               </div>

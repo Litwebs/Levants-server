@@ -1,0 +1,47 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--space-6);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.tableCard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border-radius: var(--radius-lg);
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
+.clickableRow:hover {
+  background-color: var(--color-gray-50);
+}
+
+@media (max-width: 768px) {
+  .container {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

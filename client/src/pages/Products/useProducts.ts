@@ -21,6 +21,7 @@ export function useProducts() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  const [sortBy, setSortBy] = useState("newest");
   const [variantStockFilter, setVariantStockFilter] = useState<
     "All" | "low" | "out"
   >("All");
@@ -113,7 +114,7 @@ export function useProducts() {
   );
 
   const filteredProducts = useMemo(() => {
-    return products.filter((product) => {
+    const filtered = products.filter((product) => {
       const matchesSearch =
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -149,11 +150,39 @@ export function useProducts() {
         matchesVariantStock
       );
     });
-  }, [products, searchQuery, selectedCategory, selectedStatus, variantStockFilter]);
+
+    const sorted = [...filtered];
+
+    switch (sortBy) {
+      case "oldest":
+        sorted.sort((a, b) => {
+          const timeA = new Date(a.createdAt || 0).getTime();
+          const timeB = new Date(b.createdAt || 0).getTime();
+          return timeA - timeB;
+        });
+        break;
+      case "name-asc":
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
+        break;
+      case "name-desc":
+        sorted.sort((a, b) => b.name.localeCompare(a.name));
+        break;
+      case "newest":
+      default:
+        sorted.sort((a, b) => {
+          const timeA = new Date(a.createdAt || 0).getTime();
+          const timeB = new Date(b.createdAt || 0).getTime();
+          return timeB - timeA;
+        });
+        break;
+    }
+
+    return sorted;
+  }, [products, searchQuery, selectedCategory, selectedStatus, variantStockFilter, sortBy]);
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, selectedCategory, selectedStatus, variantStockFilter]);
+  }, [searchQuery, selectedCategory, selectedStatus, variantStockFilter, sortBy]);
 
   const paginationMeta = useMemo(() => {
     const total = filteredProducts.length;
@@ -408,6 +437,8 @@ export function useProducts() {
     setSelectedCategory,
     selectedStatus,
     setSelectedStatus,
+    sortBy,
+    setSortBy,
 
     variantStockFilter,
     setVariantStockFilter,

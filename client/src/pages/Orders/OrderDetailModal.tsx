@@ -1,4 +1,4 @@
-import { Button, Modal, ModalFooter } from "../../components/common";
+import { Button, Modal, ModalFooter, Table } from "../../components/common";
 import { getStatusBadge, getPaymentBadge } from "./order.utils";
 import styles from "./Orders.module.css";
 import { useEffect, useMemo, useState } from "react";
@@ -245,7 +245,7 @@ const OrderDetailModal = ({
               <div className={styles.itemsHeaderRow}>
                 <h4 className={styles.detailTitle}>Order Items</h4>
               </div>
-              <table className={styles.itemsTable}>
+              <Table withWrapper={false} tableClassName={styles.itemsTable}>
                 <thead>
                   <tr>
                     <th>Product</th>
@@ -317,7 +317,7 @@ const OrderDetailModal = ({
                     ),
                   )}
                 </tbody>
-              </table>
+              </Table>
 
               {isEditingItems ? (
                 <div className={styles.itemEditPanel}>

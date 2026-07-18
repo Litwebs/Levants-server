@@ -1,26 +1,8 @@
-import {
-  Eye,
-  Phone,
-  MapPin,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-} from "lucide-react";
-import {
-  Card,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  Button,
-  Badge,
-  Select,
-  CardFooter,
-} from "../../components/common";
+import { Eye, Phone, MapPin } from "lucide-react";
+import { DataTableCard, Button, Badge, Table } from "../../components/common";
 import styles from "./Customers.module.css";
-import { useState, useEffect } from "react";
+import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
+import { useMemo } from "react";
 
 const CustomersTable = ({
   filteredCustomers,
@@ -34,8 +16,6 @@ const CustomersTable = ({
 }: any) => {
   const total = meta?.total ?? filteredCustomers?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = total === 0 ? 0 : Math.min(page * pageSize, total);
 
   const getFullName = (c: any) =>
     `${c?.firstName || ""} ${c?.lastName || ""}`.trim() || c?.email;
@@ -56,161 +36,93 @@ const CustomersTable = ({
     }).format(d);
   };
 
-  const [paginationAction, setPaginationAction] = useState<
-    "prev" | "next" | null
-  >(null);
-
-  useEffect(() => {
-    if (!loading) {
-      setPaginationAction(null);
-    }
-  }, [loading]);
+  const pageSizeOptions = useMemo(
+    () => [
+      { value: "50", label: "50 - page" },
+      { value: "100", label: "100 - page" },
+      { value: "200", label: "200 - page" },
+    ],
+    [],
+  );
 
   return (
-    <Card className={styles.tableCard}>
-      <div className={styles.tableArea}>
-        <Table className={styles.tableScroll}>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Customer</TableHead>
-              <TableHead>Contact</TableHead>
-              {/* <TableHead>Orders</TableHead> */}
-              <TableHead>Last Order</TableHead>
-              <TableHead>Marketing</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
+    <DataTableCard
+      className={styles.tableCard}
+      loading={loading}
+      loadingText="Loading..."
+      pagination={{
+        page,
+        pageSize,
+        total,
+        totalPages,
+        setPage,
+        setPageSize,
+        pageSizeOptions,
+        loading,
+      }}
+    >
+      <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Contact</th>
+            <th>Last Order</th>
+            <th>Marketing</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
 
-          <TableBody>
-            {(filteredCustomers?.length ?? 0) === 0 ? (
-              <TableRow>
-                <TableCell className={styles.emptyTableCell}>
-                  {loading ? "Loading customers…" : "No customers found."}
-                </TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-              </TableRow>
-            ) : (
-              filteredCustomers.map((c: any, idx: number) => {
-                const addr = getDefaultAddress(c);
-                return (
-                  <TableRow
-                    key={`${c._id}-${idx}`}
-                    onClick={() => handleViewCustomer(c)}
-                  >
-                    <TableCell>{getFullName(c)}</TableCell>
-                    <TableCell>
-                      <div className={styles.contactCell}>
-                        <span>
-                          <Phone size={14} /> {c.phone || "—"}
-                        </span>
-                        <span>
-                          <MapPin size={14} /> {addr?.postcode || "—"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    {/* <TableCell>{"—"}</TableCell> */}
-                    <TableCell>{formatLastOrder(c.lastOrderAt)}</TableCell>
-                    <TableCell>
-                      <Badge variant={c.isGuest ? "default" : "success"}>
-                        {c.isGuest ? "Guest" : "Customer"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleViewCustomer(c)}
-                      >
-                        <Eye size={16} />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-
-        {loading && (
-          <div className={styles.tableLoadingOverlay} aria-live="polite">
-            <div className={styles.tableLoadingInner}>
-              <Loader2 size={16} className={styles.spinnerIcon} />
-              Loading…
-            </div>
-          </div>
-        )}
-      </div>
-
-      <CardFooter className={styles.paginationFooter}>
-        <div className={styles.paginationInfo}>
-          Showing {rangeStart}–{rangeEnd} of {total}
-        </div>
-
-        <div className={styles.paginationControls}>
-          <Select
-            className={styles.pageSizeSelect}
-            value={String(pageSize)}
-            disabled={loading}
-            onChange={(v) => {
-              setPageSize(Number(v));
-              setPage(1);
-            }}
-            options={[
-              { value: "10", label: "10 / page" },
-              { value: "20", label: "20 / page" },
-              { value: "50", label: "50 / page" },
-            ]}
-          />
-
-          <div className={styles.pageButtons}>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading || page <= 1}
-              onClick={() => {
-                setPaginationAction("prev");
-                setPage((p) => Math.max(1, p - 1));
-              }}
-            >
-              {loading && paginationAction === "prev" ? (
-                <Loader2 size={14} className={styles.spinnerIcon} />
-              ) : (
-                <>
-                  <ChevronLeft size={16} />
-                  Prev
-                </>
-              )}
-            </Button>
-
-            <div className={styles.pageLabel}>
-              Page {page} / {totalPages}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading || page >= totalPages}
-              onClick={() => {
-                setPaginationAction("next");
-                setPage((p) => Math.min(totalPages, p + 1));
-              }}
-            >
-              {loading && paginationAction === "next" ? (
-                <Loader2 size={14} className={styles.spinnerIcon} />
-              ) : (
-                <>
-                  Next
-                  <ChevronRight size={16} />
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </CardFooter>
-    </Card>
+        <tbody>
+          {(filteredCustomers?.length ?? 0) === 0 ? (
+            <tr className={sharedTableStyles.emptyStateRow}>
+              <td className={sharedTableStyles.emptyTableCell} colSpan={5}>
+                {loading ? "Loading customers…" : "No customers found."}
+              </td>
+            </tr>
+          ) : (
+            filteredCustomers.map((c: any, idx: number) => {
+              const addr = getDefaultAddress(c);
+              return (
+                <tr
+                  key={`${c._id}-${idx}`}
+                  onClick={() => handleViewCustomer(c)}
+                >
+                  <td>{getFullName(c)}</td>
+                  <td>
+                    <div className={styles.contactCell}>
+                      <span>
+                        <Phone size={14} /> {c.phone || "—"}
+                      </span>
+                      <span>
+                        <MapPin size={14} /> {addr?.postcode || "—"}
+                      </span>
+                    </div>
+                  </td>
+                  <td>{formatLastOrder(c.lastOrderAt)}</td>
+                  <td>
+                    <Badge variant={c.isGuest ? "default" : "success"}>
+                      {c.isGuest ? "Guest" : "Customer"}
+                    </Badge>
+                  </td>
+                  <td>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewCustomer(c);
+                      }}
+                    >
+                      <Eye size={16} />
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </Table>
+    </DataTableCard>
   );
 };
 

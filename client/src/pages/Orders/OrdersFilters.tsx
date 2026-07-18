@@ -1,26 +1,23 @@
 import { Search, Filter, X } from "lucide-react";
-import { Card, Button, Select } from "../../components/common";
+import { Button, FiltersCardLayout, Select } from "../../components/common";
 import styles from "./Orders.module.css";
+import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 
 const OrdersFilters = ({
   searchQuery,
   setSearchQuery,
   showFilters,
   setShowFilters,
-
-  // rename these in parent if you can:
   deliveryStatusFilter,
   setDeliveryStatusFilter,
   paymentStatusFilter,
   setPaymentStatusFilter,
   orderSourceFilter,
   setOrderSourceFilter,
-
   dateFilter,
   setDateFilter,
   sortBy,
   setSortBy,
-
   minTotal,
   setMinTotal,
   maxTotal,
@@ -31,58 +28,65 @@ const OrdersFilters = ({
   setDateTo,
   refundedOnly,
   setRefundedOnly,
-  expiredOnly,
   setExpiredOnly,
 }: any) => {
   return (
-    <Card className={styles.filtersCard}>
-      <div className={styles.searchRow}>
-        <div className={styles.searchInput}>
-          <Search size={18} className={styles.searchIcon} />
-          <input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search orders..."
-            className={styles.search}
+    <FiltersCardLayout
+      className={sharedFilterStyles.filtersCard}
+      topRow={
+        <div className={sharedFilterStyles.searchRow}>
+          <div className={sharedFilterStyles.searchInput}>
+            <Search size={18} className={sharedFilterStyles.searchIcon} />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search orders..."
+              className={sharedFilterStyles.search}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className={sharedFilterStyles.clearSearch}
+                onClick={() => setSearchQuery("")}
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <Button
+            variant="outline"
+            leftIcon={<Filter size={16} />}
+            onClick={() => setShowFilters(!showFilters)}
+            className={sharedFilterStyles.filtersToggleBtn}
+          >
+            Filters
+          </Button>
+
+          <Select
+            value={sortBy}
+            onChange={setSortBy}
+            className={sharedFilterStyles.sortSelect}
+            options={[
+              { value: "newest", label: "Newest First" },
+              { value: "oldest", label: "Oldest First" },
+              { value: "total-high", label: "Total High → Low" },
+              { value: "total-low", label: "Total Low → High" },
+              { value: "delivery", label: "Delivery Date" },
+            ]}
           />
-          {searchQuery && (
-            <button
-              type="button"
-              className={styles.clearSearch}
-              onClick={() => setSearchQuery("")}
-            >
-              <X size={16} />
-            </button>
-          )}
         </div>
-
-        <Button
-          variant="outline"
-          leftIcon={<Filter size={16} />}
-          onClick={() => setShowFilters(!showFilters)}
-          className={styles.filtersToggleBtn}
-        >
-          Filters
-        </Button>
-
-        <Select
-          value={sortBy}
-          onChange={setSortBy}
-          className={styles.sortSelect}
-          options={[
-            { value: "newest", label: "Newest First" },
-            { value: "oldest", label: "Oldest First" },
-            { value: "total-high", label: "Total High → Low" },
-            { value: "total-low", label: "Total Low → High" },
-            { value: "delivery", label: "Delivery Date" },
-          ]}
-        />
-      </div>
-
-      {showFilters && (
-        <div className={styles.filtersRow}>
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Delivery Status</label>
+      }
+      isExpanded={showFilters}
+      expandedWrapClassName={sharedFilterStyles.filtersRowWrap}
+      expandedOpenClassName={sharedFilterStyles.filtersRowOpen}
+      expandedInnerClassName={sharedFilterStyles.filtersRowInner}
+      expandedContent={
+        <div className={sharedFilterStyles.filtersRow}>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>
+              Delivery Status
+            </label>
             <Select
               value={deliveryStatusFilter}
               onChange={setDeliveryStatusFilter}
@@ -97,8 +101,8 @@ const OrdersFilters = ({
             />
           </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Created</label>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>Created</label>
             <Select
               value={dateFilter}
               onChange={setDateFilter}
@@ -112,8 +116,10 @@ const OrdersFilters = ({
             />
           </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Payment Status</label>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>
+              Payment Status
+            </label>
             <Select
               value={paymentStatusFilter}
               onChange={setPaymentStatusFilter}
@@ -123,14 +129,19 @@ const OrdersFilters = ({
                 { value: "paid", label: "Paid" },
                 { value: "partially_paid", label: "Partially Paid" },
                 { value: "refund_pending", label: "Refund Pending" },
-                { value: "partially_refunded", label: "Partially Refunded" },
+                {
+                  value: "partially_refunded",
+                  label: "Partially Refunded",
+                },
                 { value: "refunded", label: "Refunded" },
               ]}
             />
           </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Order Source</label>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>
+              Order Source
+            </label>
             <Select
               value={orderSourceFilter}
               onChange={setOrderSourceFilter}
@@ -142,8 +153,8 @@ const OrdersFilters = ({
             />
           </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Date From</label>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>Date From</label>
             <input
               type="date"
               className={styles.filterInput}
@@ -155,8 +166,8 @@ const OrdersFilters = ({
             />
           </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Date To</label>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>Date To</label>
             <input
               type="date"
               className={styles.filterInput}
@@ -168,8 +179,8 @@ const OrdersFilters = ({
             />
           </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Min Total</label>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>Min Total</label>
             <input
               type="number"
               inputMode="decimal"
@@ -179,8 +190,8 @@ const OrdersFilters = ({
             />
           </div>
 
-          <div className={styles.filterGroup}>
-            <label className={styles.filterLabel}>Max Total</label>
+          <div className={sharedFilterStyles.filterGroup}>
+            <label className={sharedFilterStyles.filterLabel}>Max Total</label>
             <input
               type="number"
               inputMode="decimal"
@@ -198,15 +209,6 @@ const OrdersFilters = ({
             />
             Refunded only
           </label>
-
-          {/* <label className={styles.checkboxFilter}>
-            <input
-              type="checkbox"
-              checked={expiredOnly}
-              onChange={(e) => setExpiredOnly(e.target.checked)}
-            />
-            Expired only
-          </label> */}
 
           <Button
             variant="ghost"
@@ -227,8 +229,8 @@ const OrdersFilters = ({
             Clear Filters
           </Button>
         </div>
-      )}
-    </Card>
+      }
+    />
   );
 };
 

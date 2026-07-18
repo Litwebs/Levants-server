@@ -7,20 +7,24 @@ import {
   Package,
   Users,
   Tag,
-  FileText,
-  BarChart3,
   Settings,
   ChevronLeft,
   ChevronRight,
   Bell,
-  Search,
+  Radio,
   Moon,
   Sun,
   Menu,
   X,
   Megaphone,
   LayoutList,
+<<<<<<< HEAD
   Star,
+=======
+  RefreshCw,
+  HeadphonesIcon,
+  CreditCard,
+>>>>>>> origin/Portal
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -42,12 +46,6 @@ const navItems = [
     icon: LayoutDashboard,
     requiredAny: ["analytics.read"],
   },
-  // {
-  //   path: "/deliveries",
-  //   label: "Deliveries",
-  //   icon: Truck,
-  //   requiredAny: ["delivery.routes.read"],
-  // },
   {
     path: "/delivery-runs",
     label: "Delivery Runs",
@@ -73,6 +71,24 @@ const navItems = [
     requiredAny: ["customers.read"],
   },
   {
+    path: "/subscriptions",
+    label: "Subscriptions",
+    icon: RefreshCw,
+    requiredAny: ["orders.read"],
+  },
+  {
+    path: "/support-requests",
+    label: "Support",
+    icon: HeadphonesIcon,
+    requiredAny: ["customers.read"],
+  },
+  {
+    path: "/payments",
+    label: "Payments",
+    icon: CreditCard,
+    requiredAny: ["orders.read"],
+  },
+  {
     path: "/discounts",
     label: "Discounts",
     icon: Tag,
@@ -84,6 +100,12 @@ const navItems = [
     icon: Megaphone,
     requiredAny: ["announcements.read"],
     requireEmailDomain: "@litwebs.co.uk",
+  },
+  {
+    path: "/broadcasts",
+    label: "Broadcasts",
+    icon: Radio,
+    requiredAny: ["broadcasts.read"],
   },
   {
     path: "/categories",

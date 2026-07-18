@@ -80,6 +80,8 @@ const PERMISSIONS = [
   "customers.read",
   "customers.update",
   "customers.delete",
+  "customers.credit.read",
+  "customers.credit.update",
 
   // =========================
   // Delivery / Routes
@@ -116,6 +118,15 @@ const PERMISSIONS = [
   "announcements.create",
   "announcements.update",
   "announcements.delete",
+
+  // =========================
+  // Broadcasts
+  // =========================
+  "broadcasts.read",
+  "broadcasts.create",
+  "broadcasts.update",
+  "broadcasts.delete",
+  "broadcasts.send",
 
   // =========================
   // Categories

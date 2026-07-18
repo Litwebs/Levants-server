@@ -8,6 +8,7 @@ import {
   formatProductNameWithSku,
 } from "@/context/DeliveryRuns";
 import { compareManifestItems } from "@/context/DeliveryRuns/manifestItemOrder";
+import { Table } from "@/components/common";
 import styles from "./ManifestTables.module.css";
 
 interface ManifestTablesProps {
@@ -86,41 +87,37 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
           </span>
         </div>
 
-        <div className={styles.tableWrapper}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th className={styles.headerCell}>SKU</th>
-                <th className={styles.headerCell}>Product</th>
-                <th className={`${styles.headerCell} ${styles.qtyCell}`}>
-                  Qty
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {allStock.map((item) => (
-                <tr key={`${item.skuId}-${item.name}`}>
-                  <td className={`${styles.cell} ${styles.skuCell}`}>
-                    {item.skuId}
-                  </td>
-                  <td className={`${styles.cell} ${styles.nameCell}`}>
-                    {formatProductNameWithSku(item.name, item.skuId)}
-                  </td>
-                  <td className={`${styles.cell} ${styles.qtyCell}`}>
-                    {item.qty}
-                  </td>
-                </tr>
-              ))}
-              <tr className={styles.totalRow}>
-                <td className={styles.cell}></td>
-                <td className={styles.cell}>Total</td>
+        <Table className={styles.tableWrapper} tableClassName={styles.table}>
+          <thead>
+            <tr>
+              <th className={styles.headerCell}>SKU</th>
+              <th className={styles.headerCell}>Product</th>
+              <th className={`${styles.headerCell} ${styles.qtyCell}`}>Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allStock.map((item) => (
+              <tr key={`${item.skuId}-${item.name}`}>
+                <td className={`${styles.cell} ${styles.skuCell}`}>
+                  {item.skuId}
+                </td>
+                <td className={`${styles.cell} ${styles.nameCell}`}>
+                  {formatProductNameWithSku(item.name, item.skuId)}
+                </td>
                 <td className={`${styles.cell} ${styles.qtyCell}`}>
-                  {allStockTotalQty}
+                  {item.qty}
                 </td>
               </tr>
-            </tbody>
-          </table>
-        </div>
+            ))}
+            <tr className={styles.totalRow}>
+              <td className={styles.cell}></td>
+              <td className={styles.cell}>Total</td>
+              <td className={`${styles.cell} ${styles.qtyCell}`}>
+                {allStockTotalQty}
+              </td>
+            </tr>
+          </tbody>
+        </Table>
       </div>
 
       {vans.map((van) => {
@@ -144,46 +141,47 @@ export const ManifestTables: React.FC<ManifestTablesProps> = ({ vans }) => {
               </span>
             </div>
 
-            <div className={styles.tableWrapper}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th className={styles.headerCell}>SKU</th>
-                    <th className={styles.headerCell}>Product</th>
-                    <th className={`${styles.headerCell} ${styles.qtyCell}`}>
-                      Qty
-                    </th>
-                    {/* <th className={styles.headerCell}>Unit</th> */}
-                  </tr>
-                </thead>
-                <tbody>
-                  {van.manifest.items.map((item, idx) => (
-                    <tr key={`${van.vanId}-${item.skuId}-${idx}`}>
-                      <td className={`${styles.cell} ${styles.skuCell}`}>
-                        {item.skuId}
-                      </td>
-                      <td className={`${styles.cell} ${styles.nameCell}`}>
-                        {formatProductNameWithSku(item.name, item.skuId)}
-                      </td>
-                      <td className={`${styles.cell} ${styles.qtyCell}`}>
-                        {item.qty}
-                      </td>
-                      {/* <td className={`${styles.cell} ${styles.unitCell}`}>
+            <Table
+              className={styles.tableWrapper}
+              tableClassName={styles.table}
+            >
+              <thead>
+                <tr>
+                  <th className={styles.headerCell}>SKU</th>
+                  <th className={styles.headerCell}>Product</th>
+                  <th className={`${styles.headerCell} ${styles.qtyCell}`}>
+                    Qty
+                  </th>
+                  {/* <th className={styles.headerCell}>Unit</th> */}
+                </tr>
+              </thead>
+              <tbody>
+                {van.manifest.items.map((item, idx) => (
+                  <tr key={`${van.vanId}-${item.skuId}-${idx}`}>
+                    <td className={`${styles.cell} ${styles.skuCell}`}>
+                      {item.skuId}
+                    </td>
+                    <td className={`${styles.cell} ${styles.nameCell}`}>
+                      {formatProductNameWithSku(item.name, item.skuId)}
+                    </td>
+                    <td className={`${styles.cell} ${styles.qtyCell}`}>
+                      {item.qty}
+                    </td>
+                    {/* <td className={`${styles.cell} ${styles.unitCell}`}>
                         {item.unit || "—"}
                       </td> */}
-                    </tr>
-                  ))}
-                  <tr className={styles.totalRow}>
-                    <td className={styles.cell}></td>
-                    <td className={styles.cell}>Total</td>
-                    <td className={`${styles.cell} ${styles.qtyCell}`}>
-                      {totalQty}
-                    </td>
-                    {/* <td className={styles.cell}></td> */}
                   </tr>
-                </tbody>
-              </table>
-            </div>
+                ))}
+                <tr className={styles.totalRow}>
+                  <td className={styles.cell}></td>
+                  <td className={styles.cell}>Total</td>
+                  <td className={`${styles.cell} ${styles.qtyCell}`}>
+                    {totalQty}
+                  </td>
+                  {/* <td className={styles.cell}></td> */}
+                </tr>
+              </tbody>
+            </Table>
 
             {van.manifest.itemsByStop &&
               van.manifest.itemsByStop.length > 0 && (

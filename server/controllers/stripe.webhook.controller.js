@@ -1,5 +1,6 @@
 const stripe = require("../utils/stripe.util");
 const orderService = require("../services/orders/orders.webhook.service");
+const subscriptionWebhookService = require("../services/subscriptions/subscriptionWebhook.service");
 
 const HandleStripeWebhook = async (req, res) => {
   const sig = req.headers["stripe-signature"];
@@ -49,13 +50,71 @@ const HandleStripeWebhook = async (req, res) => {
       }
       break;
 
-    case "charge.refunded":
+    case "charge.refunded": {
+      // charge.refunded contains a Charge, not a Refund. Process each embedded
+      // refund separately so its real re_ identifier and metadata are retained.
+      const charge = event.data.object;
+      for (const refund of charge.refunds?.data || []) {
+        if (refund.status === "succeeded") {
+          await orderService.HandleRefundSucceeded(refund);
+        }
+      }
+      break;
+    }
+
+    case "refund.created":
+    case "refund.updated":
     case "refund.succeeded":
-      await orderService.HandleRefundSucceeded(event.data.object);
+      if (event.data.object.status === "succeeded") {
+        await orderService.HandleRefundSucceeded(event.data.object);
+      }
       break;
 
     case "refund.failed":
       await orderService.HandleRefundFailed(event.data.object);
+      break;
+
+    // ── Stripe Subscription billing events ──────────────────────────────────
+    case "invoice.payment_succeeded":
+      try {
+        await subscriptionWebhookService.HandleSubscriptionInvoicePaid(
+          event.data.object,
+        );
+      } catch (err) {
+        // Log but don't fail — Stripe will retry on 5xx only
+        console.error("[Webhook] invoice.payment_succeeded error:", err);
+        return res.json({ received: true });
+      }
+      break;
+
+    case "invoice.payment_failed":
+      try {
+        await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(
+          event.data.object,
+        );
+      } catch (err) {
+        return res.json({ received: true });
+      }
+      break;
+
+    case "customer.subscription.updated":
+      try {
+        await subscriptionWebhookService.HandleStripeSubscriptionUpdated(
+          event.data.object,
+        );
+      } catch (err) {
+        return res.json({ received: true });
+      }
+      break;
+
+    case "customer.subscription.deleted":
+      try {
+        await subscriptionWebhookService.HandleStripeSubscriptionDeleted(
+          event.data.object,
+        );
+      } catch (err) {
+        return res.json({ received: true });
+      }
       break;
 
     default:

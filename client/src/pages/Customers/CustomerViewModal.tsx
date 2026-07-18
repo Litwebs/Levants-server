@@ -4,11 +4,14 @@ import {
   Button,
   Badge,
   Select,
+  Input,
 } from "../../components/common";
-import { Mail, Phone, MapPin, ShoppingBag, Edit2 } from "lucide-react";
+import { Mail, Phone, MapPin, ShoppingBag, Edit2, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import styles from "./Customers.module.css";
 import { useOrdersApi } from "../../context/Orders";
+import { useCustomers, type CreditTransaction } from "../../context/Customers";
+import { usePermissions } from "@/hooks/usePermissions";
 import OrderDetailModal from "../Orders/OrderDetailModal";
 
 const formatDate = (dateString: string) =>
@@ -28,6 +31,16 @@ const formatOrderId = (id: string) => {
   if (!id) return "—";
   return `#${String(id).slice(-8)}`;
 };
+
+const CREDIT_TYPE_LABELS: Record<CreditTransaction["type"], string> = {
+  subscription_refund: "Subscription refund",
+  order_redemption: "Used on order",
+  order_redemption_reversal: "Order credit returned",
+  admin_adjustment: "Adjustment",
+};
+
+const formatCredit = (minor: number) =>
+  `£${((Number(minor) || 0) / 100).toFixed(2)}`;
 
 const getOrderBadgeVariant = (status: string) => {
   const s = String(status || "").toLowerCase();
@@ -121,6 +134,10 @@ const CustomerViewModal = ({
   if (!selectedCustomer) return null;
 
   const { getOrderById, refundOrder } = useOrdersApi();
+  const { getCustomerCredit, adjustCustomerCredit } = useCustomers();
+  const { hasPermission } = usePermissions();
+  const canReadCredit = hasPermission("customers.credit.read");
+  const canUpdateCredit = hasPermission("customers.credit.update");
 
   const [orders, setOrders] = useState<any[]>([]);
   const [ordersMeta, setOrdersMeta] = useState<any>(null);
@@ -130,8 +147,74 @@ const CustomerViewModal = ({
   const [ordersPage, setOrdersPage] = useState(1);
   const [ordersPageSize, setOrdersPageSize] = useState(10);
 
+  const [creditBalance, setCreditBalance] = useState(0);
+  const [creditTxns, setCreditTxns] = useState<CreditTransaction[]>([]);
+  const [creditLoading, setCreditLoading] = useState(false);
+  const [creditError, setCreditError] = useState<string | null>(null);
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [adjustSaving, setAdjustSaving] = useState(false);
+
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [isOrderDetailModalOpen, setIsOrderDetailModalOpen] = useState(false);
+
+  const loadCredit = () => {
+    if (!selectedCustomer?._id || !canReadCredit) return;
+    setCreditLoading(true);
+    setCreditError(null);
+    getCustomerCredit(selectedCustomer._id, { page: 1, pageSize: 20 })
+      .then((res) => {
+        setCreditBalance(res.balance);
+        setCreditTxns(res.transactions);
+      })
+      .catch((e: any) => {
+        setCreditError(
+          e?.response?.data?.message || "Failed to load store credit",
+        );
+      })
+      .finally(() => setCreditLoading(false));
+  };
+
+  useEffect(() => {
+    if (!isViewModalOpen) return;
+    if (!selectedCustomer?._id) return;
+    if (!canReadCredit) return;
+    loadCredit();
+    setAdjustAmount("");
+    setAdjustReason("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isViewModalOpen, selectedCustomer?._id, canReadCredit]);
+
+  const handleAdjustCredit = async () => {
+    if (!selectedCustomer?._id) return;
+    const amount = Number(adjustAmount);
+    if (!Number.isFinite(amount) || amount === 0) {
+      setCreditError("Enter a non-zero amount (in £).");
+      return;
+    }
+    if (!adjustReason.trim()) {
+      setCreditError("A reason is required.");
+      return;
+    }
+    try {
+      setAdjustSaving(true);
+      setCreditError(null);
+      const res = await adjustCustomerCredit(selectedCustomer._id, {
+        amount,
+        reason: adjustReason.trim(),
+      });
+      setCreditBalance(res.balance);
+      setAdjustAmount("");
+      setAdjustReason("");
+      loadCredit();
+    } catch (e: any) {
+      setCreditError(
+        e?.response?.data?.message || "Failed to adjust store credit",
+      );
+    } finally {
+      setAdjustSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!isViewModalOpen) return;
@@ -408,6 +491,111 @@ const CustomerViewModal = ({
               </div>
             </div>
           </div>
+
+          {canReadCredit && (
+            <div className={styles.detailSection}>
+              <h3
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <Wallet size={18} /> Store Credit
+              </h3>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: "8px",
+                  marginBottom: "12px",
+                }}
+              >
+                <span style={{ fontSize: "1.75rem", fontWeight: 600 }}>
+                  {formatCredit(creditBalance)}
+                </span>
+                <span style={{ color: "var(--text-muted, #888)" }}>
+                  available
+                </span>
+              </div>
+
+              {canUpdateCredit && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                    alignItems: "flex-end",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <Input
+                    label="Amount (£)"
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 5 or -2.50"
+                    value={adjustAmount}
+                    onChange={(e: any) => setAdjustAmount(e.target.value)}
+                    style={{ width: "140px" }}
+                  />
+                  <Input
+                    label="Reason"
+                    placeholder="Reason for adjustment"
+                    value={adjustReason}
+                    onChange={(e: any) => setAdjustReason(e.target.value)}
+                    style={{ flex: 1, minWidth: "200px" }}
+                  />
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={adjustSaving}
+                    onClick={handleAdjustCredit}
+                  >
+                    {adjustSaving ? "Saving…" : "Apply"}
+                  </Button>
+                </div>
+              )}
+
+              {creditError && <p className={styles.noOrders}>{creditError}</p>}
+
+              <div className={styles.orderHistory}>
+                {creditLoading ? (
+                  <p className={styles.noOrders}>Loading store credit…</p>
+                ) : creditTxns.length > 0 ? (
+                  creditTxns.map((tx) => (
+                    <div key={tx._id} className={styles.orderHistoryItem}>
+                      <div className={styles.orderHistoryMain}>
+                        <span className={styles.orderNumber}>
+                          {tx.reason || CREDIT_TYPE_LABELS[tx.type]}
+                        </span>
+                        <span className={styles.orderDate}>
+                          {tx.createdAt ? formatDate(tx.createdAt) : "—"} ·{" "}
+                          {CREDIT_TYPE_LABELS[tx.type]}
+                        </span>
+                      </div>
+                      <div className={styles.orderHistoryMeta}>
+                        <span
+                          className={styles.orderAmount}
+                          style={{
+                            color:
+                              tx.amount >= 0
+                                ? "var(--success, #16a34a)"
+                                : undefined,
+                          }}
+                        >
+                          {tx.amount >= 0 ? "+" : "−"}
+                          {formatCredit(Math.abs(tx.amount))}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className={styles.noOrders}>No store credit activity</p>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className={styles.detailSection}>
             <h3>Account Info</h3>

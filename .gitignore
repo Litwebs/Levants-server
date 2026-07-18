@@ -31,6 +31,8 @@ tmp/
 # Coverage
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
 
 # Cache
 .cache/

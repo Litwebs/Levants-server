@@ -95,13 +95,81 @@ function verify2FATempToken(token) {
   return decoded;
 }
 
+// ===== Customer portal tokens =====
+const CUSTOMER_ACCESS_SECRET =
+  process.env.JWT_CUSTOMER_ACCESS_SECRET || process.env.JWT_ACCESS_SECRET;
+const CUSTOMER_REFRESH_SECRET =
+  process.env.JWT_CUSTOMER_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET;
+const CUSTOMER_ACCESS_EXPIRES_IN =
+  process.env.JWT_CUSTOMER_ACCESS_EXPIRES_IN ||
+  process.env.JWT_ACCESS_EXPIRES_IN ||
+  "15m";
+const CUSTOMER_REFRESH_EXPIRES_IN =
+  process.env.JWT_CUSTOMER_REFRESH_EXPIRES_IN ||
+  process.env.JWT_REFRESH_EXPIRES_IN ||
+  "30d";
+
+function signCustomerAccessToken(customer) {
+  const payload = {
+    sub: String(customer._id || customer.id),
+    type: "customer",
+    jti: crypto.randomBytes(16).toString("hex"),
+  };
+  return jwt.sign(payload, CUSTOMER_ACCESS_SECRET, {
+    expiresIn: CUSTOMER_ACCESS_EXPIRES_IN,
+  });
+}
+
+function signCustomerRefreshToken(customer, { sessionId } = {}) {
+  if (!sessionId)
+    throw new Error("sessionId is required for customer refresh token");
+  const payload = {
+    sub: String(customer._id || customer.id),
+    type: "customer",
+    tokenType: "refresh",
+    sid: String(sessionId),
+    jti: crypto.randomBytes(16).toString("hex"),
+  };
+  return jwt.sign(payload, CUSTOMER_REFRESH_SECRET, {
+    expiresIn: CUSTOMER_REFRESH_EXPIRES_IN,
+  });
+}
+
+function verifyCustomerAccessToken(token) {
+  const decoded = jwt.verify(token, CUSTOMER_ACCESS_SECRET);
+  if (decoded.type !== "customer") {
+    const err = new Error("Invalid customer token type");
+    err.name = "JsonWebTokenError";
+    throw err;
+  }
+  return decoded;
+}
+
+function verifyCustomerRefreshToken(token) {
+  const decoded = jwt.verify(token, CUSTOMER_REFRESH_SECRET);
+  if (decoded.type !== "customer" || decoded.tokenType !== "refresh") {
+    const err = new Error("Invalid customer refresh token");
+    err.name = "JsonWebTokenError";
+    throw err;
+  }
+  if (!decoded.sid) {
+    const err = new Error("Customer refresh token missing session id");
+    err.name = "JsonWebTokenError";
+    throw err;
+  }
+  return decoded;
+}
+
 module.exports = {
   signAccessToken,
   signRefreshToken,
   verifyAccessToken,
   verifyRefreshToken,
-
-  // 2FA temp token helpers
   sign2FATempToken,
   verify2FATempToken,
+  // Customer portal tokens
+  signCustomerAccessToken,
+  signCustomerRefreshToken,
+  verifyCustomerAccessToken,
+  verifyCustomerRefreshToken,
 };
