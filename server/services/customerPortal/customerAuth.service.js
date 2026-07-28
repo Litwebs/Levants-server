@@ -97,10 +97,48 @@ function buildCookieOptions({
 /**
  * Register a new customer portal account.
  */
-async function Register({ firstName, lastName, email, phone, password } = {}) {
+async function Register({
+  firstName,
+  lastName,
+  email,
+  phone,
+  password,
+  inviteToken,
+} = {}) {
   const normalizedEmail = String(email || "")
     .trim()
     .toLowerCase();
+
+  const normalizedInviteToken =
+    typeof inviteToken === "string" ? inviteToken.trim() : "";
+
+  let invitedCustomer = null;
+  if (normalizedInviteToken) {
+    const inviteHash = cryptoUtil.hashToken(normalizedInviteToken);
+    invitedCustomer = await Customer.findOne({
+      portalInviteTokenHash: inviteHash,
+      isGuest: true,
+    });
+
+    if (!invitedCustomer) {
+      return Response(false, "Invalid or expired onboarding link", null);
+    }
+
+    if (
+      !invitedCustomer.portalInviteTokenExpiresAt ||
+      invitedCustomer.portalInviteTokenExpiresAt <= new Date()
+    ) {
+      return Response(false, "Invalid or expired onboarding link", null);
+    }
+
+    if (String(invitedCustomer.email || "").toLowerCase() !== normalizedEmail) {
+      return Response(
+        false,
+        "This onboarding link is for a different email address",
+        null,
+      );
+    }
+  }
 
   const existing = await Customer.findOne({ email: normalizedEmail }).lean();
   if (existing && !existing.isGuest) {
@@ -110,7 +148,29 @@ async function Register({ firstName, lastName, email, phone, password } = {}) {
   const passwordHash = await passwordUtil.hashPassword(password);
 
   let customer;
-  if (existing && existing.isGuest) {
+  if (invitedCustomer) {
+    customer = await Customer.findByIdAndUpdate(
+      invitedCustomer._id,
+      {
+        $set: {
+          firstName: String(firstName || "").trim(),
+          lastName: String(lastName || "").trim(),
+          phone: phone ? String(phone).trim() : null,
+          passwordHash,
+          isGuest: false,
+          status: "active",
+          emailVerifiedAt: null,
+          portalInviteAcceptedAt: new Date(),
+        },
+        $unset: {
+          portalInviteTokenHash: 1,
+          portalInviteTokenExpiresAt: 1,
+          portalInviteSentAt: 1,
+        },
+      },
+      { new: true },
+    );
+  } else if (existing && existing.isGuest) {
     // Convert guest to registered
     customer = await Customer.findByIdAndUpdate(
       existing._id,
@@ -150,6 +210,40 @@ async function Register({ firstName, lastName, email, phone, password } = {}) {
       requiresEmailVerification: true,
     },
   );
+}
+
+async function GetRegisterInvite({ token } = {}) {
+  const rawToken = String(token || "").trim();
+  if (!rawToken) return Response(false, "Invite token is required", null);
+
+  const inviteHash = cryptoUtil.hashToken(rawToken);
+  const customer = await Customer.findOne({
+    portalInviteTokenHash: inviteHash,
+    isGuest: true,
+  }).select(
+    "firstName lastName email phone portalInviteTokenExpiresAt portalInviteSentAt pendingSubscriptionDraft",
+  );
+
+  if (!customer)
+    return Response(false, "Invalid or expired onboarding link", null);
+
+  if (
+    !customer.portalInviteTokenExpiresAt ||
+    customer.portalInviteTokenExpiresAt <= new Date()
+  ) {
+    return Response(false, "Invalid or expired onboarding link", null);
+  }
+
+  return Response(true, null, {
+    invite: {
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      email: customer.email,
+      phone: customer.phone || null,
+      expiresAt: customer.portalInviteTokenExpiresAt,
+      subscriptionDraft: customer.pendingSubscriptionDraft || null,
+    },
+  });
 }
 
 /**
@@ -678,6 +772,7 @@ function sanitizeCustomer(c) {
 
 module.exports = {
   Register,
+  GetRegisterInvite,
   Login,
   RefreshToken,
   Logout,

@@ -14,6 +14,7 @@ const {
   updateCustomerSchema,
   listCustomersQuerySchema,
   adjustCustomerCreditSchema,
+  createCustomerOnboardingLinkSchema,
 } = require("../validators/customer.validators");
 
 const { customerIdParamSchema } = require("../validators/common.validators");
@@ -28,6 +29,14 @@ router.get(
   requirePermission("customers.read"),
   validateQuery(listCustomersQuerySchema),
   asyncHandler(controller.ListCustomers),
+);
+
+// Create customer onboarding link (admin)
+router.post(
+  "/onboarding-link",
+  requirePermission("customers.create"),
+  validateBody(createCustomerOnboardingLinkSchema),
+  asyncHandler(controller.CreateCustomerOnboardingLink),
 );
 
 // Get customer

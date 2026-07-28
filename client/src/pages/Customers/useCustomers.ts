@@ -25,6 +25,7 @@ export const useCustomers = () => {
     listCustomers,
     listCustomerOrders,
     updateCustomer,
+    createCustomerOnboardingLink,
   } = useCustomersContext();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -37,6 +38,17 @@ export const useCustomers = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCreateInviteModalOpen, setIsCreateInviteModalOpen] = useState(false);
+  const [createInviteLoading, setCreateInviteLoading] = useState(false);
+  const [createdOnboardingLink, setCreatedOnboardingLink] = useState("");
+  const [createdOnboardingLinkExpiresAt, setCreatedOnboardingLinkExpiresAt] =
+    useState<string | null>(null);
+  const [createInviteForm, setCreateInviteForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+  });
 
   const [editForm, setEditForm] = useState<{
     firstName?: string;
@@ -201,6 +213,84 @@ export const useCustomers = () => {
     showToast({ type: "success", title: "Customers exported" });
   };
 
+  const openCreateInviteModal = () => {
+    setCreateInviteForm({ firstName: "", lastName: "", email: "", phone: "" });
+    setCreatedOnboardingLink("");
+    setCreatedOnboardingLinkExpiresAt(null);
+    setIsCreateInviteModalOpen(true);
+  };
+
+  const closeCreateInviteModal = () => {
+    setIsCreateInviteModalOpen(false);
+    setCreateInviteLoading(false);
+  };
+
+  const setCreateInviteField = (
+    key: "firstName" | "lastName" | "email" | "phone",
+    value: string,
+  ) => {
+    setCreateInviteForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleCreateInvite = async () => {
+    const firstName = createInviteForm.firstName.trim();
+    const lastName = createInviteForm.lastName.trim();
+    const email = createInviteForm.email.trim().toLowerCase();
+    const phone = createInviteForm.phone.trim();
+
+    if (!firstName || !lastName || !email) {
+      showToast({
+        type: "error",
+        title: "Missing details",
+        message: "First name, last name, and email are required.",
+      });
+      return;
+    }
+
+    try {
+      setCreateInviteLoading(true);
+      const result = await createCustomerOnboardingLink({
+        firstName,
+        lastName,
+        email,
+        ...(phone ? { phone } : {}),
+      });
+
+      setCreatedOnboardingLink(result.onboardingLink);
+      setCreatedOnboardingLinkExpiresAt(result.expiresAt);
+
+      showToast({
+        type: "success",
+        title: "Onboarding link created",
+        message: "You can now copy and share the link with the customer.",
+      });
+
+      await listCustomers({ page, pageSize, search: searchQuery || undefined });
+    } catch (e: any) {
+      showToast({
+        type: "error",
+        title: "Failed to create link",
+        message: e?.response?.data?.message || e?.message || "Request failed",
+      });
+    } finally {
+      setCreateInviteLoading(false);
+    }
+  };
+
+  const copyOnboardingLink = async () => {
+    if (!createdOnboardingLink) return;
+    try {
+      await navigator.clipboard.writeText(createdOnboardingLink);
+      showToast({ type: "success", title: "Link copied" });
+    } catch {
+      showToast({
+        type: "error",
+        title: "Copy failed",
+        message: "Please copy the link manually.",
+      });
+    }
+  };
+
   return {
     customers,
     filteredCustomers,
@@ -227,6 +317,13 @@ export const useCustomers = () => {
 
     isEditModalOpen,
     setIsEditModalOpen,
+    isCreateInviteModalOpen,
+    setIsCreateInviteModalOpen,
+    createInviteLoading,
+    createInviteForm,
+    setCreateInviteForm,
+    createdOnboardingLink,
+    createdOnboardingLinkExpiresAt,
 
     editForm,
     setEditForm,
@@ -236,6 +333,11 @@ export const useCustomers = () => {
     handleViewCustomer,
     handleEditCustomer,
     handleSaveEdit,
+    openCreateInviteModal,
+    closeCreateInviteModal,
+    setCreateInviteField,
+    handleCreateInvite,
+    copyOnboardingLink,
     exportCustomers,
   };
 };

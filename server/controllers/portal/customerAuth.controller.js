@@ -13,6 +13,13 @@ const Register = async (req, res) => {
   return sendCreated(res, result.data, { message: result.message });
 };
 
+const GetRegisterInvite = async (req, res) => {
+  const result = await service.GetRegisterInvite({ token: req.params.token });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data);
+};
+
 const Login = async (req, res) => {
   const { rememberMe = false } = req.body || {};
   const result = await service.Login({
@@ -166,6 +173,7 @@ const ChangePassword = async (req, res) => {
 
 module.exports = {
   Register,
+  GetRegisterInvite,
   Login,
   Logout,
   RefreshToken,

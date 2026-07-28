@@ -76,6 +76,25 @@ const ListCustomers = async (req, res) => {
 };
 
 /**
+ * Create customer onboarding link (admin)
+ */
+const CreateCustomerOnboardingLink = async (req, res) => {
+  const result = await service.CreateCustomerOnboardingLink({
+    ...req.body,
+    actorUserId: req.user?.id || req.user?._id,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendCreated(res, result.data, { message: result.message });
+};
+
+/**
  * Update customer (admin)
  */
 const UpdateCustomer = async (req, res) => {
@@ -117,6 +136,7 @@ const ListOrdersByCustomer = async (req, res) => {
 module.exports = {
   CreateCustomer,
   CreateGuestCustomer,
+  CreateCustomerOnboardingLink,
   GetCustomerById,
   ListCustomers,
   UpdateCustomer,

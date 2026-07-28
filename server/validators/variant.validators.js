@@ -3,6 +3,13 @@ const Joi = require("joi");
 
 const createVariantSchema = Joi.object({
   name: Joi.string().min(2).max(100).required(),
+  description: Joi.string().allow("").max(5000).optional(),
+  ingredients: Joi.string().allow("").max(5000).optional(),
+  allergens: Joi.array()
+    .items(Joi.string().trim().min(1).max(200))
+    .max(50)
+    .optional(),
+  nutritionalInformation: Joi.string().allow("").max(10000).optional(),
   sku: Joi.string().min(2).max(50).required(),
   price: Joi.number().min(0).required(),
   stockQuantity: Joi.number().min(0).required(),
@@ -13,6 +20,13 @@ const createVariantSchema = Joi.object({
 
 const updateVariantSchema = Joi.object({
   name: Joi.string().min(2).max(100).optional(),
+  description: Joi.string().allow("").max(5000).optional(),
+  ingredients: Joi.string().allow("").max(5000).optional(),
+  allergens: Joi.array()
+    .items(Joi.string().trim().min(1).max(200))
+    .max(50)
+    .optional(),
+  nutritionalInformation: Joi.string().allow("").max(10000).optional(),
   sku: Joi.string().min(2).max(50).optional(),
   price: Joi.number().min(0).optional(),
   stockQuantity: Joi.number().min(0).optional(),

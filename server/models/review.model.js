@@ -6,7 +6,7 @@ const reviewSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      index: true,
+      unique: true,
     },
 
     customerName: {
@@ -43,7 +43,8 @@ const reviewSchema = new mongoose.Schema(
 
     isVisible: {
       type: Boolean,
-      default: true,
+      // Reviews require administrator approval before public publication.
+      default: false,
       index: true,
     },
   },

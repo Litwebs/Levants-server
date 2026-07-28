@@ -50,6 +50,10 @@ describe("POST /api/admin/variants/products/:productId/variants (E2E)", () => {
       .set("Cookie", getSetCookieHeader(login))
       .send({
         name: "500ml",
+        description: "Rich cream in a 500ml bottle.",
+        ingredients: "Pasteurised cream",
+        allergens: ["Milk"],
+        nutritionalInformation: "Energy: 400kcal per 100ml",
         sku: "CREAM-500",
         price: 2.99,
         stockQuantity: 100,
@@ -59,5 +63,13 @@ describe("POST /api/admin/variants/products/:productId/variants (E2E)", () => {
     expect(res.status).toBe(201);
     expect(res.body.data.variant.stripeProductId).toBeDefined();
     expect(res.body.data.variant.stripePriceId).toBeDefined();
+    expect(res.body.data.variant.description).toBe(
+      "Rich cream in a 500ml bottle.",
+    );
+    expect(res.body.data.variant.ingredients).toBe("Pasteurised cream");
+    expect(res.body.data.variant.allergens).toEqual(["Milk"]);
+    expect(res.body.data.variant.nutritionalInformation).toBe(
+      "Energy: 400kcal per 100ml",
+    );
   });
 });

@@ -3,8 +3,68 @@ const app = require("../testApp");
 
 const { createUser } = require("../helpers/authTestData");
 const { getSetCookieHeader } = require("../helpers/cookies");
+const BusinessInfo = require("../../models/businessInfo.model");
+const File = require("../../models/file.model");
+const { seedBusinessInfo } = require("../../scripts/seedBusinessInfo");
 
 describe("Business Info API (E2E)", () => {
+  describe("GET /api/business-info/public", () => {
+    test("returns customer-facing business details without authentication", async () => {
+      const admin = await createUser({ role: "admin" });
+      const logo = await File.create({
+        originalName: "business-logo.png",
+        filename: `test/business-logo-${Date.now()}`,
+        mimeType: "image/png",
+        sizeBytes: 100,
+        url: "https://cdn.example.com/business-logo.png",
+        uploadedBy: admin._id,
+      });
+
+      await BusinessInfo.findOneAndUpdate(
+        { singletonKey: "business-info" },
+        {
+          companyName: "Public Dairy",
+          email: "hello@public-dairy.test",
+          phone: "+44 7000 000000",
+          address: "1 Farm Lane",
+          logo: logo._id,
+        },
+      );
+
+      const res = await request(app).get("/api/business-info/public");
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.business).toMatchObject({
+        companyName: "Public Dairy",
+        email: "hello@public-dairy.test",
+        phone: "+44 7000 000000",
+        address: "1 Farm Lane",
+        logo: {
+          url: "https://cdn.example.com/business-logo.png",
+        },
+      });
+      expect(res.body.data.business.updatedBy).toBeUndefined();
+    });
+  });
+
+  test("startup seeding does not overwrite dashboard-managed details", async () => {
+    await BusinessInfo.findOneAndUpdate(
+      { singletonKey: "business-info" },
+      {
+        companyName: "Admin Managed Dairy",
+        email: "admin-managed@example.test",
+      },
+    );
+
+    await seedBusinessInfo();
+
+    const business = await BusinessInfo.findOne({
+      singletonKey: "business-info",
+    });
+    expect(business.companyName).toBe("Admin Managed Dairy");
+    expect(business.email).toBe("admin-managed@example.test");
+  });
+
   /**
    * =========================
    * GET /api/business-info

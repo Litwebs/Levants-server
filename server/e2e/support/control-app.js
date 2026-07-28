@@ -48,6 +48,21 @@ function createControlApp() {
     asyncRoute((req) => fixtures.createFixture(req.body || {})),
   );
   app.get(
+    "/emails",
+    asyncRoute(async () => ({ emails: global.__E2E_EMAIL_OUTBOX__ || [] })),
+  );
+  app.delete(
+    "/emails",
+    asyncRoute(async () => {
+      global.__E2E_EMAIL_OUTBOX__ = [];
+      return { cleared: true };
+    }),
+  );
+  app.post(
+    "/reviews/:orderId/approve",
+    asyncRoute((req) => fixtures.approveReview(req.params.orderId)),
+  );
+  app.get(
     "/state/:subscriptionId",
     asyncRoute((req) => fixtures.getState(req.params.subscriptionId)),
   );

@@ -23,6 +23,11 @@ const registerSchema = Joi.object({
     .valid(Joi.ref("password"))
     .required()
     .messages({ "any.only": "Passwords do not match" }),
+  inviteToken: Joi.string().trim().min(20).optional(),
+}).unknown(false);
+
+const inviteTokenParamSchema = Joi.object({
+  token: Joi.string().trim().min(20).required(),
 }).unknown(false);
 
 const loginSchema = Joi.object({
@@ -89,6 +94,7 @@ const changePasswordSchema = Joi.object({
 
 module.exports = {
   registerSchema,
+  inviteTokenParamSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,

@@ -1,6 +1,7 @@
 "use strict";
 
 const adminSubService = require("../../services/customerPortal/adminSubscriptions.service");
+const customerService = require("../../services/customers.service");
 const { sendOk, sendCreated, sendErr } = require("../../utils/response.util");
 
 const ListSubscriptions = async (req, res) => {
@@ -8,10 +9,25 @@ const ListSubscriptions = async (req, res) => {
     status: req.query.status,
     frequency: req.query.frequency,
     search: req.query.search,
+    sortBy: req.query.sortBy,
     page: Number(req.query.page) || 1,
     pageSize: Number(req.query.pageSize) || 20,
   });
   return sendOk(res, result.data);
+};
+
+const CreateSubscriptionSetupLink = async (req, res) => {
+  const result = await customerService.CreateCustomerOnboardingLink({
+    ...req.body,
+    actorUserId: req.user?.id || req.user?._id,
+  });
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Could not create subscription setup link",
+    });
+  }
+  return sendCreated(res, result.data, { message: result.message });
 };
 
 const GetSubscription = async (req, res) => {
@@ -113,6 +129,7 @@ const GetSubscriptionOrders = async (req, res) => {
 
 module.exports = {
   ListSubscriptions,
+  CreateSubscriptionSetupLink,
   GetSubscription,
   PauseSubscription,
   ResumeSubscription,

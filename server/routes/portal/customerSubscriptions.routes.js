@@ -36,6 +36,11 @@ router.get("/", asyncHandler(controller.ListSubscriptions));
 router.get("/settings", asyncHandler(controller.GetSubscriptionSettings));
 
 router.get(
+  "/prepared-draft",
+  asyncHandler(controller.GetPreparedSubscriptionDraft),
+);
+
+router.get(
   "/:subscriptionId",
   validateParams(subscriptionIdParamSchema),
   asyncHandler(controller.GetSubscription),

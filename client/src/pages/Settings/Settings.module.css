@@ -199,6 +199,173 @@
   color: var(--color-gray-500);
 }
 
+.logoUploadPanel {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding: var(--space-4);
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-xl);
+}
+
+.logoPreview {
+  width: 104px;
+  height: 104px;
+  flex: 0 0 104px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-gray-400);
+  background: var(--color-white);
+  border: 1px dashed var(--color-gray-300);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.logoPreview img {
+  width: 100%;
+  height: 100%;
+  padding: var(--space-2);
+  object-fit: contain;
+}
+
+.logoPlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-gray-400);
+}
+
+.logoUploadContent {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.logoUploadCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.logoUploadCopy strong {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-800);
+}
+
+.logoUploadCopy span {
+  max-width: 560px;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-gray-500);
+}
+
+.logoMetadata {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, max-content));
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+}
+
+.logoMetadata div {
+  min-width: 0;
+}
+
+.logoMetadata dt {
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: var(--font-medium);
+  color: var(--color-gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.logoMetadata dd {
+  max-width: 220px;
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--color-gray-700);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logoUploadError {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-error);
+  background: var(--color-error-bg);
+  border-radius: var(--radius-md);
+}
+
+.logoUploadActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.logoUploadButton,
+.logoRemoveButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.logoUploadButton {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.logoUploadButton:hover {
+  background: var(--color-primary-dark);
+  box-shadow: var(--shadow-sm);
+}
+
+.logoUploadButton input {
+  display: none;
+}
+
+.logoUploadButtonDisabled,
+.logoRemoveButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.logoRemoveButton {
+  color: var(--color-error);
+  background: var(--color-white);
+  border-color: var(--color-gray-300);
+}
+
+.logoRemoveButton:hover:not(:disabled) {
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+}
+
 /* Delivery day chips */
 .dayChips {
   display: flex;
@@ -706,6 +873,10 @@
     align-items: flex-start;
     gap: var(--space-4);
   }
+
+  .logoMetadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -717,5 +888,23 @@
 
   .actions {
     flex-wrap: wrap;
+  }
+
+  .logoUploadPanel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .logoUploadContent {
+    width: 100%;
+  }
+
+  .logoUploadActions {
+    width: 100%;
+  }
+
+  .logoUploadButton,
+  .logoRemoveButton {
+    flex: 1;
   }
 }

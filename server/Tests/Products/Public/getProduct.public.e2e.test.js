@@ -42,6 +42,10 @@ async function createVariant({
   name,
   sku,
   stockQuantity = 10,
+  description,
+  ingredients,
+  allergens,
+  nutritionalInformation,
 } = {}) {
   const thumb = await createFile();
   const now = Date.now();
@@ -49,6 +53,10 @@ async function createVariant({
   return Variant.create({
     product: productId,
     name: name || `Variant ${now}`,
+    description,
+    ingredients,
+    allergens,
+    nutritionalInformation,
     sku: sku || `SKU-${now}-${Math.floor(Math.random() * 1000)}`,
     price: 2.5,
     stockQuantity,
@@ -86,6 +94,10 @@ describe("GET /api/products/:productId (PUBLIC)", () => {
       status: "active",
       name: "Active V",
       sku: `ACTIVE-${Date.now()}`,
+      description: "Variant-specific description",
+      ingredients: "Whole milk",
+      allergens: ["Milk"],
+      nutritionalInformation: "Energy: 64kcal per 100ml",
     });
     await createVariant({
       productId: product._id,
@@ -102,5 +114,11 @@ describe("GET /api/products/:productId (PUBLIC)", () => {
     const variantIds = variants.map((v) => String(v.id));
     expect(variantIds).toContain(String(activeVariant._id));
     expect(variantIds.length).toBe(1);
+    expect(variants[0]).toMatchObject({
+      description: "Variant-specific description",
+      ingredients: "Whole milk",
+      allergens: ["Milk"],
+      nutritionalInformation: "Energy: 64kcal per 100ml",
+    });
   });
 });

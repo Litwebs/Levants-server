@@ -56,11 +56,12 @@ async function AdminListSubscriptions({
   status,
   frequency,
   search,
+  sortBy = "newest",
   page = 1,
   pageSize = 20,
 } = {}) {
   const filter = {};
-  if (status) filter.status = status;
+  if (status && status !== "pending") filter.status = status;
   if (frequency) filter.frequency = frequency;
 
   let customerIds = null;
@@ -75,16 +76,127 @@ async function AdminListSubscriptions({
     filter.customer = { $in: customerIds };
   }
 
-  const total = await Subscription.countDocuments(filter);
-  const subscriptions = await Subscription.find(filter)
-    .populate("customer", "firstName lastName email phone")
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * pageSize)
-    .limit(pageSize)
-    .lean();
+  let subscriptions = [];
+  if (status !== "pending") {
+    subscriptions = await Subscription.find(filter)
+      .populate("customer", "firstName lastName email phone")
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  const pendingFilter = {
+    pendingSubscriptionDraft: { $ne: null },
+  };
+  if (search) {
+    const regex = new RegExp(search, "i");
+    pendingFilter.$or = [
+      { firstName: regex },
+      { lastName: regex },
+      { email: regex },
+    ];
+  }
+
+  let pendingSubscriptions = [];
+  if (!status || status === "pending") {
+    const pendingCustomers = await Customer.find(pendingFilter)
+      .select(
+        "firstName lastName email phone pendingSubscriptionDraft portalInviteSentAt portalInviteTokenExpiresAt createdAt updatedAt",
+      )
+      .lean();
+
+    const dayIndexes = new Map([
+      ["Sunday", 0],
+      ["Monday", 1],
+      ["Tuesday", 2],
+      ["Wednesday", 3],
+      ["Thursday", 4],
+      ["Friday", 5],
+      ["Saturday", 6],
+    ]);
+
+    pendingSubscriptions = pendingCustomers
+      .map((customer) => {
+        const draft = customer.pendingSubscriptionDraft || {};
+        const draftFrequency =
+          draft.frequency === "fortnightly"
+            ? "every_two_weeks"
+            : draft.frequency || "weekly";
+        const days = Array.isArray(draft.deliveryDays)
+          ? draft.deliveryDays
+              .map((day) => dayIndexes.get(day))
+              .filter((day) => Number.isInteger(day))
+          : [];
+        const quantities =
+          draft.quantities && typeof draft.quantities === "object"
+            ? draft.quantities
+            : {};
+        return {
+          _id: `pending:${customer._id}`,
+          subscriptionNumber: "Pending setup",
+          customer: {
+            _id: customer._id,
+            firstName: customer.firstName,
+            lastName: customer.lastName,
+            email: customer.email,
+            phone: customer.phone || null,
+          },
+          status: "pending",
+          frequency: draftFrequency,
+          preferredDeliveryDay: days[0] ?? 0,
+          preferredDeliveryDays: days,
+          nextDeliveryDate: null,
+          startDate: null,
+          items: Object.entries(quantities).map(
+            ([variant, quantity], index) => ({
+              _id: `pending-item:${index}`,
+              variant,
+              quantity,
+            }),
+          ),
+          createdAt:
+            customer.portalInviteSentAt ||
+            customer.updatedAt ||
+            customer.createdAt,
+          updatedAt: customer.updatedAt,
+          setupExpiresAt: customer.portalInviteTokenExpiresAt || null,
+          isPendingSetup: true,
+        };
+      })
+      .filter(
+        (subscription) =>
+          !frequency || subscription.frequency === frequency,
+      );
+  }
+
+  const combined = [...subscriptions, ...pendingSubscriptions].sort((a, b) => {
+    if (sortBy === "oldest") {
+      return (
+        new Date(a.createdAt || 0).getTime() -
+        new Date(b.createdAt || 0).getTime()
+      );
+    }
+    if (sortBy === "next-delivery") {
+      const aTime = a.nextDeliveryDate
+        ? new Date(a.nextDeliveryDate).getTime()
+        : Number.POSITIVE_INFINITY;
+      const bTime = b.nextDeliveryDate
+        ? new Date(b.nextDeliveryDate).getTime()
+        : Number.POSITIVE_INFINITY;
+      return aTime - bTime;
+    }
+    return (
+      new Date(b.createdAt || 0).getTime() -
+      new Date(a.createdAt || 0).getTime()
+    );
+  });
+  const total = combined.length;
+  const paginatedSubscriptions = combined.slice(
+    (page - 1) * pageSize,
+    page * pageSize,
+  );
 
   return Response(true, null, {
-    subscriptions,
+    subscriptions: paginatedSubscriptions,
     meta: { page, pageSize, total },
   });
 }

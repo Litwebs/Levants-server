@@ -82,15 +82,34 @@ async function CreateReview({ body, file }) {
     }
   }
 
-  const review = await Review.create({
-    orderId: body.orderId,
-    customerName: body.customerName,
-    description: body.description,
-    rating: Number(body.rating),
-    imageUrl,
-    imagePublicId,
-    isVisible: true,
-  });
+  let review;
+  try {
+    review = await Review.create({
+      orderId: body.orderId,
+      customerName: body.customerName,
+      description: body.description,
+      rating: Number(body.rating),
+      imageUrl,
+      imagePublicId,
+      // Approval-first moderation: a new review is retained for administrators
+      // but does not appear publicly or affect public rating statistics.
+      isVisible: false,
+    });
+  } catch (error) {
+    // The unique orderId index closes the race between the duplicate check
+    // above and two submissions arriving at the same time.
+    if (error?.code === 11000) {
+      if (imagePublicId) {
+        await cloudinary.uploader.destroy(imagePublicId).catch(() => undefined);
+      }
+      return {
+        success: false,
+        statusCode: 409,
+        message: "A review has already been submitted for this order",
+      };
+    }
+    throw error;
+  }
 
   return { success: true, data: { review } };
 }

@@ -30,11 +30,12 @@ export type Subscription = {
         phone?: string | null;
       }
     | string;
-  status: "active" | "paused" | "cancelled";
+  status: "active" | "paused" | "cancelled" | "pending";
   frequency: "weekly" | "every_two_weeks" | "monthly";
   preferredDeliveryDay: number;
-  nextDeliveryDate: string;
-  startDate: string;
+  preferredDeliveryDays?: number[];
+  nextDeliveryDate: string | null;
+  startDate: string | null;
   items: SubscriptionItem[];
   deliveryAddress: {
     line1: string;
@@ -50,6 +51,8 @@ export type Subscription = {
   pausedAt?: string | null;
   cancelledAt?: string | null;
   cancelReason?: string | null;
+  isPendingSetup?: boolean;
+  setupExpiresAt?: string | null;
 };
 
 export type SubscriptionDelivery = {
@@ -118,6 +121,7 @@ type SubscriptionsContextType = {
     status?: string;
     frequency?: string;
     search?: string;
+    sortBy?: string;
   }) => Promise<void>;
   getSubscription: (id: string) => Promise<Subscription>;
   getSubscriptionDeliveries: (
@@ -182,6 +186,7 @@ export const SubscriptionsProvider = ({
       status?: string;
       frequency?: string;
       search?: string;
+      sortBy?: string;
     }) => {
       setLoading(true);
       setError(null);

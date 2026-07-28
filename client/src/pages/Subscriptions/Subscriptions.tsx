@@ -15,7 +15,7 @@ import {
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
 import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 import styles from "./Subscriptions.module.css";
-import { RefreshCw, X as XIcon, Search, Filter } from "lucide-react";
+import { RefreshCw, X as XIcon, Search, Filter, Plus } from "lucide-react";
 
 const FREQUENCY_LABELS: Record<string, string> = {
   weekly: "Weekly",
@@ -25,8 +25,12 @@ const FREQUENCY_LABELS: Record<string, string> = {
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const STATUS_VARIANTS: Record<string, "success" | "warning" | "error"> = {
+const STATUS_VARIANTS: Record<
+  string,
+  "success" | "warning" | "error" | "default"
+> = {
   active: "success",
+  pending: "default",
   paused: "warning",
   cancelled: "error",
 };
@@ -51,7 +55,7 @@ export default function SubscriptionsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [frequencyFilter, setFrequencyFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("next-delivery");
+  const [sortBy, setSortBy] = useState("newest");
   const [showFilters, setShowFilters] = useState(false);
 
   const fetchSubscriptions = useCallback(() => {
@@ -61,8 +65,16 @@ export default function SubscriptionsPage() {
       status: statusFilter !== "all" ? statusFilter : undefined,
       frequency: frequencyFilter !== "all" ? frequencyFilter : undefined,
       search: search || undefined,
+      sortBy,
     });
-  }, [listSubscriptions, page, statusFilter, frequencyFilter, search]);
+  }, [
+    listSubscriptions,
+    page,
+    statusFilter,
+    frequencyFilter,
+    search,
+    sortBy,
+  ]);
 
   useEffect(() => {
     const t = setTimeout(fetchSubscriptions, 300);
@@ -93,8 +105,12 @@ export default function SubscriptionsPage() {
       case "next-delivery":
       default:
         next.sort((a, b) => {
-          const at = new Date(a.nextDeliveryDate || 0).getTime();
-          const bt = new Date(b.nextDeliveryDate || 0).getTime();
+          const at = a.nextDeliveryDate
+            ? new Date(a.nextDeliveryDate).getTime()
+            : Number.POSITIVE_INFINITY;
+          const bt = b.nextDeliveryDate
+            ? new Date(b.nextDeliveryDate).getTime()
+            : Number.POSITIVE_INFINITY;
           return at - bt;
         });
         break;
@@ -113,14 +129,23 @@ export default function SubscriptionsPage() {
             {meta?.total ?? 0} total subscriptions
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchSubscriptions}
-          leftIcon={<RefreshCw size={16} />}
-        >
-          Refresh
-        </Button>
+        <div className={styles.headerActions}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchSubscriptions}
+            leftIcon={<RefreshCw size={16} />}
+          >
+            Refresh
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => navigate("/subscriptions/new")}
+            leftIcon={<Plus size={16} />}
+          >
+            Create subscription
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -163,9 +188,9 @@ export default function SubscriptionsPage() {
               onChange={setSortBy}
               className={sharedFilterStyles.sortSelect}
               options={[
-                { value: "next-delivery", label: "Next Delivery" },
-                { value: "newest", label: "Newest First" },
-                { value: "oldest", label: "Oldest First" },
+                { value: "newest", label: "Newest created" },
+                { value: "oldest", label: "Oldest created" },
+                { value: "next-delivery", label: "Next delivery" },
               ]}
             />
           </div>
@@ -183,6 +208,7 @@ export default function SubscriptionsPage() {
                 onChange={setStatusFilter}
                 options={[
                   { value: "all", label: "All statuses" },
+                  { value: "pending", label: "Pending setup" },
                   { value: "active", label: "Active" },
                   { value: "paused", label: "Paused" },
                   { value: "cancelled", label: "Cancelled" },
@@ -212,7 +238,7 @@ export default function SubscriptionsPage() {
                 setSearch("");
                 setStatusFilter("all");
                 setFrequencyFilter("all");
-                setSortBy("next-delivery");
+                setSortBy("newest");
               }}
             >
               Clear Filters
@@ -247,19 +273,20 @@ export default function SubscriptionsPage() {
                 <th>Frequency</th>
                 <th>Delivery Day</th>
                 <th>Next Delivery</th>
+                <th>Created</th>
                 <th>Items</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr className={sharedTableStyles.emptyStateRow}>
-                  <td colSpan={7} className={sharedTableStyles.emptyTableCell}>
+                  <td colSpan={8} className={sharedTableStyles.emptyTableCell}>
                     Loading…
                   </td>
                 </tr>
               ) : sortedSubscriptions.length === 0 ? (
                 <tr className={sharedTableStyles.emptyStateRow}>
-                  <td colSpan={7} className={sharedTableStyles.emptyTableCell}>
+                  <td colSpan={8} className={sharedTableStyles.emptyTableCell}>
                     No subscriptions found
                   </td>
                 </tr>
@@ -267,8 +294,14 @@ export default function SubscriptionsPage() {
                 sortedSubscriptions.map((sub) => (
                   <tr
                     key={sub._id}
-                    className={styles.clickableRow}
-                    onClick={() => navigate(`/subscriptions/${sub._id}`)}
+                    className={
+                      sub.isPendingSetup ? styles.pendingRow : styles.clickableRow
+                    }
+                    onClick={() => {
+                      if (!sub.isPendingSetup) {
+                        navigate(`/subscriptions/${sub._id}`);
+                      }
+                    }}
                   >
                     <td className="font-mono text-xs">
                       {sub.subscriptionNumber}
@@ -290,13 +323,28 @@ export default function SubscriptionsPage() {
                       {FREQUENCY_LABELS[sub.frequency] ?? sub.frequency}
                     </td>
                     <td className="text-sm">
-                      {DAY_LABELS[sub.preferredDeliveryDay] ??
-                        sub.preferredDeliveryDay}
+                      {(sub.preferredDeliveryDays?.length
+                        ? sub.preferredDeliveryDays
+                        : [sub.preferredDeliveryDay]
+                      )
+                        .map((day) => DAY_LABELS[day] ?? day)
+                        .join(", ")}
                     </td>
                     <td className="text-sm">
-                      {new Date(sub.nextDeliveryDate).toLocaleDateString(
-                        "en-GB",
-                      )}
+                      {sub.nextDeliveryDate
+                        ? new Date(sub.nextDeliveryDate).toLocaleDateString(
+                            "en-GB",
+                          )
+                        : "Awaiting setup"}
+                    </td>
+                    <td className="text-sm">
+                      {sub.createdAt
+                        ? new Date(sub.createdAt).toLocaleDateString("en-GB", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "—"}
                     </td>
                     <td className="text-sm">{sub.items.length}</td>
                   </tr>

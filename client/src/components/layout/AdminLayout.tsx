@@ -18,13 +18,9 @@ import {
   X,
   Megaphone,
   LayoutList,
-<<<<<<< HEAD
   Star,
-=======
   RefreshCw,
-  HeadphonesIcon,
   CreditCard,
->>>>>>> origin/Portal
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -36,7 +32,13 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/context/Auth/AuthContext";
+import api from "@/context/api";
 import { usePermissions } from "@/hooks/usePermissions";
+import {
+  BUSINESS_INFO_UPDATED_EVENT,
+  getBusinessBranding,
+  getBusinessInitials,
+} from "@/lib/businessBranding";
 import styles from "./AdminLayout.module.css";
 
 const navItems = [
@@ -75,12 +77,6 @@ const navItems = [
     label: "Subscriptions",
     icon: RefreshCw,
     requiredAny: ["orders.read"],
-  },
-  {
-    path: "/support-requests",
-    label: "Support",
-    icon: HeadphonesIcon,
-    requiredAny: ["customers.read"],
   },
   {
     path: "/payments",
@@ -138,10 +134,47 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
+  const [businessBranding, setBusinessBranding] = useState(() =>
+    getBusinessBranding(),
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, updateSelf } = useAuth();
   const { hasAnyPermission } = usePermissions();
+
+  useEffect(() => {
+    let active = true;
+
+    void api
+      .get("/business-info/public")
+      .then((res) => {
+        if (active) {
+          setBusinessBranding(
+            getBusinessBranding((res.data as any)?.data?.business),
+          );
+        }
+      })
+      .catch(() => {
+        // Keep the fallback branding if business details cannot be loaded.
+      });
+
+    const handleBusinessInfoUpdated = (event: Event) => {
+      const business = (event as CustomEvent).detail;
+      setBusinessBranding(getBusinessBranding(business));
+    };
+    window.addEventListener(
+      BUSINESS_INFO_UPDATED_EVENT,
+      handleBusinessInfoUpdated,
+    );
+
+    return () => {
+      active = false;
+      window.removeEventListener(
+        BUSINESS_INFO_UPDATED_EVENT,
+        handleBusinessInfoUpdated,
+      );
+    };
+  }, []);
 
   const isDeliveryRunDetailsRoute = useMemo(() => {
     return /^\/delivery-runs\/[^/]+$/.test(location.pathname);
@@ -236,8 +269,25 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         className={`${styles.sidebar} ${collapsed ? styles.collapsed : ""} ${mobileSidebarOpen ? styles.open : ""}`}
       >
         <div className={styles.logo}>
-          <div className={styles.logoIcon}>LD</div>
-          {!collapsed && <span className={styles.logoText}>Levants Dairy</span>}
+          {businessBranding.logoUrl ? (
+            <img
+              className={styles.logoImage}
+              src={businessBranding.logoUrl}
+              alt={`${businessBranding.companyName} logo`}
+            />
+          ) : (
+            <div className={styles.logoIcon}>
+              {getBusinessInitials(businessBranding.companyName)}
+            </div>
+          )}
+          {!collapsed && (
+            <span
+              className={styles.logoText}
+              title={businessBranding.companyName}
+            >
+              {businessBranding.companyName}
+            </span>
+          )}
           <button
             type="button"
             className={styles.mobileClose}

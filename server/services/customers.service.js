@@ -1,6 +1,13 @@
 const Customer = require("../models/customer.model");
 const mongoose = require("mongoose");
 const Order = require("../models/order.model");
+const crypto = require("crypto");
+const cryptoUtil = require("../utils/crypto.util");
+const sendEmail = require("../Integration/Email.service");
+
+const DEFAULT_PORTAL_INVITE_TTL_MINUTES = Number(
+  process.env.CUSTOMER_PORTAL_INVITE_TTL_MINUTES || 72 * 60,
+);
 
 /**
  * Find or create guest customer by email
@@ -82,6 +89,201 @@ async function FindOrCreateGuestCustomer({
     success: true,
     statusCode: created ? 201 : 200,
     data: { customer: { ...json, address: defaultAddress } },
+  };
+}
+
+function getCustomerPortalBaseUrl() {
+  const env = process.env.NODE_ENV;
+  const base =
+    env === "production"
+      ? process.env.CUSTOMER_PORTAL_URL_PROD ||
+        process.env.CLIENT_FRONT_URL_PROD ||
+        process.env.FRONTEND_URL_PROD
+      : process.env.CUSTOMER_PORTAL_URL_DEV ||
+        process.env.CLIENT_FRONT_URL_DEV ||
+        process.env.FRONTEND_URL_DEV ||
+        "http://localhost:8080";
+
+  return String(base || "").replace(/\/$/, "");
+}
+
+function buildPortalOnboardingLink(token) {
+  const base = getCustomerPortalBaseUrl();
+  if (!base) return "";
+  const params = new URLSearchParams({
+    invite: token,
+    redirect: "/portal/subscriptions/new?prepared=1",
+  });
+  return `${base}/register?${params.toString()}`;
+}
+
+function buildExistingCustomerSetupLink(email) {
+  const base = getCustomerPortalBaseUrl();
+  if (!base) return "";
+  const params = new URLSearchParams({
+    redirect: "/portal/subscriptions/new?prepared=1",
+    email: String(email || ""),
+  });
+  return `${base}/login?${params.toString()}`;
+}
+
+async function CreateCustomerOnboardingLink({
+  email,
+  firstName,
+  lastName,
+  phone,
+  address,
+  subscription,
+  linkTtlMinutes,
+} = {}) {
+  const normalizedEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+  const normalizedFirstName = normalizeText(stripHtml(firstName));
+  const normalizedLastName = normalizeText(stripHtml(lastName));
+  const normalizedPhone = phone ? String(phone).trim() : null;
+  const normalizedAddress = sanitizeAddress(address);
+
+  if (!normalizedEmail || !normalizedFirstName || !normalizedLastName) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "email, firstName, and lastName are required",
+    };
+  }
+
+  const existing = await Customer.findOne({ email: normalizedEmail }).sort({
+    createdAt: -1,
+  });
+
+  const existingRegisteredCustomer = Boolean(existing && !existing.isGuest);
+
+  const ttlMinutes = Math.max(
+    15,
+    Number.isFinite(Number(linkTtlMinutes))
+      ? Math.floor(Number(linkTtlMinutes))
+      : DEFAULT_PORTAL_INVITE_TTL_MINUTES,
+  );
+
+  const rawInviteToken = crypto.randomBytes(32).toString("hex");
+  const inviteTokenHash = cryptoUtil.hashToken(rawInviteToken);
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+
+  let customer = existing;
+  if (!customer) {
+    customer = await Customer.create({
+      email: normalizedEmail,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      phone: normalizedPhone,
+      ...(normalizedAddress
+        ? { addresses: [{ ...normalizedAddress, isDefault: true }] }
+        : {}),
+      isGuest: true,
+    });
+  } else {
+    customer.firstName = normalizedFirstName;
+    customer.lastName = normalizedLastName;
+    customer.phone = normalizedPhone;
+    if (normalizedAddress) {
+      upsertDefaultAddress(customer, normalizedAddress);
+    }
+  }
+
+  if (!existingRegisteredCustomer) {
+    customer.portalInviteTokenHash = inviteTokenHash;
+    customer.portalInviteTokenExpiresAt = expiresAt;
+    customer.portalInviteSentAt = new Date();
+    customer.portalInviteAcceptedAt = null;
+  }
+  if (subscription) {
+    const defaultAddress =
+      customer.addresses.find((entry) => entry.isDefault) ||
+      customer.addresses[customer.addresses.length - 1];
+    if (!defaultAddress) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "A delivery address is required for the subscription",
+      };
+    }
+
+    const dayNames = [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ];
+    customer.pendingSubscriptionDraft = {
+      step: 5,
+      selectedVariantIds: subscription.items.map((item) =>
+        String(item.variantId),
+      ),
+      quantities: Object.fromEntries(
+        subscription.items.map((item) => [
+          String(item.variantId),
+          Number(item.quantity),
+        ]),
+      ),
+      dayQuantities: {},
+      frequency:
+        subscription.frequency === "every_two_weeks"
+          ? "fortnightly"
+          : subscription.frequency,
+      deliveryDays: (subscription.preferredDeliveryDays?.length
+        ? subscription.preferredDeliveryDays
+        : [subscription.preferredDeliveryDay]
+      ).map((day) => dayNames[day]),
+      selectedAddress: String(defaultAddress._id),
+      notes: subscription.notes || "",
+      preparedByAdmin: true,
+    };
+  }
+  await customer.save();
+
+  const onboardingLink = existingRegisteredCustomer
+    ? buildExistingCustomerSetupLink(normalizedEmail)
+    : buildPortalOnboardingLink(rawInviteToken);
+  const expiresAtLabel = expiresAt.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  try {
+    await sendEmail(
+      normalizedEmail,
+      "Complete your Levants subscription setup",
+      "serviceAnnouncement",
+      {
+        customerName: normalizedFirstName,
+        title: "Your account setup link",
+        description:
+          `An admin has prepared your account for subscriptions. ` +
+          (existingRegisteredCustomer
+            ? `Please sign in and add a payment method to complete setup.\n\n`
+            : `Please open the link below, verify your email, and add a payment method to complete setup.\n\n`) +
+          `${onboardingLink}\n\n` +
+          `This link expires on ${expiresAtLabel}.`,
+      },
+    );
+  } catch {
+    // Ignore email transport errors for link generation; admin can still copy/share the link.
+  }
+
+  return {
+    success: true,
+    message: "Customer onboarding link created",
+    data: {
+      customer,
+      onboardingLink,
+      expiresAt,
+    },
   };
 }
 
@@ -389,6 +591,7 @@ function upsertDefaultAddress(customer, address) {
 
 module.exports = {
   FindOrCreateGuestCustomer,
+  CreateCustomerOnboardingLink,
   GetCustomerById,
   ListCustomers,
   UpdateCustomer,

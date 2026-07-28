@@ -12,6 +12,11 @@ const {
 
 const router = express.Router();
 
+router.get(
+  "/public",
+  asyncHandler(businessInfoController.GetPublicBusinessInfo),
+);
+
 /**
  * GET business info
  */

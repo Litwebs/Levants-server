@@ -37,6 +37,7 @@
   gap: var(--space-3);
   padding: var(--space-5) var(--space-4);
   border-bottom: 1px solid var(--sidebar-border);
+  min-width: 0;
 }
 
 .mobileClose {
@@ -69,12 +70,24 @@
   flex-shrink: 0;
 }
 
+.logoImage {
+  width: 40px;
+  height: 40px;
+  padding: 2px;
+  background: white;
+  border-radius: var(--radius-lg);
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .logoText {
   color: white;
   font-family: var(--font-display);
   font-weight: var(--font-semibold);
   font-size: var(--text-lg);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav {

@@ -120,6 +120,34 @@ const customerSchema = new mongoose.Schema(
       default: null,
     },
 
+    portalInviteTokenHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
+    portalInviteTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
+
+    portalInviteSentAt: {
+      type: Date,
+      default: null,
+    },
+
+    portalInviteAcceptedAt: {
+      type: Date,
+      default: null,
+    },
+
+    // Admin-prepared subscription details, consumed after email verification
+    // and payment setup in the customer portal.
+    pendingSubscriptionDraft: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+
     pendingEmail: {
       type: String,
       lowercase: true,

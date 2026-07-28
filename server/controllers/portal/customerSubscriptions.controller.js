@@ -28,6 +28,15 @@ const GetSubscriptionSettings = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetPreparedSubscriptionDraft = async (req, res) => {
+  const result = await service.GetPreparedSubscriptionDraft({
+    customerId: req.customer._id,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 404, message: result.message });
+  return sendOk(res, result.data);
+};
+
 const GetSubscription = async (req, res) => {
   const result = await service.GetSubscription({
     customerId: req.customer._id,
@@ -138,6 +147,7 @@ module.exports = {
   ListSubscriptions,
   GetSubscription,
   GetSubscriptionSettings,
+  GetPreparedSubscriptionDraft,
   UpdateSubscription,
   PauseSubscription,
   ResumeSubscription,

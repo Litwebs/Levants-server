@@ -60,12 +60,22 @@ describe("PUT / DELETE /api/admin/variants/variants/:variantId (E2E)", () => {
     const res = await request(app)
       .put(`/api/admin/products/variants/${variant._id}`)
       .set("Cookie", getSetCookieHeader(login))
-      .send({ thumbnailImage: "" });
+      .send({
+        thumbnailImage: "",
+        description: "Updated variant description",
+        ingredients: "Milk, salt",
+        allergens: ["Milk"],
+        nutritionalInformation: "Energy: 300kcal per 100g",
+      });
 
     expect(res.status).toBe(200);
 
     const vAfter = await Variant.findById(variant._id);
     expect(vAfter.thumbnailImage).toBeNull();
+    expect(vAfter.description).toBe("Updated variant description");
+    expect(vAfter.ingredients).toBe("Milk, salt");
+    expect(vAfter.allergens).toEqual(["Milk"]);
+    expect(vAfter.nutritionalInformation).toBe("Energy: 300kcal per 100g");
 
     const f1After = await File.findById(file1._id);
     expect(f1After).toBeNull();

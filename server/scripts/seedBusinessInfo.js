@@ -57,14 +57,12 @@ const seedBusinessInfo = async () => {
   const doc = await BusinessInfo.findOneAndUpdate(
     { singletonKey },
     {
-      $set: {
+      $setOnInsert: {
+        singletonKey,
         companyName: business.companyName,
         email: business.email,
         phone: business.phone,
         address: business.address,
-      },
-      $setOnInsert: {
-        singletonKey,
       },
     },
     {

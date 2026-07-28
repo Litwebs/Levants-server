@@ -11,6 +11,9 @@ const {
 
 const controller = require("../../controllers/portal/adminSubscriptions.controller");
 const {
+  createCustomerOnboardingLinkSchema,
+} = require("../../validators/customer.validators");
+const {
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
   updateSubscriptionSchema,
@@ -24,6 +27,13 @@ router.use(requireAuth);
 router.use(requirePermission("orders.read")); // subscriptions are part of orders domain
 
 router.get("/", asyncHandler(controller.ListSubscriptions));
+
+router.post(
+  "/setup-link",
+  requirePermission("orders.update"),
+  validateBody(createCustomerOnboardingLinkSchema),
+  asyncHandler(controller.CreateSubscriptionSetupLink),
+);
 
 router.get(
   "/:subscriptionId",

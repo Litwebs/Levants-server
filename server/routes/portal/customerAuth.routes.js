@@ -5,7 +5,10 @@ const asyncHandler = require("../../utils/asyncHandler.util");
 const {
   requireCustomerAuth,
 } = require("../../middleware/customerAuth.middleware");
-const { validateBody } = require("../../middleware/validate.middleware");
+const {
+  validateBody,
+  validateParams,
+} = require("../../middleware/validate.middleware");
 const {
   loginLimiter,
   authLimiter,
@@ -14,6 +17,7 @@ const {
 const controller = require("../../controllers/portal/customerAuth.controller");
 const {
   registerSchema,
+  inviteTokenParamSchema,
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
@@ -32,6 +36,13 @@ router.post(
   authLimiter,
   validateBody(registerSchema),
   asyncHandler(controller.Register),
+);
+
+router.get(
+  "/invite/:token",
+  authLimiter,
+  validateParams(inviteTokenParamSchema),
+  asyncHandler(controller.GetRegisterInvite),
 );
 
 router.post(

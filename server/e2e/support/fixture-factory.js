@@ -8,6 +8,7 @@ const Order = require("../../models/order.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const Product = require("../../models/product.model");
 const ProductVariant = require("../../models/variant.model");
+const Review = require("../../models/review.model");
 const StoreCreditTransaction = require("../../models/storeCreditTransaction.model");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
@@ -180,6 +181,7 @@ async function cleanupStripe() {
 }
 
 async function reset() {
+  global.__E2E_EMAIL_OUTBOX__ = [];
   if (mongoose.connection.readyState === 1) {
     const localProductIds = await Subscription.distinct("stripeProductId", {
       stripeProductId: { $nin: [null, ""] },
@@ -246,7 +248,10 @@ async function attachMethod(stripeCustomerId, paymentMethodId) {
   return attachedMethodId;
 }
 
-async function createCustomer(scenarioId, { withPaymentMethod = true } = {}) {
+async function createCustomer(
+  scenarioId,
+  { withPaymentMethod = true, subscriptionUpdates = true } = {},
+) {
   let clock = null;
   if (process.env.E2E_USE_TEST_CLOCKS !== "0") {
     clock = await stripe.testHelpers.testClocks.create({
@@ -281,6 +286,9 @@ async function createCustomer(scenarioId, { withPaymentMethod = true } = {}) {
     status: "active",
     emailVerifiedAt: new Date(),
     stripeCustomerId: remoteCustomer.id,
+    notificationPreferences: {
+      subscriptionUpdates,
+    },
     addresses: [
       {
         label: "E2E Home",
@@ -438,6 +446,7 @@ async function createFixture(options = {}) {
   const variants = await createCatalog(scenarioId);
   const customerData = await createCustomer(scenarioId, {
     withPaymentMethod: options.withPaymentMethod !== false,
+    subscriptionUpdates: options.subscriptionUpdates !== false,
   });
   const addressId = customerData.customer.addresses[0]._id.toString();
 
@@ -690,6 +699,16 @@ async function finalizeCancellation(subscriptionId, referenceDate) {
   return { finalized };
 }
 
+async function approveReview(orderId) {
+  const review = await Review.findOneAndUpdate(
+    { orderId },
+    { $set: { isVisible: true } },
+    { new: true },
+  ).lean();
+  if (!review) throw new Error("Review fixture not found");
+  return { review };
+}
+
 async function stripeState(subscription, customer) {
   let remoteSubscription = null;
   try {
@@ -786,6 +805,7 @@ async function getState(subscriptionId) {
 }
 
 module.exports = {
+  approveReview,
   autoResume,
   createFixture,
   crossCutoff,

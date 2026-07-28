@@ -38,6 +38,28 @@ async function createFixture(request, options) {
   return responseJson(response, "E2E fixture creation");
 }
 
+async function getEmails(request) {
+  const response = await request.get(`${CONTROL_ORIGIN}/emails`, {
+    headers: controlHeaders,
+  });
+  return responseJson(response, "Email outbox read");
+}
+
+async function clearEmails(request) {
+  const response = await request.delete(`${CONTROL_ORIGIN}/emails`, {
+    headers: controlHeaders,
+  });
+  return responseJson(response, "Email outbox clear");
+}
+
+async function approveReview(request, orderId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/reviews/${encodeURIComponent(orderId)}/approve`,
+    { headers: controlHeaders },
+  );
+  return responseJson(response, "Review approval");
+}
+
 async function getState(request, subscriptionId) {
   const response = await request.get(
     `${CONTROL_ORIGIN}/state/${subscriptionId}`,
@@ -107,11 +129,14 @@ function portalHeaders(accessToken) {
 
 module.exports = {
   API_ORIGIN,
+  approveReview,
   autoResume,
   createFixture,
+  clearEmails,
   crossCutoff,
   finalizeCancellation,
   getState,
+  getEmails,
   login,
   portalHeaders,
   reset,

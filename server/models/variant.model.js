@@ -16,6 +16,32 @@ const productVariantSchema = new mongoose.Schema(
       trim: true,
     },
 
+    description: {
+      type: String,
+      trim: true,
+      maxlength: 5000,
+      default: null,
+    },
+
+    ingredients: {
+      type: String,
+      trim: true,
+      maxlength: 5000,
+      default: null,
+    },
+
+    allergens: {
+      type: [String],
+      default: undefined,
+    },
+
+    nutritionalInformation: {
+      type: String,
+      trim: true,
+      maxlength: 10000,
+      default: null,
+    },
+
     sku: {
       type: String,
       required: true,

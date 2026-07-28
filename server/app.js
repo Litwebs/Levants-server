@@ -207,11 +207,9 @@ app.use("/api/admin/announcements", adminAnnouncementRoutes);
 app.use("/api/categories", publicCategoryRoutes);
 app.use("/api/admin/categories", adminCategoryRoutes);
 
-<<<<<<< HEAD
 // Reviews
 app.use("/api/reviews", publicReviewRoutes);
 app.use("/api/admin/reviews", adminReviewRoutes);
-=======
 // ===== Customer Portal =====
 app.use("/api/portal/auth", portalAuthRoutes);
 app.use("/api/portal/products", portalProductRoutes);
@@ -231,7 +229,6 @@ app.use("/api/admin/reports", adminReportsRouter);
 
 // ===== Admin Broadcast Routes =====
 app.use("/api/admin/broadcasts", require("./routes/broadcasts.routes"));
->>>>>>> origin/Portal
 
 // Static
 const buildPath = path.join(__dirname, "..", "client", "build");

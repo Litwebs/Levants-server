@@ -56,6 +56,38 @@ const listCustomersQuerySchema = Joi.object({
   search: Joi.string().trim().min(2).optional(),
 }).unknown(false);
 
+const createCustomerOnboardingLinkSchema = Joi.object({
+  email: Joi.string().trim().email().required(),
+  firstName: Joi.string().trim().min(1).max(100).required(),
+  lastName: Joi.string().trim().min(1).max(100).required(),
+  phone: Joi.string().trim().allow(null, "").optional(),
+  address: addressSchema.optional(),
+  subscription: Joi.object({
+    frequency: Joi.string()
+      .valid("weekly", "every_two_weeks", "monthly")
+      .required(),
+    preferredDeliveryDay: Joi.number().integer().min(0).max(6).required(),
+    preferredDeliveryDays: Joi.array()
+      .items(Joi.number().integer().min(0).max(6))
+      .min(1)
+      .unique()
+      .optional(),
+    items: Joi.array()
+      .items(
+        Joi.object({
+          variantId: Joi.string().hex().length(24).required(),
+          quantity: Joi.number().integer().min(1).required(),
+        }).unknown(false),
+      )
+      .min(1)
+      .required(),
+    notes: Joi.string().trim().max(1000).allow(null, "").optional(),
+  })
+    .unknown(false)
+    .optional(),
+  linkTtlMinutes: Joi.number().integer().min(15).max(10080).optional(),
+}).unknown(false);
+
 const adjustCustomerCreditSchema = Joi.object({
   // Amount in POUNDS; positive adds credit, negative deducts. Non-zero.
   amount: Joi.number().invalid(0).required(),
@@ -66,6 +98,7 @@ module.exports = {
   createCustomerSchema,
   createGuestCustomerSchema,
   updateCustomerSchema,
+  createCustomerOnboardingLinkSchema,
   listCustomersQuerySchema,
   adjustCustomerCreditSchema,
 };

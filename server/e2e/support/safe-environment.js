@@ -75,6 +75,7 @@ function configureSafeEnvironment() {
   // than loading a production mail key into the isolated stack.
   process.env.RESEND_URI = "re_e2e_never_send";
   process.env.RESEND_EMAIL_KEY = "re_e2e_never_send";
+  process.env.E2E_CAPTURE_EMAILS = "1";
   process.env.TZ = process.env.TZ || "Europe/London";
 
   return { source, secretKey, publishableKey };

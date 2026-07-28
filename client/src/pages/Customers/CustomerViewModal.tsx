@@ -6,7 +6,7 @@ import {
   Select,
   Input,
 } from "../../components/common";
-import { Mail, Phone, MapPin, ShoppingBag, Edit2, Wallet } from "lucide-react";
+import { Mail, Phone, MapPin, ShoppingBag, Wallet } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import styles from "./Customers.module.css";
 import { useOrdersApi } from "../../context/Orders";
@@ -27,10 +27,7 @@ const formatCurrency = (amount: unknown) => {
   return `£${n.toFixed(2)}`;
 };
 
-const formatOrderId = (id: string) => {
-  if (!id) return "—";
-  return `#${String(id).slice(-8)}`;
-};
+const formatOrderId = (id: string) => (id ? `#${String(id).slice(-8)}` : "—");
 
 const CREDIT_TYPE_LABELS: Record<CreditTransaction["type"], string> = {
   subscription_refund: "Subscription refund",
@@ -42,13 +39,12 @@ const CREDIT_TYPE_LABELS: Record<CreditTransaction["type"], string> = {
 const formatCredit = (minor: number) =>
   `£${((Number(minor) || 0) / 100).toFixed(2)}`;
 
-const getOrderBadgeVariant = (status: string) => {
-  const s = String(status || "").toLowerCase();
-
-  if (s === "paid" || s === "completed" || s === "delivered") return "success";
-  if (s === "refunded") return "warning";
-  if (s === "cancelled" || s === "canceled" || s === "failed") return "error";
-  if (s) return "info";
+const badgeVariantForStatus = (status: string) => {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "active" || normalized === "paid") return "success";
+  if (normalized === "paused" || normalized === "pending") return "warning";
+  if (normalized === "cancelled" || normalized === "failed") return "error";
+  if (normalized === "refunded") return "warning";
   return "default";
 };
 
@@ -74,7 +70,6 @@ const mapAdminOrderToUi = (order: any) => {
       ? order.customer
       : null;
   const addr = getDefaultAddress(customer);
-
   const customerName = customer
     ? `${customer.firstName ?? ""} ${customer.lastName ?? ""}`.trim() ||
       customer.email
@@ -83,42 +78,34 @@ const mapAdminOrderToUi = (order: any) => {
   return {
     id: order._id,
     orderNumber: order.orderId,
-
     customer: {
       name: customerName,
       email: customer?.email ?? "-",
       phone: customer?.phone ?? "-",
     },
-
     deliveryAddress: {
       line1: addr.line1 ?? "-",
       line2: addr.line2 ?? undefined,
       city: addr.city ?? "-",
       postcode: addr.postcode ?? "-",
     },
-
     deliverySlot: {
       date: order.createdAt,
       timeWindow: "-",
     },
-
     items: (order.items ?? []).map((i: any) => ({
       name: i.name,
       variant: i.sku,
       quantity: i.quantity,
       unitPrice: i.price,
     })),
-
     subtotal: order.subtotal,
     deliveryFee: order.deliveryFee,
     discount: 0,
     total: order.total,
-
     fulfillmentStatus: order.status,
     paymentStatus: order.status,
-
     history: [],
-
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };
@@ -129,13 +116,16 @@ const CustomerViewModal = ({
   isViewModalOpen,
   setIsViewModalOpen,
   listCustomerOrders,
-  handleEditCustomer,
 }: any) => {
-  if (!selectedCustomer) return null;
-
   const { getOrderById, refundOrder } = useOrdersApi();
-  const { getCustomerCredit, adjustCustomerCredit } = useCustomers();
+  const {
+    getCustomerCredit,
+    adjustCustomerCredit,
+    listCustomerSubscriptions,
+    listCustomerPayments,
+  } = useCustomers();
   const { hasPermission } = usePermissions();
+
   const canReadCredit = hasPermission("customers.credit.read");
   const canUpdateCredit = hasPermission("customers.credit.update");
 
@@ -155,8 +145,21 @@ const CustomerViewModal = ({
   const [adjustReason, setAdjustReason] = useState("");
   const [adjustSaving, setAdjustSaving] = useState(false);
 
+  const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+  const [subscriptionsError, setSubscriptionsError] = useState<string | null>(
+    null,
+  );
+
+  const [payments, setPayments] = useState<any[]>([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
+
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [isOrderDetailModalOpen, setIsOrderDetailModalOpen] = useState(false);
+
+  const fullName =
+    `${selectedCustomer?.firstName || ""} ${selectedCustomer?.lastName || ""}`.trim();
 
   const loadCredit = () => {
     if (!selectedCustomer?._id || !canReadCredit) return;
@@ -175,15 +178,113 @@ const CustomerViewModal = ({
       .finally(() => setCreditLoading(false));
   };
 
-  useEffect(() => {
-    if (!isViewModalOpen) return;
+  const loadSubscriptions = () => {
     if (!selectedCustomer?._id) return;
-    if (!canReadCredit) return;
-    loadCredit();
+    setSubscriptionsLoading(true);
+    setSubscriptionsError(null);
+    listCustomerSubscriptions(selectedCustomer._id, { page: 1, pageSize: 5 })
+      .then((res) => {
+        setSubscriptions(
+          Array.isArray(res.subscriptions) ? res.subscriptions : [],
+        );
+      })
+      .catch((e: any) => {
+        setSubscriptions([]);
+        setSubscriptionsError(
+          e?.response?.data?.message || "Failed to load subscriptions",
+        );
+      })
+      .finally(() => setSubscriptionsLoading(false));
+  };
+
+  const loadPayments = () => {
+    if (!selectedCustomer?._id) return;
+    setPaymentsLoading(true);
+    setPaymentsError(null);
+    listCustomerPayments(selectedCustomer._id, { page: 1, pageSize: 5 })
+      .then((res) => {
+        setPayments(Array.isArray(res.payments) ? res.payments : []);
+      })
+      .catch((e: any) => {
+        setPayments([]);
+        setPaymentsError(
+          e?.response?.data?.message || "Failed to load payments",
+        );
+      })
+      .finally(() => setPaymentsLoading(false));
+  };
+
+  useEffect(() => {
+    if (!isViewModalOpen || !selectedCustomer?._id) return;
+    if (canReadCredit) loadCredit();
+    loadSubscriptions();
+    loadPayments();
     setAdjustAmount("");
     setAdjustReason("");
+    setOrdersPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isViewModalOpen, selectedCustomer?._id, canReadCredit]);
+
+  useEffect(() => {
+    if (
+      !isViewModalOpen ||
+      !selectedCustomer?._id ||
+      typeof listCustomerOrders !== "function"
+    )
+      return;
+
+    setOrdersLoading(true);
+    setOrdersError(null);
+
+    listCustomerOrders(selectedCustomer._id, {
+      page: ordersPage,
+      pageSize: ordersPageSize,
+    })
+      .then((res: any) => {
+        setOrders(Array.isArray(res?.orders) ? res.orders : []);
+        setOrdersMeta(res?.meta ?? null);
+        setOrdersStats(res?.stats ?? null);
+      })
+      .catch((e: any) => {
+        setOrders([]);
+        setOrdersMeta(null);
+        setOrdersStats(null);
+        setOrdersError(e?.response?.data?.message || "Failed to load orders");
+      })
+      .finally(() => setOrdersLoading(false));
+  }, [
+    isViewModalOpen,
+    selectedCustomer?._id,
+    listCustomerOrders,
+    ordersPage,
+    ordersPageSize,
+  ]);
+
+  const orderStats = useMemo(
+    () => ({
+      totalOrders: ordersMeta?.total ?? 0,
+      totalSpent: ordersStats?.totalSpent ?? 0,
+      averageOrderValue: ordersStats?.averageOrderValue ?? 0,
+    }),
+    [ordersMeta?.total, ordersStats],
+  );
+
+  const openOrderDetails = async (orderId: string) => {
+    setIsOrderDetailModalOpen(true);
+    setSelectedOrder(null);
+    try {
+      const adminOrder = await getOrderById(orderId);
+      setSelectedOrder(mapAdminOrderToUi(adminOrder));
+    } catch {
+      setIsOrderDetailModalOpen(false);
+    }
+  };
+
+  const refundOrderFromModal = async (orderId: string) => {
+    await refundOrder(orderId);
+    const refreshed = await getOrderById(orderId);
+    setSelectedOrder(mapAdminOrderToUi(refreshed));
+  };
 
   const handleAdjustCredit = async () => {
     if (!selectedCustomer?._id) return;
@@ -216,73 +317,7 @@ const CustomerViewModal = ({
     }
   };
 
-  useEffect(() => {
-    if (!isViewModalOpen) return;
-    setOrdersPage(1);
-  }, [isViewModalOpen, selectedCustomer?._id]);
-
-  useEffect(() => {
-    if (!isViewModalOpen) return;
-    if (!selectedCustomer?._id) return;
-    if (typeof listCustomerOrders !== "function") return;
-
-    setOrdersLoading(true);
-    setOrdersError(null);
-
-    listCustomerOrders(selectedCustomer._id, {
-      page: ordersPage,
-      pageSize: ordersPageSize,
-    })
-      .then((res: any) => {
-        setOrders(Array.isArray(res?.orders) ? res.orders : []);
-        setOrdersMeta(res?.meta ?? null);
-        setOrdersStats(res?.stats ?? null);
-      })
-      .catch((e: any) => {
-        setOrders([]);
-        setOrdersMeta(null);
-        setOrdersStats(null);
-        setOrdersError(e?.response?.data?.message || "Failed to load orders");
-      })
-      .finally(() => setOrdersLoading(false));
-  }, [
-    isViewModalOpen,
-    selectedCustomer?._id,
-    listCustomerOrders,
-    ordersPage,
-    ordersPageSize,
-  ]);
-
-  const ordersTotal = ordersMeta?.total ?? orders.length;
-  const ordersTotalPages = ordersMeta?.totalPages ?? 1;
-
-  const orderStats = useMemo(() => {
-    return {
-      totalOrders: ordersMeta?.total ?? 0,
-      totalSpent: ordersStats?.totalSpent ?? 0,
-      averageOrderValue: ordersStats?.averageOrderValue ?? 0,
-    };
-  }, [ordersMeta?.total, ordersStats]);
-  const fullName = `${selectedCustomer.firstName || ""} ${
-    selectedCustomer.lastName || ""
-  }`.trim();
-
-  const openOrderDetails = async (orderId: string) => {
-    setIsOrderDetailModalOpen(true);
-    setSelectedOrder(null);
-    try {
-      const adminOrder = await getOrderById(orderId);
-      setSelectedOrder(mapAdminOrderToUi(adminOrder));
-    } catch {
-      setIsOrderDetailModalOpen(false);
-    }
-  };
-
-  const refundOrderFromModal = async (orderId: string) => {
-    await refundOrder(orderId);
-    const refreshed = await getOrderById(orderId);
-    setSelectedOrder(mapAdminOrderToUi(refreshed));
-  };
+  if (!selectedCustomer) return null;
 
   return (
     <>
@@ -311,6 +346,11 @@ const CustomerViewModal = ({
                 >
                   {selectedCustomer.isGuest ? "Guest" : "Customer"}
                 </Badge>
+                {selectedCustomer.emailVerifiedAt ? (
+                  <Badge variant="success">Email verified</Badge>
+                ) : (
+                  <Badge variant="warning">Email unverified</Badge>
+                )}
               </div>
             </div>
           </div>
@@ -318,46 +358,36 @@ const CustomerViewModal = ({
           <div className={styles.detailGrid}>
             <div className={styles.detailSection}>
               <h3>Contact Information</h3>
-              <p
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-start",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
+              <p className={styles.contactLine}>
                 <Mail size={16} /> {selectedCustomer.email}
               </p>
-              <p
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-start",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
+              <p className={styles.contactLine}>
                 <Phone size={16} /> {selectedCustomer.phone || "—"}
               </p>
             </div>
 
             <div className={styles.detailSection}>
               <h3>Addresses</h3>
-              {selectedCustomer.addresses.map((addr: any, idx: number) => (
-                <div
-                  key={`${addr.postcode || "addr"}-${idx}`}
-                  className={styles.addressCard}
-                >
-                  <MapPin size={16} />
-                  <div>
-                    <p>{addr.line1}</p>
-                    {addr.line2 && <p>{addr.line2}</p>}
-                    <p>
-                      {addr.city}, {addr.postcode}
-                    </p>
-                    {addr.country && <p>{addr.country}</p>}
+              {selectedCustomer.addresses?.length ? (
+                selectedCustomer.addresses.map((addr: any, idx: number) => (
+                  <div
+                    key={`${addr.postcode || "addr"}-${idx}`}
+                    className={styles.addressCard}
+                  >
+                    <MapPin size={16} />
+                    <div>
+                      <p>{addr.line1}</p>
+                      {addr.line2 && <p>{addr.line2}</p>}
+                      <p>
+                        {addr.city}, {addr.postcode}
+                      </p>
+                      {addr.country && <p>{addr.country}</p>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className={styles.noOrders}>No saved addresses</p>
+              )}
             </div>
           </div>
 
@@ -373,7 +403,6 @@ const CustomerViewModal = ({
                   <span className={styles.summaryLabel}>Total Orders</span>
                 </div>
               </div>
-
               <div className={styles.summaryItem}>
                 <span className={styles.currencyIcon}>£</span>
                 <div>
@@ -383,7 +412,6 @@ const CustomerViewModal = ({
                   <span className={styles.summaryLabel}>Total Spent</span>
                 </div>
               </div>
-
               <div className={styles.summaryItem}>
                 <span className={styles.currencyIcon}>Ø</span>
                 <div>
@@ -394,6 +422,91 @@ const CustomerViewModal = ({
                 </div>
               </div>
             </div>
+          </div>
+
+          <div className={styles.detailSection}>
+            <h3>Subscriptions</h3>
+            {subscriptionsLoading ? (
+              <p className={styles.noOrders}>Loading subscriptions…</p>
+            ) : subscriptionsError ? (
+              <p className={styles.noOrders}>{subscriptionsError}</p>
+            ) : subscriptions.length > 0 ? (
+              <div className={styles.orderHistory}>
+                {subscriptions.map((sub: any) => (
+                  <div key={sub._id} className={styles.orderHistoryItem}>
+                    <div className={styles.orderHistoryMain}>
+                      <span className={styles.orderNumber}>
+                        {sub.subscriptionNumber || String(sub._id).slice(-8)}
+                      </span>
+                      <span className={styles.orderDate}>
+                        {(sub.frequency || "").replace(/_/g, " ")} · Next{" "}
+                        {sub.nextDeliveryDate
+                          ? formatDate(sub.nextDeliveryDate)
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className={styles.orderHistoryMeta}>
+                      <Badge
+                        variant={badgeVariantForStatus(sub.status)}
+                        size="sm"
+                      >
+                        {sub.status || "—"}
+                      </Badge>
+                      <span className={styles.orderAmount}>
+                        {Array.isArray(sub.items)
+                          ? `${sub.items.length} item${sub.items.length === 1 ? "" : "s"}`
+                          : "—"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className={styles.noOrders}>No subscriptions found</p>
+            )}
+          </div>
+
+          <div className={styles.detailSection}>
+            <h3>Payment History</h3>
+            {paymentsLoading ? (
+              <p className={styles.noOrders}>Loading payments…</p>
+            ) : paymentsError ? (
+              <p className={styles.noOrders}>{paymentsError}</p>
+            ) : payments.length > 0 ? (
+              <div className={styles.orderHistory}>
+                {payments.map((payment: any) => (
+                  <div key={payment._id} className={styles.orderHistoryItem}>
+                    <div className={styles.orderHistoryMain}>
+                      <span className={styles.orderNumber}>
+                        {payment.order?.orderId ||
+                          String(payment._id).slice(-8)}
+                      </span>
+                      <span className={styles.orderDate}>
+                        {payment.createdAt
+                          ? formatDate(payment.createdAt)
+                          : "—"}
+                        {payment.subscription?.subscriptionNumber
+                          ? ` · ${payment.subscription.subscriptionNumber}`
+                          : ""}
+                      </span>
+                    </div>
+                    <div className={styles.orderHistoryMeta}>
+                      <Badge
+                        variant={badgeVariantForStatus(payment.status)}
+                        size="sm"
+                      >
+                        {payment.status || "—"}
+                      </Badge>
+                      <span className={styles.orderAmount}>
+                        {formatCurrency(payment.amount)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className={styles.noOrders}>No payments found</p>
+            )}
           </div>
 
           <div className={styles.detailSection}>
@@ -428,7 +541,7 @@ const CustomerViewModal = ({
                     </div>
                     <div className={styles.orderHistoryMeta}>
                       <Badge
-                        variant={getOrderBadgeVariant(order.status)}
+                        variant={badgeVariantForStatus(order.status)}
                         size="sm"
                       >
                         {order.status || "—"}
@@ -448,9 +561,8 @@ const CustomerViewModal = ({
 
             <div className={styles.orderPagination}>
               <div className={styles.orderPaginationInfo}>
-                {ordersTotal ? `Total: ${ordersTotal}` : ""}
+                {ordersMeta?.total ? `Total: ${ordersMeta.total}` : ""}
               </div>
-
               <div className={styles.orderPaginationControls}>
                 <Select
                   className={styles.orderPageSizeSelect}
@@ -466,7 +578,6 @@ const CustomerViewModal = ({
                     { value: "50", label: "50 / page" },
                   ]}
                 />
-
                 <Button
                   variant="outline"
                   size="sm"
@@ -476,14 +587,18 @@ const CustomerViewModal = ({
                   Prev
                 </Button>
                 <span className={styles.orderPageLabel}>
-                  Page {ordersPage} / {ordersTotalPages}
+                  Page {ordersPage} / {ordersMeta?.totalPages ?? 1}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={ordersLoading || ordersPage >= ordersTotalPages}
+                  disabled={
+                    ordersLoading || ordersPage >= (ordersMeta?.totalPages ?? 1)
+                  }
                   onClick={() =>
-                    setOrdersPage((p) => Math.min(ordersTotalPages, p + 1))
+                    setOrdersPage((p) =>
+                      Math.min(ordersMeta?.totalPages ?? 1, p + 1),
+                    )
                   }
                 >
                   Next
@@ -494,13 +609,7 @@ const CustomerViewModal = ({
 
           {canReadCredit && (
             <div className={styles.detailSection}>
-              <h3
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
+              <h3 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <Wallet size={18} /> Store Credit
               </h3>
 

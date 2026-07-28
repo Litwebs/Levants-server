@@ -11,6 +11,9 @@ const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
 const storeCreditService = require("../storeCredit.service");
+const {
+  sendSubscriptionUpdateEmail,
+} = require("./subscriptionEmailNotifications.service");
 
 const STRIPE_INTERVALS = {
   weekly: { interval: "week", interval_count: 1 },
@@ -629,6 +632,15 @@ async function activatePausedSubscription(
     relatedSubscription: subscription._id,
   });
 
+  await sendSubscriptionUpdateEmail({
+    customerId: subscription.customer,
+    subscription,
+    title: notificationTitle,
+    message:
+      notificationMessage ||
+      `Your subscription is active again. Next delivery: ${formatDateLabel(subscription.nextDeliveryDate)}.`,
+  });
+
   return subscription;
 }
 
@@ -726,7 +738,16 @@ async function FinalizeScheduledCancellations({
         },
         { new: true },
       );
-      if (updated) finalized += 1;
+      if (updated) {
+        finalized += 1;
+        await sendSubscriptionUpdateEmail({
+          customerId: updated.customer,
+          subscription: updated,
+          title: "Subscription cancellation completed",
+          message:
+            "Your final protected delivery has passed and your scheduled subscription cancellation is now complete. No further subscription deliveries will be billed.",
+        });
+      }
     } catch (error) {
       console.error(
         `[FinalizeScheduledCancellations] Failed for ${candidate.subscriptionNumber}:`,
@@ -1108,13 +1129,20 @@ async function applyItemChange(
     // and are promoted when that delivery's invoice is paid.
     await syncStripeSubscriptionPrice(subscription, nextItems);
     const enriched = await enrichSubscriptionWithVariantImages(subscription);
+    const message = effectiveFrom
+      ? `Cut-off has passed for your next delivery. This change will apply from ${effectiveFrom.toLocaleDateString(
+          "en-GB",
+        )}.`
+      : "Saved. This change will apply from your next delivery.";
+    await sendSubscriptionUpdateEmail({
+      customer,
+      subscription,
+      title: actionLabel,
+      message,
+    });
     return Response(
       true,
-      effectiveFrom
-        ? `Cut-off has passed for your next delivery. This change will apply from ${effectiveFrom.toLocaleDateString(
-            "en-GB",
-          )}.`
-        : "Saved. This change will apply from your next delivery.",
+      message,
       { subscription: enriched, appliedTo: "next" },
     );
   }
@@ -1142,9 +1170,16 @@ async function applyItemChange(
       paymentIntent: charge.paymentIntent,
     });
     const enriched = await enrichSubscriptionWithVariantImages(subscription);
+    const message = `You've been charged ${formatMinor(deltaMinor)} for the added items on your upcoming delivery, and future invoices have been updated.`;
+    await sendSubscriptionUpdateEmail({
+      customer,
+      subscription,
+      title: actionLabel,
+      message,
+    });
     return Response(
       true,
-      `You've been charged ${formatMinor(deltaMinor)} for the added items on your upcoming delivery, and future invoices have been updated.`,
+      message,
       {
         subscription: enriched,
         appliedTo: "upcoming",
@@ -1223,6 +1258,13 @@ async function applyItemChange(
       message = `We've added ${formatMinor(creditedMinor)} of store credit to your account.`;
     }
 
+    await sendSubscriptionUpdateEmail({
+      customer,
+      subscription,
+      title: actionLabel,
+      message,
+    });
+
     return Response(true, message, {
       subscription: enriched,
       appliedTo: "upcoming",
@@ -1237,6 +1279,12 @@ async function applyItemChange(
   await subscription.save();
   await syncStripeSubscriptionPrice(subscription);
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  await sendSubscriptionUpdateEmail({
+    customer,
+    subscription,
+    title: actionLabel,
+    message: "Your subscription has been updated.",
+  });
   return Response(true, "Your subscription has been updated.", {
     subscription: enriched,
     appliedTo: "upcoming",
@@ -1299,6 +1347,13 @@ async function promotePendingChanges(subscription) {
   if (changed) {
     await subscription.save();
     await syncStripeSubscriptionPrice(subscription);
+    await sendSubscriptionUpdateEmail({
+      customerId: subscription.customer,
+      subscription,
+      title: "Scheduled subscription changes now active",
+      message:
+        "The subscription changes you scheduled after cut-off are now active for your new billing period.",
+    });
   }
   return changed;
 }
@@ -1597,7 +1652,18 @@ async function CreateSubscription({
     relatedSubscription: subscription._id,
   });
 
+  await sendSubscriptionUpdateEmail({
+    customer,
+    subscription,
+    title: "Subscription created",
+    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB")}.`,
+  });
+
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  if (customer.pendingSubscriptionDraft) {
+    customer.pendingSubscriptionDraft = null;
+    await customer.save();
+  }
   return Response(true, "Subscription created", { subscription: enriched });
 }
 /**
@@ -2304,6 +2370,13 @@ async function UpdateSubscription({
     relatedSubscription: subscription._id,
   });
 
+  await sendSubscriptionUpdateEmail({
+    customerId,
+    subscription,
+    title: "Subscription updated",
+    message: updateMessage,
+  });
+
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
   const responseData = {
     subscription: {
@@ -2524,6 +2597,15 @@ async function PauseSubscription({
       pauseResume.resumeDate,
     )}. Deliveries past cut-off remain scheduled; eligible deliveries before the resume date have been skipped.`,
     relatedSubscription: subscription._id,
+  });
+
+  await sendSubscriptionUpdateEmail({
+    customer,
+    subscription,
+    title: "Subscription paused",
+    message: `Your subscription has been paused until ${formatDateLabel(
+      pauseResume.resumeDate,
+    )}. Deliveries past cut-off remain scheduled; eligible deliveries before the resume date have been skipped.`,
   });
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
@@ -2869,6 +2951,24 @@ async function CancelSubscription({
     relatedSubscription: subscription._id,
   });
 
+  const cancellationEmailMessage = hasLockedDeliveries
+    ? refundedMinor > 0 || creditedMinor > 0
+      ? "Your subscription is scheduled for cancellation. Deliveries before cut-off were refunded, and deliveries past cut-off remain scheduled."
+      : "Your subscription is scheduled for cancellation. Deliveries past cut-off remain scheduled and no refund is due."
+    : creditedMinor > 0
+      ? "Your subscription has been cancelled and your upcoming delivery value was added to your store credit balance."
+      : refundedMinor > 0
+        ? "Your subscription has been cancelled and your upcoming delivery value will be refunded to your original card within 3-5 working days."
+        : "Your subscription has been cancelled. No further subscription deliveries will be billed.";
+  await sendSubscriptionUpdateEmail({
+    customer,
+    subscription,
+    title: hasLockedDeliveries
+      ? "Subscription cancellation scheduled"
+      : "Subscription cancelled",
+    message: cancellationEmailMessage,
+  });
+
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
   return Response(
     true,
@@ -3117,6 +3217,16 @@ async function GetSubscriptionSettingsForCustomer() {
   });
 }
 
+async function GetPreparedSubscriptionDraft({ customerId } = {}) {
+  const customer = await Customer.findById(customerId)
+    .select("pendingSubscriptionDraft")
+    .lean();
+  if (!customer) return Response(false, "Customer not found", null);
+  return Response(true, null, {
+    draft: customer.pendingSubscriptionDraft || null,
+  });
+}
+
 module.exports = {
   CreateSubscription,
   ListSubscriptions,
@@ -3132,6 +3242,7 @@ module.exports = {
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,
   GetSubscriptionSettingsForCustomer,
+  GetPreparedSubscriptionDraft,
   calculateNextDeliveryDate,
   addFrequencyDays,
   scheduleUpcomingDeliveries,

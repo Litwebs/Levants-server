@@ -17,12 +17,18 @@ import CustomersReducer, {
 
 import type {
   Customer,
+  CreateCustomerOnboardingLinkPayload,
+  CreateCustomerOnboardingLinkResult,
+  CustomerPayment,
+  CustomerSubscription,
   CustomerAddress,
   Order,
   OrderStats,
   CustomersListMeta,
   CustomersState,
   ListCustomerOrdersResult,
+  ListCustomerPaymentsResult,
+  ListCustomerSubscriptionsResult,
   ListCustomersResult,
 } from "./constants";
 
@@ -73,6 +79,16 @@ type CustomersContextType = {
     params?: { page?: number; pageSize?: number; search?: string },
   ) => Promise<ListCustomerOrdersResult>;
 
+  listCustomerSubscriptions: (
+    customerId: string,
+    params?: { page?: number; pageSize?: number },
+  ) => Promise<ListCustomerSubscriptionsResult>;
+
+  listCustomerPayments: (
+    customerId: string,
+    params?: { page?: number; pageSize?: number },
+  ) => Promise<ListCustomerPaymentsResult>;
+
   getCustomerById: (customerId: string) => Promise<Customer>;
 
   updateCustomer: (
@@ -98,6 +114,10 @@ type CustomersContextType = {
     customerId: string,
     body: { amount: number; reason: string },
   ) => Promise<{ balance: number; transaction: CreditTransaction }>;
+
+  createCustomerOnboardingLink: (
+    payload: CreateCustomerOnboardingLinkPayload,
+  ) => Promise<CreateCustomerOnboardingLinkResult>;
 };
 
 const CustomersContext = createContext<CustomersContextType | null>(null);
@@ -192,6 +212,72 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const listCustomerSubscriptions = useCallback(
+    async (
+      customerId: string,
+      params?: { page?: number; pageSize?: number },
+    ) => {
+      const res = await api.get(
+        `/admin/customers/${customerId}/subscriptions`,
+        {
+          params: {
+            page: params?.page,
+            pageSize: params?.pageSize,
+          },
+        },
+      );
+
+      const envelope = res.data as ApiEnvelope<{
+        subscriptions?: CustomerSubscription[];
+      }>;
+
+      const data = unwrapData<{
+        subscriptions?: CustomerSubscription[];
+      }>(res.data);
+
+      const subscriptions = data?.subscriptions ?? [];
+      const nextMeta =
+        envelope?.meta && typeof envelope.meta === "object"
+          ? (envelope.meta as CustomersListMeta)
+          : null;
+
+      return { subscriptions, meta: nextMeta };
+    },
+    [],
+  );
+
+  const listCustomerPayments = useCallback(
+    async (
+      customerId: string,
+      params?: { page?: number; pageSize?: number },
+    ) => {
+      const res = await api.get(`/admin/payments`, {
+        params: {
+          customerId,
+          page: params?.page,
+          pageSize: params?.pageSize,
+        },
+      });
+
+      const envelope = res.data as ApiEnvelope<{
+        payments?: CustomerPayment[];
+      }>;
+
+      const data = unwrapData<{
+        payments?: CustomerPayment[];
+      }>(res.data);
+
+      const payments = data?.payments ?? [];
+      const nextMeta =
+        envelope?.meta && typeof envelope.meta === "object"
+          ? (envelope.meta as CustomersListMeta)
+          : null;
+
+      return { payments, meta: nextMeta };
+    },
+    [],
+  );
+
   const updateCustomer = useCallback(
     async (
       customerId: string,
@@ -270,6 +356,18 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const createCustomerOnboardingLink = useCallback(
+    async (payload: CreateCustomerOnboardingLinkPayload) => {
+      const res = await api.post("/admin/customers/onboarding-link", payload);
+      const data = unwrapData<CreateCustomerOnboardingLinkResult>(res.data);
+      if (!data?.onboardingLink) {
+        throw new Error("Failed to create onboarding link");
+      }
+      return data;
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       customers: state.customers,
@@ -278,19 +376,25 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
       error: state.error,
       listCustomers,
       listCustomerOrders,
+      listCustomerSubscriptions,
+      listCustomerPayments,
       getCustomerById,
       updateCustomer,
       getCustomerCredit,
       adjustCustomerCredit,
+      createCustomerOnboardingLink,
     }),
     [
       state,
       listCustomers,
       listCustomerOrders,
+      listCustomerSubscriptions,
+      listCustomerPayments,
       getCustomerById,
       updateCustomer,
       getCustomerCredit,
       adjustCustomerCredit,
+      createCustomerOnboardingLink,
     ],
   );
 
