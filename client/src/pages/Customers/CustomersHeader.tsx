@@ -1,20 +1,33 @@
-import { Users, Download } from "lucide-react";
+import { Users, UserPlus } from "lucide-react";
 import { Button } from "../../components/common";
 import styles from "./Customers.module.css";
+import { usePermissions } from "@/hooks/usePermissions";
 
-const CustomersHeader = ({ exportCustomers }: any) => (
-  <div className={styles.header}>
-    <div className={styles.titleSection}>
-      <Users size={28} />
-      <div>
-        <h1 className={styles.title}>Customers</h1>
-        <p className={styles.subtitle}>Manage your customer database</p>
+const CustomersHeader = ({
+  openCreateInviteModal,
+}: {
+  openCreateInviteModal: () => void;
+}) => {
+  const { hasPermission } = usePermissions();
+
+  return (
+    <div className={styles.header}>
+      <div className={styles.titleSection}>
+        <Users size={28} />
+        <div>
+          <h1 className={styles.title}>Customers</h1>
+          <p className={styles.subtitle}>Manage guests and registered accounts</p>
+        </div>
+      </div>
+      <div className={styles.headerActions}>
+        {hasPermission("customers.create") && (
+          <Button variant="primary" onClick={openCreateInviteModal}>
+            <UserPlus size={18} /> Create Customer Link
+          </Button>
+        )}
       </div>
     </div>
-    {/* <Button variant="outline" onClick={exportCustomers}>
-      <Download size={18} /> Export CSV
-    </Button> */}
-  </div>
-);
+  );
+};
 
 export default CustomersHeader;

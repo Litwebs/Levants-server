@@ -221,6 +221,20 @@ async function bulkAssignDeliveryDate(req, res) {
   }
 }
 
+const UpdateDriverNote = async (req, res) => {
+  const result = await service.UpdateDriverNote({
+    orderId: req.params.orderId,
+    driverNote: req.body.driverNote,
+  });
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Failed to update driver note",
+    });
+  }
+  return sendOk(res, result.data);
+};
+
 module.exports = {
   ListOrders,
   GetOrderById,
@@ -232,4 +246,5 @@ module.exports = {
   BulkDeleteOrders,
   BulkUpdateDeliveryStatus,
   bulkAssignDeliveryDate,
+  UpdateDriverNote,
 };

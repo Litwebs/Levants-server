@@ -114,6 +114,13 @@ const orderSchema = new mongoose.Schema(
       default: "",
     },
 
+    driverNote: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null,
+    },
+
     location: {
       lat: { type: Number, required: true },
       lng: { type: Number, required: true },
@@ -144,6 +151,14 @@ const orderSchema = new mongoose.Schema(
     },
 
     discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Store credit applied to this order, in MINOR units (pence).
+    // Redeemed from the customer's balance when the order is paid.
+    creditApplied: {
       type: Number,
       default: 0,
       min: 0,
@@ -199,6 +214,11 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    stripeInvoiceId: {
+      type: String,
+      index: true,
+    },
+
     paidAt: {
       type: Date,
     },
@@ -207,6 +227,31 @@ const orderSchema = new mongoose.Schema(
     amountPaid: {
       type: Number,
       min: 0,
+    },
+
+    // Delivery-level allocation ledger. Multiple delivery orders may share one
+    // Stripe invoice/PaymentIntent, while later modifications can add separate
+    // intents. This ledger keeps each delivery independently auditable without
+    // splitting the customer's bill or transaction.
+    paymentAllocations: {
+      type: [
+        new mongoose.Schema(
+          {
+            paymentIntentId: { type: String, required: true, index: true },
+            stripeInvoiceId: { type: String, default: null, index: true },
+            source: {
+              type: String,
+              enum: ["subscription_invoice", "modification", "resume"],
+              required: true,
+            },
+            amountMinor: { type: Number, required: true, min: 0 },
+            idempotencyKey: { type: String, default: null },
+            createdAt: { type: Date, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
     },
 
     refund: {
@@ -322,9 +367,49 @@ const orderSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+
+    // ===== Customer portal additions =====
+    orderType: {
+      type: String,
+      enum: ["one_time", "subscription_generated"],
+      default: "one_time",
+      index: true,
+    },
+
+    subscription: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Subscription",
+      default: null,
+      index: true,
+    },
+
+    // Delivery status extended for portal (extends existing deliveryStatus)
+    // We keep the existing deliveryStatus field and add portal-specific delivery tracking
+    portalDeliveryStatus: {
+      type: String,
+      enum: [
+        "scheduled",
+        "preparing",
+        "out_for_delivery",
+        "delivered",
+        "failed",
+        "rescheduled",
+        "cancelled",
+      ],
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
+  },
+);
+
+orderSchema.index(
+  { stripeInvoiceId: 1, subscription: 1, deliveryDate: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { stripeInvoiceId: { $type: "string" } },
   },
 );
 

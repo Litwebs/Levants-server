@@ -15,6 +15,9 @@ const createOrderSchema = Joi.object({
 
   discountCode: Joi.string().trim().uppercase().min(3).max(32).optional(),
 
+  // Store credit to apply, in MINOR units (pence).
+  creditToApplyMinor: Joi.number().integer().min(0).optional(),
+
   deliveryAddress: deliveryAddressSchema.required(),
 
   customerInstructions: Joi.string()

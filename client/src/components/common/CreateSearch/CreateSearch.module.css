@@ -1,0 +1,72 @@
+.root {
+  position: relative;
+  width: 100%;
+}
+
+.clearBtn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--color-gray-500);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.suggestions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: var(--z-popover);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.stateRow,
+.stateRowError {
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+.stateRowError {
+  color: var(--color-error);
+}
+
+.optionBtn {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.optionBtn:hover {
+  background: var(--color-gray-50);
+}
+
+.optionBtnSelected {
+  background: var(--color-primary-bg);
+}
+
+.optionTitle {
+  font-size: var(--text-sm);
+  color: var(--color-gray-800);
+}
+
+.optionSubtitle {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}

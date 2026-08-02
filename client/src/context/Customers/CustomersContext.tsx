@@ -17,12 +17,18 @@ import CustomersReducer, {
 
 import type {
   Customer,
+  CreateCustomerOnboardingLinkPayload,
+  CreateCustomerOnboardingLinkResult,
+  CustomerPayment,
+  CustomerSubscription,
   CustomerAddress,
   Order,
   OrderStats,
   CustomersListMeta,
   CustomersState,
   ListCustomerOrdersResult,
+  ListCustomerPaymentsResult,
+  ListCustomerSubscriptionsResult,
   ListCustomersResult,
 } from "./constants";
 
@@ -42,6 +48,20 @@ const unwrapData = <T,>(payload: unknown): T | null => {
   return payload as T;
 };
 
+export type CreditTransaction = {
+  _id: string;
+  /** Signed amount in MINOR units (pence). */
+  amount: number;
+  balanceAfter: number;
+  type:
+    | "subscription_refund"
+    | "order_redemption"
+    | "order_redemption_reversal"
+    | "admin_adjustment";
+  reason?: string | null;
+  createdAt: string;
+};
+
 type CustomersContextType = {
   customers: CustomersState["customers"];
   meta: CustomersState["meta"];
@@ -52,6 +72,8 @@ type CustomersContextType = {
     page?: number;
     pageSize?: number;
     search?: string;
+    type?: "all" | "guest" | "registered";
+    sort?: "newest" | "oldest" | "name-asc" | "name-desc";
   }) => Promise<ListCustomersResult>;
 
   listCustomerOrders: (
@@ -59,17 +81,47 @@ type CustomersContextType = {
     params?: { page?: number; pageSize?: number; search?: string },
   ) => Promise<ListCustomerOrdersResult>;
 
+  listCustomerSubscriptions: (
+    customerId: string,
+    params?: { page?: number; pageSize?: number },
+  ) => Promise<ListCustomerSubscriptionsResult>;
+
+  listCustomerPayments: (
+    customerId: string,
+    params?: { page?: number; pageSize?: number },
+  ) => Promise<ListCustomerPaymentsResult>;
+
   getCustomerById: (customerId: string) => Promise<Customer>;
 
   updateCustomer: (
     customerId: string,
     body: {
+      email?: string;
       firstName?: string;
       lastName?: string;
       phone?: string | null;
+      status?: "active" | "disabled";
       address?: CustomerAddress;
     },
   ) => Promise<Customer>;
+
+  getCustomerCredit: (
+    customerId: string,
+    params?: { page?: number; pageSize?: number },
+  ) => Promise<{
+    balance: number;
+    transactions: CreditTransaction[];
+    meta: CustomersListMeta | null;
+  }>;
+
+  adjustCustomerCredit: (
+    customerId: string,
+    body: { amount: number; reason: string },
+  ) => Promise<{ balance: number; transaction: CreditTransaction }>;
+
+  createCustomerOnboardingLink: (
+    payload: CreateCustomerOnboardingLinkPayload,
+  ) => Promise<CreateCustomerOnboardingLinkResult>;
 };
 
 const CustomersContext = createContext<CustomersContextType | null>(null);
@@ -78,7 +130,13 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(CustomersReducer, initialCustomersState);
 
   const listCustomers = useCallback(
-    async (params?: { page?: number; pageSize?: number; search?: string }) => {
+    async (params?: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      type?: "all" | "guest" | "registered";
+      sort?: "newest" | "oldest" | "name-asc" | "name-desc";
+    }) => {
       dispatch({ type: CUSTOMERS_REQUEST });
       try {
         const res = await api.get("/admin/customers", {
@@ -86,6 +144,8 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
             page: params?.page,
             pageSize: params?.pageSize,
             search: params?.search,
+            type: params?.type,
+            sort: params?.sort,
           },
         });
 
@@ -164,13 +224,81 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const listCustomerSubscriptions = useCallback(
+    async (
+      customerId: string,
+      params?: { page?: number; pageSize?: number },
+    ) => {
+      const res = await api.get(
+        `/admin/customers/${customerId}/subscriptions`,
+        {
+          params: {
+            page: params?.page,
+            pageSize: params?.pageSize,
+          },
+        },
+      );
+
+      const envelope = res.data as ApiEnvelope<{
+        subscriptions?: CustomerSubscription[];
+      }>;
+
+      const data = unwrapData<{
+        subscriptions?: CustomerSubscription[];
+      }>(res.data);
+
+      const subscriptions = data?.subscriptions ?? [];
+      const nextMeta =
+        envelope?.meta && typeof envelope.meta === "object"
+          ? (envelope.meta as CustomersListMeta)
+          : null;
+
+      return { subscriptions, meta: nextMeta };
+    },
+    [],
+  );
+
+  const listCustomerPayments = useCallback(
+    async (
+      customerId: string,
+      params?: { page?: number; pageSize?: number },
+    ) => {
+      const res = await api.get(`/admin/payments`, {
+        params: {
+          customerId,
+          page: params?.page,
+          pageSize: params?.pageSize,
+        },
+      });
+
+      const envelope = res.data as ApiEnvelope<{
+        payments?: CustomerPayment[];
+      }>;
+
+      const data = unwrapData<{
+        payments?: CustomerPayment[];
+      }>(res.data);
+
+      const payments = data?.payments ?? [];
+      const nextMeta =
+        envelope?.meta && typeof envelope.meta === "object"
+          ? (envelope.meta as CustomersListMeta)
+          : null;
+
+      return { payments, meta: nextMeta };
+    },
+    [],
+  );
+
   const updateCustomer = useCallback(
     async (
       customerId: string,
       body: {
+        email?: string;
         firstName?: string;
         lastName?: string;
         phone?: string | null;
+        status?: "active" | "disabled";
         address?: CustomerAddress;
       },
     ) => {
@@ -195,6 +323,65 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const getCustomerCredit = useCallback(
+    async (
+      customerId: string,
+      params?: { page?: number; pageSize?: number },
+    ) => {
+      const res = await api.get(`/admin/customers/${customerId}/credit`, {
+        params: {
+          page: params?.page,
+          pageSize: params?.pageSize,
+        },
+      });
+      const data = unwrapData<{
+        balance: number;
+        transactions: CreditTransaction[];
+      }>(res.data);
+      const meta = (res.data as ApiEnvelope<unknown>)
+        ?.meta as CustomersListMeta | null;
+      return {
+        balance: Number(data?.balance || 0),
+        transactions: Array.isArray(data?.transactions)
+          ? data!.transactions
+          : [],
+        meta: meta ?? null,
+      };
+    },
+    [],
+  );
+
+  const adjustCustomerCredit = useCallback(
+    async (customerId: string, body: { amount: number; reason: string }) => {
+      const res = await api.post(
+        `/admin/customers/${customerId}/credit/adjust`,
+        body,
+      );
+      const data = unwrapData<{
+        balance: number;
+        transaction: CreditTransaction;
+      }>(res.data);
+      if (!data) throw new Error("Failed to adjust credit");
+      return {
+        balance: Number(data.balance || 0),
+        transaction: data.transaction,
+      };
+    },
+    [],
+  );
+
+  const createCustomerOnboardingLink = useCallback(
+    async (payload: CreateCustomerOnboardingLinkPayload) => {
+      const res = await api.post("/admin/customers/onboarding-link", payload);
+      const data = unwrapData<CreateCustomerOnboardingLinkResult>(res.data);
+      if (!data?.onboardingLink) {
+        throw new Error("Failed to create onboarding link");
+      }
+      return data;
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       customers: state.customers,
@@ -203,10 +390,26 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
       error: state.error,
       listCustomers,
       listCustomerOrders,
+      listCustomerSubscriptions,
+      listCustomerPayments,
       getCustomerById,
       updateCustomer,
+      getCustomerCredit,
+      adjustCustomerCredit,
+      createCustomerOnboardingLink,
     }),
-    [state, listCustomers, listCustomerOrders, getCustomerById, updateCustomer],
+    [
+      state,
+      listCustomers,
+      listCustomerOrders,
+      listCustomerSubscriptions,
+      listCustomerPayments,
+      getCustomerById,
+      updateCustomer,
+      getCustomerCredit,
+      adjustCustomerCredit,
+      createCustomerOnboardingLink,
+    ],
   );
 
   return (

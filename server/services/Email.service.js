@@ -7,11 +7,16 @@ const {
   getLogoCidSrc,
   getLogoDataUri,
 } = require("../Templates/logoAttachment");
+const {
+  getEmailBranding,
+  applyEmailBranding,
+  withBusinessTemplateParams,
+} = require("./emailBranding.service");
 
 const resend = new Resend(RESEND_EMAIL_KEY);
 
 const FALLBACK_LOGO_URL =
-  "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png";
+  "https://res.cloudinary.com/deonzcviy/image/upload/v1782736410/logo_tpfgpa.png";
 
 const DEFAULT_FROM = "no-reply@litwebs.co.uk";
 const DEFAULT_FALLBACK_FROM = "contact@litwebs.co.uk";
@@ -60,7 +65,12 @@ const sendEmail = async (
   }
 
   try {
-    resolvedLogoSrc = String(templateParams.logoSrc || "").trim();
+    const branding = await getEmailBranding();
+    resolvedLogoSrc = String(branding.logoSrc || "").trim();
+
+    if (!resolvedLogoSrc) {
+      resolvedLogoSrc = String(templateParams.logoSrc || "").trim();
+    }
 
     if (!resolvedLogoSrc) {
       const envLogoUrl = String(process.env.EMAIL_LOGO_URL || "").trim();
@@ -75,10 +85,12 @@ const sendEmail = async (
 
     if (!resolvedLogoSrc) resolvedLogoSrc = FALLBACK_LOGO_URL;
 
-    htmlContent = templateFunction(
-      resolvedLogoSrc
-        ? { ...templateParams, logoSrc: resolvedLogoSrc }
-        : { ...templateParams },
+    htmlContent = applyEmailBranding(
+      templateFunction(
+        withBusinessTemplateParams(templateParams, branding, resolvedLogoSrc),
+      ),
+      branding,
+      resolvedLogoSrc,
     );
 
     const payload = { from, to, subject, html: htmlContent };

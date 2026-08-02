@@ -36,6 +36,12 @@ const businessInfoSchema = new mongoose.Schema(
       maxlength: 500,
     },
 
+    logo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "File",
+      default: null,
+    },
+
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

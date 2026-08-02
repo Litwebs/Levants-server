@@ -285,4 +285,17 @@ module.exports = {
   GetOrderById,
   UpdateOrderPaymentStatus,
   UpdateOrderItems,
+  UpdateDriverNote,
 };
+
+async function UpdateDriverNote({ orderId, driverNote } = {}) {
+  const order = await Order.findById(orderId);
+  if (!order)
+    return { success: false, statusCode: 404, message: "Order not found" };
+
+  order.driverNote =
+    typeof driverNote === "string" ? driverNote.trim() || null : null;
+  await order.save();
+  await order.populate("customer");
+  return { success: true, data: order };
+}

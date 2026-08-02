@@ -6,11 +6,16 @@ const {
   getInlineLogoAttachment,
   getLogoDataUri,
 } = require("../Templates/logoAttachment");
+const {
+  getEmailBranding,
+  applyEmailBranding,
+  withBusinessTemplateParams,
+} = require("../services/emailBranding.service");
 
 const resend = new Resend(RESEND_EMAIL_KEY);
 
 const FALLBACK_LOGO_URL =
-  "https://res.cloudinary.com/dkrzhzr4t/image/upload/v1771166319/litwebs/variants/thumbnails/76bfa026-a03c-476c-b481-a07faf8f09de_ofh3ki.png";
+  "https://res.cloudinary.com/deonzcviy/image/upload/v1777833005/logo_znwpja.png";
 
 const DEFAULT_FROM = "no-reply@levantsdairy.co.uk";
 const DEFAULT_FALLBACK_FROM = "contact@levantsdairy.co.uk";
@@ -43,12 +48,14 @@ function chunkArray(arr, size) {
   return out;
 }
 
-function buildFrom(options = null) {
+function buildFrom(options = null, branding = null) {
   let from = DEFAULT_FROM;
 
   if (options && typeof options === "object") {
     const requestedFromEmail = String(options.fromEmail || "").trim();
-    const fromName = String(options.fromName || "").trim();
+    const fromName =
+      String(branding?.companyName || "").trim() ||
+      String(options.fromName || "").trim();
     const fallbackFrom = String(
       options.fallbackFrom || DEFAULT_FALLBACK_FROM,
     ).trim();
@@ -60,11 +67,19 @@ function buildFrom(options = null) {
     from = fromName ? `${fromName} <${chosenFromEmail}>` : chosenFromEmail;
   }
 
+  if (!options && branding?.companyName) {
+    return `${branding.companyName} <${from}>`;
+  }
+
   return from;
 }
 
-function resolveLogoSrc(templateParams = {}) {
-  let resolvedLogoSrc = String(templateParams.logoSrc || "").trim();
+function resolveLogoSrc(templateParams = {}, branding = null) {
+  let resolvedLogoSrc = String(branding?.logoSrc || "").trim();
+
+  if (!resolvedLogoSrc) {
+    resolvedLogoSrc = String(templateParams.logoSrc || "").trim();
+  }
 
   if (!resolvedLogoSrc) {
     const envLogoUrl = String(process.env.EMAIL_LOGO_URL || "").trim();
@@ -101,18 +116,31 @@ function renderEmailTemplate(
   TempName = "welcomeEmail",
   templateParams = {},
   options = null,
+  branding = null,
 ) {
   const templateFunction = emailTemplates[TempName];
   if (!templateFunction) {
     throw new Error(`Email template "${TempName}" not found.`);
   }
 
-  const resolvedLogoSrc = resolveLogoSrc(templateParams);
+  const resolvedLogoSrc = resolveLogoSrc(templateParams, branding);
 
-  const html = templateFunction(
-    resolvedLogoSrc
-      ? { ...templateParams, logoSrc: resolvedLogoSrc }
-      : { ...templateParams },
+  const resolvedBranding = branding || {
+    companyName: "Levants Dairy",
+    email: "levantsdairy1@gmail.com",
+    phone: "",
+    address: "",
+  };
+  const html = applyEmailBranding(
+    templateFunction(
+      withBusinessTemplateParams(
+        templateParams,
+        resolvedBranding,
+        resolvedLogoSrc,
+      ),
+    ),
+    resolvedBranding,
+    resolvedLogoSrc,
   );
 
   const attachments = buildAttachments(options, resolvedLogoSrc);
@@ -124,9 +152,16 @@ function renderEmailTemplate(
   };
 }
 
-function buildBasePayload({ to, subject, html, attachments, options = null }) {
+function buildBasePayload({
+  to,
+  subject,
+  html,
+  attachments,
+  options = null,
+  branding = null,
+}) {
   const payload = {
-    from: buildFrom(options),
+    from: buildFrom(options, branding),
     to,
     subject,
     html,
@@ -142,6 +177,10 @@ function buildBasePayload({ to, subject, html, attachments, options = null }) {
     if (options.bcc) payload.bcc = options.bcc;
   }
 
+  if (!payload.reply_to && branding?.email) {
+    payload.reply_to = branding.email;
+  }
+
   return payload;
 }
 
@@ -153,10 +192,12 @@ async function sendEmail(
   options = null,
 ) {
   try {
+    const branding = await getEmailBranding();
     const { html, attachments } = renderEmailTemplate(
       TempName,
       templateParams,
       options,
+      branding,
     );
 
     const payload = buildBasePayload({
@@ -165,7 +206,19 @@ async function sendEmail(
       html,
       attachments,
       options,
+      branding,
     });
+
+    if (process.env.E2E_CAPTURE_EMAILS === "1") {
+      global.__E2E_EMAIL_OUTBOX__ = global.__E2E_EMAIL_OUTBOX__ || [];
+      global.__E2E_EMAIL_OUTBOX__.push({
+        ...payload,
+        template: TempName,
+        templateParams,
+        capturedAt: new Date().toISOString(),
+      });
+      return { success: true, response: { id: `e2e-email-${global.__E2E_EMAIL_OUTBOX__.length}` } };
+    }
 
     const response = await resend.emails.send(payload);
     return { success: true, response };
@@ -196,6 +249,7 @@ async function sendBatchEmails(
   jobs = [],
   { chunkSize = 100, maxAttempts = 3, baseDelayMs = 750 } = {},
 ) {
+  const branding = await getEmailBranding();
   const chunks = chunkArray(jobs, chunkSize);
   const allResults = [];
 
@@ -213,6 +267,7 @@ async function sendBatchEmails(
             job.template,
             job.templateParams,
             job.options,
+            branding,
           );
 
           const item = buildBasePayload({
@@ -221,6 +276,7 @@ async function sendBatchEmails(
             html,
             attachments,
             options: job.options,
+            branding,
           });
 
           if (job.tags) item.tags = job.tags;

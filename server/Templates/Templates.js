@@ -11,6 +11,8 @@ const orderDispatched = require("./orderDispatched");
 const outOfStockAlert = require("./outOfStockAlert");
 const refundConfirmation = require("./refundConfirmation");
 const userInvitation = require("./userInvitation");
+const serviceAnnouncement = require("./serviceAnnouncement");
+const subscriptionUpdate = require("./subscriptionUpdate");
 
 const emailTemplates = {
   resetPassword,
@@ -25,6 +27,8 @@ const emailTemplates = {
   orderDispatched,
   refundConfirmation,
   userInvitation,
+  serviceAnnouncement,
+  subscriptionUpdate,
 };
 
 module.exports = emailTemplates;

@@ -1,23 +1,37 @@
+import { UserCheck, UserRound, Users } from "lucide-react";
 import { Card } from "../../components/common";
 import styles from "./Customers.module.css";
 
-const CustomersStats = ({ stats }: any) => (
+type CustomerStats = {
+  total: number;
+  registered: number;
+  guests: number;
+};
+
+const CustomersStats = ({ stats, loading }: { stats: CustomerStats; loading: boolean }) => (
   <div className={styles.statsGrid}>
     <Card className={styles.statCard}>
-      <span className={styles.statLabel}>Total Customers</span>
-      <span className={styles.statValue}>{stats.total}</span>
+      <span className={styles.statIcon}><Users size={20} /></span>
+      <div>
+        <span className={styles.statLabel}>Total customers</span>
+        <span className={styles.statValue}>{loading && stats.total === 0 ? "—" : stats.total.toLocaleString()}</span>
+      </div>
     </Card>
 
     <Card className={styles.statCard}>
-      <span className={styles.statLabel}>Marketing Opt-In</span>
-      <span className={styles.statValue}>{stats.withMarketing}</span>
+      <span className={`${styles.statIcon} ${styles.registeredIcon}`}><UserCheck size={20} /></span>
+      <div>
+        <span className={styles.statLabel}>Registered accounts</span>
+        <span className={styles.statValue}>{loading && stats.total === 0 ? "—" : stats.registered.toLocaleString()}</span>
+      </div>
     </Card>
 
     <Card className={styles.statCard}>
-      <span className={styles.statLabel}>Total Revenue</span>
-      <span className={styles.statValue}>
-        £{Number(stats.totalRevenue || 0).toFixed(2)}
-      </span>
+      <span className={`${styles.statIcon} ${styles.guestIcon}`}><UserRound size={20} /></span>
+      <div>
+        <span className={styles.statLabel}>Guest customers</span>
+        <span className={styles.statValue}>{loading && stats.total === 0 ? "—" : stats.guests.toLocaleString()}</span>
+      </div>
     </Card>
   </div>
 );

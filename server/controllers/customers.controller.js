@@ -63,6 +63,8 @@ const ListCustomers = async (req, res) => {
     page: Number(req.query.page) || 1,
     pageSize: Number(req.query.pageSize) || 20,
     search: req.query.search,
+    type: req.query.type,
+    sort: req.query.sort,
   });
 
   if (!result.success) {
@@ -73,6 +75,25 @@ const ListCustomers = async (req, res) => {
   }
 
   return sendOk(res, result.data, { meta: result.meta });
+};
+
+/**
+ * Create customer onboarding link (admin)
+ */
+const CreateCustomerOnboardingLink = async (req, res) => {
+  const result = await service.CreateCustomerOnboardingLink({
+    ...req.body,
+    actorUserId: req.user?.id || req.user?._id,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendCreated(res, result.data, { message: result.message });
 };
 
 /**
@@ -117,8 +138,91 @@ const ListOrdersByCustomer = async (req, res) => {
 module.exports = {
   CreateCustomer,
   CreateGuestCustomer,
+  CreateCustomerOnboardingLink,
   GetCustomerById,
   ListCustomers,
   UpdateCustomer,
   ListOrdersByCustomer,
+  ListSubscriptionsByCustomer,
+  ListSupportRequestsByCustomer,
+  GetCustomerCredit,
+  AdjustCustomerCredit,
 };
+
+/**
+ * Get a customer's store-credit balance + ledger history (admin)
+ */
+async function GetCustomerCredit(req, res) {
+  const result = await service.GetCustomerCredit({
+    customerId: req.params.customerId,
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 20,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message,
+    });
+  }
+
+  return sendOk(res, result.data, { meta: result.meta });
+}
+
+/**
+ * Manually adjust a customer's store credit (admin). `amount` is in POUNDS and
+ * may be negative to deduct.
+ */
+async function AdjustCustomerCredit(req, res) {
+  const result = await service.AdjustCustomerCredit({
+    customerId: req.params.customerId,
+    amount: req.body.amount,
+    reason: req.body.reason,
+    actorUserId: req.user?._id || req.user?.id || null,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message,
+    });
+  }
+
+  return sendOk(res, result.data);
+}
+
+async function ListSubscriptionsByCustomer(req, res) {
+  const Subscription = require("../models/subscription.model");
+  const { sendOk } = require("../utils/response.util");
+  const { customerId } = req.params;
+  const page = Number(req.query.page) || 1;
+  const pageSize = Number(req.query.pageSize) || 20;
+
+  const total = await Subscription.countDocuments({ customer: customerId });
+  const subscriptions = await Subscription.find({ customer: customerId })
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .lean();
+
+  return sendOk(res, { subscriptions }, { meta: { page, pageSize, total } });
+}
+
+async function ListSupportRequestsByCustomer(req, res) {
+  const SupportRequest = require("../models/supportRequest.model");
+  const { sendOk } = require("../utils/response.util");
+  const { customerId } = req.params;
+  const page = Number(req.query.page) || 1;
+  const pageSize = Number(req.query.pageSize) || 20;
+
+  const total = await SupportRequest.countDocuments({ customer: customerId });
+  const requests = await SupportRequest.find({ customer: customerId })
+    .populate("relatedOrder", "orderId status")
+    .populate("relatedSubscription", "subscriptionNumber status")
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .lean();
+
+  return sendOk(res, { requests }, { meta: { page, pageSize, total } });
+}

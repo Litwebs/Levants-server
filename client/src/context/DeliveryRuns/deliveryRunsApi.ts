@@ -247,11 +247,12 @@ const mapStops = (stops: any[]): RouteStop[] => {
       orderIsStripeBacked,
       navigationUrl:
         typeof s?.navigationUrl === "string" ? s.navigationUrl : undefined,
-      notes:
-        typeof order?.customerInstructions === "string" &&
-        order.customerInstructions.trim().length > 0
-          ? order.customerInstructions.trim()
-          : undefined,
+      notes: (() => {
+        const dn = typeof order?.driverNote === "string" && order.driverNote.trim() ? order.driverNote.trim() : null;
+        const ci = typeof order?.customerInstructions === "string" && order.customerInstructions.trim() ? order.customerInstructions.trim() : null;
+        if (dn && ci) return `${dn} — ${ci}`;
+        return dn || ci || undefined;
+      })(),
       eta: s.estimatedArrival
         ? new Date(s.estimatedArrival).toISOString()
         : undefined,

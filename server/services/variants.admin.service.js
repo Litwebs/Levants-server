@@ -237,6 +237,13 @@ async function UpdateVariant({ variantId, body, userId }) {
 
   // Normal updates
   if (body.name !== undefined) variant.name = body.name;
+  if (body.description !== undefined)
+    variant.description = body.description || null;
+  if (body.ingredients !== undefined)
+    variant.ingredients = body.ingredients || null;
+  if (body.allergens !== undefined) variant.allergens = body.allergens;
+  if (body.nutritionalInformation !== undefined)
+    variant.nutritionalInformation = body.nutritionalInformation || null;
   if (body.sku !== undefined) variant.sku = body.sku;
   if (body.stockQuantity !== undefined)
     variant.stockQuantity = body.stockQuantity;

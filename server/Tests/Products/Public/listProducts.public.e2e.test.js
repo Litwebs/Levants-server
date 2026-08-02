@@ -41,12 +41,20 @@ async function createVariant({
   status = "active",
   sku,
   price = 2.5,
+  description,
+  ingredients,
+  allergens,
+  nutritionalInformation,
 } = {}) {
   const thumb = await createFile();
   const now = Date.now();
   return Variant.create({
     product: productId,
     name: `Variant ${now}`,
+    description,
+    ingredients,
+    allergens,
+    nutritionalInformation,
     sku: sku || `SKU-${now}-${Math.floor(Math.random() * 1000)}`,
     price,
     stockQuantity: 10,
@@ -134,6 +142,35 @@ describe("GET /api/products (PUBLIC)", () => {
     const res = await request(app).get("/api/products");
 
     expect(JSON.stringify(res.body)).not.toContain("stripe");
+  });
+
+  test("returns variant-specific product information", async () => {
+    const product = await createProduct({ name: "Variant Information" });
+    const variant = await createVariant({
+      productId: product._id,
+      sku: `INFO-${Date.now()}`,
+      description: "Description for this size",
+      ingredients: "Milk, cultures",
+      allergens: ["Milk"],
+      nutritionalInformation: "Protein: 4g per 100ml",
+    });
+
+    const res = await request(app).get("/api/products");
+
+    expect(res.status).toBe(200);
+    const item = (res.body.data.items || []).find(
+      (candidate) => String(candidate.id) === String(product._id),
+    );
+    const responseVariant = item?.variants?.find(
+      (candidate) => String(candidate.id) === String(variant._id),
+    );
+
+    expect(responseVariant).toMatchObject({
+      description: "Description for this size",
+      ingredients: "Milk, cultures",
+      allergens: ["Milk"],
+      nutritionalInformation: "Protein: 4g per 100ml",
+    });
   });
 
   test("supports comma-separated category filter", async () => {

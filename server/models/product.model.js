@@ -67,6 +67,18 @@ const productSchema = new mongoose.Schema(
       },
       default: [],
     },
+    // ===== Customer portal additions =====
+    isSubscriptionEligible: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+
+    isFeatured: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

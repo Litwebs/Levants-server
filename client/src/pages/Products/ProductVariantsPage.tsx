@@ -56,6 +56,10 @@ import VariantDeleteModal from "./Models/VariantDeleteModal";
 
 type VariantForm = {
   name: string;
+  description: string;
+  ingredients: string;
+  allergens: string;
+  nutritionalInformation: string;
   sku: string;
   price: number | undefined;
   stockQuantity: number | undefined;
@@ -66,6 +70,10 @@ type VariantForm = {
 
 const emptyCreateForm = (): VariantForm => ({
   name: "",
+  description: "",
+  ingredients: "",
+  allergens: "",
+  nutritionalInformation: "",
   sku: "",
   price: 0,
   stockQuantity: 0,
@@ -73,6 +81,12 @@ const emptyCreateForm = (): VariantForm => ({
   status: "active",
   thumbnailImage: { _id: "", url: "" },
 });
+
+const parseAllergens = (value: string) =>
+  value
+    .split(",")
+    .map((allergen) => allergen.trim())
+    .filter(Boolean);
 
 const VariantViewModal = ({
   isOpen,
@@ -123,6 +137,25 @@ const VariantViewModal = ({
             <FormValue
               label="Low Stock Alert"
               value={variant.lowStockAlert ?? 0}
+            />
+          </FormGrid>
+        </FormSection>
+
+        <FormSection title="Product Information">
+          <FormGrid>
+            <FormValue label="Description" value={variant.description} />
+            <FormValue label="Ingredients" value={variant.ingredients} />
+            <FormValue
+              label="Allergens"
+              value={
+                variant.allergens === undefined
+                  ? "Uses product default"
+                  : variant.allergens.join(", ") || "None"
+              }
+            />
+            <FormValue
+              label="Nutritional Information"
+              value={variant.nutritionalInformation}
             />
           </FormGrid>
         </FormSection>
@@ -264,6 +297,63 @@ const VariantCreateModal = ({
           </select>
         </FormRow>
 
+        <FormSection title="Product Information">
+          <FormGrid>
+            <FormRow label="Description" htmlFor="variant-description">
+              <textarea
+                id="variant-description"
+                rows={3}
+                value={form.description}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, description: e.target.value }))
+                }
+                placeholder="Description shown for this variant"
+              />
+            </FormRow>
+
+            <FormRow label="Ingredients" htmlFor="variant-ingredients">
+              <textarea
+                id="variant-ingredients"
+                rows={3}
+                value={form.ingredients}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, ingredients: e.target.value }))
+                }
+                placeholder="Ingredients for this variant"
+              />
+            </FormRow>
+
+            <FormRow label="Allergens" htmlFor="variant-allergens">
+              <input
+                id="variant-allergens"
+                value={form.allergens}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, allergens: e.target.value }))
+                }
+                placeholder="Comma-separated (e.g. Milk, Nuts)"
+              />
+            </FormRow>
+
+            <FormRow
+              label="Nutritional Information"
+              htmlFor="variant-nutrition"
+            >
+              <textarea
+                id="variant-nutrition"
+                rows={5}
+                value={form.nutritionalInformation}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    nutritionalInformation: e.target.value,
+                  }))
+                }
+                placeholder="Nutritional information for this variant"
+              />
+            </FormRow>
+          </FormGrid>
+        </FormSection>
+
         <FormSection title="Thumbnail Image">
           <div className={styles.thumbnailUpload}>
             {getImageUrl(form.thumbnailImage) ? (
@@ -362,6 +452,13 @@ const VariantEditModal = ({
     if (!isOpen || !variant) return;
     setPatch({
       name: variant.name,
+      description: variant.description ?? "",
+      ingredients: variant.ingredients ?? "",
+      allergens:
+        variant.allergens === undefined
+          ? undefined
+          : variant.allergens.join(", "),
+      nutritionalInformation: variant.nutritionalInformation ?? "",
       sku: variant.sku,
       price: variant.price,
       stockQuantity: variant.stockQuantity,
@@ -486,6 +583,64 @@ const VariantEditModal = ({
             <option value="inactive">inactive</option>
           </select>
         </FormRow>
+
+        <FormSection title="Product Information">
+          <FormGrid>
+            <FormRow label="Description" htmlFor="edit-variant-description">
+              <textarea
+                id="edit-variant-description"
+                rows={3}
+                value={patch.description ?? ""}
+                disabled={!canUpdateVariant}
+                onChange={(e) =>
+                  setPatch((p) => ({ ...p, description: e.target.value }))
+                }
+              />
+            </FormRow>
+
+            <FormRow label="Ingredients" htmlFor="edit-variant-ingredients">
+              <textarea
+                id="edit-variant-ingredients"
+                rows={3}
+                value={patch.ingredients ?? ""}
+                disabled={!canUpdateVariant}
+                onChange={(e) =>
+                  setPatch((p) => ({ ...p, ingredients: e.target.value }))
+                }
+              />
+            </FormRow>
+
+            <FormRow label="Allergens" htmlFor="edit-variant-allergens">
+              <input
+                id="edit-variant-allergens"
+                value={patch.allergens ?? ""}
+                disabled={!canUpdateVariant}
+                onChange={(e) =>
+                  setPatch((p) => ({ ...p, allergens: e.target.value }))
+                }
+                placeholder="Comma-separated (e.g. Milk, Nuts)"
+              />
+            </FormRow>
+
+            <FormRow
+              label="Nutritional Information"
+              htmlFor="edit-variant-nutrition"
+            >
+              <textarea
+                id="edit-variant-nutrition"
+                rows={5}
+                value={patch.nutritionalInformation ?? ""}
+                disabled={!canUpdateVariant}
+                onChange={(e) =>
+                  setPatch((p) => ({
+                    ...p,
+                    nutritionalInformation: e.target.value,
+                  }))
+                }
+              />
+            </FormRow>
+          </FormGrid>
+        </FormSection>
 
         <FormSection title="Thumbnail Image">
           <div className={styles.thumbnailUpload}>
@@ -780,6 +935,10 @@ const ProductVariantsPage = () => {
 
     const body = {
       name: payload.name,
+      description: payload.description,
+      ingredients: payload.ingredients,
+      allergens: parseAllergens(payload.allergens),
+      nutritionalInformation: payload.nutritionalInformation,
       sku: payload.sku,
       price: payload.price,
       stockQuantity: payload.stockQuantity,
@@ -828,6 +987,13 @@ const ProductVariantsPage = () => {
       ...(canUpdateVariant
         ? {
             name: patch.name,
+            description: patch.description,
+            ingredients: patch.ingredients,
+            allergens:
+              patch.allergens === undefined
+                ? undefined
+                : parseAllergens(patch.allergens),
+            nutritionalInformation: patch.nutritionalInformation,
             sku: patch.sku,
             price: patch.price,
             thumbnailImage: patch.thumbnailImage?.url,

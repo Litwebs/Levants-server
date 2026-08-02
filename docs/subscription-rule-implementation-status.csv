@@ -1,0 +1,136 @@
+ID,Category,Scenario,Implemented,AutomatedTestStatus,StatusSummary
+SUB-CREATE-01,Creation,Create weekly subscription with a single valid delivery day,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-02,Creation,Create every_two_weeks subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-03,Creation,Create subscription choosing a delivery day NOT offered by business,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-04,Creation,Create subscription with no valid delivery day resolved,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-05,Creation,Create subscription without a Stripe customer,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-06,Creation,Create subscription when Stripe customer cannot be retrieved,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-07,Creation,Create subscription with no default card,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-08,Creation,Create subscription with invalid/unknown delivery address id,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-09,Creation,Create subscription with zero items,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-10,Creation,Create subscription with an inactive/unavailable variant,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-11,Creation,Create subscription with product not subscription-eligible,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-12,Creation,Create subscription but first invoice payment fails,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-13,Creation,First delivery date lands on the next weekday occurrence not today,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CREATE-14,Creation,Notes field persisted on creation,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CUTOFF-01,Cut-off,Cut-off boundary exactly at cutoff time,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CUTOFF-02,Cut-off,Just before cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CUTOFF-03,Cut-off,Just after cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CUTOFF-04,Cut-off,Cut-off with no nextDeliveryDate,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-CUTOFF-05,Cut-off,Admin changes cutoffDaysBefore affects cut-off window,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-CUTOFF-06,Cut-off,GET subscription returns cutoff metadata,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-ITEM-ADD-01,Items,Add item before cut-off (increase),Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-ADD-02,Items,Add item before cut-off but immediate charge declines,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-ADD-03,Items,Add same variant that already exists,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-ADD-04,Items,Add item after cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-ADD-05,Items,Add unavailable/inactive variant,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-ADD-06,Items,Add non-subscription-eligible product,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-ADD-07,Items,Add item to paused subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-ADD-08,Items,Add item to cancelled subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-UPD-01,Items,Increase quantity before cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-UPD-02,Items,Decrease quantity before cut-off with store credit,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-UPD-03,Items,Decrease quantity before cut-off with card refund,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-UPD-04,Items,Decrease with card refund but no captured payment,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-UPD-05,Items,Card refund partially fails and remainder goes to credit,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-UPD-06,Items,Update quantity after cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-UPD-07,Items,Update non-existent item id,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-RMV-01,Items,Remove a non-last item before cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-RMV-02,Items,Attempt to remove the last remaining item,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-RMV-03,Items,Remove item after cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-ITEM-RMV-04,Items,Remove item on paused subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-01,Pause,Pause active subscription with valid resume date,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-02,Pause,Pause without resume date,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-03,Pause,Pause with resume date in the past/today,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-04,Pause,Pause longer than 28 days,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-05,Pause,Pause with invalid date string,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-06,Pause,Pause an already-paused subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-07,Pause,Pause a cancelled subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-08,Pause,No edits allowed while paused,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-09,Pause,Pause keeps the pre-paid upcoming delivery,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAUSE-10,Pause,Stripe pause API failure is non-fatal,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-RESUME-01,Resume,Manually resume a paused subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-RESUME-02,Resume,Resume a non-paused (active) subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-RESUME-03,Resume,Resume a cancelled subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-RESUME-04,Resume,Auto-resume when pause period ends,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-RESUME-05,Resume,Auto-resume ignores still-paused-in-future subs,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-RESUME-06,Resume,Resume uses retained scheduled delivery if present,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-RESUME-07,Resume,Resume recalculates when no retained slot,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-CANCEL-01,Cancel,Cancel before cut-off with refund,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CANCEL-02,Cancel,Cancel before cut-off but no refundable order found,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CANCEL-03,Cancel,Cancel before cut-off with zero refundable amount,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CANCEL-04,Cancel,Cancel before cut-off but Stripe refund fails,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CANCEL-05,Cancel,Cancel after cut-off (scheduled cancellation),Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CANCEL-06,Cancel,Cancel an already-cancelled subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CANCEL-07,Cancel,Cancel with optional reason,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-CANCEL-08,Cancel,Stripe cancel already removed remotely,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-MULTI-01,Multi-day,Create weekly multi-day subscription with per-day plans,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-MULTI-02,Multi-day,Multi-day create with a day plan referencing an unselected day,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-MULTI-03,Multi-day,Multi-day create with duplicate day plans,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-MULTI-04,Multi-day,Multi-day create with a day plan having no products,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-MULTI-05,Multi-day,Multi-day create missing a plan for a selected day,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-MULTI-06,Multi-day,Multi-day create without explicit plans (defaults),Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-MULTI-07,Multi-day,Order generation uses day-specific plan,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-MULTI-08,Multi-day,Edit a single day's products in detail page (before cut-off),Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-MULTI-09,Multi-day,Edit a single day's products after cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-MULTI-10,Multi-day,Send deliveryDayPlans on a single-day/non-weekly subscription,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-MULTI-11,Multi-day,Add products via add-products assigning to multiple days,Yes,No,No direct automated test found in current subscription test suites.
+SUB-MULTI-12,Multi-day,Add-products save blocked when a product has no day chosen,Yes,No,No direct automated test found in current subscription test suites.
+SUB-MULTI-13,Multi-day,Reduce a multi-day sub to single day clears day plans,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-MULTI-14,Multi-day,Multi-day next delivery date picks nearest selected weekday,Yes,Partial,Partially covered by automated tests; related behavior asserted but not fully end-to-end for this exact rule.
+SUB-MULTI-15,Multi-day,Recurring cadence for multi-day steps day-to-day,Yes,Partial,Partially covered by automated tests; related behavior asserted but not fully end-to-end for this exact rule.
+SUB-PAY-01,Payment,Recurring subscription invoice payment fails,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAY-02,Payment,Payment method declined when increasing items pre-cut-off,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-PAY-03,Payment,Card declined during initial subscription creation,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-PAY-04,Payment,Customer updates card then failed subscription retries succeed,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-PAY-05,Payment,No default card when charging delta,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-WEBHOOK-01,Webhook,First (create) invoice generates first order,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-02,Webhook,Recurring invoice advances next delivery date,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-03,Webhook,Duplicate invoice webhook is idempotent,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-04,Webhook,Pending post-cut-off changes promoted on paid delivery,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-05,Webhook,Pending changes not yet effective are retained,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-06,Webhook,Deferred price sync applied after invoice paid,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-07,Webhook,Invoice for unknown local subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-08,Webhook,Subscription with no populated customer,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-09,Webhook,Non-subscription invoice ignored,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-10,Webhook,Stripe subscription.updated syncs cancelled status,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-11,Webhook,Stripe subscription.updated syncs paused status,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-12,Webhook,Stripe subscription.updated reactivates,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-13,Webhook,Stripe subscription.deleted cancels locally,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-14,Webhook,Geocode failure is non-fatal on order creation,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-WEBHOOK-15,Webhook,New Stripe API invoice shape re-resolved to legacy,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-SCHED-01,Scheduling,Three upcoming delivery slots pre-generated,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-SCHED-02,Scheduling,No duplicate slot for an existing date,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-SCHED-03,Scheduling,Deliveries list endpoint returns ownership-scoped slots,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-SCHED-04,Scheduling,Deliveries list for non-owned subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-UPDATE-01,Update,Change delivery day before cut-off,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-UPDATE-02,Update,Change delivery day after cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-UPDATE-03,Update,Change to an unavailable delivery day,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-UPDATE-04,Update,Change to no valid day,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-UPDATE-05,Update,Change frequency,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-UPDATE-06,Update,Change delivery address before cut-off,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-UPDATE-07,Update,Change delivery address after cut-off,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-UPDATE-08,Update,Change address to unknown id,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-UPDATE-09,Update,Update notes only,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-UPDATE-10,Update,Update on paused subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-UPDATE-11,Update,Update with no changed fields,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-AUTH-01,Auth,Unauthenticated request,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-AUTH-02,Auth,Access another customer's subscription,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-AUTH-03,Validation,Invalid subscription id format,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-AUTH-04,Validation,Invalid item id format,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-AUTH-05,Validation,Create with unknown body fields,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-AUTH-06,Validation,Create with invalid frequency,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-AUTH-07,Validation,Preferred days out of range or duplicated,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-AUTH-08,Validation,Add item with quantity < 1,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-SETTINGS-01,Settings,Admin sets delivery days to empty,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-SETTINGS-02,Settings,Settings auto-created with defaults on first access,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-SETTINGS-03,Settings,Admin narrows delivery days affecting new subscriptions,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
+SUB-SETTINGS-04,Settings,Customer settings endpoint returns delivery config,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-STRIPE-01,Stripe Sync,Price sync archives old price,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-STRIPE-02,Stripe Sync,Price sync failure is non-fatal,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-STRIPE-03,Stripe Sync,Test clock time used for date math,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-LIST-01,Listing,List subscriptions filtered by status,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
+SUB-LIST-02,Listing,Subscription list shows multi-day labels,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
+SUB-UI-01,UI,Preferred-day chips do not clip long day names,Yes,No,No direct automated test found in current subscription test suites.
+SUB-UI-02,UI,Per-day product editor shown only for multi-day weekly,Yes,No,No direct automated test found in current subscription test suites.
+SUB-UI-03,UI,Scheduled change hint after cut-off,Yes,No,No direct automated test found in current subscription test suites.
+SUB-UI-04,UI,Discard resets per-day draft,Yes,No,No direct automated test found in current subscription test suites.

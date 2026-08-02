@@ -13,6 +13,8 @@ const controller = require("../controllers/customers.controller");
 const {
   updateCustomerSchema,
   listCustomersQuerySchema,
+  adjustCustomerCreditSchema,
+  createCustomerOnboardingLinkSchema,
 } = require("../validators/customer.validators");
 
 const { customerIdParamSchema } = require("../validators/common.validators");
@@ -27,6 +29,14 @@ router.get(
   requirePermission("customers.read"),
   validateQuery(listCustomersQuerySchema),
   asyncHandler(controller.ListCustomers),
+);
+
+// Create customer onboarding link (admin)
+router.post(
+  "/onboarding-link",
+  requirePermission("customers.create"),
+  validateBody(createCustomerOnboardingLinkSchema),
+  asyncHandler(controller.CreateCustomerOnboardingLink),
 );
 
 // Get customer
@@ -53,6 +63,40 @@ router.get(
   validateParams(customerIdParamSchema),
   validateQuery(listCustomersQuerySchema), // reuse page/pageSize/search pattern
   asyncHandler(controller.ListOrdersByCustomer),
+);
+
+// Get subscriptions by customer (admin)
+router.get(
+  "/:customerId/subscriptions",
+  requirePermission(["customers.read", "orders.read"]),
+  validateParams(customerIdParamSchema),
+  asyncHandler(controller.ListSubscriptionsByCustomer),
+);
+
+// Get support requests by customer (admin)
+router.get(
+  "/:customerId/support-requests",
+  requirePermission("customers.read"),
+  validateParams(customerIdParamSchema),
+  asyncHandler(controller.ListSupportRequestsByCustomer),
+);
+
+// Get a customer's store-credit balance + ledger (admin)
+router.get(
+  "/:customerId/credit",
+  requirePermission("customers.credit.read"),
+  validateParams(customerIdParamSchema),
+  validateQuery(listCustomersQuerySchema),
+  asyncHandler(controller.GetCustomerCredit),
+);
+
+// Manually adjust a customer's store credit (admin)
+router.post(
+  "/:customerId/credit/adjust",
+  requirePermission("customers.credit.update"),
+  validateParams(customerIdParamSchema),
+  validateBody(adjustCustomerCreditSchema),
+  asyncHandler(controller.AdjustCustomerCredit),
 );
 
 module.exports = router;

@@ -1,0 +1,138 @@
+"use strict";
+
+const adminSubService = require("../../services/customerPortal/adminSubscriptions.service");
+const customerService = require("../../services/customers.service");
+const { sendOk, sendCreated, sendErr } = require("../../utils/response.util");
+
+const ListSubscriptions = async (req, res) => {
+  const result = await adminSubService.AdminListSubscriptions({
+    status: req.query.status,
+    frequency: req.query.frequency,
+    search: req.query.search,
+    sortBy: req.query.sortBy,
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 20,
+  });
+  return sendOk(res, result.data);
+};
+
+const CreateSubscriptionSetupLink = async (req, res) => {
+  const result = await customerService.CreateCustomerOnboardingLink({
+    ...req.body,
+    actorUserId: req.user?.id || req.user?._id,
+  });
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Could not create subscription setup link",
+    });
+  }
+  return sendCreated(res, result.data, { message: result.message });
+};
+
+const CreateBulkSubscriptionSetupLinks = async (req, res) => {
+  const result = await customerService.CreateBulkCustomerOnboardingLinks({
+    rows: req.body.rows,
+    actorUserId: req.user?.id || req.user?._id,
+  });
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Could not import subscription setups",
+    });
+  }
+  return sendOk(res, result.data, { message: result.message });
+};
+
+const GetSubscription = async (req, res) => {
+  const result = await adminSubService.AdminGetSubscription({
+    subscriptionId: req.params.subscriptionId,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 404, message: result.message });
+  return sendOk(res, result.data);
+};
+
+const PauseSubscription = async (req, res) => {
+  const result = await adminSubService.AdminPauseSubscription({
+    subscriptionId: req.params.subscriptionId,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
+const ResumeSubscription = async (req, res) => {
+  const result = await adminSubService.AdminResumeSubscription({
+    subscriptionId: req.params.subscriptionId,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
+const CancelSubscription = async (req, res) => {
+  const result = await adminSubService.AdminCancelSubscription({
+    subscriptionId: req.params.subscriptionId,
+    reason: req.body?.reason,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
+const UpdateSubscription = async (req, res) => {
+  const result = await adminSubService.AdminUpdateSubscription({
+    subscriptionId: req.params.subscriptionId,
+    ...req.body,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
+const DeletePendingSubscription = async (req, res) => {
+  const result = await adminSubService.AdminDeletePendingSubscription({
+    subscriptionId: req.params.subscriptionId,
+  });
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode:
+        result.message === "Pending subscription not found" ? 404 : 400,
+      message: result.message,
+    });
+  }
+  return sendOk(res, result.data, { message: result.message });
+};
+
+const GetSubscriptionDeliveries = async (req, res) => {
+  const result = await adminSubService.AdminGetSubscriptionDeliveries({
+    subscriptionId: req.params.subscriptionId,
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 20,
+  });
+  return sendOk(res, result.data);
+};
+
+const GetSubscriptionOrders = async (req, res) => {
+  const result = await adminSubService.AdminGetSubscriptionOrders({
+    subscriptionId: req.params.subscriptionId,
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize) || 20,
+  });
+  return sendOk(res, result.data);
+};
+
+module.exports = {
+  ListSubscriptions,
+  CreateSubscriptionSetupLink,
+  CreateBulkSubscriptionSetupLinks,
+  GetSubscription,
+  PauseSubscription,
+  ResumeSubscription,
+  CancelSubscription,
+  UpdateSubscription,
+  DeletePendingSubscription,
+  GetSubscriptionDeliveries,
+  GetSubscriptionOrders,
+};

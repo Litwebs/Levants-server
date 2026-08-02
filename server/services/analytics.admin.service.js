@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Order = require("../models/order.model");
 const Product = require("../models/product.model");
 const ProductVariant = require("../models/variant.model");
+const Review = require("../models/review.model");
 
 const {
   parseDateRange,
@@ -537,4 +538,14 @@ module.exports = {
   GetLowStock,
   GetOutOfStock,
   GetDashboard,
+  GetNavCounts,
 };
+
+async function GetNavCounts() {
+  const [pendingOrders, pendingReviews] = await Promise.all([
+    // Paid orders that haven't been dispatched yet — need admin action
+    Order.countDocuments({ status: "paid", deliveryStatus: "ordered" }),
+    Review.countDocuments({ isVisible: false }),
+  ]);
+  return { success: true, data: { pendingOrders, pendingReviews } };
+}

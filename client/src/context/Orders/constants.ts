@@ -76,6 +76,8 @@ export type OrderStatus =
 export type AdminOrder = {
   _id: string;
   orderId: string;
+  orderType?: "one_time" | "subscription_generated" | (string & {});
+  subscription?: string | null;
 
   // List endpoint populates customer; update endpoint may return string
   customer: OrderCustomer | string;
@@ -112,6 +114,7 @@ export type AdminOrder = {
   metadata?: Record<string, unknown>;
 
   customerInstructions?: string;
+  driverNote?: string | null;
 
   createdAt: string;
   updatedAt: string;

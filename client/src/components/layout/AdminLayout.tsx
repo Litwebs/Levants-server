@@ -7,19 +7,19 @@ import {
   Package,
   Users,
   Tag,
-  FileText,
-  BarChart3,
   Settings,
   ChevronLeft,
   ChevronRight,
   Bell,
-  Search,
+  Radio,
   Moon,
   Sun,
   Menu,
   X,
   Megaphone,
   LayoutList,
+  Star,
+  RefreshCw,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -31,7 +31,13 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/context/Auth/AuthContext";
+import api from "@/context/api";
 import { usePermissions } from "@/hooks/usePermissions";
+import {
+  BUSINESS_INFO_UPDATED_EVENT,
+  getBusinessBranding,
+  getBusinessInitials,
+} from "@/lib/businessBranding";
 import styles from "./AdminLayout.module.css";
 
 const navItems = [
@@ -41,12 +47,6 @@ const navItems = [
     icon: LayoutDashboard,
     requiredAny: ["analytics.read"],
   },
-  // {
-  //   path: "/deliveries",
-  //   label: "Deliveries",
-  //   icon: Truck,
-  //   requiredAny: ["delivery.routes.read"],
-  // },
   {
     path: "/delivery-runs",
     label: "Delivery Runs",
@@ -58,6 +58,7 @@ const navItems = [
     label: "Orders",
     icon: ShoppingCart,
     requiredAny: ["orders.read"],
+    badgeKey: "pendingOrders" as const,
   },
   {
     path: "/products",
@@ -72,6 +73,12 @@ const navItems = [
     requiredAny: ["customers.read"],
   },
   {
+    path: "/subscriptions",
+    label: "Subscriptions",
+    icon: RefreshCw,
+    requiredAny: ["orders.read"],
+  },
+  {
     path: "/discounts",
     label: "Discounts",
     icon: Tag,
@@ -82,24 +89,62 @@ const navItems = [
     label: "Announcements",
     icon: Megaphone,
     requiredAny: ["announcements.read"],
-    requireEmailDomain: "@litwebs.co.uk",
+  },
+  {
+    path: "/broadcasts",
+    label: "Broadcasts",
+    icon: Radio,
+    requiredAny: ["broadcasts.read"],
   },
   {
     path: "/categories",
     label: "Categories",
     icon: LayoutList,
     requiredAny: ["categories.read"],
-    requireEmailDomain: "@litwebs.co.uk",
+  },
+  {
+    path: "/reviews",
+    label: "Reviews",
+    icon: Star,
+    requiredAny: ["reviews.read"],
+    badgeKey: "pendingReviews" as const,
   },
   {
     path: "/settings",
     label: "Settings",
     icon: Settings,
   },
-  // { path: '/promotions', label: 'Promotions', icon: Tag },
-  // { path: '/content', label: 'Content', icon: FileText },
-  // { path: '/reports', label: 'Reports', icon: BarChart3 },
 ];
+
+type NavCounts = { pendingOrders: number; pendingReviews: number };
+
+function useNavCounts() {
+  const [counts, setCounts] = React.useState<NavCounts>({
+    pendingOrders: 0,
+    pendingReviews: 0,
+  });
+
+  React.useEffect(() => {
+    let active = true;
+    const fetch = async () => {
+      try {
+        const res = await api.get("/analytics/nav-counts");
+        const data = res.data?.data ?? res.data;
+        if (active && data) setCounts(data);
+      } catch {
+        // non-fatal — badge just stays at previous value
+      }
+    };
+    fetch();
+    const id = setInterval(fetch, 60_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  return counts;
+}
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -109,10 +154,48 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
+  const [businessBranding, setBusinessBranding] = useState(() =>
+    getBusinessBranding(),
+  );
+  const navCounts = useNavCounts();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, updateSelf } = useAuth();
   const { hasAnyPermission } = usePermissions();
+
+  useEffect(() => {
+    let active = true;
+
+    void api
+      .get("/business-info/public")
+      .then((res) => {
+        if (active) {
+          setBusinessBranding(
+            getBusinessBranding((res.data as any)?.data?.business),
+          );
+        }
+      })
+      .catch(() => {
+        // Keep the fallback branding if business details cannot be loaded.
+      });
+
+    const handleBusinessInfoUpdated = (event: Event) => {
+      const business = (event as CustomEvent).detail;
+      setBusinessBranding(getBusinessBranding(business));
+    };
+    window.addEventListener(
+      BUSINESS_INFO_UPDATED_EVENT,
+      handleBusinessInfoUpdated,
+    );
+
+    return () => {
+      active = false;
+      window.removeEventListener(
+        BUSINESS_INFO_UPDATED_EVENT,
+        handleBusinessInfoUpdated,
+      );
+    };
+  }, []);
 
   const isDeliveryRunDetailsRoute = useMemo(() => {
     return /^\/delivery-runs\/[^/]+$/.test(location.pathname);
@@ -155,12 +238,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.path === "/orders" && String(roleLabel || "") === "driver") {
-      return false;
-    }
-    const requireEmailDomain = (item as any).requireEmailDomain as
-      | string
-      | undefined;
-    if (requireEmailDomain && !user?.email?.endsWith(requireEmailDomain)) {
       return false;
     }
     const requiredAny = (item as any).requiredAny as string[] | undefined;
@@ -207,8 +284,25 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         className={`${styles.sidebar} ${collapsed ? styles.collapsed : ""} ${mobileSidebarOpen ? styles.open : ""}`}
       >
         <div className={styles.logo}>
-          <div className={styles.logoIcon}>LD</div>
-          {!collapsed && <span className={styles.logoText}>Levants Dairy</span>}
+          {businessBranding.logoUrl ? (
+            <img
+              className={styles.logoImage}
+              src={businessBranding.logoUrl}
+              alt={`${businessBranding.companyName} logo`}
+            />
+          ) : (
+            <div className={styles.logoIcon}>
+              {getBusinessInitials(businessBranding.companyName)}
+            </div>
+          )}
+          {!collapsed && (
+            <span
+              className={styles.logoText}
+              title={businessBranding.companyName}
+            >
+              {businessBranding.companyName}
+            </span>
+          )}
           <button
             type="button"
             className={styles.mobileClose}
@@ -223,6 +317,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
+            const badge = (item as any).badgeKey
+              ? navCounts[(item as any).badgeKey as keyof NavCounts]
+              : 0;
             return (
               <NavLink
                 key={item.path}
@@ -232,7 +329,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 onClick={() => setMobileSidebarOpen(false)}
               >
                 <Icon size={20} />
-                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && (
+                  <span className={styles.navLabel}>{item.label}</span>
+                )}
+                {badge > 0 && (
+                  <span className={styles.navBadge}>
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </NavLink>
             );
           })}

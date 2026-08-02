@@ -3,6 +3,7 @@ import { useToast } from "@/components/common/Toast";
 import { useAuth } from "@/context/Auth/AuthContext";
 import { useUsers } from "@/context/Users";
 import api from "@/context/api";
+import { BUSINESS_INFO_UPDATED_EVENT } from "@/lib/businessBranding";
 
 type UserForm = {
   name: string;
@@ -210,6 +211,15 @@ export const useSettings = () => {
     email: string;
     phone: string;
     address: string;
+    logo: string;
+    logoMetadata: {
+      originalName: string;
+      mimeType: string;
+      sizeBytes: number;
+      width?: number;
+      height?: number;
+      uploadedAt?: string;
+    } | null;
   };
 
   const emptyBusinessInfo: BusinessInfo = {
@@ -217,6 +227,8 @@ export const useSettings = () => {
     email: "",
     phone: "",
     address: "",
+    logo: "",
+    logoMetadata: null,
   };
 
   const [companySettings, setCompanySettings] = useState<BusinessInfo>(
@@ -254,6 +266,20 @@ export const useSettings = () => {
           email: business.email || "",
           phone: business.phone || "",
           address: business.address || "",
+          logo:
+            typeof business.logo === "string"
+              ? business.logo
+              : business.logo?.url || "",
+          logoMetadata: business.logo?.url
+            ? {
+                originalName: business.logo.originalName || "Business logo",
+                mimeType: business.logo.mimeType || "",
+                sizeBytes: Number(business.logo.sizeBytes || 0),
+                width: business.logo.width,
+                height: business.logo.height,
+                uploadedAt: business.logo.createdAt,
+              }
+            : null,
         };
         setCompanySettings(next);
         setOriginalCompanySettings(next);
@@ -283,13 +309,16 @@ export const useSettings = () => {
       email: companySettings.email,
       phone: companySettings.phone,
       address: companySettings.address,
+      logo: companySettings.logo,
+      logoMetadata: companySettings.logoMetadata,
     };
 
     const unchanged =
       next.companyName === originalCompanySettings.companyName &&
       next.email === originalCompanySettings.email &&
       next.phone === originalCompanySettings.phone &&
-      next.address === originalCompanySettings.address;
+      next.address === originalCompanySettings.address &&
+      next.logo === originalCompanySettings.logo;
 
     if (unchanged) {
       showToast({ type: "success", title: "No changes to save" });
@@ -298,8 +327,53 @@ export const useSettings = () => {
 
     setGeneralLoading((prev) => ({ ...prev, saving: true }));
     try {
-      await api.put("/business-info", next);
-      setOriginalCompanySettings(next);
+      const payload: Record<string, unknown> = {
+        companyName: next.companyName,
+        email: next.email,
+        phone: next.phone,
+        address: next.address,
+      };
+      if (next.logo !== originalCompanySettings.logo) {
+        payload.logo = next.logo
+          ? {
+              dataUrl: next.logo,
+              originalName:
+                next.logoMetadata?.originalName || "business-logo",
+            }
+          : null;
+      }
+
+      const res = await api.put("/business-info", payload);
+      const business = (res.data as any)?.data?.business;
+      const saved: BusinessInfo = business
+        ? {
+            companyName: business.companyName || "",
+            email: business.email || "",
+            phone: business.phone || "",
+            address: business.address || "",
+            logo:
+              typeof business.logo === "string"
+                ? business.logo
+                : business.logo?.url || "",
+            logoMetadata: business.logo?.url
+              ? {
+                  originalName: business.logo.originalName || "Business logo",
+                  mimeType: business.logo.mimeType || "",
+                  sizeBytes: Number(business.logo.sizeBytes || 0),
+                  width: business.logo.width,
+                  height: business.logo.height,
+                  uploadedAt: business.logo.createdAt,
+                }
+              : next.logoMetadata,
+          }
+        : next;
+      setCompanySettings(saved);
+      setOriginalCompanySettings(saved);
+      window.dispatchEvent(
+        new CustomEvent(BUSINESS_INFO_UPDATED_EVENT, {
+          detail: business || saved,
+        }),
+      );
       showToast({ type: "success", title: "Business info updated" });
     } catch (err: any) {
       showToast({
@@ -308,6 +382,122 @@ export const useSettings = () => {
       });
     } finally {
       setGeneralLoading((prev) => ({ ...prev, saving: false }));
+    }
+  };
+
+  /* -------------------- SUBSCRIPTION SETTINGS -------------------- */
+  type SubscriptionSettings = {
+    deliveryDays: number[];
+    cutoffDaysBefore: number;
+    cutoffTime: string;
+  };
+
+  const emptySubscriptionSettings: SubscriptionSettings = {
+    deliveryDays: [],
+    cutoffDaysBefore: 2,
+    cutoffTime: "22:00",
+  };
+
+  const [subscriptionSettings, setSubscriptionSettings] =
+    useState<SubscriptionSettings>(emptySubscriptionSettings);
+  const [subscriptionSettingsLoading, setSubscriptionSettingsLoading] = useState({
+    loading: false,
+    saving: false,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    if (!canReadBusinessInfo) return;
+
+    setSubscriptionSettingsLoading((prev) => ({ ...prev, loading: true }));
+    void api
+      .get("/admin/subscription-settings")
+      .then((res) => {
+        const settings = (res.data as any)?.data?.settings;
+        if (!settings) return;
+        setSubscriptionSettings({
+          deliveryDays: Array.isArray(settings.deliveryDays)
+            ? settings.deliveryDays
+            : [],
+          cutoffDaysBefore:
+            typeof settings.cutoffDaysBefore === "number"
+              ? settings.cutoffDaysBefore
+              : 2,
+          cutoffTime: settings.cutoffTime || "22:00",
+        });
+      })
+      .catch((err: any) => {
+        showToast({
+          type: "error",
+          title:
+            err?.response?.data?.message ||
+            "Failed to load subscription settings",
+        });
+      })
+      .finally(() => {
+        setSubscriptionSettingsLoading((prev) => ({ ...prev, loading: false }));
+      });
+  }, [canReadBusinessInfo, showToast, user]);
+
+  const toggleDeliveryDay = (day: number) => {
+    setSubscriptionSettings((prev) => {
+      const has = prev.deliveryDays.includes(day);
+      const deliveryDays = has
+        ? prev.deliveryDays.filter((d) => d !== day)
+        : [...prev.deliveryDays, day].sort((a, b) => a - b);
+      return { ...prev, deliveryDays };
+    });
+  };
+
+  const handleSaveSubscriptionSettings = async () => {
+    if (!canUpdateBusinessInfo) {
+      showToast({ type: "error", title: "You do not have access to update this" });
+      return;
+    }
+    if (subscriptionSettingsLoading.saving) return;
+
+    if (!subscriptionSettings.deliveryDays.length) {
+      showToast({
+        type: "error",
+        title: "Select at least one delivery day",
+      });
+      return;
+    }
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(subscriptionSettings.cutoffTime)) {
+      showToast({ type: "error", title: "Cut-off time must be in HH:MM format" });
+      return;
+    }
+
+    setSubscriptionSettingsLoading((prev) => ({ ...prev, saving: true }));
+    try {
+      const res = await api.put("/admin/subscription-settings", {
+        deliveryDays: subscriptionSettings.deliveryDays,
+        cutoffDaysBefore: subscriptionSettings.cutoffDaysBefore,
+        cutoffTime: subscriptionSettings.cutoffTime,
+      });
+      const settings = (res.data as any)?.data?.settings;
+      if (settings) {
+        setSubscriptionSettings({
+          deliveryDays: Array.isArray(settings.deliveryDays)
+            ? settings.deliveryDays
+            : subscriptionSettings.deliveryDays,
+          cutoffDaysBefore:
+            typeof settings.cutoffDaysBefore === "number"
+              ? settings.cutoffDaysBefore
+              : subscriptionSettings.cutoffDaysBefore,
+          cutoffTime: settings.cutoffTime || subscriptionSettings.cutoffTime,
+        });
+      }
+      showToast({ type: "success", title: "Subscription settings updated" });
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title:
+          err?.response?.data?.message ||
+          "Failed to update subscription settings",
+      });
+    } finally {
+      setSubscriptionSettingsLoading((prev) => ({ ...prev, saving: false }));
     }
   };
 
@@ -746,6 +936,12 @@ export const useSettings = () => {
     setCompanySettings,
     handleSaveGeneral,
     generalLoading,
+
+    subscriptionSettings,
+    setSubscriptionSettings,
+    toggleDeliveryDay,
+    handleSaveSubscriptionSettings,
+    subscriptionSettingsLoading,
 
     users: managedUsers,
     roles,

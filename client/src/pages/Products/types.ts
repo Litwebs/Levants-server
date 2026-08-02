@@ -18,6 +18,10 @@ export type AdminProductVariant = {
   _id: string;
   product: string;
   name: string;
+  description?: string | null;
+  ingredients?: string | null;
+  allergens?: string[];
+  nutritionalInformation?: string | null;
   sku: string;
   price: number;
   stockQuantity: number;

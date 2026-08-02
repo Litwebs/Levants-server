@@ -97,7 +97,9 @@ async function listProducts({
       select:
         "originalName filename mimeType sizeBytes url uploadedBy isArchived archivedAt createdAt updatedAt",
     })
-    .select("product name price stockQuantity lowStockAlert thumbnailImage")
+    .select(
+      "product name description ingredients allergens nutritionalInformation price stockQuantity lowStockAlert thumbnailImage",
+    )
     .lean();
 
   const variantsByProduct = variants.reduce((acc, v) => {
@@ -106,6 +108,10 @@ async function listProducts({
     acc[productKey].push({
       id: v._id,
       name: v.name,
+      description: v.description,
+      ingredients: v.ingredients,
+      allergens: v.allergens,
+      nutritionalInformation: v.nutritionalInformation,
       price: v.price,
       currency: "gbp",
       stockQuantity: v.stockQuantity,
@@ -184,7 +190,9 @@ async function getProductById({ productId, variantId }) {
       select:
         "originalName filename mimeType sizeBytes url uploadedBy isArchived archivedAt createdAt updatedAt",
     })
-    .select("name price stockQuantity lowStockAlert thumbnailImage")
+    .select(
+      "name description ingredients allergens nutritionalInformation price stockQuantity lowStockAlert thumbnailImage",
+    )
     .lean();
 
   if (variants.length === 0) return null;
@@ -192,6 +200,10 @@ async function getProductById({ productId, variantId }) {
   const mappedVariants = variants.map((v) => ({
     id: v._id,
     name: v.name,
+    description: v.description,
+    ingredients: v.ingredients,
+    allergens: v.allergens,
+    nutritionalInformation: v.nutritionalInformation,
     price: v.price,
     currency: "gbp",
     stockQuantity: v.stockQuantity,

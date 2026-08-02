@@ -19,6 +19,7 @@ const adminDeliveryRoutes = require("../routes/delivery.routes");
 const adminOrderRoutes = require("../routes/orders.admin.routes");
 const adminDiscountRoutes = require("../routes/discounts.admin.routes");
 const stripeWebhookRoutes = require("../routes/stripe.webhook.routes");
+const broadcastRoutes = require("../routes/broadcasts.routes");
 
 const notFoundMiddleware = require("../middleware/notFound.middleware");
 const errorMiddleware = require("../middleware/error.middleware");
@@ -50,6 +51,7 @@ app.use("/api/admin/products", adminVariantRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/discounts", adminDiscountRoutes);
 app.use("/api/admin/delivery", adminDeliveryRoutes);
+app.use("/api/admin/broadcasts", broadcastRoutes);
 
 // Backward-compatible admin variants routes (older tests/clients)
 app.use("/api/admin/variants", adminVariantRoutes);
@@ -58,6 +60,35 @@ app.use("/api/admin/variants/products", adminVariantRoutes);
 // Customers
 app.use("/api/customers", publicCustomerRoutes);
 app.use("/api/admin/customers", adminCustomerRoutes);
+
+// ===== Customer portal =====
+const portalAuthRoutes = require("../routes/portal/customerAuth.routes");
+const portalOrderRoutes = require("../routes/portal/customerOrders.routes");
+const portalAddressRoutes = require("../routes/portal/customerAddresses.routes");
+const portalSubscriptionRoutes = require("../routes/portal/customerSubscriptions.routes");
+const {
+  notifRouter,
+  supportRouter,
+  paymentRouter,
+} = require("../routes/portal/customerMisc.routes");
+const adminSubscriptionRoutes = require("../routes/portal/adminSubscriptions.routes");
+const {
+  supportRouter: adminSupportRouter,
+  paymentsRouter: adminPaymentsRouter,
+  reportsRouter: adminReportsRouter,
+} = require("../routes/portal/adminMisc.routes");
+
+app.use("/api/portal/auth", portalAuthRoutes);
+app.use("/api/portal/orders", portalOrderRoutes);
+app.use("/api/portal/addresses", portalAddressRoutes);
+app.use("/api/portal/subscriptions", portalSubscriptionRoutes);
+app.use("/api/portal/notifications", notifRouter);
+app.use("/api/portal/support-requests", supportRouter);
+app.use("/api/portal/payments", paymentRouter);
+app.use("/api/admin/subscriptions", adminSubscriptionRoutes);
+app.use("/api/admin/support-requests", adminSupportRouter);
+app.use("/api/admin/payments", adminPaymentsRouter);
+app.use("/api/admin/reports", adminReportsRouter);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

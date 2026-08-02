@@ -3,6 +3,7 @@ const app = require("../../testApp");
 
 const { createUser } = require("../../helpers/authTestData");
 const { getSetCookieHeader } = require("../../helpers/cookies");
+const Role = require("../../../models/role.model");
 
 describe("PUT /api/admin/customers/:customerId (E2E)", () => {
   /**
@@ -37,6 +38,30 @@ describe("PUT /api/admin/customers/:customerId (E2E)", () => {
       .put(`/api/admin/customers/${customerRes.body.data.customer._id}`)
       .set("Cookie", getSetCookieHeader(login))
       .send({ firstName: "Hacked" });
+
+    expect(res.status).toBe(403);
+  });
+
+  test("403 with customers.read but without customers.update", async () => {
+    const staff = await createUser({ role: "staff" });
+    await Role.findByIdAndUpdate(staff.role, {
+      $set: { permissions: ["customers.read"] },
+    });
+
+    const customerRes = await request(app).post("/api/customers/guest").send({
+      email: "read-only@test.com",
+      firstName: "Read",
+      lastName: "Only",
+    });
+    const login = await request(app).post("/api/auth/login").send({
+      email: staff.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/admin/customers/${customerRes.body.data.customer._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({ firstName: "Forbidden" });
 
     expect(res.status).toBe(403);
   });
@@ -138,6 +163,54 @@ describe("PUT /api/admin/customers/:customerId (E2E)", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.customer.firstName).toBe("After");
     expect(res.body.data.customer.phone).toBe("07000000000");
+  });
+
+  test("200 admin can update email and account status", async () => {
+    const admin = await createUser({ role: "admin" });
+    const customerRes = await request(app).post("/api/customers/guest").send({
+      email: "account-before@test.com",
+      firstName: "Account",
+      lastName: "Owner",
+    });
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/admin/customers/${customerRes.body.data.customer._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({ email: "Account-After@Test.com", status: "disabled" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.customer.email).toBe("account-after@test.com");
+    expect(res.body.data.customer.status).toBe("disabled");
+  });
+
+  test("409 when updating to an email used by another customer", async () => {
+    const admin = await createUser({ role: "admin" });
+    await request(app).post("/api/customers/guest").send({
+      email: "email-owner@test.com",
+      firstName: "Email",
+      lastName: "Owner",
+    });
+    const customerRes = await request(app).post("/api/customers/guest").send({
+      email: "email-change@test.com",
+      firstName: "Email",
+      lastName: "Change",
+    });
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .put(`/api/admin/customers/${customerRes.body.data.customer._id}`)
+      .set("Cookie", getSetCookieHeader(login))
+      .send({ email: "email-owner@test.com" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe("A customer with this email already exists");
   });
 
   test("200 does not overwrite fields not provided", async () => {

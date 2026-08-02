@@ -13,7 +13,7 @@
 .modal {
   background-color: var(--color-white);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
+  box-shadow: none;
   max-height: calc(100vh - 10rem);
   overflow: hidden;
   display: flex;

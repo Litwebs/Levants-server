@@ -52,10 +52,20 @@ export const getPaymentBadge = (status: PaymentStatus) => {
   );
 };
 
-export const getOrderSourceBadge = (isManualImport?: boolean) => {
+export const getOrderSourceBadge = (
+  isManualImport?: boolean,
+  isSubscriptionGenerated?: boolean,
+) => {
   return (
-    <Badge variant={isManualImport ? "warning" : "info"} size="sm">
-      {isManualImport ? "Imported" : "Website"}
-    </Badge>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      <Badge variant={isManualImport ? "warning" : "info"} size="sm">
+        {isManualImport ? "Imported" : "Website"}
+      </Badge>
+      {isSubscriptionGenerated ? (
+        <Badge variant="success" size="sm">
+          Subscription
+        </Badge>
+      ) : null}
+    </div>
   );
 };

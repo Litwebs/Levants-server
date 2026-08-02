@@ -1,48 +1,44 @@
-import {
-  Eye,
-  Phone,
-  MapPin,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-} from "lucide-react";
-import {
-  Card,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  Button,
-  Badge,
-  Select,
-  CardFooter,
-} from "../../components/common";
+import { ChevronRight, Mail, MapPin, Phone } from "lucide-react";
+import { DataTableCard, Button, Badge, Table } from "../../components/common";
 import styles from "./Customers.module.css";
-import { useState, useEffect } from "react";
+import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
+import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import type { Customer, CustomersListMeta } from "../../context/Customers";
+
+type CustomersTableProps = {
+  filteredCustomers: Customer[];
+  loading: boolean;
+  page: number;
+  setPage: (page: number | ((previous: number) => number)) => void;
+  pageSize: number;
+  setPageSize: (pageSize: number) => void;
+  meta: CustomersListMeta | null;
+  searchQuery: string;
+  customerTypeFilter: "all" | "guest" | "registered";
+};
 
 const CustomersTable = ({
   filteredCustomers,
-  handleViewCustomer,
   loading,
   page,
   setPage,
   pageSize,
   setPageSize,
   meta,
-}: any) => {
+  searchQuery,
+  customerTypeFilter,
+}: CustomersTableProps) => {
+  const navigate = useNavigate();
   const total = meta?.total ?? filteredCustomers?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = total === 0 ? 0 : Math.min(page * pageSize, total);
 
-  const getFullName = (c: any) =>
+  const getFullName = (c: Customer) =>
     `${c?.firstName || ""} ${c?.lastName || ""}`.trim() || c?.email;
 
-  const getDefaultAddress = (c: any) => {
+  const getDefaultAddress = (c: Customer) => {
     const addresses = Array.isArray(c?.addresses) ? c.addresses : [];
-    return addresses.find((a: any) => a?.isDefault) || addresses[0] || null;
+    return addresses.find((address) => address?.isDefault) || addresses[0] || null;
   };
 
   const formatLastOrder = (value: unknown) => {
@@ -56,161 +52,123 @@ const CustomersTable = ({
     }).format(d);
   };
 
-  const [paginationAction, setPaginationAction] = useState<
-    "prev" | "next" | null
-  >(null);
-
-  useEffect(() => {
-    if (!loading) {
-      setPaginationAction(null);
-    }
-  }, [loading]);
+  const pageSizeOptions = useMemo(
+    () => [
+      { value: "10", label: "10 / page" },
+      { value: "25", label: "25 / page" },
+      { value: "50", label: "50 / page" },
+      { value: "100", label: "100 / page" },
+    ],
+    [],
+  );
 
   return (
-    <Card className={styles.tableCard}>
-      <div className={styles.tableArea}>
-        <Table className={styles.tableScroll}>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Customer</TableHead>
-              <TableHead>Contact</TableHead>
-              {/* <TableHead>Orders</TableHead> */}
-              <TableHead>Last Order</TableHead>
-              <TableHead>Marketing</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
+    <DataTableCard
+      className={styles.tableCard}
+      loading={loading}
+      loadingText="Loading..."
+      pagination={{
+        page,
+        pageSize,
+        total,
+        totalPages,
+        setPage,
+        setPageSize,
+        pageSizeOptions,
+        loading,
+      }}
+    >
+      <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Contact</th>
+            <th>Last Order</th>
+            <th>Account Type</th>
+            <th><span className={styles.srOnly}>Actions</span></th>
+          </tr>
+        </thead>
 
-          <TableBody>
-            {(filteredCustomers?.length ?? 0) === 0 ? (
-              <TableRow>
-                <TableCell className={styles.emptyTableCell}>
-                  {loading ? "Loading customers…" : "No customers found."}
-                </TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-                <TableCell>{""}</TableCell>
-              </TableRow>
-            ) : (
-              filteredCustomers.map((c: any, idx: number) => {
-                const addr = getDefaultAddress(c);
-                return (
-                  <TableRow
-                    key={`${c._id}-${idx}`}
-                    onClick={() => handleViewCustomer(c)}
-                  >
-                    <TableCell>{getFullName(c)}</TableCell>
-                    <TableCell>
-                      <div className={styles.contactCell}>
-                        <span>
-                          <Phone size={14} /> {c.phone || "—"}
-                        </span>
-                        <span>
-                          <MapPin size={14} /> {addr?.postcode || "—"}
-                        </span>
-                      </div>
-                    </TableCell>
-                    {/* <TableCell>{"—"}</TableCell> */}
-                    <TableCell>{formatLastOrder(c.lastOrderAt)}</TableCell>
-                    <TableCell>
+        <tbody>
+          {(filteredCustomers?.length ?? 0) === 0 ? (
+            <tr className={sharedTableStyles.emptyStateRow}>
+              <td className={sharedTableStyles.emptyTableCell} colSpan={5}>
+                {loading
+                  ? "Loading customers…"
+                  : searchQuery || customerTypeFilter !== "all"
+                    ? "No customers match your search or filters."
+                    : "No customers yet."}
+              </td>
+            </tr>
+          ) : (
+            filteredCustomers.map((c) => {
+              const addr = getDefaultAddress(c);
+              return (
+                <tr
+                  key={c._id}
+                  className={styles.clickableRow}
+                  onClick={() => navigate(`/customers/${c._id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(`/customers/${c._id}`);
+                    }
+                  }}
+                  tabIndex={0}
+                  aria-label={`View ${getFullName(c)}`}
+                >
+                  <td>
+                    <div className={styles.customerCell}>
+                      <span className={styles.avatar} aria-hidden="true">
+                        {(c.firstName?.[0] || c.email?.[0] || "C").toUpperCase()}
+                        {(c.lastName?.[0] || "").toUpperCase()}
+                      </span>
+                      <span className={styles.customerInfo}>
+                        <strong className={styles.customerName}>{getFullName(c)}</strong>
+                        <span className={styles.customerEmail}><Mail size={13} /> {c.email}</span>
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className={styles.contactCell}>
+                      <span>
+                        <Phone size={14} /> {c.phone || "—"}
+                      </span>
+                      <span>
+                        <MapPin size={14} /> {addr?.postcode || "—"}
+                      </span>
+                    </div>
+                  </td>
+                  <td>{formatLastOrder(c.lastOrderAt)}</td>
+                  <td>
+                    <div className={styles.accountBadges}>
                       <Badge variant={c.isGuest ? "default" : "success"}>
-                        {c.isGuest ? "Guest" : "Customer"}
+                        {c.isGuest ? "Guest" : "Registered"}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleViewCustomer(c)}
-                      >
-                        <Eye size={16} />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-
-        {loading && (
-          <div className={styles.tableLoadingOverlay} aria-live="polite">
-            <div className={styles.tableLoadingInner}>
-              <Loader2 size={16} className={styles.spinnerIcon} />
-              Loading…
-            </div>
-          </div>
-        )}
-      </div>
-
-      <CardFooter className={styles.paginationFooter}>
-        <div className={styles.paginationInfo}>
-          Showing {rangeStart}–{rangeEnd} of {total}
-        </div>
-
-        <div className={styles.paginationControls}>
-          <Select
-            className={styles.pageSizeSelect}
-            value={String(pageSize)}
-            disabled={loading}
-            onChange={(v) => {
-              setPageSize(Number(v));
-              setPage(1);
-            }}
-            options={[
-              { value: "10", label: "10 / page" },
-              { value: "20", label: "20 / page" },
-              { value: "50", label: "50 / page" },
-            ]}
-          />
-
-          <div className={styles.pageButtons}>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading || page <= 1}
-              onClick={() => {
-                setPaginationAction("prev");
-                setPage((p) => Math.max(1, p - 1));
-              }}
-            >
-              {loading && paginationAction === "prev" ? (
-                <Loader2 size={14} className={styles.spinnerIcon} />
-              ) : (
-                <>
-                  <ChevronLeft size={16} />
-                  Prev
-                </>
-              )}
-            </Button>
-
-            <div className={styles.pageLabel}>
-              Page {page} / {totalPages}
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading || page >= totalPages}
-              onClick={() => {
-                setPaginationAction("next");
-                setPage((p) => Math.min(totalPages, p + 1));
-              }}
-            >
-              {loading && paginationAction === "next" ? (
-                <Loader2 size={14} className={styles.spinnerIcon} />
-              ) : (
-                <>
-                  Next
-                  <ChevronRight size={16} />
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      </CardFooter>
-    </Card>
+                      {c.status === "disabled" && <Badge variant="error">Disabled</Badge>}
+                    </div>
+                  </td>
+                  <td>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/customers/${c._id}`);
+                      }}
+                      aria-label={`Open ${getFullName(c)}`}
+                      className={styles.rowChevron}
+                    >
+                      <ChevronRight size={17} />
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </Table>
+    </DataTableCard>
   );
 };
 

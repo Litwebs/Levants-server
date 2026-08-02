@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "../../components/common/Toast";
 import { useCustomers as useCustomersContext } from "../../context/Customers";
 import type { Customer } from "../../context/Customers";
@@ -23,125 +23,68 @@ export const useCustomers = () => {
     loading,
     error,
     listCustomers,
-    listCustomerOrders,
-    updateCustomer,
+    createCustomerOnboardingLink,
   } = useCustomersContext();
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<
+    "newest" | "oldest" | "name-asc" | "name-desc"
+  >("newest");
+  const [customerTypeFilter, setCustomerTypeFilter] = useState<
+    "all" | "guest" | "registered"
+  >("all");
 
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(25);
 
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isCreateInviteModalOpen, setIsCreateInviteModalOpen] = useState(false);
+  const [createInviteLoading, setCreateInviteLoading] = useState(false);
+  const [createdOnboardingLink, setCreatedOnboardingLink] = useState("");
+  const [createdOnboardingLinkExpiresAt, setCreatedOnboardingLinkExpiresAt] =
+    useState<string | null>(null);
+  const [createInviteForm, setCreateInviteForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+  });
 
-  const [editForm, setEditForm] = useState<{
-    firstName?: string;
-    lastName?: string;
-    phone?: string | null;
-    address?: {
-      line1?: string;
-      line2?: string | null;
-      city?: string;
-      postcode?: string;
-      country?: string;
-    };
-  }>({});
+  const refreshCustomers = useCallback(
+    () =>
+      listCustomers({
+        page,
+        pageSize,
+        search: searchQuery.trim() || undefined,
+        type: customerTypeFilter,
+        sort: sortBy,
+      }),
+    [customerTypeFilter, listCustomers, page, pageSize, searchQuery, sortBy],
+  );
 
-  // Fetch customers (server-side pagination + search)
   useEffect(() => {
     const handle = window.setTimeout(() => {
-      listCustomers({ page, pageSize, search: searchQuery || undefined }).catch(
-        () => {
-          // error state is tracked in context
-        },
-      );
+      refreshCustomers().catch(() => {
+        // Error state is tracked in context and rendered by the page.
+      });
     }, 250);
 
     return () => window.clearTimeout(handle);
-  }, [listCustomers, page, pageSize, searchQuery]);
+  }, [refreshCustomers]);
 
-  // Reset to page 1 when search changes
   useEffect(() => {
     setPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, customerTypeFilter, sortBy]);
 
   const stats = useMemo(() => {
-    // Backend doesn't currently provide marketing/revenue stats.
-    const total = meta?.total ?? customers.length;
-    return { total, withMarketing: 0, totalRevenue: 0 };
-  }, [customers.length, meta?.total]);
+    const summary = meta?.summary;
+    return {
+      total: summary?.totalCustomers ?? meta?.total ?? customers.length,
+      registered: summary?.registeredCustomers ?? 0,
+      guests: summary?.guestCustomers ?? 0,
+    };
+  }, [customers.length, meta]);
 
   const filteredCustomers = customers;
-
-  // Orders are not wired for admin customers yet.
-  const getCustomerOrders = (_customerId: string) => [];
-
-  const handleViewCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setIsViewModalOpen(true);
-  };
-
-  const handleEditCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    const addr = getDefaultAddress(customer);
-    setEditForm({
-      firstName: customer.firstName,
-      lastName: customer.lastName,
-      phone: customer.phone ?? "",
-      address: {
-        line1: addr?.line1 ?? "",
-        line2: addr?.line2 ?? "",
-        city: addr?.city ?? "",
-        postcode: addr?.postcode ?? "",
-        country: addr?.country ?? "",
-      },
-    });
-    setIsEditModalOpen(true);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!selectedCustomer) return;
-
-    const address = editForm.address;
-    const hasAnyAddressField =
-      !!address?.line1 ||
-      !!address?.line2 ||
-      !!address?.city ||
-      !!address?.postcode ||
-      !!address?.country;
-
-    const payload: any = {
-      firstName: editForm.firstName,
-      lastName: editForm.lastName,
-      phone: editForm.phone,
-      ...(hasAnyAddressField
-        ? {
-            address: {
-              line1: address?.line1,
-              line2: address?.line2 || null,
-              city: address?.city,
-              postcode: address?.postcode,
-              country: address?.country,
-            },
-          }
-        : {}),
-    };
-
-    try {
-      await updateCustomer(selectedCustomer._id, payload);
-      showToast({ type: "success", title: "Customer updated successfully" });
-      setIsEditModalOpen(false);
-      setSelectedCustomer(null);
-    } catch (e: any) {
-      showToast({
-        type: "error",
-        title: "Failed to update customer",
-        message: e?.response?.data?.message || error || "Request failed",
-      });
-    }
-  };
 
   const exportCustomers = () => {
     const rows = filteredCustomers.map((c) => {
@@ -165,8 +108,87 @@ export const useCustomers = () => {
       href: url,
       download: "customers.csv",
     }).click();
+    URL.revokeObjectURL(url);
 
     showToast({ type: "success", title: "Customers exported" });
+  };
+
+  const openCreateInviteModal = () => {
+    setCreateInviteForm({ firstName: "", lastName: "", email: "", phone: "" });
+    setCreatedOnboardingLink("");
+    setCreatedOnboardingLinkExpiresAt(null);
+    setIsCreateInviteModalOpen(true);
+  };
+
+  const closeCreateInviteModal = () => {
+    setIsCreateInviteModalOpen(false);
+    setCreateInviteLoading(false);
+  };
+
+  const setCreateInviteField = (
+    key: "firstName" | "lastName" | "email" | "phone",
+    value: string,
+  ) => {
+    setCreateInviteForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleCreateInvite = async () => {
+    const firstName = createInviteForm.firstName.trim();
+    const lastName = createInviteForm.lastName.trim();
+    const email = createInviteForm.email.trim().toLowerCase();
+    const phone = createInviteForm.phone.trim();
+
+    if (!firstName || !lastName || !email) {
+      showToast({
+        type: "error",
+        title: "Missing details",
+        message: "First name, last name, and email are required.",
+      });
+      return;
+    }
+
+    try {
+      setCreateInviteLoading(true);
+      const result = await createCustomerOnboardingLink({
+        firstName,
+        lastName,
+        email,
+        ...(phone ? { phone } : {}),
+      });
+
+      setCreatedOnboardingLink(result.onboardingLink);
+      setCreatedOnboardingLinkExpiresAt(result.expiresAt);
+
+      showToast({
+        type: "success",
+        title: "Onboarding link created",
+        message: "You can now copy and share the link with the customer.",
+      });
+
+      await refreshCustomers();
+    } catch (e: any) {
+      showToast({
+        type: "error",
+        title: "Failed to create link",
+        message: e?.response?.data?.message || e?.message || "Request failed",
+      });
+    } finally {
+      setCreateInviteLoading(false);
+    }
+  };
+
+  const copyOnboardingLink = async () => {
+    if (!createdOnboardingLink) return;
+    try {
+      await navigator.clipboard.writeText(createdOnboardingLink);
+      showToast({ type: "success", title: "Link copied" });
+    } catch {
+      showToast({
+        type: "error",
+        title: "Copy failed",
+        message: "Please copy the link manually.",
+      });
+    }
   };
 
   return {
@@ -181,25 +203,28 @@ export const useCustomers = () => {
     pageSize,
     setPageSize,
     meta,
+    refreshCustomers,
 
     searchQuery,
     setSearchQuery,
+    sortBy,
+    setSortBy,
+    customerTypeFilter,
+    setCustomerTypeFilter,
 
-    selectedCustomer,
-    isViewModalOpen,
-    setIsViewModalOpen,
+    isCreateInviteModalOpen,
+    setIsCreateInviteModalOpen,
+    createInviteLoading,
+    createInviteForm,
+    setCreateInviteForm,
+    createdOnboardingLink,
+    createdOnboardingLinkExpiresAt,
 
-    isEditModalOpen,
-    setIsEditModalOpen,
-
-    editForm,
-    setEditForm,
-
-    getCustomerOrders,
-    listCustomerOrders,
-    handleViewCustomer,
-    handleEditCustomer,
-    handleSaveEdit,
+    openCreateInviteModal,
+    closeCreateInviteModal,
+    setCreateInviteField,
+    handleCreateInvite,
+    copyOnboardingLink,
     exportCustomers,
   };
 };

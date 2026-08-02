@@ -30,6 +30,8 @@ export type OrderItem = {
 export type Order = {
   id: string;
   orderNumber: string;
+  orderType?: "one_time" | "subscription_generated" | (string & {});
+  isSubscriptionGenerated?: boolean;
   customer: { name: string; email: string; phone: string };
   deliveryAddress: { line1: string; line2?: string; city: string; postcode: string };
   deliverySlot: { date: string; timeWindow: string };
@@ -51,6 +53,7 @@ export type Order = {
   customerInstructions?: string;
   customerNotes?: string;
   internalNotes?: string;
+  driverNote?: string | null;
   history: { status: string; timestamp: string; user: string }[];
   deliveryProofUrl?: string;
   deliveredAt?: string | null;
@@ -182,6 +185,10 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
   return {
     id: order._id,
     orderNumber: order.orderId,
+    orderType: (order as any).orderType,
+    isSubscriptionGenerated:
+      (order as any).orderType === "subscription_generated" ||
+      Boolean((order as any).subscription),
 
     customer: {
       name: customerName,
@@ -227,6 +234,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     isStripeBacked,
 
     customerInstructions,
+    driverNote: typeof (order as any)?.driverNote === "string" ? (order as any).driverNote || null : null,
 
     history: [],
 
@@ -257,6 +265,7 @@ export const useOrders = () => {
     bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
     bulkAssignDeliveryDate: bulkAssignDeliveryDateApi,
     getOrdersStockRequirements: getOrdersStockRequirementsApi,
+    updateDriverNote: updateDriverNoteApi,
   } = useOrdersApi();
 
   // Backend filters
@@ -555,6 +564,19 @@ const refresh = useCallback(
     }
   };
 
+  const updateDriverNote = async (orderId: string, driverNote: string | null) => {
+    try {
+      const adminOrder = await updateDriverNoteApi(orderId, driverNote);
+      const uiOrder = mapAdminOrderToUi(adminOrder);
+      setSelectedOrder(uiOrder);
+      showToast({ title: "Driver note saved", type: "success" });
+      return uiOrder;
+    } catch (err: any) {
+      showToast({ title: err?.response?.data?.message || "Failed to save driver note", type: "error" });
+      return null;
+    }
+  };
+
   const refundOrder = async (id: string, amount?: number) => {
     try {
       await refundOrderApi(
@@ -796,6 +818,7 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     updateOrderStatus,
     updateOrderPaymentStatus,
     updateOrderItems,
+    updateDriverNote,
     deleteOrder,
     bulkDeleteOrders,
     refundOrder,

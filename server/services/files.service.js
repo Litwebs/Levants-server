@@ -3,6 +3,7 @@ const File = require("../models/file.model");
 const cloudinary = require("../config/cloudinary.js");
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
+const BusinessInfo = require("../models/businessInfo.model");
 const compressImageForUpload = require("../utils/compressImageForUpload.util");
 
 const getResourceType = (mimeType = "") => {
@@ -77,6 +78,8 @@ const uploadAndCreateFile = async ({
     filename: uploadResult.public_id,
     mimeType: uploadMimeType,
     sizeBytes: uploadResult.bytes ?? uploadSizeBytes,
+    width: uploadResult.width,
+    height: uploadResult.height,
     url: uploadResult.secure_url,
     uploadedBy,
   });
@@ -98,14 +101,26 @@ const hasCloudinaryCreds = () => {
 const isFileReferenced = async (fileId) => {
   if (!fileId) return false;
 
-  const [productThumbCount, productGalleryCount, variantThumbCount] =
+  const [
+    productThumbCount,
+    productGalleryCount,
+    variantThumbCount,
+    businessLogoCount,
+  ] =
     await Promise.all([
       Product.countDocuments({ thumbnailImage: fileId }),
       Product.countDocuments({ galleryImages: fileId }),
       Variant.countDocuments({ thumbnailImage: fileId }),
+      BusinessInfo.countDocuments({ logo: fileId }),
     ]);
 
-  return productThumbCount + productGalleryCount + variantThumbCount > 0;
+  return (
+    productThumbCount +
+      productGalleryCount +
+      variantThumbCount +
+      businessLogoCount >
+    0
+  );
 };
 
 const deleteFileById = async (fileId, { force = false } = {}) => {
