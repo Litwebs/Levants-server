@@ -32,6 +32,42 @@ jest.mock("stripe", () => {
     prices: {
       create: jest.fn(async () => ({ id: "price_test" })),
     },
+    customers: {
+      create: jest.fn(async () => ({ id: "cus_test" })),
+      update: jest.fn(async () => ({ id: "cus_test" })),
+      retrieve: jest.fn(async (id) => ({ id })),
+    },
+    setupIntents: {
+      create: jest.fn(async () => ({
+        id: "seti_test",
+        client_secret: "seti_test_secret_test",
+      })),
+    },
+    paymentMethods: {
+      retrieve: jest.fn(async (id) => ({
+        id,
+        customer: "cus_test",
+        type: "card",
+        card: {
+          brand: "visa",
+          last4: "4242",
+          exp_month: 12,
+          exp_year: 2034,
+        },
+      })),
+      attach: jest.fn(async (id, options) => ({
+        id,
+        customer: options.customer,
+        type: "card",
+        card: {
+          brand: "visa",
+          last4: "4242",
+          exp_month: 12,
+          exp_year: 2034,
+        },
+      })),
+      detach: jest.fn(async (id) => ({ id })),
+    },
     invoices: {
       retrieve: jest.fn(async (id) => ({ id })),
     },
@@ -97,6 +133,8 @@ beforeAll(async () => {
     require("../models/discount.model").init(),
     require("../models/discountRedemption.model").init(),
     require("../models/order.model").init(),
+    require("../models/subscription.model").init(),
+    require("../models/broadcast.model").init(),
     require("../models/deliveryBatch.model").init(),
     require("../models/route.model").init(),
     require("../models/stop.model").init(),

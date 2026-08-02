@@ -1,4 +1,5 @@
 const service = require("../services/broadcast.admin.service");
+const audienceService = require("../services/broadcastAudience.service");
 const { sendOk, sendErr } = require("../utils/response.util");
 
 const ListBroadcasts = async (req, res) => {
@@ -77,6 +78,24 @@ const GetActiveBroadcast = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const PreviewBroadcastAudience = async (req, res) => {
+  const preview = await audienceService.resolveAudience({
+    audience: req.body?.audience,
+    messageType: req.body?.messageType,
+  });
+  return sendOk(res, {
+    totalRecipients: preview.totalRecipients,
+    breakdown: preview.breakdown,
+    sample: preview.sample,
+    filters: preview.filters,
+  });
+};
+
+const GetBroadcastAudienceOptions = async (_req, res) => {
+  const options = await audienceService.getAudienceOptions();
+  return sendOk(res, options);
+};
+
 module.exports = {
   ListBroadcasts,
   CreateBroadcast,
@@ -84,4 +103,6 @@ module.exports = {
   DeleteBroadcast,
   SendBroadcastEmail,
   GetActiveBroadcast,
+  PreviewBroadcastAudience,
+  GetBroadcastAudienceOptions,
 };

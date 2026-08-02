@@ -63,6 +63,8 @@ const ListCustomers = async (req, res) => {
     page: Number(req.query.page) || 1,
     pageSize: Number(req.query.pageSize) || 20,
     search: req.query.search,
+    type: req.query.type,
+    sort: req.query.sort,
   });
 
   if (!result.success) {

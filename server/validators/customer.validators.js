@@ -42,9 +42,11 @@ const createGuestCustomerSchema = Joi.object({
 }).unknown(false);
 
 const updateCustomerSchema = Joi.object({
+  email: Joi.string().trim().email().optional(),
   firstName: Joi.string().trim().min(1).max(100).optional(),
   lastName: Joi.string().trim().min(1).max(100).optional(),
-  phone: Joi.string().optional(),
+  phone: Joi.string().trim().allow(null, "").optional(),
+  status: Joi.string().valid("active", "disabled").optional(),
   address: addressSchema.optional(),
 })
   .min(1)
@@ -53,7 +55,11 @@ const updateCustomerSchema = Joi.object({
 const listCustomersQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   pageSize: Joi.number().integer().min(1).max(100).default(20),
-  search: Joi.string().trim().min(2).optional(),
+  search: Joi.string().trim().min(1).optional(),
+  type: Joi.string().valid("all", "guest", "registered").default("all"),
+  sort: Joi.string()
+    .valid("newest", "oldest", "name-asc", "name-desc")
+    .default("newest"),
 }).unknown(false);
 
 const createCustomerOnboardingLinkSchema = Joi.object({
@@ -88,6 +94,18 @@ const createCustomerOnboardingLinkSchema = Joi.object({
   linkTtlMinutes: Joi.number().integer().min(15).max(10080).optional(),
 }).unknown(false);
 
+const bulkCustomerOnboardingLinksSchema = Joi.object({
+  rows: Joi.array()
+    .items(
+      createCustomerOnboardingLinkSchema.keys({
+        rowNumber: Joi.number().integer().min(2).required(),
+      }),
+    )
+    .min(1)
+    .max(250)
+    .required(),
+}).unknown(false);
+
 const adjustCustomerCreditSchema = Joi.object({
   // Amount in POUNDS; positive adds credit, negative deducts. Non-zero.
   amount: Joi.number().invalid(0).required(),
@@ -99,6 +117,7 @@ module.exports = {
   createGuestCustomerSchema,
   updateCustomerSchema,
   createCustomerOnboardingLinkSchema,
+  bulkCustomerOnboardingLinksSchema,
   listCustomersQuerySchema,
   adjustCustomerCreditSchema,
 };

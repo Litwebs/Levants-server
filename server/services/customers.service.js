@@ -1,6 +1,9 @@
 const Customer = require("../models/customer.model");
 const mongoose = require("mongoose");
 const Order = require("../models/order.model");
+const ProductVariant = require("../models/variant.model");
+const Subscription = require("../models/subscription.model");
+const SubscriptionSettings = require("../models/subscriptionSettings.model");
 const crypto = require("crypto");
 const cryptoUtil = require("../utils/crypto.util");
 const sendEmail = require("../Integration/Email.service");
@@ -287,6 +290,164 @@ async function CreateCustomerOnboardingLink({
   };
 }
 
+async function CreateBulkCustomerOnboardingLinks({ rows } = {}) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "At least one customer row is required",
+    };
+  }
+
+  const requestedVariantIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        (row.subscription?.items || []).map((item) => String(item.variantId)),
+      ),
+    ),
+  ];
+  const variants = await ProductVariant.find({
+    _id: { $in: requestedVariantIds },
+    status: "active",
+  })
+    .populate("product", "status isSubscriptionEligible")
+    .lean();
+  const allowedVariantIds = new Set(
+    variants
+      .filter(
+        (variant) =>
+          variant.product?.status === "active" &&
+          variant.product?.isSubscriptionEligible !== false,
+      )
+      .map((variant) => String(variant._id)),
+  );
+  const settings = await SubscriptionSettings.findOne({
+    singletonKey: "subscription-settings",
+  }).lean();
+  const availableDays = new Set(settings?.deliveryDays || [0, 3]);
+  const seenEmails = new Set();
+  const results = [];
+
+  for (const row of rows) {
+    const email = String(row.email || "").trim().toLowerCase();
+    const rowResult = {
+      rowNumber: row.rowNumber,
+      email,
+      customerName: `${row.firstName} ${row.lastName}`.trim(),
+    };
+
+    if (seenEmails.has(email)) {
+      results.push({
+        ...rowResult,
+        status: "failed",
+        message: "Duplicate email in this CSV",
+      });
+      continue;
+    }
+    seenEmails.add(email);
+
+    const invalidVariant = (row.subscription?.items || []).find(
+      (item) => !allowedVariantIds.has(String(item.variantId)),
+    );
+    if (invalidVariant) {
+      results.push({
+        ...rowResult,
+        status: "failed",
+        message: "One or more products are inactive or not subscription eligible",
+      });
+      continue;
+    }
+
+    const requestedDays = row.subscription.preferredDeliveryDays?.length
+      ? row.subscription.preferredDeliveryDays
+      : [row.subscription.preferredDeliveryDay];
+    if (requestedDays.some((day) => !availableDays.has(day))) {
+      results.push({
+        ...rowResult,
+        status: "failed",
+        message: "A delivery day is not currently available",
+      });
+      continue;
+    }
+    if (row.subscription.frequency !== "weekly" && requestedDays.length > 1) {
+      results.push({
+        ...rowResult,
+        status: "failed",
+        message: "Only weekly subscriptions can use multiple delivery days",
+      });
+      continue;
+    }
+
+    const existingCustomer = await Customer.findOne({ email })
+      .sort({ createdAt: -1 })
+      .select("_id pendingSubscriptionDraft")
+      .lean();
+    if (existingCustomer?.pendingSubscriptionDraft) {
+      results.push({
+        ...rowResult,
+        status: "failed",
+        message: "Customer already has a pending subscription setup",
+      });
+      continue;
+    }
+    if (existingCustomer) {
+      const existingSubscription = await Subscription.exists({
+        customer: existingCustomer._id,
+        status: { $in: ["active", "paused"] },
+      });
+      if (existingSubscription) {
+        results.push({
+          ...rowResult,
+          status: "failed",
+          message: "Customer already has an active or paused subscription",
+        });
+        continue;
+      }
+    }
+
+    try {
+      const created = await CreateCustomerOnboardingLink(row);
+      if (!created.success) {
+        results.push({
+          ...rowResult,
+          status: "failed",
+          message: created.message || "Could not create setup",
+        });
+        continue;
+      }
+      results.push({
+        ...rowResult,
+        status: "created",
+        message: "Pending setup created; onboarding link is ready",
+        onboardingLink: created.data.onboardingLink,
+      });
+    } catch (error) {
+      results.push({
+        ...rowResult,
+        status: "failed",
+        message: error?.message || "Could not create setup",
+      });
+    }
+  }
+
+  const createdCount = results.filter((row) => row.status === "created").length;
+  return {
+    success: true,
+    message:
+      createdCount === rows.length
+        ? "All subscription setups were imported"
+        : "Import completed with row errors",
+    data: {
+      summary: {
+        total: rows.length,
+        created: createdCount,
+        failed: rows.length - createdCount,
+      },
+      results,
+    },
+  };
+}
+
 /**
  * Get customer by ID
  */
@@ -319,19 +480,45 @@ async function GetCustomerById({ customerId } = {}) {
 /**
  * List customers (admin)
  */
-async function ListCustomers({ page = 1, pageSize = 20, search } = {}) {
+async function ListCustomers({
+  page = 1,
+  pageSize = 20,
+  search,
+  type = "all",
+  sort = "newest",
+} = {}) {
   const filter = {};
 
   if (search) {
-    const rx = new RegExp(search, "i");
-    filter.$or = [{ email: rx }, { firstName: rx }, { lastName: rx }];
+    const escapedSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(escapedSearch, "i");
+    filter.$or = [
+      { email: rx },
+      { firstName: rx },
+      { lastName: rx },
+      { phone: rx },
+      { "addresses.postcode": rx },
+    ];
   }
+
+  if (type === "guest") filter.isGuest = true;
+  if (type === "registered") filter.isGuest = false;
+
+  const sortOptions = {
+    newest: { createdAt: -1 },
+    oldest: { createdAt: 1 },
+    "name-asc": { firstName: 1, lastName: 1, createdAt: -1 },
+    "name-desc": { firstName: -1, lastName: -1, createdAt: -1 },
+  };
+  const sortBy = sortOptions[sort] || sortOptions.newest;
 
   const skip = (page - 1) * pageSize;
 
-  const [total, customers] = await Promise.all([
+  const [total, customers, registeredCustomers, guestCustomers] = await Promise.all([
     Customer.countDocuments(filter),
-    Customer.find(filter).sort({ createdAt: -1 }).skip(skip).limit(pageSize),
+    Customer.find(filter).sort(sortBy).skip(skip).limit(pageSize),
+    Customer.countDocuments({ isGuest: false }),
+    Customer.countDocuments({ isGuest: true }),
   ]);
 
   return {
@@ -342,6 +529,11 @@ async function ListCustomers({ page = 1, pageSize = 20, search } = {}) {
       pageSize,
       total,
       totalPages: Math.ceil(total / pageSize),
+      summary: {
+        totalCustomers: registeredCustomers + guestCustomers,
+        registeredCustomers,
+        guestCustomers,
+      },
     },
   };
 }
@@ -371,14 +563,44 @@ async function UpdateCustomer({ customerId, body } = {}) {
     return { success: false, statusCode: 404, message: "Customer not found" };
   }
 
+  if (body.email !== undefined) {
+    const normalizedEmail = String(body.email).trim().toLowerCase();
+    const emailOwner = await Customer.findOne({
+      email: normalizedEmail,
+      _id: { $ne: customer._id },
+    }).select("_id");
+
+    if (emailOwner) {
+      return {
+        success: false,
+        statusCode: 409,
+        message: "A customer with this email already exists",
+      };
+    }
+
+    if (customer.email !== normalizedEmail) {
+      customer.email = normalizedEmail;
+      // A registered customer's verified email must never carry over to a
+      // different address. Their next login will send a fresh verification code.
+      if (!customer.isGuest) customer.emailVerifiedAt = null;
+    }
+  }
+
   if (body.address) {
     const normalizedAddress = sanitizeAddress(body.address);
     upsertDefaultAddress(customer, normalizedAddress);
   }
 
-  if (body.firstName) customer.firstName = body.firstName;
-  if (body.lastName) customer.lastName = body.lastName;
-  if (body.phone) customer.phone = body.phone;
+  if (body.firstName !== undefined) {
+    customer.firstName = normalizeText(stripHtml(body.firstName));
+  }
+  if (body.lastName !== undefined) {
+    customer.lastName = normalizeText(stripHtml(body.lastName));
+  }
+  if (body.phone !== undefined) {
+    customer.phone = body.phone ? String(body.phone).trim() : null;
+  }
+  if (body.status !== undefined) customer.status = body.status;
 
   await customer.save();
 
@@ -592,6 +814,7 @@ function upsertDefaultAddress(customer, address) {
 module.exports = {
   FindOrCreateGuestCustomer,
   CreateCustomerOnboardingLink,
+  CreateBulkCustomerOnboardingLinks,
   GetCustomerById,
   ListCustomers,
   UpdateCustomer,

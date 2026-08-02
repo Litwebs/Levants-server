@@ -59,6 +59,9 @@ const PERMISSIONS = [
   "orders.delete",
   "orders.refund",
 
+  // Bulk subscription migrations are intentionally admin-only by default.
+  "subscriptions.import",
+
   // =========================
   // Products
   // =========================

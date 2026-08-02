@@ -8,6 +8,8 @@ const {
   DeleteBroadcast,
   SendBroadcastEmail,
   GetActiveBroadcast,
+  PreviewBroadcastAudience,
+  GetBroadcastAudienceOptions,
 } = require("../controllers/broadcasts.controller");
 
 const { requireAuth } = require("../middleware/auth.middleware");
@@ -20,6 +22,20 @@ router.get(
   requireAuth,
   requirePermission("broadcasts.read"),
   ListBroadcasts,
+);
+
+router.get(
+  "/audience-options",
+  requireAuth,
+  requirePermission("broadcasts.read"),
+  GetBroadcastAudienceOptions,
+);
+
+router.post(
+  "/audience-preview",
+  requireAuth,
+  requirePermission("broadcasts.read"),
+  PreviewBroadcastAudience,
 );
 
 router.post(
@@ -43,7 +59,11 @@ router.delete(
   DeleteBroadcast,
 );
 
-// TEMP: bypass permission to confirm auth works
-router.post("/:broadcastId/send", requireAuth, SendBroadcastEmail);
+router.post(
+  "/:broadcastId/send",
+  requireAuth,
+  requirePermission("broadcasts.send"),
+  SendBroadcastEmail,
+);
 
 module.exports = router;

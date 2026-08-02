@@ -118,6 +118,12 @@ const subscriptionIdParamSchema = Joi.object({
   subscriptionId: objectId.required(),
 }).unknown(true);
 
+const subscriptionLookupIdParamSchema = Joi.object({
+  subscriptionId: Joi.alternatives()
+    .try(objectId, Joi.string().pattern(/^pending:[a-f\d]{24}$/i))
+    .required(),
+}).unknown(true);
+
 const subscriptionItemIdParamSchema = Joi.object({
   subscriptionId: objectId.required(),
   itemId: objectId.required(),
@@ -210,6 +216,7 @@ module.exports = {
   subscriptionItemSchema,
   updateSubscriptionItemSchema,
   subscriptionIdParamSchema,
+  subscriptionLookupIdParamSchema,
   subscriptionItemIdParamSchema,
   cancelSubscriptionSchema,
   createSupportRequestSchema,

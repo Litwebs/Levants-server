@@ -1,28 +1,9 @@
 const Broadcast = require("../models/broadcast.model");
-const Customer = require("../models/customer.model");
 const sendEmail = require("../Integration/Email.service");
-
-function normalizeEmail(email = "") {
-  return String(email).trim().toLowerCase();
-}
-
-function buildRecipientList(customers = []) {
-  const byEmail = new Map();
-
-  for (const customer of customers) {
-    const email = normalizeEmail(customer.email);
-    if (!email || byEmail.has(email)) continue;
-
-    byEmail.set(email, {
-      email,
-      firstName: customer.firstName || "",
-      lastName: customer.lastName || "",
-      customerId: customer._id,
-    });
-  }
-
-  return Array.from(byEmail.values());
-}
+const {
+  normalizeAudience,
+  resolveAudience,
+} = require("./broadcastAudience.service");
 
 async function ListBroadcasts({ page = 1, pageSize = 20 }) {
   const safePage = Math.max(Number(page) || 1, 1);
@@ -51,9 +32,28 @@ async function ListBroadcasts({ page = 1, pageSize = 20 }) {
 }
 
 async function CreateBroadcast({ body, userId }) {
+  if (!body.title?.trim() || !body.description?.trim()) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Add both a title and message before creating the broadcast.",
+    };
+  }
+  const messageType = body.messageType === "marketing" ? "marketing" : "operational";
+  const preview = await resolveAudience({
+    audience: body.audience,
+    messageType,
+  });
   const broadcast = await Broadcast.create({
-    title: body.title,
-    description: body.description || "",
+    title: body.title.trim(),
+    description: body.description.trim(),
+    messageType,
+    audience: preview.filters,
+    audienceSummary: {
+      estimatedRecipients: preview.totalRecipients,
+      ...preview.breakdown,
+      calculatedAt: new Date(),
+    },
     expiresAt: body.expiresAt || undefined,
     isActive: false,
     createdBy: userId,
@@ -73,11 +73,48 @@ async function UpdateBroadcast({ broadcastId, body }) {
     };
   }
 
+  const contentChanged = [
+    "title",
+    "description",
+    "messageType",
+    "audience",
+  ].some((field) => Object.prototype.hasOwnProperty.call(body, field));
+  if (contentChanged && existing.emailStatus === "sending") {
+    return {
+      success: false,
+      statusCode: 409,
+      message: "Wait for the current send to finish before editing this broadcast.",
+    };
+  }
+
   const updates = {};
-  if (body.title !== undefined) updates.title = body.title;
-  if (body.description !== undefined) updates.description = body.description;
+  if (body.title !== undefined && !body.title?.trim()) {
+    return { success: false, statusCode: 400, message: "Title cannot be empty." };
+  }
+  if (body.description !== undefined && !body.description?.trim()) {
+    return { success: false, statusCode: 400, message: "Message cannot be empty." };
+  }
+  if (body.title !== undefined) updates.title = body.title.trim();
+  if (body.description !== undefined) updates.description = body.description.trim();
+  if (body.messageType !== undefined) {
+    updates.messageType = body.messageType === "marketing" ? "marketing" : "operational";
+  }
+  if (body.audience !== undefined || body.messageType !== undefined) {
+    const messageType = updates.messageType || existing.messageType || "operational";
+    const preview = await resolveAudience({
+      audience: body.audience === undefined ? existing.audience : body.audience,
+      messageType,
+    });
+    updates.audience = preview.filters;
+    updates.audienceSummary = {
+      estimatedRecipients: preview.totalRecipients,
+      ...preview.breakdown,
+      calculatedAt: new Date(),
+    };
+  }
   if ("expiresAt" in body) updates.expiresAt = body.expiresAt || undefined;
   if (body.isActive !== undefined) updates.isActive = body.isActive;
+  if (contentChanged) updates.emailStatus = "not_sent";
 
   const broadcast = await Broadcast.findByIdAndUpdate(
     broadcastId,
@@ -113,6 +150,14 @@ async function SendBroadcastEmail({ broadcastId, userId }) {
     };
   }
 
+  if (broadcast.emailStatus === "sending") {
+    return {
+      success: false,
+      statusCode: 409,
+      message: "This broadcast is already being sent.",
+    };
+  }
+
   if (!broadcast.description || !broadcast.description.trim()) {
     return {
       success: false,
@@ -129,14 +174,12 @@ async function SendBroadcastEmail({ broadcastId, userId }) {
     },
   });
 
-  const customers = await Customer.find({
-    email: { $exists: true, $nin: [null, ""] },
-    status: "active",
-  })
-    .select("_id email firstName lastName notificationPreferences")
-    .lean();
-
-  const recipients = buildRecipientList(customers);
+  const preview = await resolveAudience({
+    audience: broadcast.audience,
+    messageType: broadcast.messageType,
+    sampleSize: 0,
+  });
+  const recipients = preview.recipients;
 
   if (recipients.length === 0) {
     const updated = await Broadcast.findByIdAndUpdate(
@@ -150,7 +193,7 @@ async function SendBroadcastEmail({ broadcastId, userId }) {
             totalRecipients: 0,
             sent: 0,
             failed: 0,
-            lastError: "No active customer email addresses were found.",
+            lastError: "No customers currently match this audience.",
           },
         },
       },
@@ -160,7 +203,7 @@ async function SendBroadcastEmail({ broadcastId, userId }) {
     return {
       success: false,
       statusCode: 400,
-      message: "No active customer email addresses were found.",
+      message: "No customers currently match this audience.",
       data: { broadcast: updated },
     };
   }
@@ -208,6 +251,11 @@ async function SendBroadcastEmail({ broadcastId, userId }) {
           sent,
           failed,
           lastError: firstError,
+        },
+        audienceSummary: {
+          estimatedRecipients: recipients.length,
+          ...preview.breakdown,
+          calculatedAt: new Date(),
         },
       },
     },

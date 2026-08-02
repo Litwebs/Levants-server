@@ -19,6 +19,7 @@ const adminDeliveryRoutes = require("../routes/delivery.routes");
 const adminOrderRoutes = require("../routes/orders.admin.routes");
 const adminDiscountRoutes = require("../routes/discounts.admin.routes");
 const stripeWebhookRoutes = require("../routes/stripe.webhook.routes");
+const broadcastRoutes = require("../routes/broadcasts.routes");
 
 const notFoundMiddleware = require("../middleware/notFound.middleware");
 const errorMiddleware = require("../middleware/error.middleware");
@@ -50,6 +51,7 @@ app.use("/api/admin/products", adminVariantRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/discounts", adminDiscountRoutes);
 app.use("/api/admin/delivery", adminDeliveryRoutes);
+app.use("/api/admin/broadcasts", broadcastRoutes);
 
 // Backward-compatible admin variants routes (older tests/clients)
 app.use("/api/admin/variants", adminVariantRoutes);

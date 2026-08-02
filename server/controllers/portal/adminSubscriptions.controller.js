@@ -30,6 +30,20 @@ const CreateSubscriptionSetupLink = async (req, res) => {
   return sendCreated(res, result.data, { message: result.message });
 };
 
+const CreateBulkSubscriptionSetupLinks = async (req, res) => {
+  const result = await customerService.CreateBulkCustomerOnboardingLinks({
+    rows: req.body.rows,
+    actorUserId: req.user?.id || req.user?._id,
+  });
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Could not import subscription setups",
+    });
+  }
+  return sendOk(res, result.data, { message: result.message });
+};
+
 const GetSubscription = async (req, res) => {
   const result = await adminSubService.AdminGetSubscription({
     subscriptionId: req.params.subscriptionId,
@@ -77,35 +91,17 @@ const UpdateSubscription = async (req, res) => {
   return sendOk(res, result.data, { message: result.message });
 };
 
-const AddSubscriptionItem = async (req, res) => {
-  const result = await adminSubService.AdminAddSubscriptionItem({
+const DeletePendingSubscription = async (req, res) => {
+  const result = await adminSubService.AdminDeletePendingSubscription({
     subscriptionId: req.params.subscriptionId,
-    variantId: req.body.variantId,
-    quantity: req.body.quantity,
   });
-  if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
-  return sendOk(res, result.data, { message: result.message });
-};
-
-const UpdateSubscriptionItem = async (req, res) => {
-  const result = await adminSubService.AdminUpdateSubscriptionItem({
-    subscriptionId: req.params.subscriptionId,
-    itemId: req.params.itemId,
-    quantity: req.body.quantity,
-  });
-  if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
-  return sendOk(res, result.data, { message: result.message });
-};
-
-const RemoveSubscriptionItem = async (req, res) => {
-  const result = await adminSubService.AdminRemoveSubscriptionItem({
-    subscriptionId: req.params.subscriptionId,
-    itemId: req.params.itemId,
-  });
-  if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode:
+        result.message === "Pending subscription not found" ? 404 : 400,
+      message: result.message,
+    });
+  }
   return sendOk(res, result.data, { message: result.message });
 };
 
@@ -130,14 +126,13 @@ const GetSubscriptionOrders = async (req, res) => {
 module.exports = {
   ListSubscriptions,
   CreateSubscriptionSetupLink,
+  CreateBulkSubscriptionSetupLinks,
   GetSubscription,
   PauseSubscription,
   ResumeSubscription,
   CancelSubscription,
   UpdateSubscription,
-  AddSubscriptionItem,
-  UpdateSubscriptionItem,
-  RemoveSubscriptionItem,
+  DeletePendingSubscription,
   GetSubscriptionDeliveries,
   GetSubscriptionOrders,
 };

@@ -12,16 +12,21 @@ const {
 const controller = require("../../controllers/portal/adminSubscriptions.controller");
 const {
   createCustomerOnboardingLinkSchema,
+  bulkCustomerOnboardingLinksSchema,
 } = require("../../validators/customer.validators");
 const {
   subscriptionIdParamSchema,
-  subscriptionItemIdParamSchema,
+  subscriptionLookupIdParamSchema,
   updateSubscriptionSchema,
-  subscriptionItemSchema,
-  updateSubscriptionItemSchema,
 } = require("../../validators/portal.validators");
 
 const router = express.Router();
+
+const denyAdminItemMutation = (_req, _res, next) =>
+  next({
+    statusCode: 403,
+    message: "Subscription products cannot be changed by admins",
+  });
 
 router.use(requireAuth);
 router.use(requirePermission("orders.read")); // subscriptions are part of orders domain
@@ -35,9 +40,16 @@ router.post(
   asyncHandler(controller.CreateSubscriptionSetupLink),
 );
 
+router.post(
+  "/bulk-setup-links",
+  requirePermission("subscriptions.import"),
+  validateBody(bulkCustomerOnboardingLinksSchema),
+  asyncHandler(controller.CreateBulkSubscriptionSetupLinks),
+);
+
 router.get(
   "/:subscriptionId",
-  validateParams(subscriptionIdParamSchema),
+  validateParams(subscriptionLookupIdParamSchema),
   asyncHandler(controller.GetSubscription),
 );
 
@@ -47,6 +59,13 @@ router.patch(
   validateParams(subscriptionIdParamSchema),
   validateBody(updateSubscriptionSchema),
   asyncHandler(controller.UpdateSubscription),
+);
+
+router.delete(
+  "/:subscriptionId/pending-setup",
+  requirePermission("orders.update"),
+  validateParams(subscriptionLookupIdParamSchema),
+  asyncHandler(controller.DeletePendingSubscription),
 );
 
 router.post(
@@ -70,28 +89,11 @@ router.post(
   asyncHandler(controller.CancelSubscription),
 );
 
-router.post(
-  "/:subscriptionId/items",
-  requirePermission("orders.update"),
-  validateParams(subscriptionIdParamSchema),
-  validateBody(subscriptionItemSchema),
-  asyncHandler(controller.AddSubscriptionItem),
-);
-
-router.patch(
-  "/:subscriptionId/items/:itemId",
-  requirePermission("orders.update"),
-  validateParams(subscriptionItemIdParamSchema),
-  validateBody(updateSubscriptionItemSchema),
-  asyncHandler(controller.UpdateSubscriptionItem),
-);
-
-router.delete(
-  "/:subscriptionId/items/:itemId",
-  requirePermission("orders.update"),
-  validateParams(subscriptionItemIdParamSchema),
-  asyncHandler(controller.RemoveSubscriptionItem),
-);
+// Subscription composition is customer-managed. Keep explicit denial routes
+// so older admin clients receive a clear response instead of a generic 404.
+router.post("/:subscriptionId/items", denyAdminItemMutation);
+router.patch("/:subscriptionId/items/:itemId", denyAdminItemMutation);
+router.delete("/:subscriptionId/items/:itemId", denyAdminItemMutation);
 
 router.get(
   "/:subscriptionId/deliveries",

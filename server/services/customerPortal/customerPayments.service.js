@@ -245,9 +245,44 @@ async function AttachPaymentMethod({
   const customer = await ensureStripeCustomer(customerId);
   if (!customer) return Response(false, "Customer not found", null);
 
-  await stripe.paymentMethods.attach(stripePaymentMethodId, {
-    customer: customer.stripeCustomerId,
-  });
+  // A SetupIntent created with a Stripe customer attaches the method during
+  // confirmation. Treat this endpoint as idempotent instead of trying to
+  // attach the same method a second time.
+  let stripeMethod;
+  try {
+    stripeMethod = await stripe.paymentMethods.retrieve(stripePaymentMethodId);
+    const attachedCustomerId =
+      typeof stripeMethod?.customer === "string"
+        ? stripeMethod.customer
+        : stripeMethod?.customer?.id || null;
+
+    if (attachedCustomerId && attachedCustomerId !== customer.stripeCustomerId) {
+      return Response(
+        false,
+        "This payment method belongs to a different customer",
+        null,
+      );
+    }
+
+    if (!attachedCustomerId) {
+      stripeMethod = await stripe.paymentMethods.attach(stripePaymentMethodId, {
+        customer: customer.stripeCustomerId,
+      });
+    }
+  } catch (error) {
+    const expiredOrMissing =
+      error?.code === "resource_missing" ||
+      String(error?.message || "")
+        .toLowerCase()
+        .includes("no such payment_method");
+    return Response(
+      false,
+      expiredOrMissing
+        ? "Your payment setup session expired. Please enter your card again."
+        : "We could not save this payment method. Please try again.",
+      null,
+    );
+  }
 
   let method = await PaymentMethod.findOne({
     customer: customer._id,
@@ -286,10 +321,6 @@ async function AttachPaymentMethod({
       },
     });
   }
-
-  const stripeMethod = await stripe.paymentMethods.retrieve(
-    stripePaymentMethodId,
-  );
 
   return Response(true, "Payment method saved", {
     paymentMethod: {

@@ -3,6 +3,7 @@ const app = require("../../testApp");
 
 const { createUser } = require("../../helpers/authTestData");
 const { getSetCookieHeader } = require("../../helpers/cookies");
+const Customer = require("../../../models/customer.model");
 
 describe("GET /api/admin/customers (E2E)", () => {
   /**
@@ -146,6 +147,74 @@ describe("GET /api/admin/customers (E2E)", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data.customers.length).toBe(1);
+  });
+
+  test("200 filters guest and registered customers before pagination", async () => {
+    const admin = await createUser({ role: "admin" });
+    await Customer.create({
+      email: "registered-filter@test.com",
+      firstName: "Registered",
+      lastName: "Customer",
+      isGuest: false,
+    });
+    await Customer.create({
+      email: "guest-filter@test.com",
+      firstName: "Guest",
+      lastName: "Customer",
+      isGuest: true,
+    });
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const res = await request(app)
+      .get("/api/admin/customers?type=registered&pageSize=1")
+      .set("Cookie", getSetCookieHeader(login));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.customers).toHaveLength(1);
+    expect(res.body.data.customers[0].isGuest).toBe(false);
+    expect(res.body.meta.summary).toEqual({
+      totalCustomers: 2,
+      registeredCustomers: 1,
+      guestCustomers: 1,
+    });
+  });
+
+  test("200 searches phone and postcode and treats regex characters literally", async () => {
+    const admin = await createUser({ role: "admin" });
+    await request(app).post("/api/customers/guest").send({
+      email: "contact-search@test.com",
+      firstName: "Contact",
+      lastName: "Search",
+      phone: "07123 456789",
+      address: {
+        line1: "1 Test Road",
+        city: "Bradford",
+        postcode: "BD9 5HB",
+        country: "UK",
+      },
+    });
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+
+    const phoneRes = await request(app)
+      .get("/api/admin/customers?search=456789")
+      .set("Cookie", getSetCookieHeader(login));
+    const postcodeRes = await request(app)
+      .get("/api/admin/customers?search=BD9")
+      .set("Cookie", getSetCookieHeader(login));
+    const literalRes = await request(app)
+      .get("/api/admin/customers?search=%5B")
+      .set("Cookie", getSetCookieHeader(login));
+
+    expect(phoneRes.body.data.customers).toHaveLength(1);
+    expect(postcodeRes.body.data.customers).toHaveLength(1);
+    expect(literalRes.status).toBe(200);
+    expect(literalRes.body.data.customers).toEqual([]);
   });
 
   test("200 returns empty list when no matches", async () => {

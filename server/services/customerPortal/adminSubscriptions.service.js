@@ -11,9 +11,6 @@ const {
   ResumeSubscription,
   CancelSubscription,
   UpdateSubscription,
-  AddSubscriptionItem,
-  UpdateSubscriptionItem,
-  RemoveSubscriptionItem,
   GetSubscriptionDeliveries,
 } = require("./customerSubscriptions.service");
 const { Response } = require("../../utils/response.util");
@@ -205,6 +202,104 @@ async function AdminListSubscriptions({
  * Get single subscription (admin).
  */
 async function AdminGetSubscription({ subscriptionId } = {}) {
+  if (String(subscriptionId || "").startsWith("pending:")) {
+    const customerId = String(subscriptionId).slice("pending:".length);
+    const customer = await Customer.findOne({
+      _id: customerId,
+      pendingSubscriptionDraft: { $ne: null },
+    })
+      .select(
+        "firstName lastName email phone addresses pendingSubscriptionDraft portalInviteSentAt portalInviteTokenExpiresAt createdAt updatedAt",
+      )
+      .lean();
+
+    if (!customer) return Response(false, "Pending subscription not found", null);
+
+    const draft = customer.pendingSubscriptionDraft || {};
+    const selectedVariantIds = Array.isArray(draft.selectedVariantIds)
+      ? draft.selectedVariantIds.map(String)
+      : Object.keys(draft.quantities || {});
+    const variants = await ProductVariant.find({
+      _id: { $in: selectedVariantIds },
+    })
+      .populate("thumbnailImage", "url")
+      .select("product name sku price thumbnailImage")
+      .lean();
+    const variantById = new Map(
+      variants.map((variant) => [String(variant._id), variant]),
+    );
+    const items = selectedVariantIds
+      .map((variantId, index) => {
+        const variant = variantById.get(variantId);
+        if (!variant) return null;
+        return {
+          _id: `pending-item:${index}`,
+          product: String(variant.product),
+          variant: variantId,
+          name: variant.name,
+          sku: variant.sku,
+          quantity: Number(draft.quantities?.[variantId] || 1),
+          unitPrice: Number(variant.price || 0),
+          imageUrl: variant.thumbnailImage?.url || null,
+        };
+      })
+      .filter(Boolean);
+
+    const dayIndexes = new Map([
+      ["Sunday", 0],
+      ["Monday", 1],
+      ["Tuesday", 2],
+      ["Wednesday", 3],
+      ["Thursday", 4],
+      ["Friday", 5],
+      ["Saturday", 6],
+    ]);
+    const preferredDeliveryDays = Array.isArray(draft.deliveryDays)
+      ? draft.deliveryDays
+          .map((day) => dayIndexes.get(day))
+          .filter((day) => Number.isInteger(day))
+      : [];
+    const selectedAddress = (customer.addresses || []).find(
+      (address) => String(address._id) === String(draft.selectedAddress || ""),
+    );
+    const deliveryAddress =
+      selectedAddress ||
+      (customer.addresses || []).find((address) => address.isDefault) ||
+      (customer.addresses || [])[0] ||
+      null;
+
+    return Response(true, null, {
+      subscription: {
+        _id: `pending:${customer._id}`,
+        subscriptionNumber: "Pending setup",
+        customer: {
+          _id: customer._id,
+          firstName: customer.firstName,
+          lastName: customer.lastName,
+          email: customer.email,
+          phone: customer.phone || null,
+        },
+        status: "pending",
+        frequency:
+          draft.frequency === "fortnightly"
+            ? "every_two_weeks"
+            : draft.frequency || "weekly",
+        preferredDeliveryDay: preferredDeliveryDays[0] ?? 0,
+        preferredDeliveryDays,
+        nextDeliveryDate: null,
+        startDate: null,
+        items,
+        deliveryAddress,
+        notes: draft.notes || "",
+        createdAt:
+          customer.portalInviteSentAt || customer.updatedAt || customer.createdAt,
+        updatedAt: customer.updatedAt,
+        setupExpiresAt: customer.portalInviteTokenExpiresAt || null,
+        isPendingSetup: true,
+      },
+    });
+  }
+
   const subscription = await Subscription.findById(subscriptionId)
     .populate("customer", "firstName lastName email phone addresses")
     .lean();
@@ -268,51 +363,43 @@ async function AdminUpdateSubscription({ subscriptionId, ...fields } = {}) {
 }
 
 /**
- * Admin: add item.
+ * Admin: delete an uncompleted subscription setup without deleting the customer.
  */
-async function AdminAddSubscriptionItem({
-  subscriptionId,
-  variantId,
-  quantity,
-} = {}) {
-  const subscription = await Subscription.findById(subscriptionId);
-  if (!subscription) return Response(false, "Subscription not found", null);
-  return AddSubscriptionItem({
-    customerId: String(subscription.customer),
-    subscriptionId,
-    variantId,
-    quantity,
-  });
-}
+async function AdminDeletePendingSubscription({ subscriptionId } = {}) {
+  const normalizedId = String(subscriptionId || "");
+  if (!normalizedId.startsWith("pending:")) {
+    return Response(
+      false,
+      "Only pending subscription setups can be deleted",
+      null,
+    );
+  }
 
-/**
- * Admin: update item.
- */
-async function AdminUpdateSubscriptionItem({
-  subscriptionId,
-  itemId,
-  quantity,
-} = {}) {
-  const subscription = await Subscription.findById(subscriptionId);
-  if (!subscription) return Response(false, "Subscription not found", null);
-  return UpdateSubscriptionItem({
-    customerId: String(subscription.customer),
-    subscriptionId,
-    itemId,
-    quantity,
-  });
-}
+  const customerId = normalizedId.slice("pending:".length);
+  const customer = await Customer.findOneAndUpdate(
+    {
+      _id: customerId,
+      pendingSubscriptionDraft: { $ne: null },
+    },
+    {
+      $set: {
+        pendingSubscriptionDraft: null,
+        portalInviteTokenHash: null,
+        portalInviteTokenExpiresAt: null,
+        portalInviteSentAt: null,
+      },
+    },
+    { new: true },
+  )
+    .select("_id firstName lastName email")
+    .lean();
 
-/**
- * Admin: remove item.
- */
-async function AdminRemoveSubscriptionItem({ subscriptionId, itemId } = {}) {
-  const subscription = await Subscription.findById(subscriptionId);
-  if (!subscription) return Response(false, "Subscription not found", null);
-  return RemoveSubscriptionItem({
-    customerId: String(subscription.customer),
-    subscriptionId,
-    itemId,
+  if (!customer) {
+    return Response(false, "Pending subscription not found", null);
+  }
+
+  return Response(true, "Pending subscription setup deleted", {
+    customer,
   });
 }
 
@@ -362,9 +449,7 @@ module.exports = {
   AdminResumeSubscription,
   AdminCancelSubscription,
   AdminUpdateSubscription,
-  AdminAddSubscriptionItem,
-  AdminUpdateSubscriptionItem,
-  AdminRemoveSubscriptionItem,
+  AdminDeletePendingSubscription,
   AdminGetSubscriptionDeliveries,
   AdminGetSubscriptionOrders,
 };
