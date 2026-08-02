@@ -400,11 +400,11 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(updatedSub.pendingChanges.items[0].quantity).toBe(4);
   });
 
-  it("creates payment_failed notification on invoice.payment_failed", async () => {
+  it("pauses subscription and creates payment_failed notification on invoice.payment_failed", async () => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
 
-    await createSubscriptionFixture({
+    const subscription = await createSubscriptionFixture({
       customer: customer._id,
       stripeSubscriptionId: "sub_test_webhook_payment_failed_1",
       nextDeliveryDate: new Date("2026-08-09T09:00:00.000Z"),
@@ -428,9 +428,13 @@ describe("Subscription Stripe webhook E2E", () => {
       type: "payment_failed",
     }).lean();
     expect(notification).toBeTruthy();
+
+    const updated = await Subscription.findById(subscription._id).lean();
+    expect(updated.status).toBe("paused");
+    expect(updated.pausedAt).toBeTruthy();
   });
 
-  it("supports payment_failed then payment_succeeded retry flow", async () => {
+  it("pauses subscription on payment_failed; order still created if invoice later succeeds", async () => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
     const nextDelivery = new Date("2026-08-16T09:00:00.000Z");
@@ -460,6 +464,11 @@ describe("Subscription Stripe webhook E2E", () => {
     });
     expect(failed.status).toBe(200);
 
+    const paused = await Subscription.findById(subscription._id).lean();
+    expect(paused.status).toBe("paused");
+
+    // If Stripe fires invoice.payment_succeeded (e.g. manual payment capture), an
+    // order is still created so the delivery is fulfilled.
     const success = await postStripeEvent({
       type: "invoice.payment_succeeded",
       data: {

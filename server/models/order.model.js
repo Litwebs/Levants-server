@@ -114,6 +114,13 @@ const orderSchema = new mongoose.Schema(
       default: "",
     },
 
+    driverNote: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null,
+    },
+
     location: {
       lat: { type: Number, required: true },
       lng: { type: Number, required: true },

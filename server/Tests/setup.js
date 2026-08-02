@@ -71,6 +71,10 @@ jest.mock("stripe", () => {
     invoices: {
       retrieve: jest.fn(async (id) => ({ id })),
     },
+    subscriptions: {
+      update: jest.fn(async (id) => ({ id })),
+      cancel: jest.fn(async (id) => ({ id })),
+    },
     checkout: {
       sessions: {
         create: jest.fn(async () => ({

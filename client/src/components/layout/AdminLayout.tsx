@@ -58,6 +58,7 @@ const navItems = [
     label: "Orders",
     icon: ShoppingCart,
     requiredAny: ["orders.read"],
+    badgeKey: "pendingOrders" as const,
   },
   {
     path: "/products",
@@ -106,16 +107,44 @@ const navItems = [
     label: "Reviews",
     icon: Star,
     requiredAny: ["reviews.read"],
+    badgeKey: "pendingReviews" as const,
   },
   {
     path: "/settings",
     label: "Settings",
     icon: Settings,
   },
-  // { path: '/promotions', label: 'Promotions', icon: Tag },
-  // { path: '/content', label: 'Content', icon: FileText },
-  // { path: '/reports', label: 'Reports', icon: BarChart3 },
 ];
+
+type NavCounts = { pendingOrders: number; pendingReviews: number };
+
+function useNavCounts() {
+  const [counts, setCounts] = React.useState<NavCounts>({
+    pendingOrders: 0,
+    pendingReviews: 0,
+  });
+
+  React.useEffect(() => {
+    let active = true;
+    const fetch = async () => {
+      try {
+        const res = await api.get("/analytics/nav-counts");
+        const data = res.data?.data ?? res.data;
+        if (active && data) setCounts(data);
+      } catch {
+        // non-fatal — badge just stays at previous value
+      }
+    };
+    fetch();
+    const id = setInterval(fetch, 60_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  return counts;
+}
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -128,6 +157,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [businessBranding, setBusinessBranding] = useState(() =>
     getBusinessBranding(),
   );
+  const navCounts = useNavCounts();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, updateSelf } = useAuth();
@@ -287,6 +317,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
+            const badge = (item as any).badgeKey
+              ? navCounts[(item as any).badgeKey as keyof NavCounts]
+              : 0;
             return (
               <NavLink
                 key={item.path}
@@ -296,7 +329,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 onClick={() => setMobileSidebarOpen(false)}
               >
                 <Icon size={20} />
-                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && (
+                  <span className={styles.navLabel}>{item.label}</span>
+                )}
+                {badge > 0 && (
+                  <span className={styles.navBadge}>
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </NavLink>
             );
           })}

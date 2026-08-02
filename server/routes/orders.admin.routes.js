@@ -90,6 +90,13 @@ router.patch(
   asyncHandler(controller.UpdateOrderItems),
 );
 
+router.patch(
+  "/:orderId/driver-note",
+  requirePermission("orders.update"),
+  validateParams(orderIdParamSchema),
+  asyncHandler(controller.UpdateDriverNote),
+);
+
 router.delete(
   "/:orderId",
   requirePermission("orders.delete"),

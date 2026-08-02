@@ -12,9 +12,13 @@
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
+const Payment = require("../../models/payment.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
+const {
+  sendSubscriptionUpdateEmail,
+} = require("../customerPortal/subscriptionEmailNotifications.service");
 
 /**
  * Webhook events can be delivered in a newer Stripe API shape (2025+/clover)
@@ -290,6 +294,17 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       });
     }
 
+    await Payment.create({
+      customer: subscription.customer._id,
+      order: order._id,
+      subscription: subscription._id,
+      amount: total,
+      currency: invoice.currency || "gbp",
+      status: "paid",
+      providerReference: stripePaymentIntentId || null,
+      paidAt,
+    });
+
     createdOrders.push(order);
   }
 
@@ -334,7 +349,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
 /**
  * invoice.payment_failed
  *
- * Stripe couldn't charge the subscription. Notify the customer.
+ * Stripe couldn't charge the subscription. Pause it immediately and notify the customer.
  */
 async function HandleSubscriptionInvoiceFailed(eventInvoice) {
   const invoice = await resolveLegacyInvoice(eventInvoice);
@@ -345,17 +360,49 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
   });
   if (!subscription) return;
 
+  // Pause Stripe billing to stop future charges while the customer fixes their payment.
+  if (subscription.stripeSubscriptionId && subscription.status === "active") {
+    try {
+      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        pause_collection: { behavior: "void" },
+      });
+    } catch (err) {
+      logger.error(
+        `[SubscriptionWebhook] Failed to pause Stripe subscription ${subscription.stripeSubscriptionId} after payment failure: ${err.message}`,
+      );
+    }
+
+    subscription.status = "paused";
+    subscription.pausedAt = subscription.pausedAt || new Date();
+    await subscription.save();
+  }
+
   await CustomerNotification.create({
     customer: subscription.customer,
     type: "payment_failed",
-    title: "Subscription payment failed",
+    title: "Subscription paused – payment failed",
     message:
-      "We couldn't charge your payment method for your subscription. Please update your payment details in the Payments section.",
+      "We couldn't charge your payment method, so your subscription has been paused. Please update your payment details in the Payments section to resume.",
     relatedSubscription: subscription._id,
   });
 
+  try {
+    await sendSubscriptionUpdateEmail({
+      customerId: subscription.customer,
+      subscription,
+      subject: "Your subscription has been paused",
+      title: "Subscription paused – payment failed",
+      message:
+        "We were unable to process your subscription payment, so your deliveries have been paused. Please visit your portal to update your payment method and resume.",
+    });
+  } catch (err) {
+    logger.error(
+      `[SubscriptionWebhook] Failed to send payment-failed email: ${err.message}`,
+    );
+  }
+
   logger.warn(
-    `[SubscriptionWebhook] Payment failed for subscription ${subscription.subscriptionNumber}, invoice ${invoice.id}`,
+    `[SubscriptionWebhook] Payment failed for subscription ${subscription.subscriptionNumber}, invoice ${invoice.id} — subscription paused`,
   );
 }
 

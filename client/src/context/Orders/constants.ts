@@ -114,6 +114,7 @@ export type AdminOrder = {
   metadata?: Record<string, unknown>;
 
   customerInstructions?: string;
+  driverNote?: string | null;
 
   createdAt: string;
   updatedAt: string;

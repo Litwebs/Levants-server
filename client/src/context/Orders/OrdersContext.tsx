@@ -91,6 +91,11 @@ type OrdersContextType = {
     },
   ) => Promise<AdminOrder>;
 
+  updateDriverNote: (
+    orderId: string,
+    driverNote: string | null,
+  ) => Promise<AdminOrder>;
+
   deleteOrder: (orderId: string) => Promise<{ deleted: true; orderId: string }>;
 
   bulkDeleteOrders: (
@@ -322,6 +327,19 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const updateDriverNote = useCallback(
+    async (orderId: string, driverNote: string | null) => {
+      const res = await api.patch(`/admin/orders/${orderId}/driver-note`, {
+        driverNote,
+      });
+      const order = unwrapData<AdminOrder>(res.data);
+      if (!order?._id) throw new Error("Failed to update driver note");
+      dispatch({ type: ORDERS_UPDATE_SUCCESS, payload: { order } });
+      return order;
+    },
+    [],
+  );
+
   const deleteOrder = useCallback(async (orderId: string) => {
     dispatch({ type: ORDERS_REQUEST });
     try {
@@ -518,6 +536,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       updateOrderStatus,
       updateOrderPaymentStatus,
       updateOrderItems,
+      updateDriverNote,
       deleteOrder,
       bulkDeleteOrders,
       refundOrder,
@@ -532,6 +551,9 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       updateOrderStatus,
       updateOrderPaymentStatus,
       updateOrderItems,
+      updateDriverNote,
+      updateOrderItems,
+      updateDriverNote,
       deleteOrder,
       bulkDeleteOrders,
       refundOrder,

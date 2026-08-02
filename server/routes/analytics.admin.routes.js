@@ -9,6 +9,10 @@ const controller = require("../controllers/analytics.admin.controller");
 const router = express.Router();
 
 router.use(requireAuth);
+
+// Nav badge counts only need auth — no analytics.read required
+router.get("/nav-counts", asyncHandler(controller.GetNavCounts));
+
 // Dashboard analytics needs both orders and products.
 router.use(requirePermission("analytics.read"));
 
@@ -23,5 +27,6 @@ router.get("/order-status", asyncHandler(controller.GetOrderStatusCounts));
 router.get("/top-products", asyncHandler(controller.GetTopProducts));
 router.get("/recent-orders", asyncHandler(controller.GetRecentOrders));
 router.get("/low-stock", asyncHandler(controller.GetLowStock));
+router.get("/nav-counts", asyncHandler(controller.GetNavCounts));
 
 module.exports = router;

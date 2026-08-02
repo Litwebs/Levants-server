@@ -12,6 +12,7 @@ const OrderDetailModal = ({
   setIsStatusModalOpen,
   updateOrderPaymentStatus,
   updateOrderItems,
+  updateDriverNote,
   refundOrder,
 }: any) => {
   const { hasPermission } = usePermissions();
@@ -33,6 +34,10 @@ const OrderDetailModal = ({
   const [isSavingItems, setIsSavingItems] = useState(false);
   const [includeDeliveryFeeInTotal, setIncludeDeliveryFeeInTotal] =
     useState(true);
+
+  const [driverNoteDraft, setDriverNoteDraft] = useState("");
+  const [isEditingDriverNote, setIsEditingDriverNote] = useState(false);
+  const [isSavingDriverNote, setIsSavingDriverNote] = useState(false);
   const [draftItems, setDraftItems] = useState<
     {
       variantId: string;
@@ -649,6 +654,105 @@ const OrderDetailModal = ({
                     <p>{selectedOrder.internalNotes}</p>
                   </div>
                 )}
+              </div>
+            )}
+
+            {canUpdatePermission && (
+              <div className={styles.notesSection}>
+                <div className={`${styles.noteBox} ${styles.internalNote}`}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: "var(--space-2)",
+                    }}
+                  >
+                    <h5 style={{ margin: 0 }}>Driver Note</h5>
+                    {!isEditingDriverNote && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setDriverNoteDraft(selectedOrder.driverNote || "");
+                          setIsEditingDriverNote(true);
+                        }}
+                      >
+                        {selectedOrder.driverNote ? "Edit" : "Add note"}
+                      </Button>
+                    )}
+                  </div>
+                  {isEditingDriverNote ? (
+                    <>
+                      <textarea
+                        rows={3}
+                        maxLength={500}
+                        value={driverNoteDraft}
+                        onChange={(e) => setDriverNoteDraft(e.target.value)}
+                        placeholder="Note for the driver (visible on delivery run)…"
+                        style={{
+                          width: "100%",
+                          resize: "vertical",
+                          padding: "var(--space-2)",
+                          borderRadius: "var(--radius-md)",
+                          border: "1px solid var(--color-border)",
+                          fontSize: "var(--text-sm)",
+                        }}
+                        disabled={isSavingDriverNote}
+                      />
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "var(--space-2)",
+                          marginTop: "var(--space-2)",
+                        }}
+                      >
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          isLoading={isSavingDriverNote}
+                          disabled={isSavingDriverNote}
+                          onClick={async () => {
+                            if (!selectedOrder?.id) return;
+                            setIsSavingDriverNote(true);
+                            try {
+                              await updateDriverNote?.(
+                                selectedOrder.id,
+                                driverNoteDraft.trim() || null,
+                              );
+                              setIsEditingDriverNote(false);
+                            } finally {
+                              setIsSavingDriverNote(false);
+                            }
+                          }}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={isSavingDriverNote}
+                          onClick={() => setIsEditingDriverNote(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p
+                      style={{
+                        color: selectedOrder.driverNote
+                          ? undefined
+                          : "var(--color-text-muted)",
+                        fontStyle: selectedOrder.driverNote
+                          ? undefined
+                          : "italic",
+                      }}
+                    >
+                      {selectedOrder.driverNote || "No driver note set"}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 

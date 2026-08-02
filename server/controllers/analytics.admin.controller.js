@@ -125,6 +125,17 @@ const GetOrderStatusCounts = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetNavCounts = async (_req, res) => {
+  const result = await service.GetNavCounts();
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: 500,
+      message: result.message || "Request failed",
+    });
+  }
+  return sendOk(res, result.data);
+};
+
 const GetDashboard = async (req, res) => {
   const result = await service.GetDashboard({
     range: req.query.range,
@@ -153,4 +164,5 @@ module.exports = {
   GetRecentOrders,
   GetLowStock,
   GetDashboard,
+  GetNavCounts,
 };
