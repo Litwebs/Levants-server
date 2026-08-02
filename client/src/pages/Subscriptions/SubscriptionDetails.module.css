@@ -139,6 +139,50 @@
   animation: fadeInUp 360ms ease both;
 }
 
+.pendingSetupCard {
+  justify-content: flex-start;
+  background: var(--color-gray-50);
+  border-color: var(--color-gray-200);
+}
+
+.pendingSetupFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.pendingSetupFacts > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+}
+
+.pendingSetupActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.pendingSetupActions strong {
+  display: block;
+  color: var(--color-gray-900);
+  font-size: var(--text-sm);
+}
+
+.pendingSetupActions p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-gray-600);
+  font-size: var(--text-sm);
+}
+
 .fullSpan {
   grid-column: 1 / -1;
 }
@@ -165,6 +209,15 @@
   font-size: var(--text-sm);
   color: var(--color-gray-700);
   margin-bottom: var(--space-2);
+}
+
+.settingsPermissionNote {
+  padding: var(--space-3);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--color-gray-50);
+  color: var(--color-gray-600);
+  font-size: var(--text-sm);
 }
 
 .notesInput {
@@ -204,56 +257,66 @@
   min-width: 280px;
 }
 
-.itemsAdminPanel {
+.itemsSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.sectionDescription {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-gray-500);
+}
+
+.itemCount {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-gray-100) 45%, transparent);
-  padding: var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.itemsAdminPanelHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.itemsAdminPanelTitle {
-  font-size: var(--text-sm);
-  font-weight: var(--font-semibold);
-  color: var(--color-gray-800);
-}
-
-.itemsBulkBar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-gray-200);
+  border-radius: 999px;
   background: var(--color-gray-50);
-}
-
-.itemsBulkCount {
+  color: var(--color-gray-600);
   font-size: var(--text-sm);
-  color: var(--color-gray-700);
   font-weight: var(--font-medium);
 }
 
-.itemsBulkActions {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+.readOnlyNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--color-gray-50);
 }
 
-.selectedItemRow {
-  background: color-mix(in srgb, var(--color-primary-bg) 65%, white);
+.readOnlyNoticeIcon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  color: var(--color-gray-600);
+  border: 1px solid var(--color-gray-200);
+}
+
+.readOnlyNotice strong {
+  display: block;
+  color: var(--color-gray-800);
+  font-size: var(--text-sm);
+}
+
+.readOnlyNotice p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-gray-600);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
 }
 
 .itemCellWithImage {
@@ -680,6 +743,16 @@
   border-color: #99f6e4;
 }
 
+.status-pending {
+  color: var(--color-gray-700);
+  background: var(--color-gray-100);
+  border-color: var(--color-gray-200);
+}
+
+.status-pending .heroStatusDot {
+  background: var(--color-gray-500);
+}
+
 .status-active .heroStatusDot {
   background: #14b8a6;
 }
@@ -872,6 +945,15 @@
   .page {
     padding: var(--space-3);
     gap: var(--space-4);
+  }
+
+  .pendingSetupFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .pendingSetupActions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .tabs {

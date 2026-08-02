@@ -72,6 +72,8 @@ type CustomersContextType = {
     page?: number;
     pageSize?: number;
     search?: string;
+    type?: "all" | "guest" | "registered";
+    sort?: "newest" | "oldest" | "name-asc" | "name-desc";
   }) => Promise<ListCustomersResult>;
 
   listCustomerOrders: (
@@ -94,9 +96,11 @@ type CustomersContextType = {
   updateCustomer: (
     customerId: string,
     body: {
+      email?: string;
       firstName?: string;
       lastName?: string;
       phone?: string | null;
+      status?: "active" | "disabled";
       address?: CustomerAddress;
     },
   ) => Promise<Customer>;
@@ -126,7 +130,13 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(CustomersReducer, initialCustomersState);
 
   const listCustomers = useCallback(
-    async (params?: { page?: number; pageSize?: number; search?: string }) => {
+    async (params?: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      type?: "all" | "guest" | "registered";
+      sort?: "newest" | "oldest" | "name-asc" | "name-desc";
+    }) => {
       dispatch({ type: CUSTOMERS_REQUEST });
       try {
         const res = await api.get("/admin/customers", {
@@ -134,6 +144,8 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
             page: params?.page,
             pageSize: params?.pageSize,
             search: params?.search,
+            type: params?.type,
+            sort: params?.sort,
           },
         });
 
@@ -282,9 +294,11 @@ export const CustomersProvider = ({ children }: { children: ReactNode }) => {
     async (
       customerId: string,
       body: {
+        email?: string;
         firstName?: string;
         lastName?: string;
         phone?: string | null;
+        status?: "active" | "disabled";
         address?: CustomerAddress;
       },
     ) => {

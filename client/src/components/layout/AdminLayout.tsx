@@ -20,7 +20,6 @@ import {
   LayoutList,
   Star,
   RefreshCw,
-  CreditCard,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -79,12 +78,6 @@ const navItems = [
     requiredAny: ["orders.read"],
   },
   {
-    path: "/payments",
-    label: "Payments",
-    icon: CreditCard,
-    requiredAny: ["orders.read"],
-  },
-  {
     path: "/discounts",
     label: "Discounts",
     icon: Tag,
@@ -95,7 +88,6 @@ const navItems = [
     label: "Announcements",
     icon: Megaphone,
     requiredAny: ["announcements.read"],
-    requireEmailDomain: "@litwebs.co.uk",
   },
   {
     path: "/broadcasts",
@@ -108,7 +100,6 @@ const navItems = [
     label: "Categories",
     icon: LayoutList,
     requiredAny: ["categories.read"],
-    requireEmailDomain: "@litwebs.co.uk",
   },
   {
     path: "/reviews",
@@ -217,12 +208,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.path === "/orders" && String(roleLabel || "") === "driver") {
-      return false;
-    }
-    const requireEmailDomain = (item as any).requireEmailDomain as
-      | string
-      | undefined;
-    if (requireEmailDomain && !user?.email?.endsWith(requireEmailDomain)) {
       return false;
     }
     const requiredAny = (item as any).requiredAny as string[] | undefined;

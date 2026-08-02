@@ -7,6 +7,15 @@ import {
 } from "react";
 import api from "../api";
 
+const getRequestError = (error: unknown, fallback: string) => {
+  if (error && typeof error === "object" && "response" in error) {
+    const response = (error as { response?: { data?: { message?: unknown } } })
+      .response;
+    if (typeof response?.data?.message === "string") return response.data.message;
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+};
+
 export type SubscriptionItem = {
   _id: string;
   product: string;
@@ -153,16 +162,7 @@ type SubscriptionsContextType = {
   pauseSubscription: (id: string) => Promise<Subscription>;
   resumeSubscription: (id: string) => Promise<Subscription>;
   cancelSubscription: (id: string, reason?: string) => Promise<Subscription>;
-  addSubscriptionItem: (
-    id: string,
-    payload: { variantId: string; quantity: number },
-  ) => Promise<Subscription>;
-  updateSubscriptionItem: (
-    id: string,
-    itemId: string,
-    payload: { quantity: number },
-  ) => Promise<Subscription>;
-  removeSubscriptionItem: (id: string, itemId: string) => Promise<Subscription>;
+  deletePendingSubscription: (id: string) => Promise<void>;
 };
 
 const SubscriptionsContext = createContext<SubscriptionsContextType | null>(
@@ -195,8 +195,8 @@ export const SubscriptionsProvider = ({
         const data = res.data?.data ?? res.data;
         setSubscriptions(data?.subscriptions ?? []);
         setMeta(data?.meta ?? null);
-      } catch (e: any) {
-        setError(e?.response?.data?.message ?? "Failed to load subscriptions");
+      } catch (error: unknown) {
+        setError(getRequestError(error, "Failed to load subscriptions"));
       } finally {
         setLoading(false);
       }
@@ -335,52 +335,15 @@ export const SubscriptionsProvider = ({
     [getSubscription],
   );
 
-  const addSubscriptionItem = useCallback(
-    async (id: string, payload: { variantId: string; quantity: number }) => {
-      const res = await api.post(`/admin/subscriptions/${id}/items`, payload);
-      const data = res.data?.data ?? res.data;
-      const next = (data?.subscription ?? null) as Subscription | null;
-      if (next?._id) {
-        setSubscriptions((prev) => prev.map((s) => (s._id === id ? next : s)));
-        return next;
-      }
-      return getSubscription(id);
-    },
-    [getSubscription],
-  );
-
-  const updateSubscriptionItem = useCallback(
-    async (id: string, itemId: string, payload: { quantity: number }) => {
-      const res = await api.patch(
-        `/admin/subscriptions/${id}/items/${itemId}`,
-        payload,
-      );
-      const data = res.data?.data ?? res.data;
-      const next = (data?.subscription ?? null) as Subscription | null;
-      if (next?._id) {
-        setSubscriptions((prev) => prev.map((s) => (s._id === id ? next : s)));
-        return next;
-      }
-      return getSubscription(id);
-    },
-    [getSubscription],
-  );
-
-  const removeSubscriptionItem = useCallback(
-    async (id: string, itemId: string) => {
-      const res = await api.delete(
-        `/admin/subscriptions/${id}/items/${itemId}`,
-      );
-      const data = res.data?.data ?? res.data;
-      const next = (data?.subscription ?? null) as Subscription | null;
-      if (next?._id) {
-        setSubscriptions((prev) => prev.map((s) => (s._id === id ? next : s)));
-        return next;
-      }
-      return getSubscription(id);
-    },
-    [getSubscription],
-  );
+  const deletePendingSubscription = useCallback(async (id: string) => {
+    await api.delete(`/admin/subscriptions/${id}/pending-setup`);
+    setSubscriptions((prev) =>
+      prev.filter((subscription) => subscription._id !== id),
+    );
+    setMeta((prev) =>
+      prev ? { ...prev, total: Math.max(0, prev.total - 1) } : prev,
+    );
+  }, []);
 
   return (
     <SubscriptionsContext.Provider
@@ -398,9 +361,7 @@ export const SubscriptionsProvider = ({
         pauseSubscription,
         resumeSubscription,
         cancelSubscription,
-        addSubscriptionItem,
-        updateSubscriptionItem,
-        removeSubscriptionItem,
+        deletePendingSubscription,
       }}
     >
       {children}

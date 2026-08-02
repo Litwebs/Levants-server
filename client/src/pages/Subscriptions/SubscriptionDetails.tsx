@@ -4,14 +4,12 @@ import {
   Button,
   Card,
   DataTableCard,
-  Input,
   Modal,
   ModalFooter,
   Select,
   Table,
 } from "../../components/common";
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
-import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 import {
   useSubscriptions,
   type Subscription,
@@ -20,14 +18,13 @@ import {
   type SubscriptionPayment,
 } from "../../context/Subscriptions";
 import { useToast } from "../../components/common/Toast";
-import { useVariantSearch } from "../Discounts/useVariantSearch";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   ArrowLeft,
+  LockKeyhole,
   Loader2,
   RefreshCw,
-  Search,
-  X as XIcon,
-  Plus,
+  Trash2,
 } from "lucide-react";
 import styles from "./SubscriptionDetails.module.css";
 
@@ -51,6 +48,7 @@ const STATUS_LABELS: Record<string, string> = {
   active: "Active",
   paused: "Paused",
   cancelled: "Cancelled",
+  pending: "Pending setup",
 };
 
 type TabId = "overview" | "deliveries" | "orders" | "payments";
@@ -59,20 +57,6 @@ type ListMeta = {
   page: number;
   pageSize: number;
   total: number;
-};
-
-type VariantSearchItem = {
-  _id: string;
-  name: string;
-  sku?: string;
-  product?: { name?: string } | null;
-};
-
-type StagedAddItem = {
-  variantId: string;
-  name: string;
-  sku?: string;
-  quantity: number;
 };
 
 const DEFAULT_META = (page = 1, pageSize = 10): ListMeta => ({
@@ -85,12 +69,6 @@ const PAGE_SIZE_OPTIONS = [
   { value: "10", label: "10 - page" },
   { value: "20", label: "20 - page" },
   { value: "50", label: "50 - page" },
-];
-
-const ITEMS_WIZARD_STEPS = [
-  { id: 1 as const, label: "Select Products" },
-  { id: 2 as const, label: "Summary" },
-  { id: 3 as const, label: "Confirm" },
 ];
 
 const toneFromStatus = (status: string) => {
@@ -143,10 +121,21 @@ const formatDate = (value?: string | null) => {
   });
 };
 
+const getRequestError = (error: unknown, fallback: string) => {
+  if (error && typeof error === "object" && "response" in error) {
+    const response = (error as { response?: { data?: { message?: unknown } } })
+      .response;
+    if (typeof response?.data?.message === "string") return response.data.message;
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+};
+
 export default function SubscriptionDetailsPage() {
   const { subscriptionId = "" } = useParams<{ subscriptionId: string }>();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { hasPermission } = usePermissions();
+  const canUpdateSubscription = hasPermission("orders.update");
   const {
     getSubscription,
     getSubscriptionDeliveries,
@@ -156,11 +145,8 @@ export default function SubscriptionDetailsPage() {
     pauseSubscription,
     resumeSubscription,
     cancelSubscription,
-    addSubscriptionItem,
-    updateSubscriptionItem,
-    removeSubscriptionItem,
+    deletePendingSubscription,
   } = useSubscriptions();
-  const variantSearch = useVariantSearch();
 
   const [tab, setTab] = useState<TabId>("overview");
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -200,21 +186,13 @@ export default function SubscriptionDetailsPage() {
   >("active");
   const [preferredDeliveryDay, setPreferredDeliveryDay] = useState("1");
   const [notes, setNotes] = useState("");
-  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  const [itemsBulkLoading, setItemsBulkLoading] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelModalReason, setCancelModalReason] = useState("");
-  const [isItemsModalOpen, setIsItemsModalOpen] = useState(false);
-  const [itemsWizardStep, setItemsWizardStep] = useState<1 | 2 | 3>(1);
-  const [stagedAdds, setStagedAdds] = useState<StagedAddItem[]>([]);
-  const [stagedRemoveIds, setStagedRemoveIds] = useState<string[]>([]);
-  const [searchQuantities, setSearchQuantities] = useState<
-    Record<string, string>
-  >({});
-  const [applyChangesLoading, setApplyChangesLoading] = useState(false);
+  const [isDeletePendingModalOpen, setIsDeletePendingModalOpen] =
+    useState(false);
 
   const hydrateEditor = (value: Subscription) => {
-    setStatusDraft(value.status);
+    setStatusDraft(value.status === "pending" ? "active" : value.status);
     setFrequency(value.frequency);
     setPreferredDeliveryDay(String(value.preferredDeliveryDay));
     setNotes(value.notes || "");
@@ -234,7 +212,7 @@ export default function SubscriptionDetailsPage() {
   };
 
   const hasFormChanges = useMemo(() => {
-    if (!subscription) return false;
+    if (!subscription || subscription.isPendingSetup) return false;
     return (
       frequency !== subscription.frequency ||
       Number(preferredDeliveryDay) !==
@@ -243,6 +221,8 @@ export default function SubscriptionDetailsPage() {
       statusDraft !== subscription.status
     );
   }, [frequency, preferredDeliveryDay, notes, statusDraft, subscription]);
+
+  const isPendingSetup = Boolean(subscription?.isPendingSetup);
 
   const statusOptions = useMemo(() => {
     if (subscription?.status === "cancelled") {
@@ -263,8 +243,8 @@ export default function SubscriptionDetailsPage() {
       const detail = await getSubscription(subscriptionId);
       setSubscription(detail);
       hydrateEditor(detail);
-    } catch (e: any) {
-      setError(e?.response?.data?.message || "Failed to load subscription");
+    } catch (error: unknown) {
+      setError(getRequestError(error, "Failed to load subscription"));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -361,8 +341,6 @@ export default function SubscriptionDetailsPage() {
     );
   }, [subscription]);
 
-  const canManageItems = !!subscription && subscription.status !== "cancelled";
-
   const pagedItems = useMemo(() => {
     if (!subscription) return [];
     const start = (itemsPage - 1) * itemsPageSize;
@@ -379,15 +357,6 @@ export default function SubscriptionDetailsPage() {
       setItemsPage(itemsTotalPages);
     }
   }, [itemsPage, itemsTotalPages]);
-
-  useEffect(() => {
-    setSelectedItemIds((prev) => {
-      const validIds = new Set(
-        (subscription?.items || []).map((item) => item._id),
-      );
-      return prev.filter((id) => validIds.has(id));
-    });
-  }, [subscription]);
 
   const renderSoftTag = (value?: string | null) => {
     const normalized = String(value || "").toLowerCase();
@@ -407,7 +376,7 @@ export default function SubscriptionDetailsPage() {
   };
 
   const saveChanges = async () => {
-    if (!subscription) return;
+    if (!subscription || !canUpdateSubscription) return;
     if (!hasFormChanges) return;
     setSaving(true);
     try {
@@ -439,10 +408,10 @@ export default function SubscriptionDetailsPage() {
       setSubscription(normalized);
       hydrateEditor(normalized);
       showToast({ type: "success", title: "Subscription updated" });
-    } catch (e: any) {
+    } catch (error: unknown) {
       showToast({
         type: "error",
-        title: e?.response?.data?.message || "Failed to update subscription",
+        title: getRequestError(error, "Failed to update subscription"),
       });
     } finally {
       setSaving(false);
@@ -456,7 +425,12 @@ export default function SubscriptionDetailsPage() {
   };
 
   const handleCancel = async () => {
-    if (!subscription || subscription.status === "cancelled") return;
+    if (
+      !subscription ||
+      !canUpdateSubscription ||
+      subscription.status === "cancelled"
+    )
+      return;
     setActionBusy(true);
     try {
       const next = await cancelSubscription(
@@ -468,208 +442,33 @@ export default function SubscriptionDetailsPage() {
       setIsCancelModalOpen(false);
       showToast({ type: "success", title: "Subscription cancelled" });
       await loadSubscription(true);
-    } catch (e: any) {
+    } catch (error: unknown) {
       showToast({
         type: "error",
-        title: e?.response?.data?.message || "Failed to cancel subscription",
+        title: getRequestError(error, "Failed to cancel subscription"),
       });
     } finally {
       setActionBusy(false);
     }
   };
 
-  const toggleItemSelection = (itemId: string) => {
-    setSelectedItemIds((prev) =>
-      prev.includes(itemId)
-        ? prev.filter((id) => id !== itemId)
-        : [...prev, itemId],
-    );
-  };
-
-  const toggleSelectAllItemsOnPage = () => {
-    const pageIds = pagedItems.map((item) => item._id);
-    if (!pageIds.length) return;
-    const allSelected = pageIds.every((id) => selectedItemIds.includes(id));
-    if (allSelected) {
-      setSelectedItemIds((prev) => prev.filter((id) => !pageIds.includes(id)));
-      return;
-    }
-    setSelectedItemIds((prev) => Array.from(new Set([...prev, ...pageIds])));
-  };
-
-  const applyBulkQuantityDelta = async (delta: number) => {
-    if (!subscription || !canManageItems || selectedItemIds.length === 0)
-      return;
-    setItemsBulkLoading(true);
+  const handleDeletePending = async () => {
+    if (!subscription?.isPendingSetup || !canUpdateSubscription) return;
+    setActionBusy(true);
     try {
-      let nextSubscription = subscription;
-      for (const itemId of selectedItemIds) {
-        const current = nextSubscription.items.find(
-          (item) => item._id === itemId,
-        );
-        if (!current) continue;
-        const nextQty = Math.max(1, Number(current.quantity || 1) + delta);
-        nextSubscription = await updateSubscriptionItem(
-          nextSubscription._id,
-          itemId,
-          {
-            quantity: nextQty,
-          },
-        );
-      }
-      applySubscriptionPatch(nextSubscription);
-      showToast({ type: "success", title: "Selected items updated" });
-    } catch (e: any) {
+      await deletePendingSubscription(subscription._id);
+      showToast({
+        type: "success",
+        title: "Pending subscription setup deleted",
+      });
+      navigate("/subscriptions");
+    } catch (error: unknown) {
       showToast({
         type: "error",
-        title: e?.response?.data?.message || "Failed to update selected items",
+        title: getRequestError(error, "Failed to delete pending setup"),
       });
     } finally {
-      setItemsBulkLoading(false);
-    }
-  };
-
-  const removeSelectedItems = async () => {
-    if (!subscription || !canManageItems || selectedItemIds.length === 0)
-      return;
-    setItemsBulkLoading(true);
-    try {
-      let nextSubscription = subscription;
-      for (const itemId of selectedItemIds) {
-        if (nextSubscription.items.length <= 1) break;
-        nextSubscription = await removeSubscriptionItem(
-          nextSubscription._id,
-          itemId,
-        );
-      }
-      applySubscriptionPatch(nextSubscription);
-      setSelectedItemIds([]);
-      showToast({ type: "success", title: "Selected items removed" });
-    } catch (e: any) {
-      showToast({
-        type: "error",
-        title: e?.response?.data?.message || "Failed to remove selected items",
-      });
-    } finally {
-      setItemsBulkLoading(false);
-    }
-  };
-
-  const openItemsWizard = () => {
-    if (!canManageItems) return;
-    setItemsWizardStep(1);
-    setStagedAdds([]);
-    setStagedRemoveIds([]);
-    setSearchQuantities({});
-    variantSearch.setQuery("");
-    setIsItemsModalOpen(true);
-  };
-
-  const closeItemsWizard = () => {
-    setIsItemsModalOpen(false);
-    setItemsWizardStep(1);
-    setStagedAdds([]);
-    setStagedRemoveIds([]);
-    setSearchQuantities({});
-    variantSearch.setQuery("");
-  };
-
-  const setResultQuantity = (variantId: string, value: string) => {
-    setSearchQuantities((prev) => ({ ...prev, [variantId]: value }));
-  };
-
-  const getResultQuantity = (variantId: string) => {
-    const raw = searchQuantities[variantId];
-    const parsed = Math.floor(Number(raw || 1));
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-  };
-
-  const stageAddVariant = (variant: VariantSearchItem) => {
-    const qty = getResultQuantity(variant._id);
-    setStagedAdds((prev) => {
-      const idx = prev.findIndex((item) => item.variantId === variant._id);
-      if (idx === -1) {
-        return [
-          ...prev,
-          {
-            variantId: variant._id,
-            name: variant.name,
-            sku: variant.sku,
-            quantity: qty,
-          },
-        ];
-      }
-      const next = [...prev];
-      next[idx] = {
-        ...next[idx],
-        quantity: next[idx].quantity + qty,
-      };
-      return next;
-    });
-  };
-
-  const setStagedAddQuantity = (variantId: string, quantity: number) => {
-    const nextQty = Math.max(1, Math.floor(quantity));
-    setStagedAdds((prev) =>
-      prev.map((item) =>
-        item.variantId === variantId ? { ...item, quantity: nextQty } : item,
-      ),
-    );
-  };
-
-  const removeStagedAdd = (variantId: string) => {
-    setStagedAdds((prev) =>
-      prev.filter((item) => item.variantId !== variantId),
-    );
-  };
-
-  const toggleStagedRemoval = (itemId: string) => {
-    setStagedRemoveIds((prev) =>
-      prev.includes(itemId)
-        ? prev.filter((id) => id !== itemId)
-        : [...prev, itemId],
-    );
-  };
-
-  const hasPendingChanges = stagedAdds.length > 0 || stagedRemoveIds.length > 0;
-
-  const itemsMarkedForRemoval = useMemo(() => {
-    if (!subscription) return [];
-    return subscription.items.filter((item) =>
-      stagedRemoveIds.includes(item._id),
-    );
-  }, [subscription, stagedRemoveIds]);
-
-  const applyItemChanges = async () => {
-    if (!subscription || !canManageItems || !hasPendingChanges) return;
-    setApplyChangesLoading(true);
-    try {
-      let nextSubscription = subscription;
-
-      for (const itemId of stagedRemoveIds) {
-        nextSubscription = await removeSubscriptionItem(
-          nextSubscription._id,
-          itemId,
-        );
-      }
-
-      for (const item of stagedAdds) {
-        nextSubscription = await addSubscriptionItem(nextSubscription._id, {
-          variantId: item.variantId,
-          quantity: item.quantity,
-        });
-      }
-
-      applySubscriptionPatch(nextSubscription);
-      showToast({ type: "success", title: "Subscription items updated" });
-      closeItemsWizard();
-    } catch (e: any) {
-      showToast({
-        type: "error",
-        title: e?.response?.data?.message || "Failed to apply item changes",
-      });
-    } finally {
-      setApplyChangesLoading(false);
+      setActionBusy(false);
     }
   };
 
@@ -745,7 +544,9 @@ export default function SubscriptionDetailsPage() {
         <Card className={styles.summaryCard}>
           <div className={styles.summaryLabel}>Next Delivery</div>
           <div className={styles.summaryValue}>
-            {formatDate(subscription.nextDeliveryDate)}
+            {isPendingSetup
+              ? "Awaiting setup"
+              : formatDate(subscription.nextDeliveryDate)}
           </div>
         </Card>
 
@@ -764,36 +565,102 @@ export default function SubscriptionDetailsPage() {
         >
           Overview & Manage
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`${styles.tabBtn} ${tab === "deliveries" ? styles.activeTab : ""}`}
-          onClick={() => setTab("deliveries")}
-        >
-          Delivery History
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`${styles.tabBtn} ${tab === "orders" ? styles.activeTab : ""}`}
-          onClick={() => setTab("orders")}
-        >
-          Orders History
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`${styles.tabBtn} ${tab === "payments" ? styles.activeTab : ""}`}
-          onClick={() => setTab("payments")}
-        >
-          Payment History
-        </Button>
+        {!isPendingSetup && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`${styles.tabBtn} ${tab === "deliveries" ? styles.activeTab : ""}`}
+              onClick={() => setTab("deliveries")}
+            >
+              Delivery History
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`${styles.tabBtn} ${tab === "orders" ? styles.activeTab : ""}`}
+              onClick={() => setTab("orders")}
+            >
+              Orders History
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={`${styles.tabBtn} ${tab === "payments" ? styles.activeTab : ""}`}
+              onClick={() => setTab("payments")}
+            >
+              Payment History
+            </Button>
+          </>
+        )}
       </div>
 
       {tab === "overview" ? (
         <div className={styles.overviewGrid}>
+          {isPendingSetup ? (
+            <Card className={`${styles.sectionCard} ${styles.pendingSetupCard}`}>
+              <div>
+                <h3 className={styles.sectionTitle}>Customer setup required</h3>
+                <p className={styles.sectionDescription}>
+                  This subscription has been prepared, but it will not create
+                  deliveries or payments until the customer verifies their account
+                  and adds a payment method.
+                </p>
+              </div>
+              <div className={styles.pendingSetupFacts}>
+                <div>
+                  <span className={styles.infoLabel}>Prepared</span>
+                  <span className={styles.infoValue}>
+                    {formatDate(subscription.createdAt)}
+                  </span>
+                </div>
+                <div>
+                  <span className={styles.infoLabel}>Setup link expires</span>
+                  <span className={styles.infoValue}>
+                    {formatDate(subscription.setupExpiresAt)}
+                  </span>
+                </div>
+                <div>
+                  <span className={styles.infoLabel}>Delivery days</span>
+                  <span className={styles.infoValue}>
+                    {(subscription.preferredDeliveryDays?.length
+                      ? subscription.preferredDeliveryDays
+                      : [subscription.preferredDeliveryDay]
+                    )
+                      .map((day) => DAY_OPTIONS.find((option) => Number(option.value) === day)?.label)
+                      .filter(Boolean)
+                      .join(", ") || "-"}
+                  </span>
+                </div>
+              </div>
+              {canUpdateSubscription ? (
+                <div className={styles.pendingSetupActions}>
+                  <div>
+                    <strong>Remove this pending setup</strong>
+                    <p>
+                      The customer will remain in Customers, but their setup
+                      link will stop working immediately.
+                    </p>
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    leftIcon={<Trash2 size={16} />}
+                    onClick={() => setIsDeletePendingModalOpen(true)}
+                  >
+                    Delete pending setup
+                  </Button>
+                </div>
+              ) : null}
+            </Card>
+          ) : (
           <Card className={styles.sectionCard}>
             <h3 className={styles.sectionTitle}>Manage Subscription</h3>
+            {!canUpdateSubscription && (
+              <div className={styles.settingsPermissionNote} role="note">
+                You have read-only access to subscription settings.
+              </div>
+            )}
             <div className={styles.formGrid}>
               <Select
                 label="Status"
@@ -802,19 +669,23 @@ export default function SubscriptionDetailsPage() {
                   setStatusDraft(value as "active" | "paused" | "cancelled")
                 }
                 options={statusOptions}
-                disabled={subscription.status === "cancelled"}
+                disabled={
+                  !canUpdateSubscription || subscription.status === "cancelled"
+                }
               />
               <Select
                 label="Frequency"
                 value={frequency}
                 onChange={setFrequency}
                 options={FREQUENCY_OPTIONS}
+                disabled={!canUpdateSubscription}
               />
               <Select
                 label="Preferred Delivery Day"
                 value={preferredDeliveryDay}
                 onChange={setPreferredDeliveryDay}
                 options={DAY_OPTIONS}
+                disabled={!canUpdateSubscription}
               />
               <div className={styles.fullWidth}>
                 <label className={styles.fieldLabel}>Notes</label>
@@ -824,6 +695,7 @@ export default function SubscriptionDetailsPage() {
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Subscription notes"
                   rows={4}
+                  disabled={!canUpdateSubscription}
                 />
               </div>
             </div>
@@ -835,11 +707,13 @@ export default function SubscriptionDetailsPage() {
                   size="sm"
                   onClick={saveChanges}
                   isLoading={saving}
-                  disabled={!hasFormChanges || actionBusy}
+                  disabled={
+                    !canUpdateSubscription || !hasFormChanges || actionBusy
+                  }
                 >
                   Save Changes
                 </Button>
-                {subscription.status !== "cancelled" && (
+                {canUpdateSubscription && subscription.status !== "cancelled" && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -853,6 +727,7 @@ export default function SubscriptionDetailsPage() {
               </div>
             </div>
           </Card>
+          )}
 
           <Card className={styles.sectionCard}>
             <h3 className={styles.sectionTitle}>Customer Details</h3>
@@ -899,27 +774,29 @@ export default function SubscriptionDetailsPage() {
           </Card>
 
           <Card className={`${styles.sectionCard} ${styles.fullSpan}`}>
-            <h3 className={styles.sectionTitle}>Subscription Items</h3>
-
-            <div className={styles.itemsAdminPanel}>
-              <div className={styles.itemsAdminPanelHeader}>
-                <div className={styles.itemsAdminPanelTitle}>
-                  Manage Products
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={openItemsWizard}
-                  disabled={!canManageItems}
-                  leftIcon={<Plus size={14} />}
-                >
-                  Add / Remove Products
-                </Button>
+            <div className={styles.itemsSectionHeader}>
+              <div>
+                <h3 className={styles.sectionTitle}>Subscription Items</h3>
+                <p className={styles.sectionDescription}>
+                  Products and quantities currently included in this subscription.
+                </p>
               </div>
-              <p className={styles.wizardHint}>
-                Launch the product manager to search variants, set quantities,
-                review a summary, and confirm all changes in one flow.
-              </p>
+              <span className={styles.itemCount}>
+                {subscription.items.length} product{subscription.items.length === 1 ? "" : "s"}
+              </span>
+            </div>
+
+            <div className={styles.readOnlyNotice} role="note">
+              <span className={styles.readOnlyNoticeIcon} aria-hidden="true">
+                <LockKeyhole size={17} />
+              </span>
+              <div>
+                <strong>Products are read-only for admins</strong>
+                <p>
+                  You can review the current items, but products and quantities
+                  cannot be added, removed, or changed here.
+                </p>
+              </div>
             </div>
 
             <DataTableCard
@@ -934,69 +811,12 @@ export default function SubscriptionDetailsPage() {
                 pageSizeOptions: PAGE_SIZE_OPTIONS,
               }}
             >
-              {selectedItemIds.length > 0 ? (
-                <div className={styles.itemsBulkBar}>
-                  <span className={styles.itemsBulkCount}>
-                    {selectedItemIds.length} product(s) selected
-                  </span>
-                  <div className={styles.itemsBulkActions}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => applyBulkQuantityDelta(1)}
-                      isLoading={itemsBulkLoading}
-                      disabled={!canManageItems}
-                    >
-                      Increase Qty
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => applyBulkQuantityDelta(-1)}
-                      isLoading={itemsBulkLoading}
-                      disabled={!canManageItems}
-                    >
-                      Decrease Qty
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={removeSelectedItems}
-                      isLoading={itemsBulkLoading}
-                      disabled={!canManageItems}
-                    >
-                      Remove Selected
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedItemIds([])}
-                      disabled={itemsBulkLoading}
-                    >
-                      Clear Selection
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
               <Table
                 withWrapper={false}
                 tableClassName={sharedTableStyles.table}
               >
                 <thead>
                   <tr>
-                    <th>
-                      <input
-                        type="checkbox"
-                        checked={
-                          pagedItems.length > 0 &&
-                          pagedItems.every((item) =>
-                            selectedItemIds.includes(item._id),
-                          )
-                        }
-                        onChange={toggleSelectAllItemsOnPage}
-                      />
-                    </th>
                     <th>Name</th>
                     <th>SKU</th>
                     <th>Qty</th>
@@ -1009,7 +829,7 @@ export default function SubscriptionDetailsPage() {
                     <tr className={sharedTableStyles.emptyStateRow}>
                       <td
                         className={sharedTableStyles.emptyTableCell}
-                        colSpan={6}
+                        colSpan={5}
                       >
                         No items
                       </td>
@@ -1023,21 +843,7 @@ export default function SubscriptionDetailsPage() {
                       ).imageUrl;
 
                       return (
-                        <tr
-                          key={item._id}
-                          className={
-                            selectedItemIds.includes(item._id)
-                              ? styles.selectedItemRow
-                              : undefined
-                          }
-                        >
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={selectedItemIds.includes(item._id)}
-                              onChange={() => toggleItemSelection(item._id)}
-                            />
-                          </td>
+                        <tr key={item._id}>
                           <td>
                             <div className={styles.itemCellWithImage}>
                               {imageUrl ? (
@@ -1112,6 +918,44 @@ export default function SubscriptionDetailsPage() {
             isLoading={actionBusy}
           >
             Confirm Cancellation
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        isOpen={isDeletePendingModalOpen}
+        onClose={() => {
+          if (actionBusy) return;
+          setIsDeletePendingModalOpen(false);
+        }}
+        title="Delete pending setup?"
+        size="sm"
+      >
+        <div className={styles.cancelModalContent}>
+          <p className={styles.cancelModalText}>
+            This permanently removes the prepared subscription for{" "}
+            <strong>{getCustomerName(subscription.customer)}</strong> and
+            invalidates their setup link.
+          </p>
+          <p className={styles.cancelModalText}>
+            The customer account and contact details will not be deleted.
+          </p>
+        </div>
+        <ModalFooter>
+          <Button
+            variant="outline"
+            onClick={() => setIsDeletePendingModalOpen(false)}
+            disabled={actionBusy}
+          >
+            Keep setup
+          </Button>
+          <Button
+            variant="danger"
+            leftIcon={<Trash2 size={16} />}
+            onClick={handleDeletePending}
+            isLoading={actionBusy}
+          >
+            Delete pending setup
           </Button>
         </ModalFooter>
       </Modal>
@@ -1275,313 +1119,6 @@ export default function SubscriptionDetailsPage() {
         </DataTableCard>
       ) : null}
 
-      <Modal
-        isOpen={isItemsModalOpen}
-        onClose={closeItemsWizard}
-        title="Manage Subscription Products"
-        size="xl"
-      >
-        <div className={styles.wizardHeaderTop}>
-          <div className={styles.wizardHeaderSubtle}>
-            Step {itemsWizardStep} of 3
-          </div>
-          <div className={styles.wizardStepper}>
-            {ITEMS_WIZARD_STEPS.map((step, index) => {
-              const isActive = itemsWizardStep === step.id;
-              const isDone = itemsWizardStep > step.id;
-              return (
-                <div key={step.id} className={styles.wizardStepNode}>
-                  <div
-                    className={`${styles.wizardStepCircle} ${isActive ? styles.wizardStepCircleActive : ""} ${isDone ? styles.wizardStepCircleDone : ""}`}
-                  >
-                    {step.id}
-                  </div>
-                  <div className={styles.wizardStepLabel}>{step.label}</div>
-                  {index < ITEMS_WIZARD_STEPS.length - 1 ? (
-                    <div
-                      className={`${styles.wizardStepConnector} ${itemsWizardStep > step.id ? styles.wizardStepConnectorDone : ""}`}
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {itemsWizardStep === 1 ? (
-          <div className={styles.wizardBody}>
-            <div className={styles.wizardSection}>
-              <h4 className={styles.wizardTitle}>Search and Add Products</h4>
-              <div className={sharedFilterStyles.searchInput}>
-                <Search size={18} className={sharedFilterStyles.searchIcon} />
-                <input
-                  value={variantSearch.query}
-                  onChange={(e) => variantSearch.setQuery(e.target.value)}
-                  placeholder="Search product variants by name / SKU"
-                  className={sharedFilterStyles.search}
-                  disabled={applyChangesLoading}
-                />
-                {variantSearch.query && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={sharedFilterStyles.clearSearch}
-                    onClick={() => variantSearch.setQuery("")}
-                    aria-label="Clear search"
-                  >
-                    <XIcon size={16} />
-                  </Button>
-                )}
-              </div>
-
-              {variantSearch.hasQuery ? (
-                <div className={styles.wizardSearchResults}>
-                  {variantSearch.loading ? (
-                    <div className={styles.wizardEmptyState}>Searching...</div>
-                  ) : variantSearch.error ? (
-                    <div className={styles.wizardErrorState}>
-                      {variantSearch.error}
-                    </div>
-                  ) : variantSearch.results.length === 0 ? (
-                    <div className={styles.wizardEmptyState}>No results</div>
-                  ) : (
-                    (variantSearch.results as VariantSearchItem[]).map(
-                      (variant) => (
-                        <div
-                          key={variant._id}
-                          className={styles.searchResultRow}
-                        >
-                          <div className={styles.searchResultText}>
-                            <div className={styles.searchResultName}>
-                              {variant.product?.name
-                                ? `${variant.product.name} • ${variant.name}`
-                                : variant.name}
-                            </div>
-                            <div className={styles.searchResultMeta}>
-                              {variant.sku || "-"}
-                            </div>
-                          </div>
-                          <Input
-                            type="number"
-                            min={1}
-                            value={String(searchQuantities[variant._id] ?? "1")}
-                            onChange={(e) =>
-                              setResultQuantity(variant._id, e.target.value)
-                            }
-                            className={styles.resultQtyInput}
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => stageAddVariant(variant)}
-                          >
-                            Add
-                          </Button>
-                        </div>
-                      ),
-                    )
-                  )}
-                </div>
-              ) : null}
-            </div>
-
-            <div className={styles.wizardTwoColumn}>
-              <div className={styles.wizardSection}>
-                <h4 className={styles.wizardTitle}>Products to Add</h4>
-                {stagedAdds.length === 0 ? (
-                  <div className={styles.wizardEmptyState}>
-                    No products staged.
-                  </div>
-                ) : (
-                  <div className={styles.stagedList}>
-                    {stagedAdds.map((item) => (
-                      <div key={item.variantId} className={styles.stagedRow}>
-                        <div className={styles.stagedRowText}>
-                          <div className={styles.stagedRowName}>
-                            {item.name}
-                          </div>
-                          <div className={styles.stagedRowMeta}>
-                            {item.sku || "-"}
-                          </div>
-                        </div>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={String(item.quantity)}
-                          onChange={(e) =>
-                            setStagedAddQuantity(
-                              item.variantId,
-                              Number(e.target.value || 1),
-                            )
-                          }
-                          className={styles.resultQtyInput}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeStagedAdd(item.variantId)}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className={styles.wizardSection}>
-                <h4 className={styles.wizardTitle}>Products to Remove</h4>
-                <div className={styles.stagedList}>
-                  {subscription.items.length === 0 ? (
-                    <div className={styles.wizardEmptyState}>
-                      No items in subscription.
-                    </div>
-                  ) : (
-                    subscription.items.map((item) => {
-                      const marked = stagedRemoveIds.includes(item._id);
-                      return (
-                        <div key={item._id} className={styles.stagedRow}>
-                          <div className={styles.stagedRowText}>
-                            <div className={styles.stagedRowName}>
-                              {item.name}
-                            </div>
-                            <div className={styles.stagedRowMeta}>
-                              {item.sku} • Qty {item.quantity}
-                            </div>
-                          </div>
-                          <Button
-                            variant={marked ? "danger" : "outline"}
-                            size="sm"
-                            onClick={() => toggleStagedRemoval(item._id)}
-                          >
-                            {marked ? "Undo" : "Remove"}
-                          </Button>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {itemsWizardStep === 2 ? (
-          <div className={styles.wizardBody}>
-            <div className={styles.wizardSection}>
-              <h4 className={styles.wizardTitle}>Summary of Changes</h4>
-              <div className={styles.summaryStats}>
-                <span>Additions: {stagedAdds.length}</span>
-                <span>Removals: {itemsMarkedForRemoval.length}</span>
-                <span>
-                  Added Units:{" "}
-                  {stagedAdds.reduce((sum, item) => sum + item.quantity, 0)}
-                </span>
-              </div>
-            </div>
-
-            <div className={styles.wizardTwoColumn}>
-              <div className={styles.wizardSection}>
-                <h4 className={styles.wizardTitle}>Will be Added</h4>
-                {stagedAdds.length === 0 ? (
-                  <div className={styles.wizardEmptyState}>
-                    No products will be added.
-                  </div>
-                ) : (
-                  <div className={styles.stagedList}>
-                    {stagedAdds.map((item) => (
-                      <div
-                        key={item.variantId}
-                        className={styles.stagedRowCompact}
-                      >
-                        <span>{item.name}</span>
-                        <span>Qty {item.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className={styles.wizardSection}>
-                <h4 className={styles.wizardTitle}>Will be Removed</h4>
-                {itemsMarkedForRemoval.length === 0 ? (
-                  <div className={styles.wizardEmptyState}>
-                    No products will be removed.
-                  </div>
-                ) : (
-                  <div className={styles.stagedList}>
-                    {itemsMarkedForRemoval.map((item) => (
-                      <div key={item._id} className={styles.stagedRowCompact}>
-                        <span>{item.name}</span>
-                        <span>Qty {item.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {itemsWizardStep === 3 ? (
-          <div className={styles.wizardBody}>
-            <div className={styles.wizardSection}>
-              <h4 className={styles.wizardTitle}>Confirm Changes</h4>
-              <p className={styles.confirmText}>
-                This will apply {stagedAdds.length} additions and{" "}
-                {itemsMarkedForRemoval.length} removals to the subscription.
-              </p>
-              <p className={styles.confirmSubtext}>
-                You can go back to edit selections before applying.
-              </p>
-            </div>
-          </div>
-        ) : null}
-
-        <ModalFooter>
-          <div className={styles.wizardFooter}>
-            <Button variant="ghost" onClick={closeItemsWizard}>
-              Cancel
-            </Button>
-
-            <div className={styles.wizardFooterActions}>
-              {itemsWizardStep > 1 ? (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (itemsWizardStep === 3) setItemsWizardStep(2);
-                    else if (itemsWizardStep === 2) setItemsWizardStep(1);
-                  }}
-                >
-                  Back
-                </Button>
-              ) : null}
-
-              {itemsWizardStep < 3 ? (
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    if (itemsWizardStep === 1) setItemsWizardStep(2);
-                    else if (itemsWizardStep === 2) setItemsWizardStep(3);
-                  }}
-                  disabled={itemsWizardStep === 1 && !hasPendingChanges}
-                >
-                  Next
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  onClick={applyItemChanges}
-                  isLoading={applyChangesLoading}
-                  disabled={!hasPendingChanges}
-                >
-                  Confirm Changes
-                </Button>
-              )}
-            </div>
-          </div>
-        </ModalFooter>
-      </Modal>
     </div>
   );
 }

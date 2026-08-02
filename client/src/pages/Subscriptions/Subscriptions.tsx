@@ -15,7 +15,9 @@ import {
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
 import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 import styles from "./Subscriptions.module.css";
-import { RefreshCw, X as XIcon, Search, Filter, Plus } from "lucide-react";
+import { RefreshCw, X as XIcon, Search, Filter, Plus, FileUp } from "lucide-react";
+import { usePermissions } from "@/hooks/usePermissions";
+import BulkSubscriptionImportModal from "./BulkSubscriptionImportModal";
 
 const FREQUENCY_LABELS: Record<string, string> = {
   weekly: "Weekly",
@@ -48,6 +50,7 @@ const getCustomerEmail = (customer: Subscription["customer"]) => {
 
 export default function SubscriptionsPage() {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
   const { subscriptions, meta, loading, error, listSubscriptions } =
     useSubscriptions();
 
@@ -57,6 +60,7 @@ export default function SubscriptionsPage() {
   const [frequencyFilter, setFrequencyFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [showFilters, setShowFilters] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const fetchSubscriptions = useCallback(() => {
     listSubscriptions({
@@ -138,6 +142,16 @@ export default function SubscriptionsPage() {
           >
             Refresh
           </Button>
+          {hasPermission("subscriptions.import") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowImport(true)}
+              leftIcon={<FileUp size={16} />}
+            >
+              Import CSV
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() => navigate("/subscriptions/new")}
@@ -294,11 +308,14 @@ export default function SubscriptionsPage() {
                 sortedSubscriptions.map((sub) => (
                   <tr
                     key={sub._id}
-                    className={
-                      sub.isPendingSetup ? styles.pendingRow : styles.clickableRow
-                    }
-                    onClick={() => {
-                      if (!sub.isPendingSetup) {
+                    className={`${styles.clickableRow} ${sub.isPendingSetup ? styles.pendingRow : ""}`}
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`View ${sub.subscriptionNumber} for ${getCustomerName(sub.customer)}`}
+                    onClick={() => navigate(`/subscriptions/${sub._id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
                         navigate(`/subscriptions/${sub._id}`);
                       }
                     }}
@@ -354,6 +371,12 @@ export default function SubscriptionsPage() {
           </Table>
         </DataTableCard>
       )}
+
+      <BulkSubscriptionImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onImported={fetchSubscriptions}
+      />
     </div>
   );
 }

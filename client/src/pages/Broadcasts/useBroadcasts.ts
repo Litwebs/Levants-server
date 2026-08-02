@@ -76,13 +76,6 @@ export function useBroadcasts() {
   };
 
   const send = async (id: string) => {
-    if (
-      !window.confirm(
-        "Send this broadcast to ALL active customers?",
-      )
-    )
-      return;
-
     setSaving(true);
 
     try {
@@ -90,7 +83,6 @@ export function useBroadcasts() {
 
       await loadBroadcasts();
 
-      alert("Broadcast queued successfully.");
     } finally {
       setSaving(false);
     }

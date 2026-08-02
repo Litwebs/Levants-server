@@ -14,6 +14,7 @@ import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";
 import ProductVariantsPage from "./pages/Products/ProductVariantsPage";
 import Customers from "./pages/Customers/Customers";
+import CustomerDetailsPage from "./pages/Customers/CustomerDetailsPage";
 import Promotions from "./pages/Promotions";
 import Settings from "./pages/Settings/Settings";
 import ComingSoon from "./pages/ComingSoon";
@@ -31,7 +32,6 @@ import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
-import { RequireEmailDomain } from "./components/auth/RequireEmailDomain";
 import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
@@ -42,9 +42,7 @@ import { ReviewsPage } from "./pages/Reviews";
 import SubscriptionsPage from "./pages/Subscriptions/Subscriptions";
 import SubscriptionDetailsPage from "./pages/Subscriptions/SubscriptionDetails";
 import CreateSubscriptionInvitePage from "./pages/Subscriptions/CreateSubscriptionInviteModal";
-import PaymentsPage from "./pages/Payments/Payments";
 import { SubscriptionsProvider } from "./context/Subscriptions";
-import { PaymentsProvider } from "./context/Payments";
 import "./styles/global.css";
 
 const AdminShell = () => (
@@ -120,8 +118,7 @@ const App = () => (
           <CustomersProvider>
             <OrdersProvider>
               <SubscriptionsProvider>
-                <PaymentsProvider>
-                  <AnalyticsProvider>
+                <AnalyticsProvider>
                     <BrowserRouter
                       future={{
                         v7_startTransition: true,
@@ -227,6 +224,14 @@ const App = () => (
                             }
                           />
                           <Route
+                            path="/customers/:customerId"
+                            element={
+                              <RequirePermission permission="customers.read">
+                                <CustomerDetailsPage />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
                             path="/subscriptions"
                             element={
                               <RequirePermission permission="orders.read">
@@ -252,11 +257,7 @@ const App = () => (
                           />
                           <Route
                             path="/payments"
-                            element={
-                              <RequirePermission permission="orders.read">
-                                <PaymentsPage />
-                              </RequirePermission>
-                            }
+                            element={<Navigate to="/orders" replace />}
                           />
                           <Route
                             path="/promotions"
@@ -278,31 +279,25 @@ const App = () => (
                           <Route
                             path="/announcements"
                             element={
-                              <RequireEmailDomain domain="@litwebs.co.uk">
-                                <RequirePermission permission="announcements.read">
-                                  <AnnouncementsPage />
-                                </RequirePermission>
-                              </RequireEmailDomain>
+                              <RequirePermission permission="announcements.read">
+                                <AnnouncementsPage />
+                              </RequirePermission>
                             }
                           />
                           <Route
                             path="/broadcasts"
                             element={
-                              // <RequireEmailDomain domain="@litwebs.co.uk">
                               <RequirePermission permission="broadcasts.read">
                                 <BroadcastsPage />
                               </RequirePermission>
-                              // </RequireEmailDomain>
                             }
                           />
                           <Route
                             path="/categories"
                             element={
-                              <RequireEmailDomain domain="@litwebs.co.uk">
-                                <RequirePermission permission="categories.read">
-                                  <CategoriesPage />
-                                </RequirePermission>
-                              </RequireEmailDomain>
+                              <RequirePermission permission="categories.read">
+                                <CategoriesPage />
+                              </RequirePermission>
                             }
                           />
                           <Route
@@ -330,8 +325,7 @@ const App = () => (
                         </Route>
                       </Routes>
                     </BrowserRouter>
-                  </AnalyticsProvider>
-                </PaymentsProvider>
+                </AnalyticsProvider>
               </SubscriptionsProvider>
             </OrdersProvider>
           </CustomersProvider>

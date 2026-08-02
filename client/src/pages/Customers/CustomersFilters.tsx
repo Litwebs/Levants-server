@@ -3,6 +3,18 @@ import { Search, X, Filter } from "lucide-react";
 import { Button, FiltersCardLayout, Select } from "../../components/common";
 import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 
+type SortOption = "newest" | "oldest" | "name-asc" | "name-desc";
+type CustomerType = "all" | "guest" | "registered";
+
+type CustomersFiltersProps = {
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  sortBy: SortOption;
+  setSortBy: (value: SortOption) => void;
+  customerTypeFilter: CustomerType;
+  setCustomerTypeFilter: (value: CustomerType) => void;
+};
+
 const CustomersFilters = ({
   searchQuery,
   setSearchQuery,
@@ -10,8 +22,9 @@ const CustomersFilters = ({
   setSortBy,
   customerTypeFilter,
   setCustomerTypeFilter,
-}: any) => {
+}: CustomersFiltersProps) => {
   const [showFilters, setShowFilters] = useState(false);
+  const activeFilterCount = customerTypeFilter === "all" ? 0 : 1;
 
   return (
     <FiltersCardLayout
@@ -31,6 +44,7 @@ const CustomersFilters = ({
                 type="button"
                 className={sharedFilterStyles.clearSearch}
                 onClick={() => setSearchQuery("")}
+                aria-label="Clear customer search"
               >
                 <X size={16} />
               </button>
@@ -40,15 +54,16 @@ const CustomersFilters = ({
           <Button
             variant="outline"
             leftIcon={<Filter size={16} />}
-            onClick={() => setShowFilters(!showFilters)}
+            onClick={() => setShowFilters((visible) => !visible)}
             className={sharedFilterStyles.filtersToggleBtn}
+            aria-expanded={showFilters}
           >
-            Filters
+            Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
           </Button>
 
           <Select
             value={sortBy}
-            onChange={setSortBy}
+            onChange={(value) => setSortBy(value as SortOption)}
             className={sharedFilterStyles.sortSelect}
             options={[
               { value: "newest", label: "Newest First" },
@@ -71,10 +86,10 @@ const CustomersFilters = ({
             </label>
             <Select
               value={customerTypeFilter}
-              onChange={setCustomerTypeFilter}
+              onChange={(value) => setCustomerTypeFilter(value as CustomerType)}
               options={[
                 { value: "all", label: "All Customers" },
-                { value: "customer", label: "Registered" },
+                { value: "registered", label: "Registered accounts" },
                 { value: "guest", label: "Guests" },
               ]}
             />

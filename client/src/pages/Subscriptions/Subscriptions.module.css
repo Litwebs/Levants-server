@@ -825,12 +825,267 @@
   background-color: var(--color-gray-50);
 }
 
+.clickableRow:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
 .pendingRow {
   background: var(--color-gray-50);
 }
 
+.pendingRow:hover {
+  background: var(--color-primary-bg);
+}
+
 .pendingRow td:first-child {
   color: var(--color-gray-500);
+}
+
+.importBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.importNotice,
+.importResultSummary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--color-gray-700);
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+}
+
+.importNotice > svg,
+.importResultSummary > svg {
+  flex: 0 0 auto;
+  color: var(--color-primary);
+}
+
+.importNotice > div,
+.importResultSummary > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.importNotice strong,
+.importResultSummary h3,
+.importTools h3,
+.importReviewHeader h3,
+.importSectionTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+}
+
+.importNotice span,
+.importResultSummary p,
+.importTools p,
+.importReviewHeader p {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-gray-500);
+}
+
+.importTools,
+.importReviewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.importTools > div:first-child,
+.importReviewHeader > div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.importTools code {
+  padding: 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  color: var(--color-gray-700);
+  background: var(--color-gray-100);
+  border-radius: var(--radius-sm);
+}
+
+.importToolActions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+}
+
+.importSectionTitle {
+  margin-bottom: var(--space-2);
+}
+
+.importDropzone {
+  min-height: 142px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  color: var(--color-gray-500);
+  text-align: center;
+  background: var(--color-gray-50);
+  border: 1px dashed var(--color-gray-300);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.importDropzone:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+  border-color: var(--color-primary);
+}
+
+.importDropzone:focus-within {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.importDropzone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.importDropzone strong {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-800);
+}
+
+.importDropzone span {
+  font-size: var(--text-xs);
+}
+
+.importDropzoneDisabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.importTableWrap {
+  max-height: 330px;
+  overflow: auto;
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+}
+
+.importTableWrap table {
+  min-width: 860px;
+  table-layout: fixed;
+}
+
+.importTableWrap thead th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  background: var(--color-gray-50);
+}
+
+.importTableWrap tbody td {
+  vertical-align: top;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.importTableWrap tbody td strong,
+.importCellSecondary {
+  display: block;
+}
+
+.importTableWrap tbody td strong {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-gray-800);
+}
+
+.importPreviewTable tbody tr:last-child td,
+.importResultsTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.importRowColumn {
+  width: 76px;
+}
+
+.importCustomerColumn {
+  width: 25%;
+}
+
+.importScheduleColumn {
+  width: 23%;
+}
+
+.importItemsColumn {
+  width: 25%;
+}
+
+.importValidationColumn {
+  width: 22%;
+}
+
+.importStatusColumn {
+  width: 120px;
+}
+
+.importRowNumber {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-gray-500);
+}
+
+.importScheduleCell,
+.importItemsCell {
+  color: var(--color-gray-700);
+}
+
+.importCellSecondary {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.importInvalidRow {
+  background: var(--color-error-bg, #fff7f7);
+}
+
+.importErrors {
+  margin: 0;
+  padding-left: var(--space-4);
+  color: var(--color-error);
+}
+
+.importErrors li + li {
+  margin-top: 3px;
+}
+
+.importValid {
+  font-weight: var(--font-medium);
+  color: var(--color-success, var(--color-primary));
 }
 
 @media (max-width: 768px) {
@@ -850,6 +1105,20 @@
   }
 
   .headerActions > * {
+    flex: 1;
+  }
+
+  .importTools,
+  .importReviewHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .importToolActions {
+    flex-wrap: wrap;
+  }
+
+  .importToolActions > * {
     flex: 1;
   }
 

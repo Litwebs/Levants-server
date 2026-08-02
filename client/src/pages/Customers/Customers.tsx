@@ -5,9 +5,8 @@ import CustomersHeader from "./CustomersHeader";
 import CustomersStats from "./CustomersStats";
 import CustomersFilters from "./CustomersFilters";
 import CustomersTable from "./CustomersTable";
-import CustomerViewModal from "./CustomerViewModal";
-import CustomerEditModal from "./CustomerEditModal";
 import { Modal, ModalFooter, Button, Input } from "../../components/common";
+import { AlertCircle, Copy, Link2 } from "lucide-react";
 
 const Customers = () => {
   const customersState = useCustomers();
@@ -17,30 +16,47 @@ const Customers = () => {
       <CustomersHeader {...customersState} />
       <CustomersStats {...customersState} />
       <CustomersFilters {...customersState} />
+      {customersState.error && (
+        <div className={styles.errorBanner} role="alert">
+          <AlertCircle size={18} />
+          <span>{customersState.error}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => customersState.refreshCustomers()}
+          >
+            Try again
+          </Button>
+        </div>
+      )}
       <CustomersTable {...customersState} />
-
-      <CustomerViewModal {...customersState} />
-      <CustomerEditModal {...customersState} />
 
       <Modal
         isOpen={customersState.isCreateInviteModalOpen}
         onClose={customersState.closeCreateInviteModal}
-        title="Create Customer Onboarding Link"
+        title="Create customer link"
         size="lg"
       >
         <div className={styles.customerDetail}>
-          <p className={styles.subtitle}>
-            Create a customer account invite, then copy the link and forward it.
-            The customer can verify their email and add payment details to
-            activate their subscription.
-          </p>
+          <div className={styles.inviteIntro}>
+            <span className={styles.inviteIntroIcon}><Link2 size={20} /></span>
+            <div>
+              <strong>Invite a customer to create their account</strong>
+              <p>
+                We’ll email the link automatically. You can also copy it below
+                and share it directly.
+              </p>
+            </div>
+          </div>
 
           <div className={styles.detailGrid}>
             <div className={styles.detailSection}>
               <h3>Customer Details</h3>
               <div className={styles.contactInfo}>
                 <Input
-                  placeholder="First name"
+                  label="First name"
+                  placeholder="e.g. Sarah"
+                  required
                   value={customersState.createInviteForm.firstName}
                   onChange={(e) =>
                     customersState.setCreateInviteField(
@@ -50,7 +66,9 @@ const Customers = () => {
                   }
                 />
                 <Input
-                  placeholder="Last name"
+                  label="Last name"
+                  placeholder="e.g. Ahmed"
+                  required
                   value={customersState.createInviteForm.lastName}
                   onChange={(e) =>
                     customersState.setCreateInviteField(
@@ -60,15 +78,19 @@ const Customers = () => {
                   }
                 />
                 <Input
-                  placeholder="Email address"
+                  label="Email address"
+                  placeholder="sarah@example.com"
                   type="email"
+                  required
                   value={customersState.createInviteForm.email}
                   onChange={(e) =>
                     customersState.setCreateInviteField("email", e.target.value)
                   }
                 />
                 <Input
-                  placeholder="Phone number"
+                  label="Phone number"
+                  placeholder="Optional"
+                  type="tel"
                   value={customersState.createInviteForm.phone}
                   onChange={(e) =>
                     customersState.setCreateInviteField("phone", e.target.value)
@@ -96,7 +118,7 @@ const Customers = () => {
                     variant="outline"
                     onClick={customersState.copyOnboardingLink}
                   >
-                    Copy Link
+                    <Copy size={16} /> Copy link
                   </Button>
                 </div>
               ) : (

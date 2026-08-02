@@ -7,7 +7,7 @@ import {
   Filter,
   X,
   Trash2,
-  Eye,
+  CheckCircle2,
   EyeOff,
 } from "lucide-react";
 import type { Review } from "@/context/Reviews";
@@ -28,7 +28,12 @@ import {
 } from "@/components/common";
 import { useToast } from "@/components/common/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useReviewsAdmin } from "./useReviewsAdmin";
+import {
+  useReviewsAdmin,
+  type RatingFilter,
+  type SortOrder,
+  type VisibilityFilter,
+} from "./useReviewsAdmin";
 import styles from "./ReviewsPage.module.css";
 
 const StarDisplay = ({ rating }: { rating: number }) => (
@@ -47,6 +52,11 @@ const formatDate = (value?: string) => {
     month: "short",
     year: "numeric",
   });
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  const candidate = error as { response?: { data?: { message?: string } } };
+  return candidate?.response?.data?.message || fallback;
 };
 
 export const ReviewsPage = () => {
@@ -111,19 +121,18 @@ export const ReviewsPage = () => {
     ? (reviews.find((r) => r._id === selectedReview._id) ?? selectedReview)
     : null;
 
-  const handleToggleVisibility = async (
-    id: string,
-    currentVisible: boolean,
-  ) => {
+  const handleSetApproval = async (id: string, isApproved: boolean) => {
     try {
-      await toggleVisibility(id, !currentVisible);
+      await toggleVisibility(id, isApproved);
       showToast({
-        message: currentVisible ? "Review hidden" : "Review made visible",
+        message: isApproved
+          ? "Review approved and published"
+          : "Approval removed and review unpublished",
         type: "success",
       });
-    } catch (err: any) {
+    } catch (error: unknown) {
       showToast({
-        message: err?.response?.data?.message || "Failed to update review",
+        message: getErrorMessage(error, "Failed to update review"),
         type: "error",
       });
     }
@@ -137,9 +146,9 @@ export const ReviewsPage = () => {
       // Close detail modal if it was the deleted review
       if (selectedReview?._id === deleteTargetId) setSelectedReview(null);
       showToast({ message: "Review deleted", type: "success" });
-    } catch (err: any) {
+    } catch (error: unknown) {
       showToast({
-        message: err?.response?.data?.message || "Failed to delete review",
+        message: getErrorMessage(error, "Failed to delete review"),
         type: "error",
       });
     }
@@ -154,9 +163,9 @@ export const ReviewsPage = () => {
         message: `Deleted ${result?.deleted ?? selectedIds.length} review(s)`,
         type: "success",
       });
-    } catch (err: any) {
+    } catch (error: unknown) {
       showToast({
-        message: err?.response?.data?.message || "Bulk delete failed",
+        message: getErrorMessage(error, "Bulk delete failed"),
         type: "error",
       });
     } finally {
@@ -164,17 +173,17 @@ export const ReviewsPage = () => {
     }
   };
 
-  const handleBulkVisibility = async (isVisible: boolean) => {
+  const handleBulkVisibility = async (isApproved: boolean) => {
     setBulkLoading(true);
     try {
-      const result = await bulkToggleVisibility(selectedIds, isVisible);
+      const result = await bulkToggleVisibility(selectedIds, isApproved);
       showToast({
-        message: `Updated ${result?.updated ?? selectedIds.length} review(s)`,
+        message: `${isApproved ? "Approved" : "Unpublished"} ${result?.updated ?? selectedIds.length} review(s)`,
         type: "success",
       });
-    } catch (err: any) {
+    } catch (error: unknown) {
       showToast({
-        message: err?.response?.data?.message || "Bulk update failed",
+        message: getErrorMessage(error, "Bulk update failed"),
         type: "error",
       });
     } finally {
@@ -198,8 +207,8 @@ export const ReviewsPage = () => {
         <div>
           <div className={styles.title}>Reviews</div>
           <div className={styles.subtitle}>
-            Manage customer reviews. Click a row to view details and toggle
-            visibility.
+            Review customer submissions and approve them before they appear on
+            the storefront.
           </div>
         </div>
       </div>
@@ -240,7 +249,7 @@ export const ReviewsPage = () => {
 
           <Select
             value={sort}
-            onChange={(v) => setSort(v as any)}
+            onChange={(value) => setSort(value as SortOrder)}
             className={styles.sortSelect}
             options={[
               { value: "newest", label: "Newest First" },
@@ -254,14 +263,16 @@ export const ReviewsPage = () => {
         {showFilters && (
           <div className={styles.filtersRow}>
             <div className={styles.filterGroup}>
-              <label className={styles.filterLabel}>Visibility</label>
+              <label className={styles.filterLabel}>Approval status</label>
               <Select
                 value={visibility}
-                onChange={(v) => setVisibility(v as any)}
+                onChange={(value) =>
+                  setVisibility(value as VisibilityFilter)
+                }
                 options={[
-                  { value: "all", label: "All Visibilities" },
-                  { value: "visible", label: "Visible" },
-                  { value: "hidden", label: "Hidden" },
+                  { value: "all", label: "All reviews" },
+                  { value: "hidden", label: "Pending approval" },
+                  { value: "visible", label: "Approved" },
                 ]}
               />
             </div>
@@ -270,7 +281,7 @@ export const ReviewsPage = () => {
               <label className={styles.filterLabel}>Rating</label>
               <Select
                 value={ratingFilter}
-                onChange={(v) => setRatingFilter(v as any)}
+                onChange={(value) => setRatingFilter(value as RatingFilter)}
                 options={[
                   { value: "all", label: "All Ratings" },
                   { value: "5", label: "★★★★★  5 stars" },
@@ -317,8 +328,8 @@ export const ReviewsPage = () => {
                     disabled={bulkLoading}
                     onClick={() => handleBulkVisibility(true)}
                   >
-                    <Eye size={15} />
-                    Show
+                    <CheckCircle2 size={15} />
+                    Approve
                   </Button>
                   <Button
                     variant="outline"
@@ -327,7 +338,7 @@ export const ReviewsPage = () => {
                     onClick={() => handleBulkVisibility(false)}
                   >
                     <EyeOff size={15} />
-                    Hide
+                    Unpublish
                   </Button>
                 </>
               )}
@@ -375,7 +386,7 @@ export const ReviewsPage = () => {
                   <TableHead>Customer</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Image</TableHead>
-                  <TableHead>Visibility</TableHead>
+                  <TableHead>Approval status</TableHead>
                   <TableHead>Date</TableHead>
                   {canDelete && <TableHead>Actions</TableHead>}
                 </TableRow>
@@ -434,7 +445,7 @@ export const ReviewsPage = () => {
                       </TableCell>
                       <TableCell>
                         <Badge variant={r.isVisible ? "success" : "warning"}>
-                          {r.isVisible ? "Visible" : "Hidden"}
+                          {r.isVisible ? "Approved" : "Pending approval"}
                         </Badge>
                       </TableCell>
                       <TableCell>{formatDate(r.createdAt)}</TableCell>
@@ -598,15 +609,15 @@ export const ReviewsPage = () => {
               {canUpdate && (
                 <div className={styles.detailVisibilityField}>
                   <Select
-                    label="Visibility"
+                    label="Approval status"
                     value={liveSelected.isVisible ? "visible" : "hidden"}
                     options={[
-                      { value: "visible", label: "Visible" },
-                      { value: "hidden", label: "Hidden" },
+                      { value: "hidden", label: "Pending approval" },
+                      { value: "visible", label: "Approved and published" },
                     ]}
                     disabled={updatingId === liveSelected._id}
                     onChange={(val) =>
-                      handleToggleVisibility(liveSelected._id, val === "hidden")
+                      handleSetApproval(liveSelected._id, val === "visible")
                     }
                   />
                 </div>
