@@ -69,16 +69,8 @@ async function FindOrCreateGuestCustomer({
       firstName: normalizedFirstName,
       lastName: normalizedLastName,
       phone: normalizedPhone,
-      ...(normalizedAddress
-        ? { addresses: [{ ...normalizedAddress, isDefault: true }] }
-        : {}),
       isGuest: true,
     });
-  } else if (normalizedAddress) {
-    const changed = upsertDefaultAddress(customer, normalizedAddress);
-    if (changed) {
-      await customer.save();
-    }
   }
 
   const json = customer?.toJSON ? customer.toJSON() : customer;
@@ -329,7 +321,9 @@ async function CreateBulkCustomerOnboardingLinks({ rows } = {}) {
   const results = [];
 
   for (const row of rows) {
-    const email = String(row.email || "").trim().toLowerCase();
+    const email = String(row.email || "")
+      .trim()
+      .toLowerCase();
     const rowResult = {
       rowNumber: row.rowNumber,
       email,
@@ -353,7 +347,8 @@ async function CreateBulkCustomerOnboardingLinks({ rows } = {}) {
       results.push({
         ...rowResult,
         status: "failed",
-        message: "One or more products are inactive or not subscription eligible",
+        message:
+          "One or more products are inactive or not subscription eligible",
       });
       continue;
     }
@@ -514,12 +509,13 @@ async function ListCustomers({
 
   const skip = (page - 1) * pageSize;
 
-  const [total, customers, registeredCustomers, guestCustomers] = await Promise.all([
-    Customer.countDocuments(filter),
-    Customer.find(filter).sort(sortBy).skip(skip).limit(pageSize),
-    Customer.countDocuments({ isGuest: false }),
-    Customer.countDocuments({ isGuest: true }),
-  ]);
+  const [total, customers, registeredCustomers, guestCustomers] =
+    await Promise.all([
+      Customer.countDocuments(filter),
+      Customer.find(filter).sort(sortBy).skip(skip).limit(pageSize),
+      Customer.countDocuments({ isGuest: false }),
+      Customer.countDocuments({ isGuest: true }),
+    ]);
 
   return {
     success: true,
