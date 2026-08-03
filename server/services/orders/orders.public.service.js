@@ -395,7 +395,6 @@ async function CreateOrder({
       // 4️⃣ Create Stripe Checkout Session
       const stripeSession = await stripe.checkout.sessions.create({
         mode: "payment",
-        payment_method_types: ["card"],
         // Ensures the customer cannot complete Checkout after the reservation expires.
         expires_at: Math.floor(reservationExpiresAt.getTime() / 1000),
         customer_email: customer.email ?? undefined,
