@@ -220,7 +220,7 @@ async function CreateSetupIntent({ customerId } = {}) {
 
   const intent = await stripe.setupIntents.create({
     customer: customer.stripeCustomerId,
-    payment_method_types: ["card"],
+    automatic_payment_methods: { enabled: true, allow_redirects: "never" },
     usage: "off_session",
     metadata: {
       customerId: String(customer._id),
@@ -256,7 +256,10 @@ async function AttachPaymentMethod({
         ? stripeMethod.customer
         : stripeMethod?.customer?.id || null;
 
-    if (attachedCustomerId && attachedCustomerId !== customer.stripeCustomerId) {
+    if (
+      attachedCustomerId &&
+      attachedCustomerId !== customer.stripeCustomerId
+    ) {
       return Response(
         false,
         "This payment method belongs to a different customer",
