@@ -48,6 +48,8 @@ const {
   syncStripeSubscriptionPrice,
 } = require("../customerPortal/customerSubscriptions.service");
 
+const SUBSCRIPTION_DELIVERY_FEE = 1;
+
 const BILLING_WINDOW_DAYS = {
   weekly: 7,
   every_two_weeks: 14,
@@ -236,7 +238,8 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     }));
 
     const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
-    const total = subtotal;
+    const deliveryFee = SUBSCRIPTION_DELIVERY_FEE;
+    const total = subtotal + deliveryFee;
     const amountPaid = total;
 
     const order = await Order.create({
@@ -253,7 +256,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
         subscription.deliveryAddress.deliveryInstructions || "",
       location,
       deliveryDate,
-      deliveryFee: 0,
+      deliveryFee,
       subtotal,
       total,
       amountPaid,

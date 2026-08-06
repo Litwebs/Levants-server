@@ -247,6 +247,53 @@ describe("Portal Subscriptions", () => {
     expect(diffDays).toBe(7);
   });
 
+  it("uses the immediate upcoming Sunday when subscribing on Friday before cutoff", async () => {
+    const fixedNow = new Date("2026-05-08T12:00:00.000Z");
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(fixedNow.getTime());
+
+    try {
+      await SubscriptionSettings.findOneAndUpdate(
+        { singletonKey: "subscription-settings" },
+        {
+          singletonKey: "subscription-settings",
+          deliveryDays: [0, 1, 2, 3, 4, 5, 6],
+          cutoffDaysBefore: 2,
+          cutoffTime: "22:00",
+        },
+        { upsert: true },
+      );
+
+      const res = await request(app)
+        .post("/api/portal/subscriptions")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({
+          frequency: "weekly",
+          preferredDeliveryDay: 0,
+          deliveryAddressId: addressId,
+          items: [{ variantId, quantity: 1 }],
+        });
+
+      expect(res.status).toBe(201);
+
+      const nextDelivery = new Date(
+        res.body.data.subscription.nextDeliveryDate,
+      );
+      const expectedDelivery = new Date(fixedNow);
+      expectedDelivery.setDate(expectedDelivery.getDate() + 2);
+
+      const diffDays = Math.round(
+        (nextDelivery.setHours(0, 0, 0, 0) -
+          expectedDelivery.setHours(0, 0, 0, 0)) /
+          (24 * 60 * 60 * 1000),
+      );
+
+      expect(nextDelivery.getDay()).toBe(0);
+      expect(diffDays).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("rejects create when stripe customer cannot be retrieved", async () => {
     stripe.customers.retrieve.mockRejectedValueOnce(new Error("Stripe down"));
 
@@ -1237,7 +1284,7 @@ describe("Portal Subscriptions", () => {
     expect(stored.pendingChanges).toBeTruthy();
     expect(stored.pendingChanges.items[0].quantity).toBe(3);
     expect(stripe.prices.create).toHaveBeenCalled();
-    expect(stripe.prices.create.mock.calls.at(-1)?.[0]?.unit_amount).toBe(750);
+    expect(stripe.prices.create.mock.calls.at(-1)?.[0]?.unit_amount).toBe(850);
   });
 
   it("rejects update for non-existent subscription item", async () => {
@@ -2756,7 +2803,7 @@ describe("Portal Subscriptions", () => {
     ).toBe(2);
 
     expect(stripe.prices.create).toHaveBeenCalled();
-    expect(stripe.prices.create.mock.calls.at(-1)?.[0]?.unit_amount).toBe(750);
+    expect(stripe.prices.create.mock.calls.at(-1)?.[0]?.unit_amount).toBe(950);
     nowSpy.mockRestore();
   });
 

@@ -448,14 +448,41 @@ async function AdminListPayments({
   const total = await Payment.countDocuments(filter);
   const payments = await Payment.find(filter)
     .populate("customer", "firstName lastName email")
-    .populate("order", "orderId status total")
+    .populate("order", "orderId status total refund refunds")
     .populate("subscription", "subscriptionNumber")
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
     .lean();
 
-  return Response(true, null, { payments, meta: { page, pageSize, total } });
+  const normalizedPayments = payments.map((payment) => {
+    const orderStatus = String(payment?.order?.status || "").toLowerCase();
+    if (orderStatus !== "refunded" && orderStatus !== "partially_refunded") {
+      return payment;
+    }
+
+    const latestRefundedAt = Array.isArray(payment?.order?.refunds)
+      ? payment.order.refunds
+          .map((entry) => entry?.refundedAt)
+          .filter(Boolean)
+          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
+      : null;
+
+    return {
+      ...payment,
+      status: "refunded",
+      refundedAt:
+        payment.refundedAt ||
+        latestRefundedAt ||
+        payment?.order?.refund?.refundedAt ||
+        null,
+    };
+  });
+
+  return Response(true, null, {
+    payments: normalizedPayments,
+    meta: { page, pageSize, total },
+  });
 }
 
 async function AdminGetPayment({ paymentId } = {}) {

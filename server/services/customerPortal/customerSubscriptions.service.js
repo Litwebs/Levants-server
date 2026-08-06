@@ -7,6 +7,7 @@ const ProductVariant = require("../../models/variant.model");
 const Customer = require("../../models/customer.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const Order = require("../../models/order.model");
+const Payment = require("../../models/payment.model");
 const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
@@ -36,6 +37,8 @@ const WEEKDAY_NAMES = [
   "Friday",
   "Saturday",
 ];
+
+const SUBSCRIPTION_DELIVERY_FEE = 1;
 
 function normalizeWeekdays(days = []) {
   const cleaned = (Array.isArray(days) ? days : [])
@@ -110,6 +113,37 @@ function calculateSubscriptionTotalMinor(items = []) {
     const quantity = Math.max(0, Number(item?.quantity || 0));
     return sum + unitPriceMinor * quantity;
   }, 0);
+}
+
+function getSubscriptionDeliveryFeeCount(
+  frequency,
+  preferredDeliveryDay,
+  preferredDeliveryDays,
+) {
+  const resolved = resolveDeliveryDays({
+    frequency,
+    preferredDeliveryDay,
+    preferredDeliveryDays,
+  });
+
+  if (!resolved.ok) return 1;
+  return frequency === "weekly" ? Math.max(1, resolved.days.length) : 1;
+}
+
+function calculateSubscriptionChargeMinor({
+  items = [],
+  frequency,
+  preferredDeliveryDay,
+  preferredDeliveryDays,
+} = {}) {
+  const itemsMinor = calculateSubscriptionTotalMinor(items);
+  const deliveryFeeCount = getSubscriptionDeliveryFeeCount(
+    frequency,
+    preferredDeliveryDay,
+    preferredDeliveryDays,
+  );
+  const deliveryFeeMinor = Math.round(SUBSCRIPTION_DELIVERY_FEE * 100);
+  return itemsMinor + deliveryFeeMinor * deliveryFeeCount;
 }
 
 function calculateDayPlanTotalMinor(dayPlans = []) {
@@ -223,6 +257,29 @@ async function enrichSubscriptionWithVariantImages(subscriptionLike) {
   return subscription;
 }
 
+async function markSubscriptionOrderPaymentRefunded({
+  orderId,
+  subscriptionId,
+  refundedAt,
+} = {}) {
+  if (!orderId) return;
+
+  const paymentFilter = {
+    order: orderId,
+    status: { $ne: "refunded" },
+  };
+  if (subscriptionId) {
+    paymentFilter.subscription = subscriptionId;
+  }
+
+  await Payment.updateMany(paymentFilter, {
+    $set: {
+      status: "refunded",
+      refundedAt: refundedAt || new Date(),
+    },
+  });
+}
+
 /**
  * Calculate the next delivery date given a preferred day and frequency.
  * @param {number} preferredDay - 0-6 (Sun-Sat)
@@ -234,7 +291,9 @@ function calculateNextDeliveryDate(
   frequency,
   from = new Date(),
   preferredDays = [],
+  options = {},
 ) {
+  const allowSameDay = Boolean(options?.allowSameDay);
   const start = new Date(from);
   start.setHours(0, 0, 0, 0);
 
@@ -251,9 +310,9 @@ function calculateNextDeliveryDate(
   let daysUntilPreferred = 7;
   for (const day of deliveryDays) {
     let distance = (day - currentDay + 7) % 7;
-    // For the FIRST scheduled delivery, use the next weekday occurrence.
-    // Frequency controls the cadence AFTER that first delivery.
-    if (distance === 0) distance = 7;
+    // By default, same-day selection rolls to next week.
+    // For first-delivery selection we can allow same-day when cut-off is open.
+    if (distance === 0 && !allowSameDay) distance = 7;
     if (distance < daysUntilPreferred) daysUntilPreferred = distance;
   }
 
@@ -275,6 +334,43 @@ function addFrequencyDays(date, frequency, preferredDays = []) {
   const d = new Date(date);
   d.setDate(d.getDate() + (FREQUENCY_DAYS[frequency] || 7));
   return d;
+}
+
+function calculateFirstSubscriptionDeliveryDate({
+  frequency,
+  preferredDeliveryDay,
+  preferredDeliveryDays,
+  referenceDate,
+  settings,
+} = {}) {
+  const now = new Date(referenceDate || Date.now());
+  let searchFrom = new Date(now);
+
+  // Find the first candidate delivery with an open cut-off window.
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const candidate = calculateNextDeliveryDate(
+      preferredDeliveryDay,
+      frequency,
+      searchFrom,
+      preferredDeliveryDays,
+      { allowSameDay: true },
+    );
+
+    const cutoffAt = computeCutoffDate(candidate, settings);
+    if (!cutoffAt || now.getTime() < cutoffAt.getTime()) {
+      return candidate;
+    }
+
+    searchFrom = new Date(candidate);
+    searchFrom.setDate(searchFrom.getDate() + 1);
+  }
+
+  return calculateNextDeliveryDate(
+    preferredDeliveryDay,
+    frequency,
+    now,
+    preferredDeliveryDays,
+  );
 }
 
 /**
@@ -320,7 +416,12 @@ async function syncStripeSubscriptionPrice(subscription, itemsOverride) {
     Array.isArray(itemsOverride) && itemsOverride.length > 0
       ? itemsOverride
       : subscription.items;
-  const newTotalMinor = calculateSubscriptionTotalMinor(items);
+  const newTotalMinor = calculateSubscriptionChargeMinor({
+    items,
+    frequency: subscription.frequency,
+    preferredDeliveryDay: subscription.preferredDeliveryDay,
+    preferredDeliveryDays: subscription.preferredDeliveryDays,
+  });
 
   const { interval, interval_count } = STRIPE_INTERVALS[subscription.frequency];
 
@@ -453,7 +554,8 @@ async function getResumeNextDeliveryDate(
 ) {
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const eligibilityStart = startOfDay(
-    subscription.pausedUntil && new Date(subscription.pausedUntil) > referenceDate
+    subscription.pausedUntil &&
+      new Date(subscription.pausedUntil) > referenceDate
       ? subscription.pausedUntil
       : referenceDate,
   );
@@ -492,7 +594,9 @@ async function getResumeNextDeliveryDate(
     searchFrom.setDate(searchFrom.getDate() + 1);
   }
 
-  throw new Error("No delivery date with an open modification window was found");
+  throw new Error(
+    "No delivery date with an open modification window was found",
+  );
 }
 
 async function getResumeRequiredMinor(subscription, nextDeliveryDate) {
@@ -527,8 +631,10 @@ async function getResumeRequiredMinor(subscription, nextDeliveryDate) {
     const relevantRefunds = hasOrderTaggedRefunds
       ? deliveryTaggedRefunds
       : succeededRefunds;
-    const refundedMinor = relevantRefunds
-      .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+    const refundedMinor = relevantRefunds.reduce(
+      (sum, refund) => sum + Number(refund.amount || 0),
+      0,
+    );
     const deliveryMinor = Math.max(
       0,
       Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
@@ -804,20 +910,23 @@ async function chargeDeltaNow(
   }
 
   try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountMinor,
-      currency: "gbp",
-      customer: customer.stripeCustomerId,
-      payment_method: pmId,
-      off_session: true,
-      confirm: true,
-      description,
-      metadata: {
-        subscriptionId: String(subscription._id),
-        subscriptionNumber: subscription.subscriptionNumber,
-        type: "subscription_modification",
+    const paymentIntent = await stripe.paymentIntents.create(
+      {
+        amount: amountMinor,
+        currency: "gbp",
+        customer: customer.stripeCustomerId,
+        payment_method: pmId,
+        off_session: true,
+        confirm: true,
+        description,
+        metadata: {
+          subscriptionId: String(subscription._id),
+          subscriptionNumber: subscription.subscriptionNumber,
+          type: "subscription_modification",
+        },
       },
-    }, idempotencyKey ? { idempotencyKey } : undefined);
+      idempotencyKey ? { idempotencyKey } : undefined,
+    );
     return { ok: true, paymentIntent };
   } catch (err) {
     return {
@@ -838,16 +947,19 @@ async function refundAcrossSubscriptionPayments(
   orderId,
 ) {
   if (!stripe.paymentIntents?.list) {
-    const refund = await stripe.refunds.create({
-      payment_intent: primaryPaymentIntentId,
-      amount: amountMinor,
-      metadata: {
-        subscriptionId: String(subscription._id),
-        subscriptionNumber: subscription.subscriptionNumber,
-        type: metadataType,
-        ...(orderId ? { orderId: String(orderId) } : {}),
+    const refund = await stripe.refunds.create(
+      {
+        payment_intent: primaryPaymentIntentId,
+        amount: amountMinor,
+        metadata: {
+          subscriptionId: String(subscription._id),
+          subscriptionNumber: subscription.subscriptionNumber,
+          type: metadataType,
+          ...(orderId ? { orderId: String(orderId) } : {}),
+        },
       },
-    }, operationKey ? { idempotencyKey: `${operationKey}:primary` } : undefined);
+      operationKey ? { idempotencyKey: `${operationKey}:primary` } : undefined,
+    );
     return [refund];
   }
 
@@ -886,16 +998,21 @@ async function refundAcrossSubscriptionPayments(
     const refundMinor = Math.min(remainingMinor, availableMinor);
     if (refundMinor <= 0) continue;
 
-    const refund = await stripe.refunds.create({
-      payment_intent: intent.id,
-      amount: refundMinor,
-      metadata: {
-        subscriptionId: String(subscription._id),
-        subscriptionNumber: subscription.subscriptionNumber,
-        type: metadataType,
-        ...(orderId ? { orderId: String(orderId) } : {}),
+    const refund = await stripe.refunds.create(
+      {
+        payment_intent: intent.id,
+        amount: refundMinor,
+        metadata: {
+          subscriptionId: String(subscription._id),
+          subscriptionNumber: subscription.subscriptionNumber,
+          type: metadataType,
+          ...(orderId ? { orderId: String(orderId) } : {}),
+        },
       },
-    }, operationKey ? { idempotencyKey: `${operationKey}:${intent.id}` } : undefined);
+      operationKey
+        ? { idempotencyKey: `${operationKey}:${intent.id}` }
+        : undefined,
+    );
     refunds.push(refund);
     remainingMinor -= refundMinor;
   }
@@ -932,18 +1049,21 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
   }
 
   try {
-    const refund = await stripe.refunds.create({
-      payment_intent: lastPaidOrder.stripePaymentIntentId,
-      amount: amountMinor,
-      metadata: {
-        subscriptionId: String(subscription._id),
-        subscriptionNumber: subscription.subscriptionNumber,
-        type: "subscription_decrease_refund",
-        orderId: String(lastPaidOrder._id),
+    const refund = await stripe.refunds.create(
+      {
+        payment_intent: lastPaidOrder.stripePaymentIntentId,
+        amount: amountMinor,
+        metadata: {
+          subscriptionId: String(subscription._id),
+          subscriptionNumber: subscription.subscriptionNumber,
+          type: "subscription_decrease_refund",
+          orderId: String(lastPaidOrder._id),
+        },
       },
-    }, {
-      idempotencyKey: `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
-    });
+      {
+        idempotencyKey: `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
+      },
+    );
     return { refundedMinor: amountMinor, stripeRefundId: refund.id };
   } catch (err) {
     // Couldn't refund to card (no refundable balance, etc.) — caller falls back.
@@ -1140,11 +1260,10 @@ async function applyItemChange(
       title: actionLabel,
       message,
     });
-    return Response(
-      true,
-      message,
-      { subscription: enriched, appliedTo: "next" },
-    );
+    return Response(true, message, {
+      subscription: enriched,
+      appliedTo: "next",
+    });
   }
 
   // Before cut-off → affects the upcoming delivery.
@@ -1177,15 +1296,11 @@ async function applyItemChange(
       title: actionLabel,
       message,
     });
-    return Response(
-      true,
-      message,
-      {
-        subscription: enriched,
-        appliedTo: "upcoming",
-        chargedMinor: deltaMinor,
-      },
-    );
+    return Response(true, message, {
+      subscription: enriched,
+      appliedTo: "upcoming",
+      chargedMinor: deltaMinor,
+    });
   }
 
   // Decrease → refund the difference to the customer now (their upcoming
@@ -1554,15 +1669,21 @@ async function CreateSubscription({
 
   const effectiveNowMs = await getEffectiveNowMs(customer.stripeCustomerId);
 
-  const nextDeliveryDate = calculateNextDeliveryDate(
-    resolvedDays.primaryDay,
+  const nextDeliveryDate = calculateFirstSubscriptionDeliveryDate({
     frequency,
-    new Date(effectiveNowMs),
-    resolvedDays.days,
-  );
+    preferredDeliveryDay: resolvedDays.primaryDay,
+    preferredDeliveryDays: resolvedDays.days,
+    referenceDate: new Date(effectiveNowMs),
+    settings,
+  });
   const startDate = new Date(effectiveNowMs);
 
-  const totalMinor = calculateSubscriptionTotalMinor(subscriptionItems);
+  const totalMinor = calculateSubscriptionChargeMinor({
+    items: subscriptionItems,
+    frequency,
+    preferredDeliveryDay: resolvedDays.primaryDay,
+    preferredDeliveryDays: resolvedDays.days,
+  });
 
   // ── Create Stripe Product + Price + Subscription ──────────────────────────
   const { interval, interval_count } = STRIPE_INTERVALS[frequency];
@@ -2575,6 +2696,11 @@ async function PauseSubscription({
       stripeRefundId,
     };
     await order.save();
+    await markSubscriptionOrderPaymentRefunded({
+      orderId: order._id,
+      subscriptionId: subscription._id,
+      refundedAt: order.refund?.refundedAt,
+    });
   }
 
   subscription.status = "paused";
@@ -2806,6 +2932,11 @@ async function CancelSubscription({
         stripeRefundId,
       };
       await refundableOrder.save();
+      await markSubscriptionOrderPaymentRefunded({
+        orderId: refundableOrder._id,
+        subscriptionId: subscription._id,
+        refundedAt: refundableOrder.refund?.refundedAt,
+      });
     }
   } else if (!hasLockedDeliveries) {
     const refundableOrder = await Order.findOne({
@@ -2888,6 +3019,11 @@ async function CancelSubscription({
         stripeRefundId,
       };
       await refundableOrder.save();
+      await markSubscriptionOrderPaymentRefunded({
+        orderId: refundableOrder._id,
+        subscriptionId: subscription._id,
+        refundedAt: refundableOrder.refund?.refundedAt,
+      });
     }
   }
 
