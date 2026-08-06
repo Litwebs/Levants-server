@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - main
-      - master
-
-concurrency:
-  group: deploy-vps-main
-  cancel-in-progress: true
 
 jobs:
   deploy:
