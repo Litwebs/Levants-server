@@ -9,7 +9,11 @@ const {
   parseSkuQtyList,
 } = require("../../utils/deliveryImport.util");
 
-async function getOrdersStockRequirements({ orderIds, ordersSheet } = {}) {
+async function getOrdersStockRequirements({
+  orderIds,
+  ordersSheet,
+  orderTypeScope = "both",
+} = {}) {
   try {
     const ids = Array.isArray(orderIds)
       ? Array.from(new Set(orderIds.map((id) => String(id))))
@@ -19,6 +23,13 @@ async function getOrdersStockRequirements({ orderIds, ordersSheet } = {}) {
 
     const sheetRows = Array.isArray(ordersSheet?.rows) ? ordersSheet.rows : [];
     const hasSheet = sheetRows.length > 0;
+
+    const normalizedScope = String(orderTypeScope || "both").toLowerCase();
+    const scopeToOrderType = {
+      normal: "one_time",
+      subscription: "subscription_generated",
+    };
+    const orderTypeFilter = scopeToOrderType[normalizedScope] || null;
 
     if (!ids.length && !hasSheet) {
       return {
@@ -69,7 +80,12 @@ async function getOrdersStockRequirements({ orderIds, ordersSheet } = {}) {
 
     let ordersFound = 0;
     if (ids.length) {
-      const orders = await Order.find({ _id: { $in: ids } })
+      const orderQuery = { _id: { $in: ids } };
+      if (orderTypeFilter) {
+        orderQuery.orderType = orderTypeFilter;
+      }
+
+      const orders = await Order.find(orderQuery)
         .select("_id orderId items")
         .lean();
 
@@ -189,6 +205,7 @@ async function getOrdersStockRequirements({ orderIds, ordersSheet } = {}) {
         sources: {
           orderIdsProvided: ids.length,
           ordersFound,
+          orderTypeScope: normalizedScope,
           sheet: hasSheet
             ? {
                 originalName: ordersSheet?.originalName,

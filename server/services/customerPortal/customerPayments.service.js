@@ -70,7 +70,7 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
   const total = await Order.countDocuments(orderFilter);
   const orders = await Order.find(orderFilter)
     .select(
-      "_id orderId status total amountPaid currency paidAt createdAt updatedAt stripePaymentIntentId stripeCheckoutSessionId refunds refund refundedAt failedAt subscription",
+      "_id orderId status subtotal deliveryFee total amountPaid currency paidAt createdAt updatedAt stripePaymentIntentId stripeCheckoutSessionId refunds refund refundedAt failedAt subscription",
     )
     .populate("subscription", "subscriptionNumber")
     .sort({ paidAt: -1, createdAt: -1 })
@@ -136,6 +136,8 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
           _id: order._id,
           orderId: order.orderId,
           status: order.status,
+          subtotal: order.subtotal,
+          deliveryFee: order.deliveryFee,
           total: order.total,
           amountPaid: order.amountPaid ?? null,
           refunds: order.refunds || [],

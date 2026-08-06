@@ -26,6 +26,7 @@ interface Props {
   getOrdersStockRequirements: (params?: {
     orderIds?: string[];
     ordersFile?: File;
+    orderTypeScope?: "both" | "normal" | "subscription";
   }) => Promise<OrdersStockRequirements | null>;
   setSelectedOrders: (ids: string[]) => void;
 }
@@ -55,6 +56,9 @@ const OrdersBulkActions = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
   const [isCalculatingStock, setIsCalculatingStock] = useState(false);
+  const [stockOrderTypeScope, setStockOrderTypeScope] = useState<
+    "both" | "normal" | "subscription"
+  >("both");
   const [stockResult, setStockResult] =
     useState<OrdersStockRequirements | null>(null);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
@@ -189,6 +193,23 @@ const OrdersBulkActions = ({
               />
 
               <div className={styles.bulkSectionRow}>
+                <div className={styles.filterGroup}>
+                  <label className={styles.filterLabel}>Order type</label>
+                  <select
+                    className={styles.filterInput}
+                    value={stockOrderTypeScope}
+                    onChange={(e) =>
+                      setStockOrderTypeScope(
+                        e.target.value as "both" | "normal" | "subscription",
+                      )
+                    }
+                  >
+                    <option value="both">Both</option>
+                    <option value="normal">Normal orders</option>
+                    <option value="subscription">Subscription orders</option>
+                  </select>
+                </div>
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -230,6 +251,7 @@ const OrdersBulkActions = ({
                       const data = await getOrdersStockRequirements({
                         orderIds: selectedOrders,
                         ordersFile: ordersFile || undefined,
+                        orderTypeScope: stockOrderTypeScope,
                       });
                       setStockResult(data);
                       if (data) setIsStockModalOpen(true);

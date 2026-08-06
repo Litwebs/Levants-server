@@ -125,6 +125,7 @@ type OrdersContextType = {
   getOrdersStockRequirements: (params: {
     orderIds?: string[];
     ordersFile?: File;
+    orderTypeScope?: "both" | "normal" | "subscription";
   }) => Promise<OrdersStockRequirements>;
 };
 
@@ -488,10 +489,15 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const getOrdersStockRequirements = useCallback(
-    async (params: { orderIds?: string[]; ordersFile?: File }) => {
+    async (params: {
+      orderIds?: string[];
+      ordersFile?: File;
+      orderTypeScope?: "both" | "normal" | "subscription";
+    }) => {
       try {
         const orderIds = Array.isArray(params?.orderIds) ? params.orderIds : [];
         const file = params?.ordersFile;
+        const orderTypeScope = params?.orderTypeScope || "both";
 
         const res = file
           ? await api.post(
@@ -500,6 +506,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
                 const fd = new FormData();
                 if (orderIds.length)
                   fd.append("orderIds", JSON.stringify(orderIds));
+                fd.append("orderTypeScope", orderTypeScope);
                 fd.append("ordersFile", file);
                 return fd;
               })(),
@@ -507,7 +514,10 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
                 headers: { "Content-Type": "multipart/form-data" },
               },
             )
-          : await api.post("/admin/delivery/orders/stock", { orderIds });
+          : await api.post("/admin/delivery/orders/stock", {
+              orderIds,
+              orderTypeScope,
+            });
 
         const data = unwrapData<OrdersStockRequirements>(res.data);
         if (!data || !Array.isArray((data as any).items)) {

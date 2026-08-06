@@ -392,6 +392,14 @@ export const useSettings = () => {
     cutoffTime: string;
   };
 
+  const normalizeCutoffTime = (value: unknown) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const match = raw.match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+    if (!match) return raw;
+    return `${match[1]}:${match[2]}`;
+  };
+
   const emptySubscriptionSettings: SubscriptionSettings = {
     deliveryDays: [],
     cutoffDaysBefore: 2,
@@ -423,7 +431,7 @@ export const useSettings = () => {
             typeof settings.cutoffDaysBefore === "number"
               ? settings.cutoffDaysBefore
               : 2,
-          cutoffTime: settings.cutoffTime || "22:00",
+          cutoffTime: normalizeCutoffTime(settings.cutoffTime || "22:00"),
         });
       })
       .catch((err: any) => {
@@ -463,7 +471,11 @@ export const useSettings = () => {
       });
       return;
     }
-    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(subscriptionSettings.cutoffTime)) {
+    const normalizedCutoffTime = normalizeCutoffTime(
+      subscriptionSettings.cutoffTime,
+    );
+
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(normalizedCutoffTime)) {
       showToast({ type: "error", title: "Cut-off time must be in HH:MM format" });
       return;
     }
@@ -473,7 +485,7 @@ export const useSettings = () => {
       const res = await api.put("/admin/subscription-settings", {
         deliveryDays: subscriptionSettings.deliveryDays,
         cutoffDaysBefore: subscriptionSettings.cutoffDaysBefore,
-        cutoffTime: subscriptionSettings.cutoffTime,
+        cutoffTime: normalizedCutoffTime,
       });
       const settings = (res.data as any)?.data?.settings;
       if (settings) {
@@ -485,7 +497,9 @@ export const useSettings = () => {
             typeof settings.cutoffDaysBefore === "number"
               ? settings.cutoffDaysBefore
               : subscriptionSettings.cutoffDaysBefore,
-          cutoffTime: settings.cutoffTime || subscriptionSettings.cutoffTime,
+          cutoffTime: normalizeCutoffTime(
+            settings.cutoffTime || normalizedCutoffTime,
+          ),
         });
       }
       showToast({ type: "success", title: "Subscription settings updated" });

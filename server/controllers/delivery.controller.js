@@ -156,6 +156,9 @@ async function createBatch(req, res) {
 async function getOrdersStockRequirements(req, res) {
   try {
     const orderIds = parseStringArrayField(req.body?.orderIds) || [];
+    const orderTypeScope = String(
+      req.body?.orderTypeScope || "both",
+    ).toLowerCase();
 
     const ordersSheet = req.file
       ? (() => {
@@ -180,6 +183,7 @@ async function getOrdersStockRequirements(req, res) {
     const result = await getOrdersStockRequirementsService({
       orderIds,
       ordersSheet,
+      orderTypeScope,
     });
 
     if (!result.success) {

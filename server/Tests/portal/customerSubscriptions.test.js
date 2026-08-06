@@ -2807,6 +2807,131 @@ describe("Portal Subscriptions", () => {
     nowSpy.mockRestore();
   });
 
+  it("reducing multi-day weekly subscription to one day before cutoff refunds removed-day order", async () => {
+    const openCutoffNow = new Date("2026-07-06T08:00:00.000Z");
+    const nowSpy = jest
+      .spyOn(Date, "now")
+      .mockReturnValue(openCutoffNow.getTime());
+
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 3],
+        cutoffDaysBefore: 1,
+        cutoffTime: "10:00",
+      },
+      { upsert: true },
+    );
+
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDays: [0, 3],
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+    expect(createRes.status).toBe(201);
+
+    const sub = createRes.body.data.subscription;
+
+    const nextSunday = new Date("2026-07-12T12:00:00.000Z");
+    const nextWednesday = new Date("2026-07-08T12:00:00.000Z");
+
+    const sundayOrder = await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: sub.items[0].product,
+          variant: sub.items[0].variant,
+          name: sub.items[0].name,
+          sku: sub.items[0].sku,
+          price: sub.items[0].unitPrice,
+          quantity: 1,
+          subtotal: sub.items[0].unitPrice,
+        },
+      ],
+      deliveryAddress: {
+        line1: "1 Test Street",
+        city: "London",
+        postcode: "SW1A 1AA",
+        country: "United Kingdom",
+      },
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: nextSunday,
+      deliveryFee: 1,
+      subtotal: 2.5,
+      total: 3.5,
+      amountPaid: 3.5,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+
+    await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: sub.items[0].product,
+          variant: sub.items[0].variant,
+          name: sub.items[0].name,
+          sku: sub.items[0].sku,
+          price: sub.items[0].unitPrice,
+          quantity: 1,
+          subtotal: sub.items[0].unitPrice,
+        },
+      ],
+      deliveryAddress: {
+        line1: "1 Test Street",
+        city: "London",
+        postcode: "SW1A 1AA",
+        country: "United Kingdom",
+      },
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: nextWednesday,
+      deliveryFee: 1,
+      subtotal: 2.5,
+      total: 3.5,
+      amountPaid: 3.5,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+
+    const updateRes = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        preferredDeliveryDay: 3,
+        preferredDeliveryDays: [3],
+        refundMethod: "refund",
+      });
+
+    expect(updateRes.status).toBe(200);
+    expect(
+      (updateRes.body.data.refundedMinor || 0) +
+        (updateRes.body.data.creditedMinor || 0),
+    ).toBe(350);
+
+    const refreshedSundayOrder = await Order.findById(sundayOrder._id).lean();
+    expect(refreshedSundayOrder.status).toBe("refunded");
+
+    nowSpy.mockRestore();
+  });
+
   it("charges only the open-day delta immediately when a staged locked-day plan already exists", async () => {
     const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
     const nowSpy = jest

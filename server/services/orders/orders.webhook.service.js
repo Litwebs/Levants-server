@@ -180,6 +180,17 @@ async function HandleRefundSucceeded(refund) {
 
   if (!refundedOrderId) return;
 
+  const refundType = String(refund?.metadata?.type || "").toLowerCase();
+  const isSubscriptionLifecycleRefund =
+    refundType === "subscription_cancel_refund" ||
+    refundType === "subscription_pause_refund";
+
+  // Subscription cancel/pause already sends a consolidated subscription email.
+  // Suppress per-order refund confirmations to avoid emailing once per order.
+  if (isSubscriptionLifecycleRefund) {
+    return;
+  }
+
   try {
     await sendRefundConfirmationEmailToCustomer({ orderId: refundedOrderId });
   } catch {

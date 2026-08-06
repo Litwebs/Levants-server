@@ -1937,6 +1937,10 @@ async function UpdateSubscription({
   }
 
   const { isPastCutoff } = await getCutoffStatus(subscription);
+  const scheduleChangeRequested =
+    frequency !== undefined ||
+    preferredDeliveryDay !== undefined ||
+    preferredDeliveryDays !== undefined;
 
   const dayPlanChangeRequested = deliveryDayPlans !== undefined;
   const shouldUseDayPlans =
@@ -2257,6 +2261,9 @@ async function UpdateSubscription({
   let dayPlanCreditedMinor = 0;
   let dayPlanRefundedMinor = 0;
   let dayPlanStripeRefundId = null;
+  let removedDayCreditedMinor = 0;
+  let removedDayRefundedMinor = 0;
+  let removedDayStripeRefundId = null;
   let dayPlanPaymentIntent = null;
   let updateMessage = "Subscription updated";
 
@@ -2334,10 +2341,126 @@ async function UpdateSubscription({
     }
   }
 
-  const scheduleChangeRequested =
-    frequency !== undefined ||
-    preferredDeliveryDay !== undefined ||
-    preferredDeliveryDays !== undefined;
+  const currentResolvedDays = resolveDeliveryDays({
+    frequency: subscription.frequency,
+    preferredDeliveryDay: subscription.preferredDeliveryDay,
+    preferredDeliveryDays: subscription.preferredDeliveryDays,
+  });
+
+  const removedDeliveryDays =
+    !dayPlanChangeRequested &&
+    scheduleChangeRequested &&
+    subscription.frequency === "weekly" &&
+    targetFrequency === "weekly" &&
+    currentResolvedDays.ok
+      ? currentResolvedDays.days.filter(
+          (day) => !resolvedDays.days.includes(Number(day)),
+        )
+      : [];
+
+  if (removedDeliveryDays.length > 0) {
+    const now = new Date(Date.now());
+    const refundableOrders = await Order.find({
+      subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded"] },
+      deliveryStatus: "ordered",
+      deliveryDate: { $gte: startOfDay(now) },
+    })
+      .sort({ deliveryDate: 1, createdAt: 1 })
+      .exec();
+
+    const removedDaySet = new Set(removedDeliveryDays.map(Number));
+    const eligibleOrders = refundableOrders.filter((order) => {
+      if (!order.deliveryDate) return false;
+      const day = new Date(order.deliveryDate).getDay();
+      if (!removedDaySet.has(day)) return false;
+      const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
+      return cutoffAt ? now.getTime() < cutoffAt.getTime() : true;
+    });
+
+    if (
+      refundMethod === "refund" &&
+      eligibleOrders.some((order) => !order.stripePaymentIntentId)
+    ) {
+      return Response(
+        false,
+        "We couldn't find a captured payment to refund to your card. Please choose store credit instead.",
+        null,
+      );
+    }
+
+    const customer =
+      eligibleOrders.length > 0 ? await Customer.findById(customerId) : null;
+
+    for (const order of eligibleOrders) {
+      const amountMinor = Math.max(
+        0,
+        Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
+      );
+      if (amountMinor <= 0) continue;
+
+      if (refundMethod === "refund") {
+        const refunds = await refundAcrossSubscriptionPayments(
+          subscription,
+          customer,
+          order.stripePaymentIntentId,
+          amountMinor,
+          "subscription_schedule_change_refund",
+          `subscription:${subscription._id}:remove-day:${deliveryDateKey(order.deliveryDate)}:${order._id}`,
+          order._id,
+        );
+        removedDayRefundedMinor += amountMinor;
+        removedDayStripeRefundId =
+          refunds.at(-1)?.id || removedDayStripeRefundId;
+      } else {
+        const creditResult = await storeCreditService.addCredit({
+          customerId,
+          amountMinor,
+          type: "subscription_refund",
+          reason: `Refund for reducing delivery days on ${subscription.subscriptionNumber}`,
+          subscriptionId: subscription._id,
+          orderId: order._id,
+        });
+
+        if (!creditResult.ok) {
+          return Response(false, creditResult.message, null);
+        }
+
+        removedDayCreditedMinor += amountMinor;
+      }
+
+      order.status = "refunded";
+      order.refund = {
+        ...(order.refund || {}),
+        refundedAt: new Date(),
+        reason: "Subscription delivery day removed before cut-off",
+        stripeRefundId: removedDayStripeRefundId,
+      };
+      await order.save();
+      await SubscriptionDelivery.updateMany(
+        {
+          subscription: subscription._id,
+          order: order._id,
+          status: { $in: ["generated", "scheduled"] },
+        },
+        { $set: { status: "cancelled" } },
+      );
+      await markSubscriptionOrderPaymentRefunded({
+        orderId: order._id,
+        subscriptionId: subscription._id,
+        refundedAt: order.refund?.refundedAt,
+      });
+    }
+
+    if (removedDayRefundedMinor > 0 && removedDayCreditedMinor > 0) {
+      updateMessage = `We've refunded ${formatMinor(removedDayRefundedMinor)} to your card and added ${formatMinor(removedDayCreditedMinor)} as store credit.`;
+    } else if (removedDayRefundedMinor > 0) {
+      updateMessage = `We've refunded ${formatMinor(removedDayRefundedMinor)} to your card.`;
+    } else if (removedDayCreditedMinor > 0) {
+      updateMessage = `We've added ${formatMinor(removedDayCreditedMinor)} of store credit to your account.`;
+    }
+  }
+
   const effectiveFromDate = subscription.nextDeliveryDate
     ? addFrequencyDays(
         subscription.nextDeliveryDate,
@@ -2508,6 +2631,9 @@ async function UpdateSubscription({
     },
   };
 
+  const totalRefundedMinor = dayPlanRefundedMinor + removedDayRefundedMinor;
+  const totalCreditedMinor = dayPlanCreditedMinor + removedDayCreditedMinor;
+
   if (
     dayPlanChangeRequested &&
     shouldStageFutureDayPlan &&
@@ -2531,9 +2657,15 @@ async function UpdateSubscription({
     dayPlanRefundOwedMinor > 0
   ) {
     responseData.appliedTo = "upcoming";
-    responseData.refundedMinor = dayPlanRefundedMinor;
-    responseData.creditedMinor = dayPlanCreditedMinor;
-    responseData.stripeRefundId = dayPlanStripeRefundId;
+    responseData.refundedMinor = totalRefundedMinor;
+    responseData.creditedMinor = totalCreditedMinor;
+    responseData.stripeRefundId =
+      dayPlanStripeRefundId || removedDayStripeRefundId;
+  } else if (totalRefundedMinor > 0 || totalCreditedMinor > 0) {
+    responseData.appliedTo = "upcoming";
+    responseData.refundedMinor = totalRefundedMinor;
+    responseData.creditedMinor = totalCreditedMinor;
+    responseData.stripeRefundId = removedDayStripeRefundId;
   }
 
   return Response(true, updateMessage, responseData);
@@ -2568,7 +2700,7 @@ async function PauseSubscription({
       : "refund";
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
-  const now = new Date();
+  const now = new Date(Date.now());
   const resumeDate = new Date(pauseResume.resumeDate);
   const deliveriesToConsider = await SubscriptionDelivery.find({
     subscription: subscription._id,
@@ -2793,7 +2925,7 @@ async function CancelSubscription({
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
-  const now = new Date();
+  const now = new Date(Date.now());
   const dayKey = (value) => {
     const date = new Date(value);
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -3335,7 +3467,21 @@ async function GetSubscriptionDeliveries({
     .limit(pageSize)
     .lean();
 
-  return Response(true, null, { deliveries, meta: { page, pageSize, total } });
+  const normalizedDeliveries = deliveries.map((delivery) => {
+    const orderStatus = String(delivery?.order?.status || "").toLowerCase();
+    if (orderStatus !== "refunded") {
+      return delivery;
+    }
+    return {
+      ...delivery,
+      status: "cancelled",
+    };
+  });
+
+  return Response(true, null, {
+    deliveries: normalizedDeliveries,
+    meta: { page, pageSize, total },
+  });
 }
 
 /**

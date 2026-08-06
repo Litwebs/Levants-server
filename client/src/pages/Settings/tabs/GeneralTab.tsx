@@ -107,8 +107,8 @@ const GeneralTab = ({
                       : "Add your business logo"}
                   </strong>
                   <span>
-                    Used across your customer website and outgoing emails.
-                    PNG, JPG, WebP or SVG. Maximum file size: 2 MB.
+                    Used across your customer website and outgoing emails. PNG,
+                    JPG, WebP or SVG. Maximum file size: 2 MB.
                   </span>
                 </div>
                 {companySettings.logoMetadata ? (
@@ -122,9 +122,7 @@ const GeneralTab = ({
                     <div>
                       <dt>Size</dt>
                       <dd>
-                        {formatFileSize(
-                          companySettings.logoMetadata.sizeBytes,
-                        )}
+                        {formatFileSize(companySettings.logoMetadata.sizeBytes)}
                       </dd>
                     </div>
                     <div>
@@ -144,9 +142,7 @@ const GeneralTab = ({
                             dateStyle: "medium",
                             timeStyle: "short",
                           }).format(
-                            new Date(
-                              companySettings.logoMetadata.uploadedAt,
-                            ),
+                            new Date(companySettings.logoMetadata.uploadedAt),
                           )}
                         </dd>
                       </div>
@@ -318,6 +314,7 @@ const GeneralTab = ({
               className={styles.fieldInput}
               value={subscriptionSettings?.cutoffDaysBefore ?? 0}
               disabled={subDisabled}
+              onFocus={(e) => e.currentTarget.select()}
               onChange={(e) =>
                 setSubscriptionSettings({
                   ...subscriptionSettings,
