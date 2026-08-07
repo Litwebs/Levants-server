@@ -81,8 +81,12 @@ const TEMPLATE_HEADERS = [
 ];
 
 const saveCsv = (fileName: string, rows: unknown[][]) => {
-  const content = rows.map((row) => row.map(escapeCsvCell).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
+  const content = rows
+    .map((row) => row.map(escapeCsvCell).join(","))
+    .join("\r\n");
+  const url = URL.createObjectURL(
+    new Blob([content], { type: "text/csv;charset=utf-8" }),
+  );
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;
@@ -115,7 +119,8 @@ export default function BulkSubscriptionImportModal({
       api.get("/admin/subscription-settings"),
     ])
       .then(([productsResponse, settingsResponse]) => {
-        const products: ProductOption[] = productsResponse.data?.data?.products || [];
+        const products: ProductOption[] =
+          productsResponse.data?.data?.products || [];
         setVariants(
           products
             .filter(
@@ -134,10 +139,8 @@ export default function BulkSubscriptionImportModal({
                 })),
             ),
         );
-        const days =
-          settingsResponse.data?.data?.settings?.deliveryDays ||
-          settingsResponse.data?.data?.deliveryDays ||
-          [0, 3];
+        const days = settingsResponse.data?.data?.settings?.deliveryDays ||
+          settingsResponse.data?.data?.deliveryDays || [0, 3];
         setDeliveryDays(Array.isArray(days) ? days : [0, 3]);
       })
       .catch(() => {
@@ -154,7 +157,9 @@ export default function BulkSubscriptionImportModal({
     () => rows.filter((row) => row.errors.length > 0),
     [rows],
   );
-  const createdCount = results.filter((result) => result.status === "created").length;
+  const createdCount = results.filter(
+    (result) => result.status === "created",
+  ).length;
   const failedCount = results.length - createdCount;
 
   const reset = () => {
@@ -189,7 +194,11 @@ export default function BulkSubscriptionImportModal({
       return;
     }
     try {
-      const parsed = parseSubscriptionCsv(await file.text(), variants, deliveryDays);
+      const parsed = parseSubscriptionCsv(
+        await file.text(),
+        variants,
+        deliveryDays,
+      );
       setFileName(file.name);
       setRows(parsed);
       setResults([]);
@@ -260,7 +269,11 @@ export default function BulkSubscriptionImportModal({
   const downloadSkuReference = () => {
     saveCsv("subscription-product-skus.csv", [
       ["SKU", "Product", "Variant"],
-      ...variants.map((variant) => [variant.sku, variant.productName, variant.name]),
+      ...variants.map((variant) => [
+        variant.sku,
+        variant.productName,
+        variant.name,
+      ]),
     ]);
   };
 
@@ -271,7 +284,8 @@ export default function BulkSubscriptionImportModal({
       const response = await api.post("/admin/subscriptions/bulk-setup-links", {
         rows: rows.map((row) => row.payload),
       });
-      const importedResults: ImportResult[] = response.data?.data?.results || [];
+      const importedResults: ImportResult[] =
+        response.data?.data?.results || [];
       setResults(importedResults);
       onImported();
       const summary = response.data?.data?.summary;
@@ -308,7 +322,12 @@ export default function BulkSubscriptionImportModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={close} title="Import subscription customers" size="xl">
+    <Modal
+      isOpen={isOpen}
+      onClose={close}
+      title="Import subscription customers"
+      size="xl"
+    >
       {results.length ? (
         <div className={styles.importBody}>
           <div className={styles.importResultSummary}>
@@ -316,13 +335,17 @@ export default function BulkSubscriptionImportModal({
             <div>
               <h3>Import complete</h3>
               <p>
-                {createdCount} pending setups created · {failedCount} failed. Download
-                the results for backup onboarding links if an email does not arrive.
+                {createdCount} pending setups created · {failedCount} failed.
+                Download the results for backup onboarding links if an email
+                does not arrive.
               </p>
             </div>
           </div>
           <div className={styles.importTableWrap}>
-            <Table withWrapper={false} tableClassName={styles.importResultsTable}>
+            <Table
+              withWrapper={false}
+              tableClassName={styles.importResultsTable}
+            >
               <caption className="sr-only">Subscription import results</caption>
               <colgroup>
                 <col className={styles.importRowColumn} />
@@ -346,10 +369,16 @@ export default function BulkSubscriptionImportModal({
                     </TableCell>
                     <TableCell>
                       <strong>{result.customerName}</strong>
-                      <span className={styles.importCellSecondary}>{result.email}</span>
+                      <span className={styles.importCellSecondary}>
+                        {result.email}
+                      </span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={result.status === "created" ? "success" : "error"}>
+                      <Badge
+                        variant={
+                          result.status === "created" ? "success" : "error"
+                        }
+                      >
                         {result.status}
                       </Badge>
                     </TableCell>
@@ -367,8 +396,9 @@ export default function BulkSubscriptionImportModal({
             <div>
               <strong>This creates pending setups, not live billing</strong>
               <span>
-                Each customer must use their onboarding link to verify their account and
-                add a payment method before the subscription becomes active.
+                Each customer must use their onboarding link to verify their
+                account and add a payment method before the subscription becomes
+                active.
               </span>
             </div>
           </div>
@@ -377,17 +407,30 @@ export default function BulkSubscriptionImportModal({
             <div>
               <h3>1. Prepare your CSV</h3>
               <p>
-                Add frequency, delivery days and product SKUs. Separate two weekly
-                delivery days with <code>|</code>. Items support either <code>SKU:quantity</code>
-                (same basket for all selected days) or day blocks like <code>Sunday=SKU:quantity|Wednesday=SKU:quantity</code>
+                Add frequency, delivery days and product SKUs. Separate two
+                weekly delivery days with <code>|</code>. Items support either{" "}
+                <code>SKU:quantity</code>
+                (same basket for all selected days) or day blocks like{" "}
+                <code>Sunday=SKU:quantity|Wednesday=SKU:quantity</code>
                 for different baskets per day.
               </p>
             </div>
             <div className={styles.importToolActions}>
-              <Button variant="outline" size="sm" onClick={downloadTemplate} leftIcon={<Download size={16} />}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadTemplate}
+                leftIcon={<Download size={16} />}
+              >
                 Download template
               </Button>
-              <Button variant="ghost" size="sm" onClick={downloadSkuReference} disabled={!variants.length} leftIcon={<Download size={16} />}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={downloadSkuReference}
+                disabled={!variants.length}
+                leftIcon={<Download size={16} />}
+              >
                 SKU reference
               </Button>
             </div>
@@ -411,7 +454,12 @@ export default function BulkSubscriptionImportModal({
                 onChange={(event) => void readFile(event.target.files?.[0])}
               />
               <FileSpreadsheet size={28} aria-hidden="true" />
-              <strong>{fileName || (loadingOptions ? "Loading products…" : "Choose a CSV or drop it here")}</strong>
+              <strong>
+                {fileName ||
+                  (loadingOptions
+                    ? "Loading products…"
+                    : "Choose a CSV or drop it here")}
+              </strong>
               <span>Up to 250 customers · maximum 2 MB</span>
             </label>
           </div>
@@ -428,12 +476,19 @@ export default function BulkSubscriptionImportModal({
                   </p>
                 </div>
                 <Badge variant={invalidRows.length ? "error" : "success"}>
-                  {invalidRows.length ? `${invalidRows.length} need attention` : "Ready"}
+                  {invalidRows.length
+                    ? `${invalidRows.length} need attention`
+                    : "Ready"}
                 </Badge>
               </div>
               <div className={styles.importTableWrap}>
-                <Table withWrapper={false} tableClassName={styles.importPreviewTable}>
-                  <caption className="sr-only">Customers ready for subscription import</caption>
+                <Table
+                  withWrapper={false}
+                  tableClassName={styles.importPreviewTable}
+                >
+                  <caption className="sr-only">
+                    Customers ready for subscription import
+                  </caption>
                   <colgroup>
                     <col className={styles.importRowColumn} />
                     <col className={styles.importCustomerColumn} />
@@ -454,14 +509,18 @@ export default function BulkSubscriptionImportModal({
                     {rows.map((row) => (
                       <TableRow
                         key={`${row.rowNumber}-${row.email}`}
-                        className={row.errors.length ? styles.importInvalidRow : ""}
+                        className={
+                          row.errors.length ? styles.importInvalidRow : ""
+                        }
                       >
                         <TableCell className={styles.importRowNumber}>
                           {row.rowNumber}
                         </TableCell>
                         <TableCell>
                           <strong>{row.name}</strong>
-                          <span className={styles.importCellSecondary}>{row.email || "No email"}</span>
+                          <span className={styles.importCellSecondary}>
+                            {row.email || "No email"}
+                          </span>
                         </TableCell>
                         <TableCell className={styles.importScheduleCell}>
                           {row.schedule}
@@ -472,7 +531,9 @@ export default function BulkSubscriptionImportModal({
                         <TableCell>
                           {row.errors.length ? (
                             <ul className={styles.importErrors}>
-                              {row.errors.map((error) => <li key={error}>{error}</li>)}
+                              {row.errors.map((error) => (
+                                <li key={error}>{error}</li>
+                              ))}
                             </ul>
                           ) : (
                             <span className={styles.importValid}>Ready</span>
@@ -491,18 +552,26 @@ export default function BulkSubscriptionImportModal({
       <ModalFooter>
         {results.length ? (
           <>
-            <Button variant="outline" onClick={downloadResults} leftIcon={<Download size={16} />}>
+            <Button
+              variant="outline"
+              onClick={downloadResults}
+              leftIcon={<Download size={16} />}
+            >
               Download results
             </Button>
             <Button onClick={close}>Done</Button>
           </>
         ) : (
           <>
-            <Button variant="ghost" onClick={close} disabled={importing}>Cancel</Button>
+            <Button variant="ghost" onClick={close} disabled={importing}>
+              Cancel
+            </Button>
             <Button
               onClick={submitImport}
               isLoading={importing}
-              disabled={!rows.length || invalidRows.length > 0 || loadingOptions}
+              disabled={
+                !rows.length || invalidRows.length > 0 || loadingOptions
+              }
               leftIcon={<Upload size={16} />}
             >
               Import {rows.length || ""} customers
