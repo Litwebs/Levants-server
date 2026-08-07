@@ -24,6 +24,10 @@ export type ImportPayloadRow = {
     preferredDeliveryDay: number;
     preferredDeliveryDays: number[];
     items: Array<{ variantId: string; quantity: number }>;
+    deliveryDayPlans?: Array<{
+      day: number;
+      items: Array<{ variantId: string; quantity: number }>;
+    }>;
     notes?: string;
   };
 };
@@ -139,14 +143,14 @@ const splitName = (fullName: string) => {
   };
 };
 
-const parseItems = (
+const parseFlatItems = (
   rawItems: string,
   variantBySku: Map<string, ImportVariant>,
 ) => {
   const errors: string[] = [];
   const items: Array<{ variantId: string; quantity: number }> = [];
   const labels: string[] = [];
-  const separator = rawItems.includes("|") ? /\s*\|\s*/ : /\s*,\s*/;
+  const separator = /\s*(?:,|;|\n)+\s*/;
 
   rawItems
     .split(separator)
@@ -182,6 +186,99 @@ const parseItems = (
     });
 
   return { items, labels, errors };
+};
+
+const parseDaySpecificItems = (
+  rawItems: string,
+  variantBySku: Map<string, ImportVariant>,
+) => {
+  const errors: string[] = [];
+  const labels: string[] = [];
+  const dayPlans: Array<{
+    day: number;
+    items: Array<{ variantId: string; quantity: number }>;
+  }> = [];
+
+  const blocks = rawItems
+    .split(/\s*\|\s*/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  const seenDays = new Set<number>();
+  for (const block of blocks) {
+    const eqIndex = block.indexOf("=");
+    if (eqIndex <= 0) {
+      errors.push(`Use Day=SKU:quantity format for "${block}"`);
+      continue;
+    }
+
+    const dayLabel = block.slice(0, eqIndex).trim();
+    const dayIndex = DAY_ALIASES[dayLabel.toLowerCase()];
+    if (dayIndex === undefined) {
+      errors.push(`Delivery day is not recognised in "${block}"`);
+      continue;
+    }
+    if (seenDays.has(dayIndex)) {
+      errors.push(`Duplicate day block for "${DAY_NAMES[dayIndex]}"`);
+      continue;
+    }
+    seenDays.add(dayIndex);
+
+    const itemText = block.slice(eqIndex + 1).trim();
+    const parsed = parseFlatItems(itemText, variantBySku);
+    if (parsed.errors.length) {
+      errors.push(...parsed.errors.map((error) => `${DAY_NAMES[dayIndex]}: ${error}`));
+      continue;
+    }
+    if (!parsed.items.length) {
+      errors.push(`Add at least one item for ${DAY_NAMES[dayIndex]}`);
+      continue;
+    }
+
+    dayPlans.push({ day: dayIndex, items: parsed.items });
+    labels.push(`${DAY_NAMES[dayIndex]}: ${parsed.labels.join(", ")}`);
+  }
+
+  const mergedItemsMap = new Map<string, { variantId: string; quantity: number }>();
+  for (const plan of dayPlans) {
+    for (const item of plan.items) {
+      const existing = mergedItemsMap.get(item.variantId);
+      if (!existing || item.quantity > existing.quantity) {
+        mergedItemsMap.set(item.variantId, { ...item });
+      }
+    }
+  }
+
+  return {
+    dayPlans,
+    items: Array.from(mergedItemsMap.values()),
+    labels,
+    errors,
+  };
+};
+
+const parseItems = (
+  rawItems: string,
+  variantBySku: Map<string, ImportVariant>,
+) => {
+  const hasDayBlocks = /(^|\|)\s*[a-zA-Z]{3,}\s*=/.test(rawItems);
+  if (!hasDayBlocks) {
+    const parsed = parseFlatItems(rawItems, variantBySku);
+    return {
+      ...parsed,
+      isDaySpecific: false,
+      dayPlans: [] as Array<{
+        day: number;
+        items: Array<{ variantId: string; quantity: number }>;
+      }>,
+    };
+  }
+
+  const parsed = parseDaySpecificItems(rawItems, variantBySku);
+  return {
+    ...parsed,
+    isDaySpecific: true,
+  };
 };
 
 export const parseSubscriptionCsv = (
@@ -262,6 +359,27 @@ export const parseSubscriptionCsv = (
     const parsedItems = parseItems(rawItems, variantBySku);
     if (!rawItems) errors.push("At least one SKU and quantity is required");
     errors.push(...parsedItems.errors);
+    if (parsedItems.isDaySpecific) {
+      const planDays = new Set(parsedItems.dayPlans.map((plan) => plan.day));
+      const missingConfiguredDays = deliveryDays.filter((day) => !planDays.has(day));
+      if (missingConfiguredDays.length) {
+        errors.push(
+          `Add day blocks for each selected day: ${missingConfiguredDays
+            .map((day) => DAY_NAMES[day])
+            .join(", ")}`,
+        );
+      }
+      const outOfScheduleDays = parsedItems.dayPlans
+        .map((plan) => plan.day)
+        .filter((day) => !deliveryDays.includes(day));
+      if (outOfScheduleDays.length) {
+        errors.push(
+          `Day blocks include days outside delivery schedule: ${[...new Set(outOfScheduleDays)]
+            .map((day) => DAY_NAMES[day])
+            .join(", ")}`,
+        );
+      }
+    }
     if (rawItems && !parsedItems.items.length && !parsedItems.errors.length) {
       errors.push("At least one valid product is required");
     }
@@ -298,6 +416,9 @@ export const parseSubscriptionCsv = (
           preferredDeliveryDay: deliveryDays[0],
           preferredDeliveryDays: deliveryDays,
           items: parsedItems.items,
+          ...(parsedItems.isDaySpecific && parsedItems.dayPlans.length
+            ? { deliveryDayPlans: parsedItems.dayPlans }
+            : {}),
           ...(notes ? { notes } : {}),
         },
       };

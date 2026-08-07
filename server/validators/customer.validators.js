@@ -87,6 +87,23 @@ const createCustomerOnboardingLinkSchema = Joi.object({
       )
       .min(1)
       .required(),
+    deliveryDayPlans: Joi.array()
+      .items(
+        Joi.object({
+          day: Joi.number().integer().min(0).max(6).required(),
+          items: Joi.array()
+            .items(
+              Joi.object({
+                variantId: Joi.string().hex().length(24).required(),
+                quantity: Joi.number().integer().min(1).required(),
+              }).unknown(false),
+            )
+            .min(1)
+            .required(),
+        }).unknown(false),
+      )
+      .min(1)
+      .optional(),
     notes: Joi.string().trim().max(1000).allow(null, "").optional(),
   })
     .unknown(false)

@@ -212,26 +212,64 @@ async function CreateCustomerOnboardingLink({
       "Friday",
       "Saturday",
     ];
+
+    const dayPlans = Array.isArray(subscription.deliveryDayPlans)
+      ? subscription.deliveryDayPlans
+      : [];
+
+    const quantityByVariant = new Map();
+    const dayQuantities = {};
+
+    if (dayPlans.length > 0) {
+      dayPlans.forEach((plan) => {
+        const dayIndex = Number(plan?.day);
+        const dayName = Number.isInteger(dayIndex) ? dayNames[dayIndex] : null;
+        if (!dayName) return;
+
+        const dayMap = {};
+        (plan.items || []).forEach((item) => {
+          const variantId = String(item.variantId);
+          const qty = Number(item.quantity);
+          if (!variantId || !Number.isFinite(qty) || qty < 1) return;
+
+          dayMap[variantId] = qty;
+          const current = quantityByVariant.get(variantId) || 0;
+          quantityByVariant.set(variantId, Math.max(current, qty));
+        });
+
+        if (Object.keys(dayMap).length > 0) {
+          dayQuantities[dayName] = dayMap;
+        }
+      });
+    }
+
+    if (quantityByVariant.size === 0) {
+      subscription.items.forEach((item) => {
+        const variantId = String(item.variantId);
+        const qty = Number(item.quantity);
+        if (!variantId || !Number.isFinite(qty) || qty < 1) return;
+        quantityByVariant.set(variantId, qty);
+      });
+    }
+
+    const normalizedDeliveryDays = (
+      subscription.preferredDeliveryDays?.length
+        ? subscription.preferredDeliveryDays
+        : [subscription.preferredDeliveryDay]
+    )
+      .map((day) => Number(day))
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+
     customer.pendingSubscriptionDraft = {
       step: 5,
-      selectedVariantIds: subscription.items.map((item) =>
-        String(item.variantId),
-      ),
-      quantities: Object.fromEntries(
-        subscription.items.map((item) => [
-          String(item.variantId),
-          Number(item.quantity),
-        ]),
-      ),
-      dayQuantities: {},
+      selectedVariantIds: Array.from(quantityByVariant.keys()),
+      quantities: Object.fromEntries(quantityByVariant.entries()),
+      dayQuantities,
       frequency:
         subscription.frequency === "every_two_weeks"
           ? "fortnightly"
           : subscription.frequency,
-      deliveryDays: (subscription.preferredDeliveryDays?.length
-        ? subscription.preferredDeliveryDays
-        : [subscription.preferredDeliveryDay]
-      ).map((day) => dayNames[day]),
+      deliveryDays: normalizedDeliveryDays.map((day) => dayNames[day]),
       selectedAddress: String(defaultAddress._id),
       notes: subscription.notes || "",
       preparedByAdmin: true,

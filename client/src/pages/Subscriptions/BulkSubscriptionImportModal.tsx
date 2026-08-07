@@ -203,6 +203,10 @@ export default function BulkSubscriptionImportModal({
   };
 
   const downloadTemplate = () => {
+    const skuA = variants[0]?.sku || "PRODUCT-SKU-1";
+    const skuB = variants[1]?.sku || "PRODUCT-SKU-2";
+    const skuC = variants[2]?.sku || "PRODUCT-SKU-3";
+
     saveCsv("subscription-import-template.csv", [
       TEMPLATE_HEADERS,
       [
@@ -217,8 +221,38 @@ export default function BulkSubscriptionImportModal({
         "United Kingdom",
         "Leave by the back door",
         "weekly",
+        "Sunday",
+        `${skuA}:1, ${skuB}:2`,
+      ],
+      [
+        "James",
+        "Wright",
+        "james@example.com",
+        "07400999888",
+        "4 Victoria Row",
+        "",
+        "Leeds",
+        "LS1 4AA",
+        "United Kingdom",
+        "Call on arrival",
+        "weekly",
         "Sunday|Wednesday",
-        variants[0]?.sku ? `${variants[0].sku}:1` : "PRODUCT-SKU:1",
+        `${skuA}:1, ${skuC}:1`,
+      ],
+      [
+        "Aisha",
+        "Khan",
+        "aisha@example.com",
+        "07400777666",
+        "11 Oak Street",
+        "",
+        "Bradford",
+        "BD1 2BC",
+        "United Kingdom",
+        "Leave in porch",
+        "weekly",
+        "Sunday|Wednesday",
+        `Sunday=${skuA}:1,${skuB}:2|Wednesday=${skuC}:1`,
       ],
     ]);
   };
@@ -344,7 +378,9 @@ export default function BulkSubscriptionImportModal({
               <h3>1. Prepare your CSV</h3>
               <p>
                 Add frequency, delivery days and product SKUs. Separate two weekly
-                delivery days with <code>|</code>, and enter items as <code>SKU:quantity</code>.
+                delivery days with <code>|</code>. Items support either <code>SKU:quantity</code>
+                (same basket for all selected days) or day blocks like <code>Sunday=SKU:quantity|Wednesday=SKU:quantity</code>
+                for different baskets per day.
               </p>
             </div>
             <div className={styles.importToolActions}>
