@@ -38,6 +38,12 @@ const DAY_OPTIONS = [
   { value: "6", label: "Saturday" },
 ];
 
+const dayLabel = (day: number) =>
+  DAY_OPTIONS.find((option) => Number(option.value) === Number(day))?.label ||
+  `Day ${day}`;
+
+const SUBSCRIPTION_DELIVERY_FEE = 1;
+
 const FREQUENCY_OPTIONS = [
   { value: "weekly", label: "Weekly" },
   { value: "every_two_weeks", label: "Every 2 weeks" },
@@ -121,11 +127,14 @@ const formatDate = (value?: string | null) => {
   });
 };
 
+const formatMoney = (value: number) => `GBP ${Number(value || 0).toFixed(2)}`;
+
 const getRequestError = (error: unknown, fallback: string) => {
   if (error && typeof error === "object" && "response" in error) {
     const response = (error as { response?: { data?: { message?: unknown } } })
       .response;
-    if (typeof response?.data?.message === "string") return response.data.message;
+    if (typeof response?.data?.message === "string")
+      return response.data.message;
   }
   return error instanceof Error && error.message ? error.message : fallback;
 };
@@ -346,6 +355,39 @@ export default function SubscriptionDetailsPage() {
     const start = (itemsPage - 1) * itemsPageSize;
     return subscription.items.slice(start, start + itemsPageSize);
   }, [subscription, itemsPage, itemsPageSize]);
+
+  const deliveryDayPlans = useMemo(() => {
+    if (!subscription) return [];
+    return Array.isArray(subscription.deliveryDayPlans)
+      ? [...subscription.deliveryDayPlans].sort((a, b) => a.day - b.day)
+      : [];
+  }, [subscription]);
+
+  const deliveryDayPlanTotals = useMemo(() => {
+    return new Map(
+      deliveryDayPlans.map((plan) => {
+        const productsTotal = (plan.items || []).reduce(
+          (sum, item) =>
+            sum + Number(item.unitPrice || 0) * Number(item.quantity || 0),
+          0,
+        );
+        const totalQty = (plan.items || []).reduce(
+          (sum, item) => sum + Number(item.quantity || 0),
+          0,
+        );
+
+        return [
+          Number(plan.day),
+          {
+            productsTotal,
+            totalQty,
+            deliveryFee: SUBSCRIPTION_DELIVERY_FEE,
+            totalWithDeliveryFee: productsTotal + SUBSCRIPTION_DELIVERY_FEE,
+          },
+        ] as const;
+      }),
+    );
+  }, [deliveryDayPlans]);
 
   const itemsTotalPages = Math.max(
     1,
@@ -598,13 +640,15 @@ export default function SubscriptionDetailsPage() {
       {tab === "overview" ? (
         <div className={styles.overviewGrid}>
           {isPendingSetup ? (
-            <Card className={`${styles.sectionCard} ${styles.pendingSetupCard}`}>
+            <Card
+              className={`${styles.sectionCard} ${styles.pendingSetupCard}`}
+            >
               <div>
                 <h3 className={styles.sectionTitle}>Customer setup required</h3>
                 <p className={styles.sectionDescription}>
                   This subscription has been prepared, but it will not create
-                  deliveries or payments until the customer verifies their account
-                  and adds a payment method.
+                  deliveries or payments until the customer verifies their
+                  account and adds a payment method.
                 </p>
               </div>
               <div className={styles.pendingSetupFacts}>
@@ -627,7 +671,12 @@ export default function SubscriptionDetailsPage() {
                       ? subscription.preferredDeliveryDays
                       : [subscription.preferredDeliveryDay]
                     )
-                      .map((day) => DAY_OPTIONS.find((option) => Number(option.value) === day)?.label)
+                      .map(
+                        (day) =>
+                          DAY_OPTIONS.find(
+                            (option) => Number(option.value) === day,
+                          )?.label,
+                      )
                       .filter(Boolean)
                       .join(", ") || "-"}
                   </span>
@@ -654,79 +703,81 @@ export default function SubscriptionDetailsPage() {
               ) : null}
             </Card>
           ) : (
-          <Card className={styles.sectionCard}>
-            <h3 className={styles.sectionTitle}>Manage Subscription</h3>
-            {!canUpdateSubscription && (
-              <div className={styles.settingsPermissionNote} role="note">
-                You have read-only access to subscription settings.
-              </div>
-            )}
-            <div className={styles.formGrid}>
-              <Select
-                label="Status"
-                value={statusDraft}
-                onChange={(value) =>
-                  setStatusDraft(value as "active" | "paused" | "cancelled")
-                }
-                options={statusOptions}
-                disabled={
-                  !canUpdateSubscription || subscription.status === "cancelled"
-                }
-              />
-              <Select
-                label="Frequency"
-                value={frequency}
-                onChange={setFrequency}
-                options={FREQUENCY_OPTIONS}
-                disabled={!canUpdateSubscription}
-              />
-              <Select
-                label="Preferred Delivery Day"
-                value={preferredDeliveryDay}
-                onChange={setPreferredDeliveryDay}
-                options={DAY_OPTIONS}
-                disabled={!canUpdateSubscription}
-              />
-              <div className={styles.fullWidth}>
-                <label className={styles.fieldLabel}>Notes</label>
-                <textarea
-                  className={styles.notesInput}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Subscription notes"
-                  rows={4}
+            <Card className={styles.sectionCard}>
+              <h3 className={styles.sectionTitle}>Manage Subscription</h3>
+              {!canUpdateSubscription && (
+                <div className={styles.settingsPermissionNote} role="note">
+                  You have read-only access to subscription settings.
+                </div>
+              )}
+              <div className={styles.formGrid}>
+                <Select
+                  label="Status"
+                  value={statusDraft}
+                  onChange={(value) =>
+                    setStatusDraft(value as "active" | "paused" | "cancelled")
+                  }
+                  options={statusOptions}
+                  disabled={
+                    !canUpdateSubscription ||
+                    subscription.status === "cancelled"
+                  }
+                />
+                <Select
+                  label="Frequency"
+                  value={frequency}
+                  onChange={setFrequency}
+                  options={FREQUENCY_OPTIONS}
                   disabled={!canUpdateSubscription}
                 />
+                <Select
+                  label="Preferred Delivery Day"
+                  value={preferredDeliveryDay}
+                  onChange={setPreferredDeliveryDay}
+                  options={DAY_OPTIONS}
+                  disabled={!canUpdateSubscription}
+                />
+                <div className={styles.fullWidth}>
+                  <label className={styles.fieldLabel}>Notes</label>
+                  <textarea
+                    className={styles.notesInput}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Subscription notes"
+                    rows={4}
+                    disabled={!canUpdateSubscription}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className={styles.actionPanel}>
-              <div className={styles.primaryActionsRow}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={saveChanges}
-                  isLoading={saving}
-                  disabled={
-                    !canUpdateSubscription || !hasFormChanges || actionBusy
-                  }
-                >
-                  Save Changes
-                </Button>
-                {canUpdateSubscription && subscription.status !== "cancelled" && (
+              <div className={styles.actionPanel}>
+                <div className={styles.primaryActionsRow}>
                   <Button
                     variant="outline"
                     size="sm"
-                    className={styles.dangerOutlineBtn}
-                    onClick={() => setIsCancelModalOpen(true)}
-                    disabled={actionBusy}
+                    onClick={saveChanges}
+                    isLoading={saving}
+                    disabled={
+                      !canUpdateSubscription || !hasFormChanges || actionBusy
+                    }
                   >
-                    Cancel Subscription
+                    Save Changes
                   </Button>
-                )}
+                  {canUpdateSubscription &&
+                    subscription.status !== "cancelled" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={styles.dangerOutlineBtn}
+                        onClick={() => setIsCancelModalOpen(true)}
+                        disabled={actionBusy}
+                      >
+                        Cancel Subscription
+                      </Button>
+                    )}
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
           )}
 
           <Card className={styles.sectionCard}>
@@ -778,11 +829,14 @@ export default function SubscriptionDetailsPage() {
               <div>
                 <h3 className={styles.sectionTitle}>Subscription Items</h3>
                 <p className={styles.sectionDescription}>
-                  Products and quantities currently included in this subscription.
+                  {deliveryDayPlans.length > 0
+                    ? "Products are grouped by delivery day."
+                    : "Products and quantities currently included in this subscription."}
                 </p>
               </div>
               <span className={styles.itemCount}>
-                {subscription.items.length} product{subscription.items.length === 1 ? "" : "s"}
+                {subscription.items.length} product
+                {subscription.items.length === 1 ? "" : "s"}
               </span>
             </div>
 
@@ -799,84 +853,217 @@ export default function SubscriptionDetailsPage() {
               </div>
             </div>
 
-            <DataTableCard
-              className={styles.innerTableCard}
-              pagination={{
-                page: itemsPage,
-                pageSize: itemsPageSize,
-                total: subscription.items.length,
-                totalPages: itemsTotalPages,
-                setPage: setItemsPage,
-                setPageSize: setItemsPageSize,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-              }}
-            >
-              <Table
-                withWrapper={false}
-                tableClassName={sharedTableStyles.table}
-              >
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>SKU</th>
-                    <th>Qty</th>
-                    <th>Unit Price</th>
-                    <th>Line Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagedItems.length === 0 ? (
-                    <tr className={sharedTableStyles.emptyStateRow}>
-                      <td
-                        className={sharedTableStyles.emptyTableCell}
-                        colSpan={5}
-                      >
-                        No items
-                      </td>
-                    </tr>
-                  ) : (
-                    pagedItems.map((item) => {
-                      const imageUrl = (
-                        item as typeof item & {
-                          imageUrl?: string | null;
-                        }
-                      ).imageUrl;
+            {deliveryDayPlans.length > 0 ? (
+              <div className={styles.dayPlansGrid}>
+                {deliveryDayPlans.map((plan) => (
+                  <div
+                    key={`day-plan-${plan.day}`}
+                    className={styles.dayPlanCard}
+                  >
+                    <div className={styles.dayPlanHeader}>
+                      <div>
+                        <h4>{dayLabel(plan.day)}</h4>
+                        <span>
+                          {plan.items.length} item
+                          {plan.items.length === 1 ? "" : "s"} ·{" "}
+                          {deliveryDayPlanTotals.get(Number(plan.day))
+                            ?.totalQty || 0}{" "}
+                          qty
+                        </span>
+                      </div>
+                      <div className={styles.dayPlanMeta}>
+                        <div className={styles.dayPlanMetaRow}>
+                          <span>Products</span>
+                          <strong>
+                            {formatMoney(
+                              deliveryDayPlanTotals.get(Number(plan.day))
+                                ?.productsTotal || 0,
+                            )}
+                          </strong>
+                        </div>
+                        <div className={styles.dayPlanMetaRow}>
+                          <span>Delivery fee</span>
+                          <strong>
+                            {formatMoney(
+                              deliveryDayPlanTotals.get(Number(plan.day))
+                                ?.deliveryFee || SUBSCRIPTION_DELIVERY_FEE,
+                            )}
+                          </strong>
+                        </div>
+                        <div
+                          className={`${styles.dayPlanMetaRow} ${styles.dayPlanMetaRowTotal}`}
+                        >
+                          <span>Total per delivery</span>
+                          <strong>
+                            {formatMoney(
+                              deliveryDayPlanTotals.get(Number(plan.day))
+                                ?.totalWithDeliveryFee ||
+                                SUBSCRIPTION_DELIVERY_FEE,
+                            )}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
 
-                      return (
-                        <tr key={item._id}>
-                          <td>
-                            <div className={styles.itemCellWithImage}>
-                              {imageUrl ? (
-                                <img
-                                  src={imageUrl}
-                                  alt={item.name}
-                                  className={styles.itemThumb}
-                                />
-                              ) : (
-                                <div className={styles.itemThumbPlaceholder}>
-                                  IMG
-                                </div>
-                              )}
-                              <span>{item.name}</span>
-                            </div>
-                          </td>
-                          <td>{item.sku}</td>
-                          <td>{item.quantity}</td>
-                          <td>GBP {Number(item.unitPrice || 0).toFixed(2)}</td>
-                          <td>
-                            GBP{" "}
-                            {(
-                              Number(item.unitPrice || 0) *
-                              Number(item.quantity || 0)
-                            ).toFixed(2)}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </Table>
-            </DataTableCard>
+                    <div className={styles.dayPlanTableWrap}>
+                      <Table
+                        withWrapper={false}
+                        tableClassName={sharedTableStyles.table}
+                      >
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>SKU</th>
+                            <th>Qty</th>
+                            <th>Unit Price</th>
+                            <th>Line Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {plan.items.length === 0 ? (
+                            <tr className={sharedTableStyles.emptyStateRow}>
+                              <td
+                                className={sharedTableStyles.emptyTableCell}
+                                colSpan={5}
+                              >
+                                No items for this day
+                              </td>
+                            </tr>
+                          ) : (
+                            plan.items.map((item) => {
+                              const imageUrl = (
+                                item as typeof item & {
+                                  imageUrl?: string | null;
+                                }
+                              ).imageUrl;
+
+                              return (
+                                <tr key={`${plan.day}-${item._id}`}>
+                                  <td>
+                                    <div className={styles.itemCellWithImage}>
+                                      {imageUrl ? (
+                                        <img
+                                          src={imageUrl}
+                                          alt={item.name}
+                                          className={styles.itemThumb}
+                                        />
+                                      ) : (
+                                        <div
+                                          className={
+                                            styles.itemThumbPlaceholder
+                                          }
+                                        >
+                                          IMG
+                                        </div>
+                                      )}
+                                      <span>{item.name}</span>
+                                    </div>
+                                  </td>
+                                  <td>{item.sku}</td>
+                                  <td>{item.quantity}</td>
+                                  <td>
+                                    {formatMoney(Number(item.unitPrice || 0))}
+                                  </td>
+                                  <td>
+                                    {formatMoney(
+                                      Number(item.unitPrice || 0) *
+                                        Number(item.quantity || 0),
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </Table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {deliveryDayPlans.length === 0 ? (
+              <DataTableCard
+                className={styles.innerTableCard}
+                pagination={{
+                  page: itemsPage,
+                  pageSize: itemsPageSize,
+                  total: subscription.items.length,
+                  totalPages: itemsTotalPages,
+                  setPage: setItemsPage,
+                  setPageSize: setItemsPageSize,
+                  pageSizeOptions: PAGE_SIZE_OPTIONS,
+                }}
+              >
+                <Table
+                  withWrapper={false}
+                  tableClassName={sharedTableStyles.table}
+                >
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>SKU</th>
+                      <th>Qty</th>
+                      <th>Unit Price</th>
+                      <th>Line Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedItems.length === 0 ? (
+                      <tr className={sharedTableStyles.emptyStateRow}>
+                        <td
+                          className={sharedTableStyles.emptyTableCell}
+                          colSpan={5}
+                        >
+                          No items
+                        </td>
+                      </tr>
+                    ) : (
+                      pagedItems.map((item) => {
+                        const imageUrl = (
+                          item as typeof item & {
+                            imageUrl?: string | null;
+                          }
+                        ).imageUrl;
+
+                        return (
+                          <tr key={item._id}>
+                            <td>
+                              <div className={styles.itemCellWithImage}>
+                                {imageUrl ? (
+                                  <img
+                                    src={imageUrl}
+                                    alt={item.name}
+                                    className={styles.itemThumb}
+                                  />
+                                ) : (
+                                  <div className={styles.itemThumbPlaceholder}>
+                                    IMG
+                                  </div>
+                                )}
+                                <span>{item.name}</span>
+                              </div>
+                            </td>
+                            <td>{item.sku}</td>
+                            <td>{item.quantity}</td>
+                            <td>
+                              GBP {Number(item.unitPrice || 0).toFixed(2)}
+                            </td>
+                            <td>
+                              GBP{" "}
+                              {(
+                                Number(item.unitPrice || 0) *
+                                Number(item.quantity || 0)
+                              ).toFixed(2)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </Table>
+              </DataTableCard>
+            ) : null}
           </Card>
         </div>
       ) : null}
@@ -1118,7 +1305,6 @@ export default function SubscriptionDetailsPage() {
           </Table>
         </DataTableCard>
       ) : null}
-
     </div>
   );
 }

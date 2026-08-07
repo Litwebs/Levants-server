@@ -319,6 +319,72 @@
   line-height: var(--leading-relaxed);
 }
 
+.dayPlansGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
+
+.dayPlanCard {
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  overflow: hidden;
+}
+
+.dayPlanHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-gray-200);
+  background: var(--color-gray-50);
+}
+
+.dayPlanHeader h4 {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-gray-900);
+}
+
+.dayPlanHeader span {
+  font-size: var(--text-xs);
+  color: var(--color-gray-600);
+}
+
+.dayPlanMeta {
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dayPlanMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-gray-600);
+}
+
+.dayPlanMetaRow strong {
+  color: var(--color-gray-900);
+  font-weight: var(--font-semibold);
+}
+
+.dayPlanMetaRowTotal {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px dashed var(--color-gray-300);
+}
+
+.dayPlanTableWrap {
+  width: 100%;
+  overflow: auto;
+}
+
 .itemCellWithImage {
   display: inline-flex;
   align-items: center;
@@ -949,6 +1015,21 @@
 
   .pendingSetupFacts {
     grid-template-columns: 1fr;
+  }
+
+  .dayPlansGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .dayPlanMeta {
+    min-width: 0;
+    width: 100%;
+    margin-top: var(--space-1);
+  }
+
+  .dayPlanHeader {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .pendingSetupActions {

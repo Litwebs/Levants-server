@@ -18,9 +18,14 @@ const { Response } = require("../../utils/response.util");
 async function enrichSubscriptionWithVariantImages(subscription) {
   if (!subscription) return subscription;
   const items = Array.isArray(subscription.items) ? subscription.items : [];
-  if (items.length === 0) return subscription;
+  const dayPlans = Array.isArray(subscription.deliveryDayPlans)
+    ? subscription.deliveryDayPlans
+    : [];
 
-  const variantIds = items
+  const variantIds = [
+    ...items,
+    ...dayPlans.flatMap((plan) => plan?.items || []),
+  ]
     .map((item) => String(item?.variant || ""))
     .filter(Boolean);
   if (variantIds.length === 0) return subscription;
@@ -42,6 +47,13 @@ async function enrichSubscriptionWithVariantImages(subscription) {
     items: items.map((item) => ({
       ...item,
       imageUrl: imageByVariantId.get(String(item?.variant || "")) || null,
+    })),
+    deliveryDayPlans: dayPlans.map((plan) => ({
+      ...plan,
+      items: (plan.items || []).map((item) => ({
+        ...item,
+        imageUrl: imageByVariantId.get(String(item?.variant || "")) || null,
+      })),
     })),
   };
 }
@@ -160,8 +172,7 @@ async function AdminListSubscriptions({
         };
       })
       .filter(
-        (subscription) =>
-          !frequency || subscription.frequency === frequency,
+        (subscription) => !frequency || subscription.frequency === frequency,
       );
   }
 
@@ -213,7 +224,8 @@ async function AdminGetSubscription({ subscriptionId } = {}) {
       )
       .lean();
 
-    if (!customer) return Response(false, "Pending subscription not found", null);
+    if (!customer)
+      return Response(false, "Pending subscription not found", null);
 
     const draft = customer.pendingSubscriptionDraft || {};
     const selectedVariantIds = Array.isArray(draft.selectedVariantIds)
@@ -292,7 +304,9 @@ async function AdminGetSubscription({ subscriptionId } = {}) {
         deliveryAddress,
         notes: draft.notes || "",
         createdAt:
-          customer.portalInviteSentAt || customer.updatedAt || customer.createdAt,
+          customer.portalInviteSentAt ||
+          customer.updatedAt ||
+          customer.createdAt,
         updatedAt: customer.updatedAt,
         setupExpiresAt: customer.portalInviteTokenExpiresAt || null,
         isPendingSetup: true,

@@ -11,7 +11,8 @@ const getRequestError = (error: unknown, fallback: string) => {
   if (error && typeof error === "object" && "response" in error) {
     const response = (error as { response?: { data?: { message?: unknown } } })
       .response;
-    if (typeof response?.data?.message === "string") return response.data.message;
+    if (typeof response?.data?.message === "string")
+      return response.data.message;
   }
   return error instanceof Error && error.message ? error.message : fallback;
 };
@@ -43,6 +44,10 @@ export type Subscription = {
   frequency: "weekly" | "every_two_weeks" | "monthly";
   preferredDeliveryDay: number;
   preferredDeliveryDays?: number[];
+  deliveryDayPlans?: Array<{
+    day: number;
+    items: SubscriptionItem[];
+  }>;
   nextDeliveryDate: string | null;
   startDate: string | null;
   items: SubscriptionItem[];
