@@ -201,9 +201,7 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
     }),
   ).toBeVisible();
   const deliveryDay = DAY_NAMES[fixture.deliveryDays[0]];
-  await page
-    .getByRole("button", { name: deliveryDay, exact: true })
-    .click();
+  await page.getByRole("button", { name: deliveryDay, exact: true }).click();
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(
@@ -271,9 +269,62 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
   expect(state.stripe.remoteSubscription.intervalCount).toBe(1);
   expect(
     state.stripe.paymentIntents.some(
-      (intent) => intent.status === "succeeded" && Number(intent.amount) === 1000,
+      (intent) =>
+        intent.status === "succeeded" && Number(intent.amount) === 1000,
     ),
   ).toBe(true);
+});
+
+test("renders prepared multi-day subscriptions with the correct per-day product split", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-multi-day",
+    timing: "before-cutoff",
+    createSubscription: false,
+    preparedDraft: "split-multi-day",
+  });
+
+  await signIn(page, fixture.credentials, "/portal/subscriptions");
+  await page.addInitScript(
+    ({ key, draft }) => {
+      window.sessionStorage.setItem(key, JSON.stringify(draft));
+    },
+    {
+      key: "levants_subscription_draft",
+      draft: fixture.preparedDraft,
+    },
+  );
+  await page.goto("/portal/subscriptions/new?prepared=1");
+
+  await expect(
+    page.getByRole("heading", { name: "Review & Confirm", exact: true }),
+  ).toBeVisible();
+  const firstDayName = DAY_NAMES[fixture.deliveryDays[0]];
+  const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];
+
+  const productsSection = page
+    .getByRole("heading", { name: "Products", exact: true })
+    .locator("xpath=ancestor::section[1]");
+  const firstDayCard = productsSection
+    .getByText(firstDayName, { exact: true })
+    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
+  const secondDayCard = productsSection
+    .getByText(secondDayName, { exact: true })
+    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
+
+  await expect(firstDayCard).toContainText("2 products");
+  await expect(firstDayCard).toContainText("3 qty");
+  await expect(firstDayCard).toContainText("2 x £3.00");
+  await expect(firstDayCard).toContainText("1 x £5.00");
+  await expect(firstDayCard).not.toContainText("1 x £2.00");
+
+  await expect(secondDayCard).toContainText("1 product");
+  await expect(secondDayCard).toContainText("1 qty");
+  await expect(secondDayCard).toContainText("1 x £2.00");
+  await expect(secondDayCard).not.toContainText("2 x £3.00");
+  await expect(secondDayCard).not.toContainText("1 x £5.00");
 });
 
 test("increases quantity before cut-off and updates Mongo, the paid order, and Stripe", async ({
@@ -296,7 +347,9 @@ test("increases quantity before cut-off and updates Mongo, the paid order, and S
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByText(/You can edit this subscription until/i)).toBeVisible();
+  await expect(
+    page.getByText(/You can edit this subscription until/i),
+  ).toBeVisible();
 
   const section = productsSection(page);
   const itemCard = subscriptionItemCard(section, milk.name);
@@ -334,9 +387,9 @@ test("increases quantity before cut-off and updates Mongo, the paid order, and S
     3,
   );
   expect(after.subscription.pendingChanges).toBeNull();
-  expect(
-    itemQuantity(after.orders[0]?.items, fixture.variants.MILK.id),
-  ).toBe(3);
+  expect(itemQuantity(after.orders[0]?.items, fixture.variants.MILK.id)).toBe(
+    3,
+  );
   expect(after.orders[0]?.amountPaid).toBe(before.orders[0]?.amountPaid + 5);
 
   expect(after.stripe.remoteSubscription.currentPriceId).not.toBe(
@@ -423,9 +476,9 @@ test("stages an after-cutoff removal while preserving the locked delivery order"
   await expect(section.getByText(/scheduled for removal from/i)).toBeVisible();
 
   const after = await getState(request, fixture.subscriptionId);
-  expect(itemQuantity(after.subscription.items, fixture.variants.BUTTER.id)).toBe(
-    1,
-  );
+  expect(
+    itemQuantity(after.subscription.items, fixture.variants.BUTTER.id),
+  ).toBe(1);
   expect(
     itemQuantity(
       after.subscription.pendingChanges?.items,
@@ -508,12 +561,10 @@ test("pauses and manually resumes a subscription through the lifecycle UI", asyn
 
   const pausedState = await getState(request, fixture.subscriptionId);
   expect(pausedState.subscription.status).toBe("paused");
-  expect(dayKey(pausedState.subscription.pausedUntil)).toBe(
-    fixture.resumeOn,
+  expect(dayKey(pausedState.subscription.pausedUntil)).toBe(fixture.resumeOn);
+  expect(pausedState.stripe.remoteSubscription.pauseCollection?.behavior).toBe(
+    "void",
   );
-  expect(
-    pausedState.stripe.remoteSubscription.pauseCollection?.behavior,
-  ).toBe("void");
 
   await page
     .getByRole("button", { name: "Resume Subscription", exact: true })
@@ -539,9 +590,7 @@ test("pauses and manually resumes a subscription through the lifecycle UI", asyn
     page.getByText("Subscription resumed.", { exact: true }).first(),
   ).toBeVisible();
   await expect(page.getByText("Active", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText(/This subscription is paused/i),
-  ).toHaveCount(0);
+  await expect(page.getByText(/This subscription is paused/i)).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Pause Subscription", exact: true }),
   ).toBeVisible();
@@ -568,7 +617,9 @@ test("adds a new default card through a real Stripe Elements SetupIntent", async
   await expect(
     page.getByRole("heading", { name: "Payments", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Add card details", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Add card details", { exact: true }),
+  ).toBeVisible();
 
   await page.getByPlaceholder("Cardholder name").fill("Stripe E2E Customer");
   await page

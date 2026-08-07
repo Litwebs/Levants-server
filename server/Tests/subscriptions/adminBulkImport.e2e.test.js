@@ -91,7 +91,9 @@ describe("Admin bulk subscription setup import (E2E)", () => {
       deliveryDays: ["Sunday", "Wednesday"],
       preparedByAdmin: true,
     });
-    expect(customer.pendingSubscriptionDraft.quantities[String(variant._id)]).toBe(2);
+    expect(
+      customer.pendingSubscriptionDraft.quantities[String(variant._id)],
+    ).toBe(2);
 
     const detailResponse = await request(app)
       .get(`/api/admin/subscriptions/pending:${customer._id}`)
@@ -113,6 +115,28 @@ describe("Admin bulk subscription setup import (E2E)", () => {
       sku: variant.sku,
       quantity: 2,
     });
+    expect(detailResponse.body.data.subscription.deliveryDayPlans).toEqual([
+      {
+        day: 0,
+        items: [
+          expect.objectContaining({
+            variant: String(variant._id),
+            sku: variant.sku,
+            quantity: 2,
+          }),
+        ],
+      },
+      {
+        day: 3,
+        items: [
+          expect.objectContaining({
+            variant: String(variant._id),
+            sku: variant.sku,
+            quantity: 2,
+          }),
+        ],
+      },
+    ]);
   });
 
   test("deletes a pending setup and invalidates its invite without deleting the customer", async () => {

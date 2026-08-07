@@ -58,6 +58,69 @@ async function enrichSubscriptionWithVariantImages(subscription) {
   };
 }
 
+function buildPendingDeliveryDayPlans({
+  preferredDeliveryDays,
+  selectedVariantIds,
+  variantById,
+  draft,
+}) {
+  const dayNames = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+  ];
+
+  const dayQuantities =
+    draft?.dayQuantities && typeof draft.dayQuantities === "object"
+      ? draft.dayQuantities
+      : {};
+  const hasExplicitDayQuantities = Object.keys(dayQuantities).length > 0;
+  const fallbackQuantities =
+    draft?.quantities && typeof draft.quantities === "object"
+      ? draft.quantities
+      : {};
+
+  return preferredDeliveryDays.map((day) => {
+    const dayName = dayNames[day];
+    const quantitiesForDay =
+      dayName &&
+      dayQuantities[dayName] &&
+      typeof dayQuantities[dayName] === "object"
+        ? dayQuantities[dayName]
+        : hasExplicitDayQuantities
+          ? {}
+          : fallbackQuantities;
+
+    const items = selectedVariantIds
+      .map((variantId, index) => {
+        const variant = variantById.get(variantId);
+        const quantity = Number(quantitiesForDay?.[variantId] || 0);
+        if (!variant || quantity < 1) return null;
+
+        return {
+          _id: `pending-day-item:${day}:${index}`,
+          product: String(variant.product),
+          variant: variantId,
+          name: variant.name,
+          sku: variant.sku,
+          quantity,
+          unitPrice: Number(variant.price || 0),
+          imageUrl: variant.thumbnailImage?.url || null,
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      day,
+      items,
+    };
+  });
+}
+
 /**
  * List all subscriptions (admin).
  */
@@ -271,6 +334,12 @@ async function AdminGetSubscription({ subscriptionId } = {}) {
           .map((day) => dayIndexes.get(day))
           .filter((day) => Number.isInteger(day))
       : [];
+    const deliveryDayPlans = buildPendingDeliveryDayPlans({
+      preferredDeliveryDays,
+      selectedVariantIds,
+      variantById,
+      draft,
+    });
     const selectedAddress = (customer.addresses || []).find(
       (address) => String(address._id) === String(draft.selectedAddress || ""),
     );
@@ -298,6 +367,7 @@ async function AdminGetSubscription({ subscriptionId } = {}) {
             : draft.frequency || "weekly",
         preferredDeliveryDay: preferredDeliveryDays[0] ?? 0,
         preferredDeliveryDays,
+        deliveryDayPlans,
         nextDeliveryDate: null,
         startDate: null,
         items,

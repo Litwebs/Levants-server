@@ -15,14 +15,21 @@ const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const passwordUtil = require("../../utils/password.util");
 const stripe = require("../../utils/stripe.util");
-const subscriptionService = require(
-  "../../services/customerPortal/customerSubscriptions.service",
-);
+const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
 
 const SUCCESS_METHOD = "pm_card_visa";
 const DECLINING_METHOD = "pm_card_chargeCustomerFail";
 const BASE_PASSWORD = "RealStripeE2E1";
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
 const tracked = {
   clocks: new Set(),
@@ -65,8 +72,7 @@ function cadenceConfig(cadence, timing) {
   );
   return {
     cadence,
-    frequency:
-      cadence === "fortnightly" ? "every_two_weeks" : "weekly",
+    frequency: cadence === "fortnightly" ? "every_two_weeks" : "weekly",
     dates,
     deliveryDays: [dates[0].getDay()],
     paidDeliveryCount: 1,
@@ -91,6 +97,45 @@ function totalMajor(items) {
       total + Number(item.unitPrice || item.price) * Number(item.quantity),
     0,
   );
+}
+
+function buildPreparedDraft(options, config, variants, addressId) {
+  if (options.preparedDraft !== "split-multi-day") return null;
+
+  const [firstDay, secondDay] = config.deliveryDays;
+  const firstDayName = DAY_NAMES[firstDay];
+  const secondDayName = DAY_NAMES[secondDay];
+
+  if (!firstDayName || !secondDayName) {
+    throw new Error("Prepared draft fixture requires valid delivery day names");
+  }
+
+  return {
+    step: 5,
+    selectedVariantIds: [
+      String(variants.MILK._id),
+      String(variants.BUTTER._id),
+      String(variants.EGGS._id),
+    ],
+    quantities: {
+      [String(variants.MILK._id)]: 1,
+      [String(variants.BUTTER._id)]: 2,
+      [String(variants.EGGS._id)]: 1,
+    },
+    dayQuantities: {
+      [firstDayName]: {
+        [String(variants.MILK._id)]: 1,
+        [String(variants.BUTTER._id)]: 2,
+      },
+      [secondDayName]: {
+        [String(variants.EGGS._id)]: 1,
+      },
+    },
+    frequency: "weekly",
+    deliveryDays: [firstDayName, secondDayName],
+    selectedAddress: addressId,
+    preparedByAdmin: true,
+  };
 }
 
 async function clearDatabase() {
@@ -450,6 +495,17 @@ async function createFixture(options = {}) {
   });
   const addressId = customerData.customer.addresses[0]._id.toString();
 
+  const preparedDraft = buildPreparedDraft(
+    options,
+    config,
+    variants,
+    addressId,
+  );
+  if (preparedDraft) {
+    customerData.customer.pendingSubscriptionDraft = preparedDraft;
+    await customerData.customer.save();
+  }
+
   if (options.createSubscription === false) {
     const fixture = {
       scenarioId,
@@ -465,6 +521,7 @@ async function createFixture(options = {}) {
         ? String(customerData.method._id)
         : null,
       stripeCustomerId: customerData.remoteCustomer.id,
+      preparedDraft,
       deliveryDays: config.deliveryDays,
       variants: Object.fromEntries(
         Object.entries(variants).map(([key, variant]) => [
@@ -554,8 +611,7 @@ async function createFixture(options = {}) {
     const selectedResumeDate = atOffset(-1);
     const previousDeliveryDate = new Date(config.dates[0]);
     previousDeliveryDate.setDate(
-      previousDeliveryDate.getDate() +
-        (cadence === "fortnightly" ? -14 : -7),
+      previousDeliveryDate.getDate() + (cadence === "fortnightly" ? -14 : -7),
     );
     const previousDelivery = await SubscriptionDelivery.create({
       subscription: subscription._id,
@@ -691,11 +747,10 @@ async function autoResume(subscriptionId) {
 }
 
 async function finalizeCancellation(subscriptionId, referenceDate) {
-  const finalized =
-    await subscriptionService.FinalizeScheduledCancellations({
-      subscriptionId,
-      referenceDate: referenceDate ? new Date(referenceDate) : new Date(),
-    });
+  const finalized = await subscriptionService.FinalizeScheduledCancellations({
+    subscriptionId,
+    referenceDate: referenceDate ? new Date(referenceDate) : new Date(),
+  });
   return { finalized };
 }
 
