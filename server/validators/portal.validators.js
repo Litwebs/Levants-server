@@ -34,6 +34,11 @@ const createSubscriptionSchema = Joi.object({
     .unique()
     .optional(),
   deliveryAddressId: objectId.required(),
+  deliveryInstructions: Joi.string()
+    .trim()
+    .max(500)
+    .allow(null, "")
+    .optional(),
   notes: Joi.string().trim().max(1000).allow(null, "").optional(),
   items: Joi.array()
     .items(

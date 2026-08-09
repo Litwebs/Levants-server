@@ -158,36 +158,13 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
     page.getByRole("heading", { name: "New Subscription", exact: true }),
   ).toBeVisible();
 
-  const productHeading = page.getByRole("heading", {
-    name: new RegExp(`^${escapeRegex(fixture.variants.MILK.name)} - `),
-  });
-  const productCard = productHeading.locator(
-    "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' card-product ')][1]",
-  );
-  await productCard
-    .getByRole("button", { name: "Add to plan", exact: true })
-    .click();
-  await expect(
-    productCard.getByRole("button", {
-      name: "Remove from plan",
-      exact: true,
-    }),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Quantities", exact: true }),
-  ).toBeVisible();
-  const quantityRow = page
-    .getByText(fixture.variants.MILK.name, { exact: true })
-    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
-  await quantityRow.getByRole("button", { name: "+", exact: true }).click();
-  await expect(quantityRow.getByText("2", { exact: true })).toBeVisible();
+  const deliveryDay = DAY_NAMES[fixture.deliveryDays[0]];
+  await page.getByRole("button", { name: new RegExp(`^${deliveryDay}`) }).click();
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(
     page.getByRole("heading", {
-      name: "Delivery Frequency",
+      name: "How often would you like delivery?",
       exact: true,
     }),
   ).toBeVisible();
@@ -196,16 +173,33 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(
     page.getByRole("heading", {
-      name: "Preferred Delivery Days",
+      name: "Choose products for each delivery day",
       exact: true,
     }),
   ).toBeVisible();
-  const deliveryDay = DAY_NAMES[fixture.deliveryDays[0]];
-  await page.getByRole("button", { name: deliveryDay, exact: true }).click();
+
+  const productHeading = page.getByRole("heading", {
+    name: new RegExp(`^${escapeRegex(fixture.variants.MILK.name)} - `),
+  });
+  const productCard = productHeading.locator(
+    "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' card-product ')][1]",
+  );
+  await productCard
+    .getByRole("button", { name: "Increase quantity", exact: true })
+    .click();
+  await productCard
+    .getByRole("button", { name: `Add to ${deliveryDay}`, exact: true })
+    .click();
+  await expect(
+    productCard.getByRole("button", {
+      name: `Remove from ${deliveryDay}`,
+      exact: true,
+    }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Delivery Address", exact: true }),
+    page.getByRole("heading", { name: "Delivery details", exact: true }),
   ).toBeVisible();
   const addressButton = page.getByRole("button", {
     name: /Stripe E2E\s+1 Subscription Test Lane, London, SW1A 1AA/,
@@ -214,7 +208,7 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Review & Confirm", exact: true }),
+    page.getByRole("heading", { name: "Review & Payment", exact: true }),
   ).toBeVisible();
   const savedCard = page.getByRole("button", {
     name: /Visa.*4242.*Default/i,
@@ -299,7 +293,7 @@ test("renders prepared multi-day subscriptions with the correct per-day product 
   await page.goto("/portal/subscriptions/new?prepared=1");
 
   await expect(
-    page.getByRole("heading", { name: "Review & Confirm", exact: true }),
+    page.getByRole("heading", { name: "Review & Payment", exact: true }),
   ).toBeVisible();
   const firstDayName = DAY_NAMES[fixture.deliveryDays[0]];
   const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];

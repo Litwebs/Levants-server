@@ -214,6 +214,24 @@ describe("Portal Subscriptions", () => {
     expect(res.body.data.subscription.notes).toBe("Leave by the side gate");
   });
 
+  it("uses subscription-specific delivery instructions", async () => {
+    const res = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        deliveryInstructions: "Leave inside the porch",
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.subscription.deliveryAddress.deliveryInstructions).toBe(
+      "Leave inside the porch",
+    );
+  });
+
   it("sets next delivery to next-week occurrence when selected day is today", async () => {
     const todayWeekday = new Date().getDay();
 

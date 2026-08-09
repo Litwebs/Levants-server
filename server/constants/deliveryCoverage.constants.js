@@ -19,6 +19,7 @@ const DELIVERABLE_OUTWARD_CODES = new Set([
   "BD14",
   "BD15",
   "BD16",
+  "BD17",
   "BD18",
 
   // Wakefield
@@ -28,10 +29,6 @@ const DELIVERABLE_OUTWARD_CODES = new Set([
   "WF15",
   "WF16",
   "WF17",
-
-  // Halifax
-  "HX1",
-  "HX3",
 
   // Leeds
   "LS28",

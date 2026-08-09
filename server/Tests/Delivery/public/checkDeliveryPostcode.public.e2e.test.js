@@ -13,15 +13,37 @@ describe("POST /api/delivery/check (PUBLIC)", () => {
     expect(res.body.data.deliverable).toBe(true);
   });
 
-  test("returns deliverable=false for non-covered outward codes", async () => {
-    const res = await request(app)
-      .post("/api/delivery/check")
-      .send({ postcode: "BD17 1AA" });
+  test("covers the full Bradford BD1-BD18 range", async () => {
+    const postcodes = Array.from(
+      { length: 18 },
+      (_, index) => `BD${index + 1} 1AA`,
+    );
+    const responses = await Promise.all(
+      postcodes.map((postcode) =>
+        request(app).post("/api/delivery/check").send({ postcode }),
+      ),
+    );
 
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.outwardCode).toBe("BD17");
-    expect(res.body.data.deliverable).toBe(false);
+    responses.forEach((res) => {
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.deliverable).toBe(true);
+    });
+  });
+
+  test("returns deliverable=false for Halifax postcodes", async () => {
+    const postcodes = ["HX1 1AA", "HX3 1AA"];
+    const responses = await Promise.all(
+      postcodes.map((postcode) =>
+        request(app).post("/api/delivery/check").send({ postcode }),
+      ),
+    );
+
+    responses.forEach((res) => {
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.deliverable).toBe(false);
+    });
   });
 
   test("accepts outward-only inputs (WF17)", async () => {

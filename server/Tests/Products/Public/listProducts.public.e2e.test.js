@@ -20,13 +20,15 @@ async function createFile() {
   });
 }
 
-async function createProduct({ status = "active", name } = {}) {
+async function createProduct(
+  { status = "active", name, category = "Dairy" } = {},
+) {
   const thumb = await createFile();
   const n = name || `List Product ${Date.now()}`;
   return Product.create({
     name: n,
     slug: slugify(n, { lower: true, strict: true }),
-    category: "Dairy",
+    category,
     description: "Test",
     status,
     thumbnailImage: thumb._id,
@@ -226,5 +228,37 @@ describe("GET /api/products (PUBLIC)", () => {
     expect(ids).toContain(String(dairy._id));
     expect(ids).toContain(String(bakery._id));
     expect(ids).not.toContain(String(meat._id));
+  });
+
+  test("supports the storefront category order before pagination", async () => {
+    const butter = await createProduct({
+      name: "Category Order Butter",
+      category: "Butter",
+    });
+    await createVariant({
+      productId: butter._id,
+      status: "active",
+      sku: `ORDER-BUTTER-${Date.now()}`,
+    });
+
+    const milk = await createProduct({
+      name: "Category Order Milk",
+      category: "Milk",
+    });
+    await createVariant({
+      productId: milk._id,
+      status: "active",
+      sku: `ORDER-MILK-${Date.now()}`,
+    });
+
+    const res = await request(app).get(
+      "/api/products?sort=category_order&pageSize=1",
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toHaveLength(1);
+    expect(String(res.body.data.items[0].id)).toBe(String(milk._id));
+    expect(res.body.meta.total).toBe(2);
+    expect(res.body.meta.totalPages).toBe(2);
   });
 });

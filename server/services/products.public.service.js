@@ -2,6 +2,45 @@ const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
 const Category = require("../models/category.model");
 
+const STOREFRONT_CATEGORY_PRIORITY = [
+  [
+    "milk unhomogenised",
+    "unhomogenised milk",
+    "unhomogenized milk",
+    "whole milk",
+    "milk",
+  ],
+  ["milk semi skimmed", "semi skimmed milk", "semi-skimmed milk"],
+  ["eggs", "egg"],
+  ["cream"],
+  ["butter"],
+  ["milkshakes", "milkshake"],
+  ["honey"],
+  ["ghee"],
+  ["cheese"],
+  ["bakery", "bakary", "bread"],
+  ["juices", "juice"],
+];
+
+function normalizeCategory(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getStorefrontCategoryPriority(value) {
+  const normalized = normalizeCategory(value);
+  const index = STOREFRONT_CATEGORY_PRIORITY.findIndex((aliases) =>
+    aliases.some((alias) => alias === normalized),
+  );
+
+  return index === -1 ? STOREFRONT_CATEGORY_PRIORITY.length : index;
+}
+
 function parseCommaSeparatedList(value) {
   if (!value) return null;
 
@@ -151,6 +190,13 @@ async function listProducts({
   if (sort === "price_asc") items.sort((a, b) => a.pricing.min - b.pricing.min);
   if (sort === "price_desc")
     items.sort((a, b) => b.pricing.min - a.pricing.min);
+  if (sort === "category_order") {
+    items.sort(
+      (a, b) =>
+        getStorefrontCategoryPriority(a.category) -
+        getStorefrontCategoryPriority(b.category),
+    );
+  }
 
   const total = items.length;
   const start = (page - 1) * pageSize;

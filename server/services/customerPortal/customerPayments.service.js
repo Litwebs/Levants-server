@@ -9,6 +9,74 @@ const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
 
 const STRIPE_PUBLISHABLE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || null;
+let paymentMethodDomainRegistrationPromise = null;
+
+function getPaymentMethodDomains() {
+  const configured = [
+    ...(process.env.STRIPE_PAYMENT_METHOD_DOMAINS || "").split(","),
+    process.env.CLIENT_FRONT_URL_PROD,
+    process.env.FRONTEND_URL_PROD,
+    "levantsdairy.co.uk",
+  ];
+
+  return [
+    ...new Set(
+      configured
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .map((value) => {
+          try {
+            return new URL(
+              value.includes("://") ? value : `https://${value}`,
+            ).hostname;
+          } catch {
+            return null;
+          }
+        })
+        .filter(
+          (domain) =>
+            domain && domain !== "localhost" && !domain.endsWith(".localhost"),
+        ),
+    ),
+  ];
+}
+
+async function registerPaymentMethodDomains() {
+  if (!stripe.paymentMethodDomains?.list) return;
+
+  const domains = getPaymentMethodDomains();
+  if (domains.length === 0) return;
+
+  const existing = await stripe.paymentMethodDomains.list({ limit: 100 });
+  const byDomain = new Map(
+    existing.data.map((entry) => [entry.domain_name, entry]),
+  );
+
+  for (const domainName of domains) {
+    const registered = byDomain.get(domainName);
+    if (!registered) {
+      await stripe.paymentMethodDomains.create({ domain_name: domainName });
+    } else if (!registered.enabled) {
+      await stripe.paymentMethodDomains.update(registered.id, { enabled: true });
+    }
+  }
+}
+
+async function ensurePaymentMethodDomains() {
+  if (!paymentMethodDomainRegistrationPromise) {
+    paymentMethodDomainRegistrationPromise = registerPaymentMethodDomains().catch(
+      (error) => {
+        paymentMethodDomainRegistrationPromise = null;
+        console.warn(
+          "[Stripe] Unable to register payment-method domains; card entry remains available:",
+          error?.message || error,
+        );
+      },
+    );
+  }
+
+  await paymentMethodDomainRegistrationPromise;
+}
 
 async function getCustomerWithStripeId(customerId) {
   return Customer.findById(customerId).select(
@@ -219,6 +287,10 @@ async function CreateSetupIntent({ customerId } = {}) {
   if (!STRIPE_PUBLISHABLE_KEY) {
     return Response(false, "Stripe publishable key is not configured", null);
   }
+
+  // Apple Pay and Google Pay are hidden by Stripe unless the storefront host
+  // is registered in the same test/live environment as the API key.
+  await ensurePaymentMethodDomains();
 
   const intent = await stripe.setupIntents.create({
     customer: customer.stripeCustomerId,

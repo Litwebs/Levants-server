@@ -65,7 +65,14 @@ const publicProductsQuerySchema = Joi.object({
   search: Joi.string().trim().min(2).optional(),
 
   sort: Joi.string()
-    .valid("newest", "price_asc", "price_desc", "name_asc", "name_desc")
+    .valid(
+      "newest",
+      "category_order",
+      "price_asc",
+      "price_desc",
+      "name_asc",
+      "name_desc",
+    )
     .default("newest"),
 }).unknown(false);
 

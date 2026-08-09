@@ -1486,6 +1486,7 @@ async function CreateSubscription({
   preferredDeliveryDays,
   deliveryDayPlans,
   deliveryAddressId,
+  deliveryInstructions,
   notes,
   items,
 } = {}) {
@@ -1743,7 +1744,10 @@ async function CreateSubscription({
       city: address.city,
       postcode: address.postcode,
       country: address.country,
-      deliveryInstructions: address.deliveryInstructions || null,
+      deliveryInstructions:
+        typeof deliveryInstructions === "string"
+          ? deliveryInstructions.trim() || null
+          : address.deliveryInstructions || null,
     },
     items: subscriptionItems,
     deliveryDayPlans: resolvedDayPlans,
