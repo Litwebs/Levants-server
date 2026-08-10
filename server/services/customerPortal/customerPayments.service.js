@@ -26,9 +26,8 @@ function getPaymentMethodDomains() {
         .filter(Boolean)
         .map((value) => {
           try {
-            return new URL(
-              value.includes("://") ? value : `https://${value}`,
-            ).hostname;
+            return new URL(value.includes("://") ? value : `https://${value}`)
+              .hostname;
           } catch {
             return null;
           }
@@ -57,22 +56,23 @@ async function registerPaymentMethodDomains() {
     if (!registered) {
       await stripe.paymentMethodDomains.create({ domain_name: domainName });
     } else if (!registered.enabled) {
-      await stripe.paymentMethodDomains.update(registered.id, { enabled: true });
+      await stripe.paymentMethodDomains.update(registered.id, {
+        enabled: true,
+      });
     }
   }
 }
 
 async function ensurePaymentMethodDomains() {
   if (!paymentMethodDomainRegistrationPromise) {
-    paymentMethodDomainRegistrationPromise = registerPaymentMethodDomains().catch(
-      (error) => {
+    paymentMethodDomainRegistrationPromise =
+      registerPaymentMethodDomains().catch((error) => {
         paymentMethodDomainRegistrationPromise = null;
         console.warn(
           "[Stripe] Unable to register payment-method domains; card entry remains available:",
           error?.message || error,
         );
-      },
-    );
+      });
   }
 
   await paymentMethodDomainRegistrationPromise;
