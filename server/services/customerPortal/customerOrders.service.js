@@ -203,8 +203,14 @@ async function ListOrders({
   const safePage = Math.max(1, Number(page) || 1);
   const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 20));
 
-  const filter = { customer: customerId };
+  const filter = { customer: customerId, status: { $ne: "pending" } };
   if (status) {
+    if (status === "pending") {
+      return Response(true, null, {
+        orders: [],
+        meta: { page: safePage, pageSize: safePageSize, total: 0 },
+      });
+    }
     if (DELIVERY_STATUS_FILTERS.has(status)) {
       filter.deliveryStatus = status;
     } else {
@@ -239,6 +245,7 @@ async function GetOrder({ customerId, orderId } = {}) {
   const order = await Order.findOne({
     _id: orderId,
     customer: customerId,
+    status: { $ne: "pending" },
   })
     .populate("subscription", "subscriptionNumber")
     .populate("customer", "firstName lastName email phone")
@@ -274,6 +281,7 @@ async function GetOrderReceiptData({ customerId, orderId } = {}) {
   const order = await Order.findOne({
     _id: orderId,
     customer: customerId,
+    status: { $ne: "pending" },
   })
     .populate("customer", "firstName lastName email phone")
     .lean();
