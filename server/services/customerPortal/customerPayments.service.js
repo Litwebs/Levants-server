@@ -123,6 +123,7 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
 
   const orderFilter = {
     customer: customerId,
+    status: { $ne: "pending" },
     $or: [
       { stripePaymentIntentId: { $exists: true, $ne: null } },
       { stripeCheckoutSessionId: { $exists: true, $ne: null } },
