@@ -1,12 +1,5 @@
 "use strict";
 
-const VISIBLE_WEBSITE_PAYMENT_STATUSES = new Set([
-  "paid",
-  "refund_pending",
-  "partially_refunded",
-  "refunded",
-]);
-
 const ACTIVE_ORDER_FILTER = {
   archived: { $ne: true },
 };
@@ -22,10 +15,6 @@ function buildPaymentVisibilityQuery({
   requestedStatuses,
   normalizedOrderSource,
 } = {}) {
-  const websiteStatuses = requestedStatuses.filter((status) =>
-    VISIBLE_WEBSITE_PAYMENT_STATUSES.has(status),
-  );
-
   if (normalizedOrderSource === "imported") {
     return {
       status: {
@@ -38,7 +27,7 @@ function buildPaymentVisibilityQuery({
   if (normalizedOrderSource === "website") {
     return {
       status: {
-        $in: websiteStatuses,
+        $in: requestedStatuses,
       },
       "metadata.manualImport": { $ne: true },
     };
@@ -51,7 +40,7 @@ function buildPaymentVisibilityQuery({
         "metadata.manualImport": true,
       },
       {
-        status: { $in: websiteStatuses },
+        status: { $in: requestedStatuses },
         "metadata.manualImport": { $ne: true },
       },
     ],
@@ -59,7 +48,6 @@ function buildPaymentVisibilityQuery({
 }
 
 module.exports = {
-  VISIBLE_WEBSITE_PAYMENT_STATUSES,
   ACTIVE_ORDER_FILTER,
   buildActiveOrderIdQuery,
   buildPaymentVisibilityQuery,

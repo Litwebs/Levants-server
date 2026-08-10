@@ -2,17 +2,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
-  min-height: 0;
-  overflow: hidden;
+  min-height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
+  overflow: visible;
   box-sizing: border-box;
   border-radius: var(--radius-lg);
 }
 
 .pageWithFilters {
-  height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
-  min-height: 0;
-  overflow: hidden;
+  min-height: calc(100dvh - var(--topbar-height) - (2 * var(--space-6)));
+  overflow: visible;
 }
 
 .header {
@@ -326,6 +324,10 @@
   align-items: flex-start;
 }
 
+.bulkSectionsCollapsed {
+  display: none;
+}
+
 .bulkSection {
   display: flex;
   flex-direction: column;
@@ -367,8 +369,8 @@
 
 /* Table */
 .tableCard {
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 auto;
+  min-height: clamp(28rem, 52dvh, 42rem);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -696,13 +698,12 @@
 @media (max-width: 768px) {
   .page,
   .pageWithFilters {
-    height: calc(100dvh - var(--topbar-height) - (2 * var(--space-4)));
-    min-height: 2000px;
+    min-height: calc(100dvh - var(--topbar-height) - (2 * var(--space-4)));
+    overflow: visible;
   }
 
-  .tableCard,
-  .tableArea {
-    min-height: 0;
+  .tableCard {
+    min-height: 32rem;
   }
 
   .tableArea {

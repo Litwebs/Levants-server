@@ -10,10 +10,10 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/common";
-import { AlertTriangle, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { OrdersStockRequirements } from "../../context/Orders";
 
 interface Props {
@@ -64,6 +64,11 @@ const OrdersBulkActions = ({
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (selectedOrders.length === 0) setIsExpanded(false);
+  }, [selectedOrders.length]);
 
   if (!canUpdateOrders && !canReadDelivery && !canDeleteOrders) return null;
   if (!selectedOrders.length) return null;
@@ -77,6 +82,22 @@ const OrdersBulkActions = ({
           </span>
 
           <div className={styles.bulkButtons}>
+            {canUpdateOrders || canReadDelivery ? (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-expanded={isExpanded}
+                aria-controls="orders-bulk-actions-panel"
+                onClick={() => setIsExpanded((expanded) => !expanded)}
+              >
+                Bulk actions
+                {isExpanded ? (
+                  <ChevronUp size={16} />
+                ) : (
+                  <ChevronDown size={16} />
+                )}
+              </Button>
+            ) : null}
             {canDeleteOrders ? (
               <Button
                 variant="danger"
@@ -97,7 +118,13 @@ const OrdersBulkActions = ({
           </div>
         </div>
 
-        <div className={styles.bulkSections}>
+        <div
+          id="orders-bulk-actions-panel"
+          className={`${styles.bulkSections} ${
+            !isExpanded ? styles.bulkSectionsCollapsed : ""
+          }`}
+          aria-hidden={!isExpanded}
+        >
           {canUpdateOrders && (
             <div className={styles.bulkSection}>
               <div className={styles.bulkSectionTitle}>Delivery</div>
