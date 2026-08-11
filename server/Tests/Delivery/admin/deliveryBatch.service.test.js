@@ -72,6 +72,38 @@ describe("createDeliveryBatch", () => {
     expect(res.message).toMatch(/no eligible orders/i);
   });
 
+  test("finds a UK-local delivery date stored on the prior UTC day during BST", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+    await createOrder({
+      status: "paid",
+      customer,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: variant.price,
+          quantity: 1,
+          subtotal: variant.price,
+        },
+      ],
+      overrides: {
+        paidAt: new Date(),
+        deliveryDate: new Date("2026-08-18T23:00:00.000Z"),
+      },
+    });
+
+    const res = await batchService.listEligibleOrders({
+      deliveryDate: "2026-08-19",
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.data.orders).toHaveLength(1);
+  });
+
   test("returns error when duplicate batch for the same date", async () => {
     const dateStr = futureDateStr(40);
     const date = new Date(dateStr);

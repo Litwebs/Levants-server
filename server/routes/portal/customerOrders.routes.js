@@ -15,6 +15,7 @@ const controller = require("../../controllers/portal/customerOrders.controller")
 const {
   customerPortalOrderSchema,
   cancelOrderSchema,
+  updateOrderDeliverySchema,
   portalListQuerySchema,
 } = require("../../validators/portal.validators");
 const { orderIdParamSchema } = require("../../validators/common.validators");
@@ -39,6 +40,13 @@ router.get(
   "/:orderId",
   validateParams(orderIdParamSchema),
   asyncHandler(controller.GetOrder),
+);
+
+router.patch(
+  "/:orderId/delivery",
+  validateParams(orderIdParamSchema),
+  validateBody(updateOrderDeliverySchema),
+  asyncHandler(controller.UpdateOrderDelivery),
 );
 
 router.get(

@@ -7,6 +7,7 @@ const Customer = require("../../models/customer.model");
 const Payment = require("../../models/payment.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const { validateDiscountForOrder } = require("../discounts.public.service");
+const subscriptionSettingsService = require("../subscriptionSettings.service");
 const { geocodeAddress } = require("../../Integration/google.geocode");
 const { Response } = require("../../utils/response.util");
 
@@ -24,6 +25,19 @@ const RECEIPT_ELIGIBLE_STATUSES = new Set([
   "partially_refunded",
   "refunded",
 ]);
+const DELIVERY_CHANGE_ELIGIBLE_STATUSES = new Set(["paid", "partially_paid"]);
+
+function computeCutoffDate(deliveryDate, settings) {
+  const cutoffAt = new Date(deliveryDate);
+  cutoffAt.setDate(
+    cutoffAt.getDate() - (Number(settings?.cutoffDaysBefore) || 0),
+  );
+  const [hours, minutes] = String(settings?.cutoffTime || "22:00")
+    .split(":")
+    .map(Number);
+  cutoffAt.setHours(hours || 0, minutes || 0, 0, 0);
+  return cutoffAt;
+}
 
 /**
  * Place a one-time order for an authenticated portal customer.
@@ -267,6 +281,16 @@ async function GetOrder({ customerId, orderId } = {}) {
 
   if (!order) return Response(false, "Order not found", null);
 
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const cutoffAt = order.deliveryDate
+    ? computeCutoffDate(order.deliveryDate, settings)
+    : null;
+  const deliveryChangeAllowed =
+    DELIVERY_CHANGE_ELIGIBLE_STATUSES.has(order.status) &&
+    order.deliveryStatus === "ordered" &&
+    Boolean(order.deliveryDate) &&
+    Boolean(cutoffAt && Date.now() < cutoffAt.getTime());
+
   const customerDoc =
     order.customer && typeof order.customer === "object"
       ? order.customer
@@ -283,9 +307,78 @@ async function GetOrder({ customerId, orderId } = {}) {
           phone: customerDoc.phone || null,
         }
       : null,
+    deliveryChangeAllowed,
+    deliveryChangeCutoffAt: cutoffAt,
   };
 
   return Response(true, null, { order: normalizedOrder });
+}
+
+async function UpdateOrderDelivery({
+  customerId,
+  orderId,
+  deliveryAddressId,
+} = {}) {
+  const order = await Order.findOne({ _id: orderId, customer: customerId });
+  if (!order) return Response(false, "Order not found", null);
+  if (
+    !DELIVERY_CHANGE_ELIGIBLE_STATUSES.has(order.status) ||
+    order.deliveryStatus !== "ordered" ||
+    !order.deliveryDate
+  ) {
+    return Response(
+      false,
+      "This order's delivery can no longer be changed",
+      null,
+    );
+  }
+
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const currentCutoffAt = computeCutoffDate(order.deliveryDate, settings);
+  if (Date.now() >= currentCutoffAt.getTime()) {
+    return Response(false, "The cut-off for this order has passed", null);
+  }
+
+  const customer = await Customer.findById(customerId);
+  const address = customer?.addresses.id(deliveryAddressId);
+  if (!address) return Response(false, "Delivery address not found", null);
+
+  try {
+    const geo = await geocodeAddress({
+      line1: address.line1,
+      line2: address.line2,
+      city: address.city,
+      postcode: address.postcode,
+      country: address.country,
+    });
+    // Only update if geocoding returned valid coordinates; keep existing otherwise
+    if (geo && typeof geo.lat === "number" && typeof geo.lng === "number") {
+      order.location = geo;
+    }
+  } catch {
+    // Non-fatal: keep the order's existing location coordinates
+  }
+
+  order.deliveryAddress = {
+    line1: address.line1,
+    line2: address.line2 || null,
+    city: address.city,
+    postcode: address.postcode,
+    country: address.country,
+  };
+
+  await order.save();
+
+  await CustomerNotification.create({
+    customer: customerId,
+    type: "order_delivery_updated",
+    title: "Delivery updated",
+    message: `Delivery details for order ${order.orderId} have been updated.`,
+    relatedOrder: order._id,
+  });
+
+  const updatedOrder = await GetOrder({ customerId, orderId });
+  return Response(true, "Delivery details updated", updatedOrder.data);
 }
 
 /**
@@ -413,6 +506,7 @@ module.exports = {
   PlaceOrder,
   ListOrders,
   GetOrder,
+  UpdateOrderDelivery,
   GetOrderReceiptData,
   GetOrderReceiptUrl,
   CancelOrder,

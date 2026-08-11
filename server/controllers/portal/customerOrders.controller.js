@@ -381,6 +381,19 @@ const GetOrder = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const UpdateOrderDelivery = async (req, res) => {
+  const result = await ordersService.UpdateOrderDelivery({
+    customerId: req.customer._id,
+    orderId: req.params.orderId,
+    ...req.body,
+  });
+  if (!result.success) {
+    const statusCode = result.message === "Order not found" ? 404 : 400;
+    return sendErr(res, { statusCode, message: result.message });
+  }
+  return sendOk(res, result.data, { message: result.message });
+};
+
 const DownloadReceipt = async (req, res) => {
   const result = await ordersService.GetOrderReceiptUrl({
     customerId: req.customer._id,
@@ -455,6 +468,7 @@ module.exports = {
   PlaceOrder,
   ListOrders,
   GetOrder,
+  UpdateOrderDelivery,
   DownloadReceipt,
   GetReceiptUrl,
   RenderCustomReceipt,

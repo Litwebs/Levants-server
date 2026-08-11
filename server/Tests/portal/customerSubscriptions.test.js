@@ -227,9 +227,9 @@ describe("Portal Subscriptions", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.data.subscription.deliveryAddress.deliveryInstructions).toBe(
-      "Leave inside the porch",
-    );
+    expect(
+      res.body.data.subscription.deliveryAddress.deliveryInstructions,
+    ).toBe("Leave inside the porch");
   });
 
   it("sets next delivery to next-week occurrence when selected day is today", async () => {
@@ -547,7 +547,7 @@ describe("Portal Subscriptions", () => {
     expect(cancelRes.body.data.refundedMinor).toBe(0);
   });
 
-  it("stages multi-day update after cut-off and keeps current live days unchanged", async () => {
+  it("applies delivery-day changes after the current delivery cut-off", async () => {
     const createRes = await request(app)
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
@@ -580,14 +580,45 @@ describe("Portal Subscriptions", () => {
 
     const stored = await Subscription.findById(subId).lean();
     expect(stored.preferredDeliveryDays).toEqual([0, 3]);
-    expect(stored.pendingChanges).toBeTruthy();
-    expect(stored.pendingChanges.preferredDeliveryDay).toBe(0);
-    expect(stored.pendingChanges.preferredDeliveryDays).toEqual([0, 3]);
+    expect(stored.pendingChanges).toBeNull();
 
     const scheduled = await SubscriptionDelivery.find({ subscription: subId })
       .sort({ scheduledDate: 1 })
       .lean();
     expect(scheduled.length).toBeGreaterThan(0);
+  });
+
+  it("selects the next delivery day whose own cut-off is still open", () => {
+    const referenceDate = new Date("2026-08-11T12:00:00.000Z");
+    const settings = { cutoffDaysBefore: 2, cutoffTime: "22:00" };
+
+    const nextSunday =
+      subscriptionService.calculateFirstSubscriptionDeliveryDate({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        preferredDeliveryDays: [0],
+        referenceDate,
+        settings,
+      });
+    const nextWednesday =
+      subscriptionService.calculateFirstSubscriptionDeliveryDate({
+        frequency: "weekly",
+        preferredDeliveryDay: 3,
+        preferredDeliveryDays: [3],
+        referenceDate,
+        settings,
+      });
+
+    expect([
+      nextSunday.getFullYear(),
+      nextSunday.getMonth(),
+      nextSunday.getDate(),
+    ]).toEqual([2026, 7, 16]);
+    expect([
+      nextWednesday.getFullYear(),
+      nextWednesday.getMonth(),
+      nextWednesday.getDate(),
+    ]).toEqual([2026, 7, 19]);
   });
 
   it("cannot access another customer's subscription", async () => {

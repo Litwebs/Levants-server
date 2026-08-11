@@ -22,6 +22,7 @@ const customerNotificationSchema = new mongoose.Schema(
         "order_confirmed",
         "order_out_for_delivery",
         "order_delivered",
+        "order_delivery_updated",
         "order_cancelled",
         "subscription_created",
         "subscription_updated",

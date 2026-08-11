@@ -21,6 +21,33 @@ const {
   getUserId,
   normalizeDateRange,
 } = require("../../utils/deliveryHelpers.util");
+const { toUtcIsoOnBatchDate } = require("../../utils/routeTime.util");
+
+const DELIVERY_TIME_ZONE =
+  process.env.DELIVERY_TIME_ZONE ||
+  process.env.BUSINESS_TIME_ZONE ||
+  "Europe/London";
+
+function getDeliveryDayRange(deliveryDate) {
+  const date = new Date(deliveryDate);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const nextDate = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1),
+  );
+  const start = new Date(
+    toUtcIsoOnBatchDate(date, "00:00", DELIVERY_TIME_ZONE),
+  );
+  const nextStart = new Date(
+    toUtcIsoOnBatchDate(nextDate, "00:00", DELIVERY_TIME_ZONE),
+  );
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(nextStart.getTime())) {
+    return null;
+  }
+
+  return { start, end: new Date(nextStart.getTime() - 1) };
+}
 
 /**
  * Create a delivery batch for a specific date
@@ -53,36 +80,11 @@ async function createDeliveryBatch({
     return { success: false, message: "endTime must be in HH:mm format" };
   }
 
-  const date = new Date(deliveryDate);
-
-  if (Number.isNaN(date.getTime())) {
+  const deliveryDayRange = getDeliveryDayRange(deliveryDate);
+  if (!deliveryDayRange) {
     return { success: false, message: "Invalid deliveryDate" };
   }
-
-  // Normalize to start of day (UTC)
-  const startOfDay = new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-      0,
-      0,
-      0,
-      0,
-    ),
-  );
-
-  const endOfDay = new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-      23,
-      59,
-      59,
-      999,
-    ),
-  );
+  const { start: startOfDay, end: endOfDay } = deliveryDayRange;
 
   // Prevent duplicate batch
   const existingBatch = await DeliveryBatch.findOne({
@@ -563,38 +565,15 @@ async function listEligibleOrders({ deliveryDate } = {}) {
       };
     }
 
-    const date = new Date(deliveryDate);
-    if (Number.isNaN(date.getTime())) {
+    const deliveryDayRange = getDeliveryDayRange(deliveryDate);
+    if (!deliveryDayRange) {
       return {
         success: false,
         statusCode: 400,
         message: "Invalid deliveryDate",
       };
     }
-
-    const startOfDay = new Date(
-      Date.UTC(
-        date.getUTCFullYear(),
-        date.getUTCMonth(),
-        date.getUTCDate(),
-        0,
-        0,
-        0,
-        0,
-      ),
-    );
-
-    const endOfDay = new Date(
-      Date.UTC(
-        date.getUTCFullYear(),
-        date.getUTCMonth(),
-        date.getUTCDate(),
-        23,
-        59,
-        59,
-        999,
-      ),
-    );
+    const { start: startOfDay, end: endOfDay } = deliveryDayRange;
 
     const orders = await Order.find({
       deliveryDate: { $gte: startOfDay, $lte: endOfDay },

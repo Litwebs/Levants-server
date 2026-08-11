@@ -2505,28 +2505,15 @@ async function UpdateSubscription({
     : null;
   let shouldSyncStripePrice = false;
 
-  if (scheduleChangeRequested && effectiveIsPastCutoff) {
-    subscription.pendingChanges = {
-      ...(subscription.pendingChanges
-        ? subscription.pendingChanges.toObject?.() ||
-          subscription.pendingChanges
-        : {}),
-      frequency: targetFrequency,
-      preferredDeliveryDay: resolvedDays.primaryDay,
-      preferredDeliveryDays:
-        targetFrequency === "weekly" ? resolvedDays.days : undefined,
-      deliveryDayPlans: !shouldUseDayPlans ? [] : undefined,
-      effectiveFrom: effectiveFromDate,
-    };
-  } else {
+  if (scheduleChangeRequested) {
+    // Always apply delivery day preference immediately — no billing impact.
+    // nextDeliveryDate is kept as-is when past cut-off so the locked delivery still ships.
     if (frequency !== undefined) subscription.frequency = frequency;
-    if (scheduleChangeRequested) {
-      subscription.preferredDeliveryDay = resolvedDays.primaryDay;
-      subscription.preferredDeliveryDays =
-        targetFrequency === "weekly" ? resolvedDays.days : undefined;
-      if (!shouldUseDayPlans && !dayPlanChangeRequested) {
-        subscription.deliveryDayPlans = undefined;
-      }
+    subscription.preferredDeliveryDay = resolvedDays.primaryDay;
+    subscription.preferredDeliveryDays =
+      targetFrequency === "weekly" ? resolvedDays.days : undefined;
+    if (!shouldUseDayPlans && !dayPlanChangeRequested) {
+      subscription.deliveryDayPlans = undefined;
     }
   }
 
@@ -2582,20 +2569,18 @@ async function UpdateSubscription({
     }
   }
 
-  // Recalculate next delivery date if frequency or day changed
-  if (scheduleChangeRequested && !effectiveIsPastCutoff) {
-    subscription.nextDeliveryDate = calculateNextDeliveryDate(
-      subscription.preferredDeliveryDay,
-      subscription.frequency,
-      new Date(),
-      subscription.preferredDeliveryDays,
-    );
-    // Generate new upcoming delivery slots
-    await scheduleUpcomingDeliveries(subscription);
+  if (scheduleChangeRequested) {
+    const now = new Date();
+    const nextDeliveryDate = calculateFirstSubscriptionDeliveryDate({
+      frequency: subscription.frequency,
+      preferredDeliveryDay: subscription.preferredDeliveryDay,
+      preferredDeliveryDays: subscription.preferredDeliveryDays,
+      referenceDate: now,
+      settings,
+    });
+    subscription.nextDeliveryDate = nextDeliveryDate;
     shouldSyncStripePrice = true;
 
-    // Update delivery dates for existing open orders when days change
-    const now = new Date();
     const openOrders = await Order.find({
       subscription: subscription._id,
       status: { $in: ["paid", "partially_refunded"] },
@@ -2605,65 +2590,35 @@ async function UpdateSubscription({
       .sort({ deliveryDate: 1 })
       .exec();
 
-    const oldDeliveryDays = currentResolvedDays.days.map(Number);
-    const newDeliveryDays = resolvedDays.days.map(Number);
-    const oldDaysSet = new Set(oldDeliveryDays);
-    const newDaysSet = new Set(newDeliveryDays);
-    let ordersUpdated = 0;
-
+    let scheduledDate = new Date(nextDeliveryDate);
     for (const order of openOrders) {
-      if (!order.deliveryDate) continue;
-
-      const orderDayOfWeek = new Date(order.deliveryDate).getDay();
-
-      // If this order's day is being removed and not in new schedule, find next available day
-      let newDay = orderDayOfWeek;
-      if (!newDaysSet.has(orderDayOfWeek)) {
-        // Find next available delivery day after current order's day
-        let found = false;
-        for (let i = 0; i < 7; i++) {
-          const checkDay = (orderDayOfWeek + i) % 7;
-          if (newDaysSet.has(checkDay)) {
-            newDay = checkDay;
-            found = true;
-            break;
-          }
-        }
-        // If no day found forward, wrap around to first available day
-        if (!found) {
-          newDay = Math.min(...newDeliveryDays);
-        }
-      }
-
-      // Calculate the new delivery date for this day
-      let newDeliveryDate = new Date(order.deliveryDate);
-      const currentDayOfWeek = newDeliveryDate.getDay();
-      const daysToAdd = (newDay - currentDayOfWeek + 7) % 7;
-
-      if (daysToAdd !== 0) {
-        newDeliveryDate.setDate(newDeliveryDate.getDate() + daysToAdd);
-      }
-
-      // Check if the new delivery date's cutoff has already passed
-      const cutoffAt = computeCutoffDate(newDeliveryDate, settings);
-      const isPastNewCutoff = cutoffAt ? now.getTime() >= cutoffAt.getTime() : false;
-
-      // If cutoff passed, move to next available delivery day in the next cycle
-      if (isPastNewCutoff && subscription.frequency === "weekly") {
-        // Move to the same day next week
-        newDeliveryDate.setDate(newDeliveryDate.getDate() + 7);
-      }
-
-      order.deliveryDate = newDeliveryDate;
+      order.deliveryDate = scheduledDate;
       await order.save();
-      ordersUpdated++;
+      await SubscriptionDelivery.updateMany(
+        {
+          subscription: subscription._id,
+          order: order._id,
+          status: { $in: ["scheduled", "generated"] },
+        },
+        { $set: { scheduledDate } },
+      );
+      scheduledDate = addFrequencyDays(
+        scheduledDate,
+        subscription.frequency,
+        resolvedDays.days,
+      );
     }
 
-    // Update message if any orders were rescheduled
-    if (ordersUpdated > 0) {
-      updateMessage =
-        updateMessage +
-        ` (${ordersUpdated} order${ordersUpdated > 1 ? "s" : ""} rescheduled to the new delivery day)`;
+    await SubscriptionDelivery.deleteMany({
+      subscription: subscription._id,
+      order: null,
+      status: "scheduled",
+      scheduledDate: { $gte: startOfDay(now) },
+    });
+    await scheduleUpcomingDeliveries(subscription);
+
+    if (openOrders.length > 0) {
+      updateMessage += ` (${openOrders.length} order${openOrders.length > 1 ? "s" : ""} rescheduled to the next eligible delivery date)`;
     }
   }
 
@@ -3633,6 +3588,7 @@ module.exports = {
   GetSubscriptionSettingsForCustomer,
   GetPreparedSubscriptionDraft,
   calculateNextDeliveryDate,
+  calculateFirstSubscriptionDeliveryDate,
   addFrequencyDays,
   scheduleUpcomingDeliveries,
   promotePendingChanges,

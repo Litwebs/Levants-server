@@ -34,11 +34,7 @@ const createSubscriptionSchema = Joi.object({
     .unique()
     .optional(),
   deliveryAddressId: objectId.required(),
-  deliveryInstructions: Joi.string()
-    .trim()
-    .max(500)
-    .allow(null, "")
-    .optional(),
+  deliveryInstructions: Joi.string().trim().max(500).allow(null, "").optional(),
   notes: Joi.string().trim().max(1000).allow(null, "").optional(),
   items: Joi.array()
     .items(
@@ -198,6 +194,10 @@ const cancelOrderSchema = Joi.object({
   reason: Joi.string().trim().max(500).allow(null, "").optional(),
 }).unknown(false);
 
+const updateOrderDeliverySchema = Joi.object({
+  deliveryAddressId: objectId.required(),
+}).unknown(false);
+
 const updatePaymentStatusSchema = Joi.object({
   status: Joi.string()
     .valid("pending", "paid", "failed", "refunded")
@@ -230,6 +230,7 @@ module.exports = {
   updateSupportStatusSchema,
   customerPortalOrderSchema,
   cancelOrderSchema,
+  updateOrderDeliverySchema,
   updatePaymentStatusSchema,
   portalListQuerySchema,
 };
