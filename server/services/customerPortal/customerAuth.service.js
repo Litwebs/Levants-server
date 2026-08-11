@@ -171,7 +171,14 @@ async function Register({
       { new: true },
     );
   } else if (existing && existing.isGuest) {
-    // Convert guest to registered
+    // Convert guest to registered customer
+    // IMPORTANT: Data Isolation Policy
+    // When a guest customer creates a portal account, we ensure complete separation
+    // between guest checkout data and registered subscription data:
+    // - Guest orders remain in history for customer reference
+    // - Guest addresses are cleared (subscription requires explicit address selection)
+    // - Guest payment methods are not inherited (subscription requires new payment setup)
+    // This prevents accidental reuse of guest checkout details in subscriptions
     customer = await Customer.findByIdAndUpdate(
       existing._id,
       {
@@ -183,6 +190,8 @@ async function Register({
           isGuest: false,
           status: "active",
           emailVerifiedAt: null,
+          // Clear guest addresses - registered user must explicitly add addresses for subscription
+          addresses: [],
         },
       },
       { new: true },

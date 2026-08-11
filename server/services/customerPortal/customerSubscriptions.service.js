@@ -1492,6 +1492,16 @@ async function CreateSubscription({
 } = {}) {
   const customer = await Customer.findById(customerId);
   if (!customer) return Response(false, "Customer not found", null);
+
+  // Subscriptions are only available for registered customers (not guest checkouts)
+  if (customer.isGuest) {
+    return Response(
+      false,
+      "Subscriptions are only available for registered portal accounts. Please create an account first.",
+      null,
+    );
+  }
+
   const customerDisplayName =
     [customer.firstName, customer.lastName].filter(Boolean).join(" ").trim() ||
     customer.email ||
@@ -2376,7 +2386,14 @@ async function UpdateSubscription({
         )
       : [];
 
-  if (removedDeliveryDays.length > 0) {
+  // Security: Only process refunds if actually reducing the number of delivery days.
+  // Don't refund for day rescheduling (e.g., Wed→Sun with same day count).
+  const isReducingDays =
+    currentResolvedDays.ok &&
+    resolvedDays.ok &&
+    resolvedDays.days.length < currentResolvedDays.days.length;
+
+  if (removedDeliveryDays.length > 0 && isReducingDays) {
     const now = new Date(Date.now());
     const refundableOrders = await Order.find({
       subscription: subscription._id,

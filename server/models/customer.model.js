@@ -84,6 +84,13 @@ const customerSchema = new mongoose.Schema(
     },
 
     // 🔑 Guest-first design
+    // When isGuest: true → customer made checkout orders
+    // When isGuest: false → customer created portal account (subscriptions, portal features)
+    // ⚠️ DATA ISOLATION: Guest checkout data (orders) and registered account data (subscriptions)
+    // are kept separate. When guest converts to registered:
+    // - Addresses are cleared (subscription requires explicit address selection)
+    // - Orders remain for history but not inherited by subscription context
+    // This prevents accidental cross-contamination of guest and subscription data
     isGuest: {
       type: Boolean,
       default: true,
