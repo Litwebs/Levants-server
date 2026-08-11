@@ -2593,6 +2593,78 @@ async function UpdateSubscription({
     // Generate new upcoming delivery slots
     await scheduleUpcomingDeliveries(subscription);
     shouldSyncStripePrice = true;
+
+    // Update delivery dates for existing open orders when days change
+    const now = new Date();
+    const openOrders = await Order.find({
+      subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded"] },
+      deliveryStatus: "ordered",
+      deliveryDate: { $gte: startOfDay(now) },
+    })
+      .sort({ deliveryDate: 1 })
+      .exec();
+
+    const oldDeliveryDays = currentResolvedDays.days.map(Number);
+    const newDeliveryDays = resolvedDays.days.map(Number);
+    const oldDaysSet = new Set(oldDeliveryDays);
+    const newDaysSet = new Set(newDeliveryDays);
+    let ordersUpdated = 0;
+
+    for (const order of openOrders) {
+      if (!order.deliveryDate) continue;
+
+      const orderDayOfWeek = new Date(order.deliveryDate).getDay();
+
+      // If this order's day is being removed and not in new schedule, find next available day
+      let newDay = orderDayOfWeek;
+      if (!newDaysSet.has(orderDayOfWeek)) {
+        // Find next available delivery day after current order's day
+        let found = false;
+        for (let i = 0; i < 7; i++) {
+          const checkDay = (orderDayOfWeek + i) % 7;
+          if (newDaysSet.has(checkDay)) {
+            newDay = checkDay;
+            found = true;
+            break;
+          }
+        }
+        // If no day found forward, wrap around to first available day
+        if (!found) {
+          newDay = Math.min(...newDeliveryDays);
+        }
+      }
+
+      // Calculate the new delivery date for this day
+      let newDeliveryDate = new Date(order.deliveryDate);
+      const currentDayOfWeek = newDeliveryDate.getDay();
+      const daysToAdd = (newDay - currentDayOfWeek + 7) % 7;
+
+      if (daysToAdd !== 0) {
+        newDeliveryDate.setDate(newDeliveryDate.getDate() + daysToAdd);
+      }
+
+      // Check if the new delivery date's cutoff has already passed
+      const cutoffAt = computeCutoffDate(newDeliveryDate, settings);
+      const isPastNewCutoff = cutoffAt ? now.getTime() >= cutoffAt.getTime() : false;
+
+      // If cutoff passed, move to next available delivery day in the next cycle
+      if (isPastNewCutoff && subscription.frequency === "weekly") {
+        // Move to the same day next week
+        newDeliveryDate.setDate(newDeliveryDate.getDate() + 7);
+      }
+
+      order.deliveryDate = newDeliveryDate;
+      await order.save();
+      ordersUpdated++;
+    }
+
+    // Update message if any orders were rescheduled
+    if (ordersUpdated > 0) {
+      updateMessage =
+        updateMessage +
+        ` (${ordersUpdated} order${ordersUpdated > 1 ? "s" : ""} rescheduled to the new delivery day)`;
+    }
   }
 
   await subscription.save();
