@@ -1548,7 +1548,21 @@ async function CreateSubscription({
   }
 
   const address = customer.addresses.id(deliveryAddressId);
-  if (!address) return Response(false, "Delivery address not found", null);
+  if (!address) {
+    // Provide more helpful error message
+    if (!customer.addresses || customer.addresses.length === 0) {
+      return Response(
+        false,
+        "Delivery address not found. No addresses exist on your account. Please add an address first.",
+        null,
+      );
+    }
+    return Response(
+      false,
+      "Delivery address not found. The selected address is no longer available. Please select another address and try again.",
+      null,
+    );
+  }
 
   const baseItems = Array.isArray(items) ? items : [];
   const rawDayPlans = Array.isArray(deliveryDayPlans) ? deliveryDayPlans : [];
