@@ -41,19 +41,38 @@ const ensureAddressIds = (customer) => {
   return changed;
 };
 
-const normalizeId = (value) =>
-  String(value || "")
-    .trim()
-    .toLowerCase();
+const normalizeId = (value) => {
+  if (!value) return "";
+  const str = String(value).trim().toLowerCase();
+  return str;
+};
 
 const getAddressIndexById = (customer, addressId) => {
+  if (!addressId || !customer?.addresses) return -1;
+
   const target = normalizeId(addressId);
   if (!target) return -1;
 
+  // Try to match by multiple ID formats to handle different sources
   return customer.addresses.findIndex((address) => {
-    const subId = normalizeId(address?._id);
-    const virtualId = normalizeId(address?.id);
-    return subId === target || virtualId === target;
+    if (!address) return false;
+
+    // Direct _id comparison (ObjectId)
+    if (address._id) {
+      if (normalizeId(String(address._id)) === target) return true;
+    }
+
+    // Direct id comparison (string)
+    if (address.id) {
+      if (normalizeId(String(address.id)) === target) return true;
+    }
+
+    // Fallback: toString() comparison for ObjectId
+    if (address._id && typeof address._id.toString === "function") {
+      if (normalizeId(address._id.toString()) === target) return true;
+    }
+
+    return false;
   });
 };
 
@@ -176,7 +195,21 @@ async function UpdateAddress({ customerId, addressId, ...fields } = {}) {
   }
 
   const addressIndex = getAddressIndexById(customer, addressId);
-  if (addressIndex < 0) return Response(false, "Address not found", null);
+  if (addressIndex < 0) {
+    const addressCount = (customer.addresses || []).length;
+    if (addressCount === 0) {
+      return Response(
+        false,
+        "Address not found. No addresses exist on this account.",
+        null,
+      );
+    }
+    return Response(
+      false,
+      "Address not found. The address you're trying to update may have been removed. Please refresh and try again.",
+      null,
+    );
+  }
   const address = customer.addresses[addressIndex];
 
   const allowedFields = [
@@ -223,7 +256,34 @@ async function DeleteAddress({ customerId, addressId } = {}) {
   }
 
   const addressIndex = getAddressIndexById(customer, addressId);
-  if (addressIndex < 0) return Response(false, "Address not found", null);
+  if (addressIndex < 0) {
+    // Debug information - the address ID wasn't found
+    const addressCount = (customer.addresses || []).length;
+    if (addressCount === 0) {
+      return Response(
+        false,
+        "Address not found. No addresses exist on this account.",
+        null,
+      );
+    }
+
+    // Log more details for debugging
+    const addressIds = customer.addresses.map((a) => ({
+      _id: String(a._id),
+      id: a.id ? String(a.id) : null,
+    }));
+
+    console.warn(
+      `[DeleteAddress] Address ID ${addressId} not found. Available IDs:`,
+      addressIds,
+    );
+
+    return Response(
+      false,
+      "Address not found. The address you're trying to delete may have already been removed. Please refresh and try again.",
+      null,
+    );
+  }
 
   const [removedAddress] = customer.addresses.splice(addressIndex, 1);
   const wasDefault = Boolean(removedAddress?.isDefault);
@@ -249,7 +309,21 @@ async function SetDefaultAddress({ customerId, addressId } = {}) {
   }
 
   const addressIndex = getAddressIndexById(customer, addressId);
-  if (addressIndex < 0) return Response(false, "Address not found", null);
+  if (addressIndex < 0) {
+    const addressCount = (customer.addresses || []).length;
+    if (addressCount === 0) {
+      return Response(
+        false,
+        "Address not found. No addresses exist on this account.",
+        null,
+      );
+    }
+    return Response(
+      false,
+      "Address not found. The address you're trying to set as default may have been removed. Please refresh and try again.",
+      null,
+    );
+  }
 
   customer.addresses.forEach((a) => {
     a.isDefault = false;
