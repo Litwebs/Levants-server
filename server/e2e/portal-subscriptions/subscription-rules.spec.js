@@ -754,25 +754,34 @@ function assertResume(fixture, before, after) {
   expect.soft(after.subscription.status).toBe("active");
   expect.soft(after.subscription.pausedAt).toBeNull();
   expect.soft(after.subscription.pausedUntil).toBeNull();
-  // A real signed initial-invoice webhook may generate a fixture slot while
-  // the resume request itself is running. Assert against the resulting
-  // authoritative application state: the earliest still-scheduled slot whose
-  // own cut-off is open. This mirrors getResumeNextDeliveryDate without a
-  // timing-sensitive hard-coded fixture date.
-  const expectedNext = after.deliveries
+  // A real signed initial-invoice webhook may generate every retained slot
+  // while resume is running. In that case getResumeNextDeliveryDate correctly
+  // uses its calculated fallback rather than a retained `scheduled` slot.
+  const nextDeliveryDate = new Date(after.subscription.nextDeliveryDate);
+  const cutoffIsOpen = (deliveryDate) => {
+    const cutoffAt = new Date(deliveryDate);
+    cutoffAt.setDate(cutoffAt.getDate() - 2);
+    cutoffAt.setHours(22, 0, 0, 0);
+    return Date.now() < cutoffAt.getTime();
+  };
+  const earlierEligibleScheduled = after.deliveries
     .filter((delivery) => delivery.status === "scheduled")
     .map((delivery) => new Date(delivery.scheduledDate))
-    .filter((deliveryDate) => {
-      const cutoffAt = new Date(deliveryDate);
-      cutoffAt.setDate(cutoffAt.getDate() - 2);
-      cutoffAt.setHours(22, 0, 0, 0);
-      return Date.now() < cutoffAt.getTime();
-    })
-    .sort((a, b) => a.getTime() - b.getTime())[0];
-  expect.soft(expectedNext).toBeTruthy();
-  expect.soft(dayKey(after.subscription.nextDeliveryDate)).toBe(
-    dayKey(expectedNext),
-  );
+    .filter(
+      (deliveryDate) =>
+        cutoffIsOpen(deliveryDate) && deliveryDate < nextDeliveryDate,
+    );
+  expect.soft(Number.isNaN(nextDeliveryDate.getTime())).toBe(false);
+  expect.soft(fixture.deliveryDays).toContain(nextDeliveryDate.getDay());
+  expect.soft(cutoffIsOpen(nextDeliveryDate)).toBe(true);
+  expect.soft(earlierEligibleScheduled).toHaveLength(0);
+  expect.soft(
+    after.deliveries.some(
+      (delivery) =>
+        dayKey(delivery.scheduledDate) === dayKey(nextDeliveryDate) &&
+        ["scheduled", "generated"].includes(delivery.status),
+    ),
+  ).toBe(true);
   expect.soft(after.stripe.remoteSubscription.pauseCollection).toBeNull();
   expect.soft(successfulIntentSnapshot(after)).toEqual(
     successfulIntentSnapshot(before),
