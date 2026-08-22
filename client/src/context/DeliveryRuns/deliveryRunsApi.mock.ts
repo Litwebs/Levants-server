@@ -256,7 +256,7 @@ const generateMockRuns = (): DeliveryRun[] => {
 };
 
 // Store mock data
-let mockRuns = generateMockRuns();
+const mockRuns = generateMockRuns();
 
 // Helper to simulate API delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));

@@ -444,7 +444,7 @@ export const DiscountsPage = () => {
                           >
                             <Select
                               value={
-                                Boolean((d as any)?.isCodeVisibleOnWebsite)
+                                (d as any)?.isCodeVisibleOnWebsite
                                   ? "visible"
                                   : "hidden"
                               }

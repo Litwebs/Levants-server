@@ -69,8 +69,16 @@ async function FindOrCreateGuestCustomer({
       firstName: normalizedFirstName,
       lastName: normalizedLastName,
       phone: normalizedPhone,
+      ...(normalizedAddress
+        ? { addresses: [{ ...normalizedAddress, isDefault: true }] }
+        : {}),
       isGuest: true,
     });
+  } else if (
+    normalizedAddress &&
+    upsertDefaultAddress(customer, normalizedAddress)
+  ) {
+    await customer.save();
   }
 
   const json = customer?.toJSON ? customer.toJSON() : customer;

@@ -18,6 +18,88 @@ async function ensureDiscountCodeIndex() {
   }
 }
 
+async function ensureSubscriptionDeliveryUniqueIndex() {
+  const collection =
+    mongoose.connection?.db?.collection("subscriptiondeliveries");
+  if (!collection) return;
+
+  const duplicate = await collection
+    .aggregate([
+      {
+        $group: {
+          _id: { subscription: "$subscription", scheduledDate: "$scheduledDate" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+      { $limit: 1 },
+    ])
+    .next();
+  if (duplicate) {
+    throw new Error(
+      "Cannot enforce subscription delivery uniqueness: duplicate subscription/date slots exist",
+    );
+  }
+
+  const indexes = await collection.indexes();
+  const matching = indexes.find(
+    (index) =>
+      index?.key?.subscription === 1 && index?.key?.scheduledDate === 1,
+  );
+  if (matching?.unique) return;
+  if (matching) await collection.dropIndex(matching.name);
+  await collection.createIndex(
+    { subscription: 1, scheduledDate: 1 },
+    { unique: true, name: "subscription_1_scheduledDate_1" },
+  );
+}
+
+async function ensureSubscriptionOrderInvoiceUniqueIndex() {
+  const collection = mongoose.connection?.db?.collection("orders");
+  if (!collection) return;
+
+  const duplicate = await collection
+    .aggregate([
+      { $match: { stripeInvoiceId: { $type: "string" } } },
+      {
+        $group: {
+          _id: {
+            stripeInvoiceId: "$stripeInvoiceId",
+            subscription: "$subscription",
+            deliveryDate: "$deliveryDate",
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+      { $limit: 1 },
+    ])
+    .next();
+  if (duplicate) {
+    throw new Error(
+      "Cannot enforce subscription order idempotency: duplicate invoice/delivery orders exist",
+    );
+  }
+
+  const indexes = await collection.indexes();
+  const matching = indexes.find(
+    (index) =>
+      index?.key?.stripeInvoiceId === 1 &&
+      index?.key?.subscription === 1 &&
+      index?.key?.deliveryDate === 1,
+  );
+  if (matching?.unique) return;
+  if (matching) await collection.dropIndex(matching.name);
+  await collection.createIndex(
+    { stripeInvoiceId: 1, subscription: 1, deliveryDate: 1 },
+    {
+      unique: true,
+      name: "stripeInvoiceId_1_subscription_1_deliveryDate_1",
+      partialFilterExpression: { stripeInvoiceId: { $type: "string" } },
+    },
+  );
+}
+
 mongoose.set("strictQuery", true);
 
 const connectDb = async () => {
@@ -32,6 +114,8 @@ const connectDb = async () => {
     });
 
     await ensureDiscountCodeIndex();
+    await ensureSubscriptionDeliveryUniqueIndex();
+    await ensureSubscriptionOrderInvoiceUniqueIndex();
 
     if (env !== "test") {
       logger.db("MongoDB connected");

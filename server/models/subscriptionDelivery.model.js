@@ -69,7 +69,10 @@ const subscriptionDeliverySchema = new mongoose.Schema(
   },
 );
 
-subscriptionDeliverySchema.index({ subscription: 1, scheduledDate: 1 });
+subscriptionDeliverySchema.index(
+  { subscription: 1, scheduledDate: 1 },
+  { unique: true },
+);
 subscriptionDeliverySchema.index({ scheduledDate: 1, status: 1 });
 
 subscriptionDeliverySchema.method("toJSON", function () {

@@ -45,8 +45,9 @@ sheet are mapped in [RULE_COVERAGE.md](./RULE_COVERAGE.md#ten-cross-cutting-inva
 | Stripe integrity | `stripe-integrity.spec.js`   | Six checks covering Stripe cadence intervals, combined initial-plus-delta cancellation refunds, Stripe Refund-to-local order refund-history linkage, declined-add atomicity, funded-edit Price replacement/current-price selection, and payment-required automatic resume | Required only for the refund-webhook linkage case |
 | Webhook          | `stripe-webhooks.spec.js`    | Two real, Stripe-signed initial-invoice checks for exact single-day and multi-day order/delivery creation                                                                                                                                                                 | Required                                          |
 
-Playwright discovers 67 scenarios in total: 54 matrix rows, five browser
-journeys, six Stripe-integrity checks, and two signed-webhook checks.
+Playwright currently discovers 73 scenarios in total. Use
+`npx playwright test --list` as the authoritative inventory; CI runs the
+complete list with Stripe CLI webhook forwarding enabled.
 
 All lanes use one Playwright worker and execute sequentially because they share
 a locally managed test stack and create real Stripe test-mode resources. A
@@ -89,7 +90,8 @@ compatible MongoDB binary. An external MongoDB daemon is not required.
 
 - Node.js and npm installed.
 - Server dependencies installed from `Levants-server/server`.
-- Client dependencies installed in the sibling `Levants-client` project.
+- Customer portal dependencies installed in the sibling `Levants-client`
+  repository, or in the directory selected by `E2E_CLIENT_DIR` in CI.
 - Playwright Chromium installed.
 - Network access to Stripe's test API.
 - A test-only env file containing matching Stripe test-mode keys and the JWT

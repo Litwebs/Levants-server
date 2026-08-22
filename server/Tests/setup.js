@@ -11,6 +11,10 @@ process.env.CLIENT_FRONT_URL_DEV =
 // Keep test output clean (opt-out by setting JEST_SHOW_CONSOLE=1)
 const showConsole = process.env.JEST_SHOW_CONSOLE === "1";
 
+// Starting a replica set and building every unique index can exceed Jest's
+// five-second default on CI or a busy development machine.
+jest.setTimeout(30_000);
+
 jest.mock("stripe", () => {
   return jest.fn(() => ({
     webhooks: {
@@ -70,6 +74,10 @@ jest.mock("stripe", () => {
     },
     invoices: {
       retrieve: jest.fn(async (id) => ({ id })),
+      list: jest.fn(async () => ({ data: [] })),
+    },
+    webhookEndpoints: {
+      list: jest.fn(async () => ({ data: [] })),
     },
     subscriptions: {
       update: jest.fn(async (id) => ({ id })),
@@ -132,12 +140,15 @@ beforeAll(async () => {
     require("../models/session.model").init(),
     require("../models/passwordResetToken.model").init(),
     require("../models/customer.model").init(),
+    require("../models/category.model").init(),
     require("../models/product.model").init(),
     require("../models/variant.model").init(),
     require("../models/discount.model").init(),
     require("../models/discountRedemption.model").init(),
     require("../models/order.model").init(),
     require("../models/subscription.model").init(),
+    require("../models/subscriptionDelivery.model").init(),
+    require("../models/payment.model").init(),
     require("../models/broadcast.model").init(),
     require("../models/deliveryBatch.model").init(),
     require("../models/route.model").init(),

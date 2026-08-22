@@ -84,8 +84,6 @@ const SecurityTab = ({
   handleChangePassword,
   securityLoading,
 }: SecurityTabProps) => {
-  if (!accountInfo || !emailSettings || !passwordSettings) return null;
-
   const [pendingTimeLeft, setPendingTimeLeft] = useState<string | null>(null);
 
   const formatTimeLeft = (ms: number) => {
@@ -118,6 +116,8 @@ const SecurityTab = ({
     const t = window.setInterval(tick, 1000);
     return () => window.clearInterval(t);
   }, [pendingEmail, pendingEmailExpiresAt]);
+
+  if (!accountInfo || !emailSettings || !passwordSettings) return null;
 
   const savingAccountInfo = !!securityLoading?.savingAccountInfo;
   const updatingEmail = !!securityLoading?.updatingEmail;

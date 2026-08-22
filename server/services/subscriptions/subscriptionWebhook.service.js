@@ -33,13 +33,73 @@ async function resolveLegacyInvoice(eventInvoice) {
   // Already in legacy shape (e.g. tests or older API) — no need to re-fetch.
   if (typeof eventInvoice.subscription === "string") return eventInvoice;
   try {
-    return await stripe.invoices.retrieve(eventInvoice.id);
+    const retrieved = await stripe.invoices.retrieve(eventInvoice.id);
+    // Preserve new-shape parent/payment references if the account-pinned
+    // retrieve response omits them, while preferring the fuller retrieved data.
+    return {
+      ...eventInvoice,
+      ...retrieved,
+      parent: retrieved?.parent || eventInvoice.parent,
+      payments: retrieved?.payments || eventInvoice.payments,
+    };
   } catch (err) {
     logger.warn(
       `[SubscriptionWebhook] Could not re-retrieve invoice ${eventInvoice.id}: ${err.message}`,
     );
     return eventInvoice;
   }
+}
+
+function resolveInvoiceSubscriptionId(invoice) {
+  const legacy = invoice?.subscription;
+  if (typeof legacy === "string") return legacy;
+  if (legacy?.id) return legacy.id;
+
+  const parentSubscription =
+    invoice?.parent?.subscription_details?.subscription;
+  if (typeof parentSubscription === "string") return parentSubscription;
+  return parentSubscription?.id || null;
+}
+
+function resolveInvoicePaymentIntentId(invoice) {
+  const legacy = invoice?.payment_intent;
+  if (typeof legacy === "string") return legacy;
+  if (legacy?.id) return legacy.id;
+
+  for (const invoicePayment of invoice?.payments?.data || []) {
+    const paymentIntent = invoicePayment?.payment?.payment_intent;
+    if (typeof paymentIntent === "string") return paymentIntent;
+    if (paymentIntent?.id) return paymentIntent.id;
+  }
+  return null;
+}
+
+async function findLocalSubscription(stripeSubscriptionId) {
+  let subscription = await Subscription.findOne({
+    stripeSubscriptionId,
+  }).populate("customer");
+  if (subscription) return subscription;
+
+  // Creation metadata is written before Stripe takes payment. It lets a retry
+  // recover the local identity even when the first webhook arrived before the
+  // local document finished saving.
+  try {
+    const remote = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+    const localId = remote?.metadata?.subscriptionId;
+    if (localId) {
+      subscription = await Subscription.findById(localId).populate("customer");
+      if (subscription && !subscription.stripeSubscriptionId) {
+        subscription.stripeSubscriptionId = stripeSubscriptionId;
+        await subscription.save();
+      }
+    }
+  } catch (err) {
+    logger.warn(
+      `[SubscriptionWebhook] Could not resolve Stripe subscription ${stripeSubscriptionId}: ${err.message}`,
+    );
+  }
+
+  return subscription;
 }
 const {
   addFrequencyDays,
@@ -105,36 +165,27 @@ async function findDeliverySlot(subscriptionId, deliveryDate) {
  */
 async function HandleSubscriptionInvoicePaid(eventInvoice) {
   const invoice = await resolveLegacyInvoice(eventInvoice);
-  if (!invoice.subscription) return; // Not a subscription invoice
+  const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
+  if (!stripeSubscriptionId) return; // Not a subscription invoice
 
-  const subscription = await Subscription.findOne({
-    stripeSubscriptionId: invoice.subscription,
-  }).populate("customer");
+  const subscription = await findLocalSubscription(stripeSubscriptionId);
 
   if (!subscription) {
-    logger.warn(
-      `[SubscriptionWebhook] No local subscription found for Stripe sub ${invoice.subscription}`,
+    throw new Error(
+      `Local subscription is not ready for Stripe subscription ${stripeSubscriptionId}`,
     );
-    return;
   }
 
   if (!subscription.customer) {
-    logger.warn(
-      `[SubscriptionWebhook] Subscription ${subscription._id} has no populated customer`,
+    throw new Error(
+      `Subscription ${subscription._id} has no populated customer`,
     );
-    return;
   }
 
-  const alreadyProcessed = await Order.exists({
+  const existingInvoiceOrders = await Order.find({
     stripeInvoiceId: invoice.id,
     subscription: subscription._id,
-  });
-  if (alreadyProcessed) {
-    logger.info(
-      `[SubscriptionWebhook] Invoice ${invoice.id} already processed for subscription ${subscription.subscriptionNumber}`,
-    );
-    return;
-  }
+  }).sort({ deliveryDate: 1 });
 
   // Try to geocode the delivery address; fall back to 0,0
   let location = { lat: 0, lng: 0 };
@@ -145,9 +196,13 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     // Non-fatal
   }
 
-  const billingWindowStart = subscription.nextDeliveryDate
-    ? new Date(subscription.nextDeliveryDate)
-    : new Date((invoice.period_start || Math.floor(Date.now() / 1000)) * 1000);
+  const billingWindowStart = existingInvoiceOrders[0]?.deliveryDate
+    ? new Date(existingInvoiceOrders[0].deliveryDate)
+    : subscription.nextDeliveryDate
+      ? new Date(subscription.nextDeliveryDate)
+      : new Date(
+          (invoice.period_start || Math.floor(Date.now() / 1000)) * 1000,
+        );
   const billingWindowEnd = addBillingWindowDays(
     billingWindowStart,
     subscription.frequency,
@@ -174,10 +229,10 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
   const paidAt = invoice.status_transitions?.paid_at
     ? new Date(invoice.status_transitions.paid_at * 1000)
     : new Date();
-  const stripePaymentIntentId =
-    typeof invoice.payment_intent === "string" ? invoice.payment_intent : null;
+  const stripePaymentIntentId = resolveInvoicePaymentIntentId(invoice);
 
   const createdOrders = [];
+  let newlyCreatedOrderCount = 0;
   for (const slot of deliverySlots.sort(
     (a, b) =>
       new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime(),
@@ -219,6 +274,23 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
         existingSlot.generatedAt = existingSlot.generatedAt || new Date();
         await existingSlot.save();
       }
+      const hasPayment = await Payment.exists({
+        order: existing._id,
+        subscription: subscription._id,
+        status: "paid",
+      });
+      if (!hasPayment) {
+        await Payment.create({
+          customer: subscription.customer._id,
+          order: existing._id,
+          subscription: subscription._id,
+          amount: existing.amountPaid ?? existing.total,
+          currency: invoice.currency || "gbp",
+          status: "paid",
+          providerReference: stripePaymentIntentId || null,
+          paidAt,
+        });
+      }
       createdOrders.push(existing);
       continue;
     }
@@ -242,43 +314,59 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     const total = subtotal + deliveryFee;
     const amountPaid = total;
 
-    const order = await Order.create({
-      customer: subscription.customer._id,
-      items: orderItems,
-      deliveryAddress: {
-        line1: subscription.deliveryAddress.line1,
-        line2: subscription.deliveryAddress.line2 || null,
-        city: subscription.deliveryAddress.city,
-        postcode: subscription.deliveryAddress.postcode,
-        country: subscription.deliveryAddress.country,
-      },
-      customerInstructions:
-        subscription.deliveryAddress.deliveryInstructions || "",
-      location,
-      deliveryDate,
-      deliveryFee,
-      subtotal,
-      total,
-      amountPaid,
-      status: "paid",
-      deliveryStatus: "ordered",
-      orderType: "subscription_generated",
-      subscription: subscription._id,
-      stripePaymentIntentId,
-      stripeInvoiceId: invoice.id,
-      paymentAllocations: stripePaymentIntentId
-        ? [
-            {
-              paymentIntentId: stripePaymentIntentId,
-              stripeInvoiceId: invoice.id,
-              source: "subscription_invoice",
-              amountMinor: Math.round(amountPaid * 100),
-            },
-          ]
-        : [],
-      paidAt,
-      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    });
+    let order;
+    try {
+      order = await Order.create({
+        customer: subscription.customer._id,
+        items: orderItems,
+        deliveryAddress: {
+          line1: subscription.deliveryAddress.line1,
+          line2: subscription.deliveryAddress.line2 || null,
+          city: subscription.deliveryAddress.city,
+          postcode: subscription.deliveryAddress.postcode,
+          country: subscription.deliveryAddress.country,
+        },
+        customerInstructions:
+          subscription.deliveryAddress.deliveryInstructions || "",
+        location,
+        deliveryDate,
+        deliveryFee,
+        subtotal,
+        total,
+        amountPaid,
+        status: "paid",
+        deliveryStatus: "ordered",
+        orderType: "subscription_generated",
+        subscription: subscription._id,
+        stripePaymentIntentId,
+        stripeInvoiceId: invoice.id,
+        paymentAllocations: stripePaymentIntentId
+          ? [
+              {
+                paymentIntentId: stripePaymentIntentId,
+                stripeInvoiceId: invoice.id,
+                source: "subscription_invoice",
+                amountMinor: Math.round(amountPaid * 100),
+              },
+            ]
+          : [],
+        paidAt,
+        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+    } catch (err) {
+      // Stripe can deliver the signed webhook while CreateSubscription is
+      // running its synchronous fallback. The unique idempotency index chooses
+      // one winner; the loser must treat that committed order as success.
+      if (err?.code !== 11000) throw err;
+      order = await Order.findOne({
+        stripeInvoiceId: invoice.id,
+        subscription: subscription._id,
+        deliveryDate,
+      });
+      if (!order) throw err;
+      createdOrders.push(order);
+      continue;
+    }
 
     const deliverySlot = await findDeliverySlot(subscription._id, deliveryDate);
     if (deliverySlot) {
@@ -309,9 +397,16 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     });
 
     createdOrders.push(order);
+    newlyCreatedOrderCount += 1;
   }
 
-  subscription.nextDeliveryDate = billingWindowEnd;
+  if (
+    !subscription.nextDeliveryDate ||
+    new Date(subscription.nextDeliveryDate).getTime() <
+      billingWindowEnd.getTime()
+  ) {
+    subscription.nextDeliveryDate = billingWindowEnd;
+  }
 
   // Safety net: if a deferred price sync was ever queued, apply it now so
   // future deliveries bill the new amount.
@@ -331,21 +426,24 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
 
   await scheduleUpcomingDeliveries(subscription);
 
-  // Notify customer
-  await CustomerNotification.create({
-    customer: subscription.customer._id,
-    type: "subscription_upcoming_delivery",
-    title: "Subscription order confirmed",
-    message:
-      createdOrders.length > 1
-        ? `Your subscription orders have been created for ${createdOrders.length} delivery days in this billing cycle.`
-        : `Your subscription order #${createdOrders[0].orderId} has been created for ${createdOrders[0].deliveryDate.toLocaleDateString("en-GB")}.`,
-    relatedOrder: createdOrders[0]?._id,
-    relatedSubscription: subscription._id,
-  });
+  if (newlyCreatedOrderCount > 0) {
+    // Notify once for work actually performed. A duplicate/retried webhook must
+    // not create duplicate customer notifications.
+    await CustomerNotification.create({
+      customer: subscription.customer._id,
+      type: "subscription_upcoming_delivery",
+      title: "Subscription order confirmed",
+      message:
+        createdOrders.length > 1
+          ? `Your subscription orders have been created for ${createdOrders.length} delivery days in this billing cycle.`
+          : `Your subscription order #${createdOrders[0].orderId} has been created for ${createdOrders[0].deliveryDate.toLocaleDateString("en-GB")}.`,
+      relatedOrder: createdOrders[0]?._id,
+      relatedSubscription: subscription._id,
+    });
+  }
 
   logger.info(
-    `[SubscriptionWebhook] Created ${createdOrders.length} order(s) from invoice ${invoice.id} (subscription ${subscription.subscriptionNumber})`,
+    `[SubscriptionWebhook] Created ${newlyCreatedOrderCount} order(s) from invoice ${invoice.id} (subscription ${subscription.subscriptionNumber})`,
   );
 }
 
@@ -356,12 +454,15 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
  */
 async function HandleSubscriptionInvoiceFailed(eventInvoice) {
   const invoice = await resolveLegacyInvoice(eventInvoice);
-  if (!invoice.subscription) return;
+  const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
+  if (!stripeSubscriptionId) return;
 
-  const subscription = await Subscription.findOne({
-    stripeSubscriptionId: invoice.subscription,
-  });
-  if (!subscription) return;
+  const subscription = await findLocalSubscription(stripeSubscriptionId);
+  if (!subscription) {
+    throw new Error(
+      `Local subscription is not ready for Stripe subscription ${stripeSubscriptionId}`,
+    );
+  }
 
   // Pause Stripe billing to stop future charges while the customer fixes their payment.
   if (subscription.stripeSubscriptionId && subscription.status === "active") {
@@ -487,9 +588,110 @@ async function HandleStripeSubscriptionDeleted(stripeSub) {
   }
 }
 
+/**
+ * Pull-based safety net for recently missed paid-invoice webhooks.
+ *
+ * We deliberately refuse automatic historical backfills: once a delivery date
+ * is old, creating an order can put a customer onto a present-day route for a
+ * delivery that should instead be reviewed/refunded. Historical drift is
+ * reported by the integrity audit and requires an explicit repair decision.
+ */
+async function ReconcileRecentPaidSubscriptionInvoices({
+  recentWindowMs = 36 * 60 * 60 * 1000,
+} = {}) {
+  const cutoffSeconds = Math.floor((Date.now() - recentWindowMs) / 1000);
+  const subscriptions = await Subscription.find({
+    status: "active",
+    stripeSubscriptionId: { $type: "string", $ne: "" },
+  }).select("_id subscriptionNumber stripeSubscriptionId");
+
+  const result = { checked: 0, reconciled: 0, historicalDrift: 0, failed: 0 };
+  for (const subscription of subscriptions) {
+    result.checked += 1;
+    try {
+      const invoicePage = await stripe.invoices.list({
+        subscription: subscription.stripeSubscriptionId,
+        limit: 100,
+      });
+      const paidInvoices = (invoicePage.data || [])
+        .filter((invoice) => invoice.paid || invoice.status === "paid")
+        .sort((left, right) => Number(left.created) - Number(right.created));
+      const linkedIds = new Set(
+        await Order.distinct("stripeInvoiceId", {
+          subscription: subscription._id,
+          stripeInvoiceId: { $ne: null },
+        }),
+      );
+      const unlinked = paidInvoices.filter(
+        (invoice) => !linkedIds.has(invoice.id),
+      );
+      if (unlinked.length === 0) continue;
+
+      const historical = unlinked.filter(
+        (invoice) => Number(invoice.created) < cutoffSeconds,
+      );
+      const recent = unlinked.filter(
+        (invoice) => Number(invoice.created) >= cutoffSeconds,
+      );
+      if (historical.length > 0) {
+        result.historicalDrift += 1;
+        logger.error(
+          `[SubscriptionReconcile] ${subscription.subscriptionNumber} has historical paid invoices without orders; run the integrity audit before repair`,
+        );
+      }
+
+      // Historical ambiguity must not disable recovery for a new payment on
+      // the same subscription. Quarantine only the old invoices and continue
+      // reconciling recent, operationally safe billing events.
+      for (const invoice of recent) {
+        await HandleSubscriptionInvoicePaid(invoice);
+        result.reconciled += 1;
+      }
+    } catch (err) {
+      result.failed += 1;
+      logger.error(
+        `[SubscriptionReconcile] Failed for ${subscription.subscriptionNumber}: ${err.message}`,
+      );
+    }
+  }
+
+  return result;
+}
+
+async function VerifySubscriptionWebhookConfiguration() {
+  const requiredEvents = [
+    "invoice.payment_succeeded",
+    "invoice.payment_failed",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+  ];
+  const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
+  const enabled = (endpoints.data || []).filter(
+    (endpoint) => endpoint.status === "enabled",
+  );
+  const missingEvents = requiredEvents.filter(
+    (eventType) =>
+      !enabled.some(
+        (endpoint) =>
+          endpoint.enabled_events?.includes("*") ||
+          endpoint.enabled_events?.includes(eventType),
+      ),
+  );
+  if (missingEvents.length > 0) {
+    logger.error(
+      `[SubscriptionWebhook] No enabled Stripe endpoint subscribes to: ${missingEvents.join(", ")}`,
+    );
+  }
+  return { ok: missingEvents.length === 0, missingEvents };
+}
+
 module.exports = {
+  resolveInvoiceSubscriptionId,
+  resolveInvoicePaymentIntentId,
   HandleSubscriptionInvoicePaid,
   HandleSubscriptionInvoiceFailed,
   HandleStripeSubscriptionUpdated,
   HandleStripeSubscriptionDeleted,
+  ReconcileRecentPaidSubscriptionInvoices,
+  VerifySubscriptionWebhookConfiguration,
 };

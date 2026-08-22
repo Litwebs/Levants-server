@@ -151,6 +151,39 @@ describe("Portal Subscriptions", () => {
     expect(res.body.data.subscription.items).toHaveLength(1);
   });
 
+  it("creates the first fulfillment order synchronously when Stripe returns a paid invoice", async () => {
+    stripe.subscriptions.create.mockResolvedValueOnce({
+      id: "sub_test_initial_paid_fallback",
+      latest_invoice: {
+        id: "in_test_initial_paid_fallback",
+        subscription: "sub_test_initial_paid_fallback",
+        payment_intent: "pi_test_initial_paid_fallback",
+        paid: true,
+        status: "paid",
+        currency: "gbp",
+        status_transitions: { paid_at: Math.floor(Date.now() / 1000) },
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(res.status).toBe(201);
+    const orders = await Order.find({
+      subscription: res.body.data.subscription._id,
+      stripeInvoiceId: "in_test_initial_paid_fallback",
+    }).lean();
+    expect(orders).toHaveLength(1);
+    expect(orders[0].status).toBe("paid");
+  });
+
   it("rejects unauthenticated subscription requests", async () => {
     const res = await request(app).get("/api/portal/subscriptions");
     expect(res.status).toBe(401);
@@ -494,6 +527,31 @@ describe("Portal Subscriptions", () => {
       .map((d) => new Date(d.scheduledDate).getDay());
     expect(weekdays.every((day) => [0, 3].includes(day))).toBe(true);
     expect(new Set(weekdays).size).toBeGreaterThan(1);
+  });
+
+  it("extends three future slots even when nextDeliveryDate is stale", async () => {
+    const sub = await createBasicSubscription();
+    const staleDate = new Date();
+    staleDate.setDate(staleDate.getDate() - 35);
+    staleDate.setHours(0, 0, 0, 0);
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: staleDate,
+    });
+    await SubscriptionDelivery.deleteMany({ subscription: sub._id });
+
+    const stored = await Subscription.findById(sub._id);
+    await subscriptionService.scheduleUpcomingDeliveries(stored);
+
+    const futureSlots = await SubscriptionDelivery.find({
+      subscription: sub._id,
+      scheduledDate: { $gte: new Date() },
+    }).lean();
+    expect(futureSlots).toHaveLength(3);
+    expect(
+      futureSlots.every(
+        (slot) => new Date(slot.scheduledDate).getDay() === 0,
+      ),
+    ).toBe(true);
   });
 
   it("can pause, resume, and cancel subscription", async () => {
@@ -3325,6 +3383,60 @@ describe("Portal Subscriptions", () => {
     expect(afterWeekday).toBe(3);
     expect(new Date(after.nextDeliveryDate).getTime()).not.toBe(
       new Date(before.nextDeliveryDate).getTime(),
+    );
+  });
+
+  it("does not move paid orders when unchanged delivery-day fields are resubmitted", async () => {
+    const sub = await createBasicSubscription();
+    const farSunday = new Date("2026-10-04T09:00:00.000Z");
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: farSunday,
+      preferredDeliveryDay: 0,
+      preferredDeliveryDays: [0],
+    });
+    const item = sub.items[0];
+    const order = await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: item.product,
+          variant: item.variant,
+          name: item.name,
+          sku: item.sku,
+          price: item.unitPrice,
+          quantity: item.quantity,
+          subtotal: item.unitPrice * item.quantity,
+        },
+      ],
+      deliveryAddress: sub.deliveryAddress,
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: farSunday,
+      deliveryFee: 1,
+      subtotal: item.unitPrice * item.quantity,
+      total: item.unitPrice * item.quantity + 1,
+      amountPaid: item.unitPrice * item.quantity + 1,
+      status: "paid",
+      deliveryStatus: "ordered",
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      reservationExpiresAt: new Date("2026-10-05T09:00:00.000Z"),
+    });
+
+    const res = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ preferredDeliveryDay: 0, preferredDeliveryDays: [0] });
+
+    expect(res.status).toBe(200);
+    const [storedSubscription, storedOrder] = await Promise.all([
+      Subscription.findById(sub._id).lean(),
+      Order.findById(order._id).lean(),
+    ]);
+    expect(new Date(storedSubscription.nextDeliveryDate).toISOString()).toBe(
+      farSunday.toISOString(),
+    );
+    expect(new Date(storedOrder.deliveryDate).toISOString()).toBe(
+      farSunday.toISOString(),
     );
   });
 

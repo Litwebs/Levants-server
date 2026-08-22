@@ -21,6 +21,9 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      // Existing application code has substantial `any` debt. Keep every
+      // occurrence visible without making the initial release gate unusable.
+      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
 );

@@ -8,6 +8,7 @@ const mongoose = require("mongoose");
 const Product = require("../../../models/product.model");
 const Variant = require("../../../models/variant.model");
 const File = require("../../../models/file.model");
+const Category = require("../../../models/category.model");
 
 async function createFile() {
   return File.create({
@@ -76,6 +77,7 @@ describe("GET /api/products (PUBLIC)", () => {
   });
 
   test("returns all categories in meta", async () => {
+    await Category.create({ title: "Dairy", subtitle: "Fresh dairy" });
     const p = await createProduct({ name: "Category Product" });
     await createVariant({
       productId: p._id,
@@ -87,7 +89,11 @@ describe("GET /api/products (PUBLIC)", () => {
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.meta.categories)).toBe(true);
-    expect(res.body.meta.categories).toContain("Dairy");
+    expect(res.body.meta.categories).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "Dairy", subtitle: "Fresh dairy" }),
+      ]),
+    );
   });
 
   test("does not return archived products or products without active variants", async () => {

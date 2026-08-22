@@ -11,7 +11,9 @@ const mongoose = require("mongoose");
 const Stripe = require("stripe");
 
 const Subscription = require("../models/subscription.model");
+const SubscriptionDelivery = require("../models/subscriptionDelivery.model");
 const Order = require("../models/order.model");
+const Payment = require("../models/payment.model");
 
 const getArg = (flag) => {
   const i = process.argv.indexOf(flag);
@@ -40,6 +42,9 @@ const main = async () => {
   console.log("number:", sub.subscriptionNumber);
   console.log("status:", sub.status);
   console.log("frequency:", sub.frequency);
+  console.log("preferredDeliveryDay:", sub.preferredDeliveryDay);
+  console.log("preferredDeliveryDays:", sub.preferredDeliveryDays || []);
+  console.log("createdAt:", fmt(sub.createdAt));
   console.log("nextDeliveryDate:", fmt(sub.nextDeliveryDate));
   console.log("pendingPriceSync:", sub.pendingPriceSync);
   console.log("stripeSubscriptionId:", sub.stripeSubscriptionId);
@@ -86,6 +91,59 @@ const main = async () => {
       "->",
       fmt(ss.current_period_end * 1000),
     );
+
+    const invoicePage = await stripe.invoices.list({
+      subscription: sub.stripeSubscriptionId,
+      limit: 10,
+    });
+    console.log("invoices:");
+    for (const invoice of invoicePage.data || []) {
+      console.log(
+        `${invoice.id} | status=${invoice.status} | paid=${invoice.paid} | amount=£${Number(invoice.amount_paid || 0) / 100} | created=${fmt(invoice.created * 1000)}`,
+      );
+    }
+
+    const recentPaidEvents = await stripe.events.list({
+      type: "invoice.payment_succeeded",
+      limit: 100,
+    });
+    const matchingEvents = (recentPaidEvents.data || []).filter(
+      (event) =>
+        (invoicePage.data || []).some(
+          (invoice) => invoice.id === event.data?.object?.id,
+        ),
+    );
+    console.log("matching invoice.payment_succeeded events:");
+    for (const event of matchingEvents) {
+      const eventInvoice = event.data?.object || {};
+      console.log(
+        `${event.id} | api=${event.api_version || "null"} | created=${fmt(event.created * 1000)} | pendingWebhooks=${event.pending_webhooks} | topLevelSubscription=${eventInvoice.subscription || "null"} | parentSubscription=${eventInvoice.parent?.subscription_details?.subscription || "null"}`,
+      );
+      console.log(
+        "event invoice payment references:",
+        JSON.stringify({
+          payment_intent: eventInvoice.payment_intent || null,
+          payments: eventInvoice.payments || null,
+        }),
+      );
+    }
+
+    const webhookEndpoints = await stripe.webhookEndpoints.list({ limit: 100 });
+    console.log("enabled webhook endpoints:");
+    for (const endpoint of webhookEndpoints.data || []) {
+      let host = "invalid-url";
+      try {
+        host = new URL(endpoint.url).host;
+      } catch {
+        // Keep diagnostics read-only and avoid printing arbitrary URL contents.
+      }
+      console.log(
+        `${endpoint.id} | status=${endpoint.status} | host=${host} | invoice.payment_succeeded=${
+          endpoint.enabled_events?.includes("*") ||
+          endpoint.enabled_events?.includes("invoice.payment_succeeded")
+        }`,
+      );
+    }
   } catch (e) {
     console.log("Stripe retrieve failed:", e.message);
   }
@@ -98,6 +156,28 @@ const main = async () => {
   for (const o of orders) {
     console.log(
       `${o.orderId} | status=${o.status} | total=£${o.total} | paid=£${o.amountPaid} | pi=${o.stripePaymentIntentId} | inv=${o.stripeInvoiceId} | deliver=${fmt(o.deliveryDate)}`,
+    );
+  }
+
+  console.log("\n=== DELIVERY SLOTS ===");
+  const deliveries = await SubscriptionDelivery.find({
+    subscription: sub._id,
+  })
+    .sort({ scheduledDate: 1 })
+    .lean();
+  for (const delivery of deliveries) {
+    console.log(
+      `${fmt(delivery.scheduledDate)} | status=${delivery.status} | order=${delivery.order || "null"}`,
+    );
+  }
+
+  console.log("\n=== LOCAL PAYMENTS ===");
+  const payments = await Payment.find({ subscription: sub._id })
+    .sort({ createdAt: -1 })
+    .lean();
+  for (const payment of payments) {
+    console.log(
+      `${payment._id} | status=${payment.status} | amount=£${payment.amount} | ref=${payment.providerReference || "null"}`,
     );
   }
 
