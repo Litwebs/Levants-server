@@ -79,6 +79,42 @@ async function start() {
     path.join(os.tmpdir(), "levants-real-stripe-e2e-"),
   );
   process.chdir(isolatedWorkingDirectory);
+
+  // The fixture factory reshapes the initial subscription schedule into exact
+  // test dates. Do not let the asynchronously forwarded, signed initial invoice
+  // webhook race that rewrite. Observe the real HTTP response here (rather
+  // than the service method, which is also called by the synchronous fallback)
+  // so fixtures can wait specifically for successful Stripe CLI delivery.
+  global.__E2E_COMPLETED_SIGNED_INVOICE_WEBHOOKS__ = new Set();
+  const stripeWebhookController = require(
+    `${SERVER_ROOT}/controllers/stripe.webhook.controller`,
+  );
+  const handleStripeWebhook = stripeWebhookController.HandleStripeWebhook;
+  stripeWebhookController.HandleStripeWebhook = async function observedWebhook(
+    req,
+    res,
+  ) {
+    let invoiceId = null;
+    try {
+      const event = JSON.parse(Buffer.from(req.body).toString("utf8"));
+      if (event?.type === "invoice.payment_succeeded") {
+        invoiceId = event.data?.object?.id || null;
+      }
+    } catch {
+      // Signature validation in the real controller remains authoritative.
+    }
+
+    if (invoiceId) {
+      res.once("finish", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          global.__E2E_COMPLETED_SIGNED_INVOICE_WEBHOOKS__.add(invoiceId);
+        }
+      });
+    }
+
+    return handleStripeWebhook(req, res);
+  };
+
   const app = require(`${SERVER_ROOT}/app`);
   fixtureFactory = require(`${SERVER_ROOT}/e2e/support/fixture-factory`);
   const { createControlApp } = require(`${SERVER_ROOT}/e2e/support/control-app`);

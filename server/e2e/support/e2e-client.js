@@ -113,6 +113,10 @@ async function finalizeCancellation(request, subscriptionId, referenceDate) {
 async function login(request, credentials) {
   const response = await request.post(`${API_ORIGIN}/api/portal/auth/login`, {
     data: credentials,
+    // The full real-Stripe matrix intentionally runs serially for isolation.
+    // On a busy runner, Mongo/Node can briefly pause late in the 14-minute
+    // suite; login is an API setup operation, not a 20-second UI action.
+    timeout: 60_000,
   });
   const body = await response.json().catch(() => null);
   if (!response.ok() || !body?.data?.accessToken) {

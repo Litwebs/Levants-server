@@ -402,6 +402,24 @@ async function retrieveInitialInvoice(stripeSubscriptionId) {
   return { invoice, paymentIntentId };
 }
 
+async function waitForSignedInitialInvoiceWebhook(invoiceId) {
+  if (process.env.E2E_USE_STRIPE_CLI !== "1") return;
+
+  const timeoutAt = Date.now() + 30_000;
+  while (Date.now() < timeoutAt) {
+    if (
+      global.__E2E_COMPLETED_SIGNED_INVOICE_WEBHOOKS__?.has(String(invoiceId))
+    ) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  throw new Error(
+    `Signed invoice webhook did not complete for ${invoiceId} within 30 seconds`,
+  );
+}
+
 function planForDay(subscription, day) {
   const plan = subscription.deliveryDayPlans?.find(
     (candidate) => Number(candidate.day) === Number(day),
@@ -579,6 +597,7 @@ async function createFixture(options = {}) {
   const { invoice, paymentIntentId } = await retrieveInitialInvoice(
     subscription.stripeSubscriptionId,
   );
+  await waitForSignedInitialInvoiceWebhook(invoice.id);
   let resumeRequiredMinor = 0;
   let resumeFundingRefundId = null;
   if (options.resumeRequiresPayment) {
