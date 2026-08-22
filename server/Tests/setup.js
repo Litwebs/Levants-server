@@ -1,12 +1,17 @@
+process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_123";
+// Unit/integration tests capture or mock outbound email. Supplying an explicit
+// non-live key keeps the Resend SDK from rejecting module initialization in a
+// clean CI environment without granting tests access to production email.
+process.env.RESEND_EMAIL_KEY =
+  process.env.RESEND_EMAIL_KEY || "re_test_never_send";
+process.env.FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV || "localhost:3000";
+process.env.CLIENT_FRONT_URL_DEV =
+  process.env.CLIENT_FRONT_URL_DEV || process.env.FRONTEND_URL_DEV;
+
 const mongoose = require("mongoose");
 const { MongoMemoryReplSet } = require("mongodb-memory-server");
 const { seedDefaultRoles } = require("../scripts/seedDefaultRoles"); // ✅ ADD
 const { seedBusinessInfo } = require("../scripts/seedBusinessInfo"); // ✅ ADD
-
-process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_123";
-process.env.FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV || "localhost:3000";
-process.env.CLIENT_FRONT_URL_DEV =
-  process.env.CLIENT_FRONT_URL_DEV || process.env.FRONTEND_URL_DEV;
 
 // Keep test output clean (opt-out by setting JEST_SHOW_CONSOLE=1)
 const showConsole = process.env.JEST_SHOW_CONSOLE === "1";
