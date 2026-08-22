@@ -11,9 +11,11 @@ const ProductVariant = require("../../models/variant.model");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
+const Payment = require("../../models/payment.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const geocode = require("../../Integration/google.geocode");
 const stripe = require("../../utils/stripe.util");
+const subscriptionWebhookService = require("../../services/subscriptions/subscriptionWebhook.service");
 
 async function createCustomer() {
   return Customer.create({
@@ -115,6 +117,143 @@ async function createSubscriptionFixture({
 }
 
 describe("Subscription Stripe webhook E2E", () => {
+  it("detects an enabled Stripe endpoint that omits subscription events", async () => {
+    stripe.webhookEndpoints.list.mockResolvedValueOnce({
+      data: [
+        {
+          status: "enabled",
+          enabled_events: ["checkout.session.completed"],
+        },
+      ],
+    });
+
+    const result =
+      await subscriptionWebhookService.VerifySubscriptionWebhookConfiguration();
+
+    expect(result.ok).toBe(false);
+    expect(result.missingEvents).toContain("invoice.payment_succeeded");
+    expect(result.missingEvents).toContain("invoice.payment_failed");
+  });
+
+  it("reconciles a recent invoice even when an older invoice needs manual review", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date();
+    nextDelivery.setDate(nextDelivery.getDate() + 2);
+    nextDelivery.setHours(9, 0, 0, 0);
+    const subscription = await createSubscriptionFixture({
+      customer: customer._id,
+      stripeSubscriptionId: "sub_test_mixed_reconciliation_1",
+      nextDeliveryDate: nextDelivery,
+      items: [buildSubscriptionItem(product, variant, 1)],
+    });
+    await SubscriptionDelivery.create({
+      subscription: subscription._id,
+      customer: customer._id,
+      scheduledDate: nextDelivery,
+      status: "scheduled",
+    });
+    stripe.invoices.list.mockResolvedValueOnce({
+      data: [
+        {
+          id: "in_test_historical_manual_1",
+          subscription: subscription.stripeSubscriptionId,
+          paid: true,
+          created: Math.floor(Date.now() / 1000) - 10 * 24 * 60 * 60,
+        },
+        {
+          id: "in_test_recent_reconcile_1",
+          subscription: subscription.stripeSubscriptionId,
+          payment_intent: "pi_test_recent_reconcile_1",
+          currency: "gbp",
+          paid: true,
+          created: Math.floor(Date.now() / 1000),
+        },
+      ],
+    });
+
+    const result =
+      await subscriptionWebhookService.ReconcileRecentPaidSubscriptionInvoices();
+
+    expect(result.historicalDrift).toBe(1);
+    expect(result.reconciled).toBe(1);
+    expect(
+      await Order.countDocuments({
+        subscription: subscription._id,
+        stripeInvoiceId: "in_test_recent_reconcile_1",
+      }),
+    ).toBe(1);
+    expect(
+      await Order.countDocuments({
+        subscription: subscription._id,
+        stripeInvoiceId: "in_test_historical_manual_1",
+      }),
+    ).toBe(0);
+  });
+
+  it("accepts the live Clover invoice parent shape", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date("2026-07-12T09:00:00.000Z");
+    const subscription = await createSubscriptionFixture({
+      customer: customer._id,
+      stripeSubscriptionId: "sub_test_clover_parent_1",
+      nextDeliveryDate: nextDelivery,
+      items: [buildSubscriptionItem(product, variant, 1)],
+    });
+    await SubscriptionDelivery.create({
+      subscription: subscription._id,
+      customer: customer._id,
+      scheduledDate: nextDelivery,
+      status: "scheduled",
+    });
+
+    stripe.invoices.retrieve.mockResolvedValueOnce({
+      id: "in_test_clover_parent_1",
+    });
+    const res = await postStripeEvent({
+      type: "invoice.payment_succeeded",
+      data: {
+        object: {
+          id: "in_test_clover_parent_1",
+          parent: {
+            subscription_details: {
+              subscription: "sub_test_clover_parent_1",
+            },
+          },
+          status_transitions: { paid_at: 1783846800 },
+        },
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(
+      await Order.countDocuments({
+        subscription: subscription._id,
+        stripeInvoiceId: "in_test_clover_parent_1",
+      }),
+    ).toBe(1);
+  });
+
+  it("returns a retryable server error when payment wins the local-create race", async () => {
+    stripe.invoices.retrieve.mockResolvedValueOnce({
+      id: "in_test_create_race_1",
+      subscription: "sub_test_not_saved_yet",
+    });
+    stripe.subscriptions.retrieve = jest.fn(async () => ({
+      id: "sub_test_not_saved_yet",
+      metadata: { subscriptionId: new mongoose.Types.ObjectId().toString() },
+    }));
+
+    const res = await postStripeEvent({
+      type: "invoice.payment_succeeded",
+      data: { object: { id: "in_test_create_race_1" } },
+    });
+
+    expect(res.status).toBe(500);
+    expect(await Order.countDocuments({})).toBe(0);
+  });
+
   it("creates orders for each scheduled slot in the billing window and advances nextDeliveryDate", async () => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
@@ -215,7 +354,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(notice).toBeTruthy();
   });
 
-  it("is idempotent for duplicate invoice.payment_succeeded events", async () => {
+  it("is idempotent for concurrent and retried invoice.payment_succeeded events", async () => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
     const nextDelivery = new Date("2026-07-19T09:00:00.000Z");
@@ -261,17 +400,14 @@ describe("Subscription Stripe webhook E2E", () => {
       },
     };
 
-    const first = await request(app)
-      .post("/api/webhooks/stripe")
-      .set("stripe-signature", "test_sig")
-      .send(eventBody);
-    expect(first.status).toBe(200);
+    const concurrent = await Promise.all([
+      postStripeEvent(eventBody),
+      postStripeEvent(eventBody),
+    ]);
+    expect(concurrent.map((response) => response.status)).toEqual([200, 200]);
 
-    const second = await request(app)
-      .post("/api/webhooks/stripe")
-      .set("stripe-signature", "test_sig")
-      .send(eventBody);
-    expect(second.status).toBe(200);
+    const retry = await postStripeEvent(eventBody);
+    expect(retry.status).toBe(200);
 
     const orders = await Order.find({
       subscription: subscription._id,
@@ -279,6 +415,83 @@ describe("Subscription Stripe webhook E2E", () => {
     }).lean();
 
     expect(orders).toHaveLength(1);
+  });
+
+  it("repairs a partially processed multi-day invoice on retry", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const sunday = new Date("2026-07-12T09:00:00.000Z");
+    const wednesday = new Date("2026-07-15T09:00:00.000Z");
+    const item = buildSubscriptionItem(product, variant, 1);
+    const subscription = await Subscription.create({
+      subscriptionNumber: `SUB-TEST-${crypto.randomUUID().slice(0, 8)}`,
+      customer: customer._id,
+      frequency: "weekly",
+      preferredDeliveryDay: 0,
+      preferredDeliveryDays: [0, 3],
+      nextDeliveryDate: sunday,
+      startDate: new Date("2026-07-01T10:00:00.000Z"),
+      deliveryAddress: {
+        line1: "1 Retry Street",
+        city: "London",
+        postcode: "SW1A 1AA",
+        country: "United Kingdom",
+      },
+      items: [item],
+      status: "active",
+      stripeSubscriptionId: "sub_test_partial_retry_1",
+      stripeProductId: "prod_test_sub",
+      stripePriceId: "price_test_sub",
+    });
+    await SubscriptionDelivery.create([
+      {
+        subscription: subscription._id,
+        customer: customer._id,
+        scheduledDate: sunday,
+      },
+      {
+        subscription: subscription._id,
+        customer: customer._id,
+        scheduledDate: wednesday,
+      },
+    ]);
+    const event = {
+      type: "invoice.payment_succeeded",
+      data: {
+        object: {
+          id: "in_test_partial_retry_1",
+          subscription: "sub_test_partial_retry_1",
+          payment_intent: "pi_test_partial_retry_1",
+          status_transitions: { paid_at: 1783846800 },
+        },
+      },
+    };
+    const originalCreate = Payment.create.bind(Payment);
+    jest
+      .spyOn(Payment, "create")
+      .mockImplementationOnce((...args) => originalCreate(...args))
+      .mockRejectedValueOnce(new Error("transient payment-ledger failure"));
+
+    expect((await postStripeEvent(event)).status).toBe(500);
+    Payment.create.mockRestore();
+    expect((await postStripeEvent(event)).status).toBe(200);
+
+    expect(
+      await Order.countDocuments({
+        subscription: subscription._id,
+        stripeInvoiceId: "in_test_partial_retry_1",
+      }),
+    ).toBe(2);
+    expect(
+      await Payment.countDocuments({
+        subscription: subscription._id,
+        status: "paid",
+      }),
+    ).toBe(2);
+    const stored = await Subscription.findById(subscription._id).lean();
+    expect(new Date(stored.nextDeliveryDate).toISOString()).toBe(
+      new Date("2026-07-19T09:00:00.000Z").toISOString(),
+    );
   });
 
   it("promotes eligible pendingChanges before creating the paid delivery order", async () => {
@@ -507,7 +720,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(orders).toHaveLength(0);
   });
 
-  it("handles unknown local subscription gracefully", async () => {
+  it("asks Stripe to retry when the local subscription is not ready", async () => {
     const res = await postStripeEvent({
       type: "invoice.payment_succeeded",
       data: {
@@ -519,14 +732,14 @@ describe("Subscription Stripe webhook E2E", () => {
       },
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
     const orders = await Order.find({
       stripeInvoiceId: "in_test_unknown_sub_1",
     }).lean();
     expect(orders).toHaveLength(0);
   });
 
-  it("handles missing populated customer gracefully", async () => {
+  it("does not acknowledge fulfillment when the local customer is missing", async () => {
     const { product, variant } = await createProductAndVariant();
     const nextDelivery = new Date("2026-08-23T09:00:00.000Z");
 
@@ -548,7 +761,7 @@ describe("Subscription Stripe webhook E2E", () => {
       },
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(500);
     const orders = await Order.find({
       stripeInvoiceId: "in_test_no_customer_1",
     }).lean();

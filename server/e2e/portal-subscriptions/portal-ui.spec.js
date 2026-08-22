@@ -264,7 +264,7 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
   expect(
     state.stripe.paymentIntents.some(
       (intent) =>
-        intent.status === "succeeded" && Number(intent.amount) === 1000,
+        intent.status === "succeeded" && Number(intent.amount) === 1100,
     ),
   ).toBe(true);
 });

@@ -125,7 +125,6 @@ const TwoFactor: React.FC = () => {
       // success redirect is handled by isAuthenticated effect
     } catch {
       // verify2FA sets context error; toast handled via effect
-    } finally {
     }
   };
 

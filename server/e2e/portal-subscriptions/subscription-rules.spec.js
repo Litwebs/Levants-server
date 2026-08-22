@@ -651,15 +651,19 @@ async function assertRetryRecalculatesEligibility({
   }
 
   if (fixture.cadence === CADENCES.WEEKLY_MULTI_DAY) {
+    // This retry deliberately moves the cut-off across both of the fixture's
+    // first two delivery dates. The earliest delivery that can receive the
+    // staged plan is therefore the following occurrence, not the now-locked
+    // second date.
     expect
       .soft(dayKey(afterRetry.subscription.pendingChanges?.effectiveFrom))
-      .toBe(dayKey(fixture.deliveryDates[1]));
+      .toBe(dayKey(fixture.deliveryDates[2]));
   }
 }
 
 function assertCancellation(rule, fixture, after) {
   const isBefore = rule.family === TEST_FAMILIES.CANCEL_BEFORE;
-  const initialValuePerPaidDelivery = 1_300;
+  const initialValuePerPaidDelivery = 1_400;
   const expectedSettlement = isBefore
     ? initialValuePerPaidDelivery * fixture.paidDeliveryCount
     : fixture.cadence === CADENCES.WEEKLY_MULTI_DAY
@@ -692,7 +696,7 @@ function assertCancellation(rule, fixture, after) {
 
 function assertPause(rule, fixture, after) {
   const isBefore = rule.family === TEST_FAMILIES.PAUSE_BEFORE;
-  const initialValuePerPaidDelivery = 1_300;
+  const initialValuePerPaidDelivery = 1_400;
   const expectedSettlement = isBefore
     ? initialValuePerPaidDelivery * fixture.paidDeliveryCount
     : fixture.cadence === CADENCES.WEEKLY_MULTI_DAY
@@ -750,9 +754,34 @@ function assertResume(fixture, before, after) {
   expect.soft(after.subscription.status).toBe("active");
   expect.soft(after.subscription.pausedAt).toBeNull();
   expect.soft(after.subscription.pausedUntil).toBeNull();
-  expect.soft(dayKey(after.subscription.nextDeliveryDate)).toBe(
-    dayKey(fixture.firstOpenDeliveryDate),
-  );
+  // A real signed initial-invoice webhook may generate every retained slot
+  // while resume is running. In that case getResumeNextDeliveryDate correctly
+  // uses its calculated fallback rather than a retained `scheduled` slot.
+  const nextDeliveryDate = new Date(after.subscription.nextDeliveryDate);
+  const cutoffIsOpen = (deliveryDate) => {
+    const cutoffAt = new Date(deliveryDate);
+    cutoffAt.setDate(cutoffAt.getDate() - 2);
+    cutoffAt.setHours(22, 0, 0, 0);
+    return Date.now() < cutoffAt.getTime();
+  };
+  const earlierEligibleScheduled = after.deliveries
+    .filter((delivery) => delivery.status === "scheduled")
+    .map((delivery) => new Date(delivery.scheduledDate))
+    .filter(
+      (deliveryDate) =>
+        cutoffIsOpen(deliveryDate) && deliveryDate < nextDeliveryDate,
+    );
+  expect.soft(Number.isNaN(nextDeliveryDate.getTime())).toBe(false);
+  expect.soft(fixture.deliveryDays).toContain(nextDeliveryDate.getDay());
+  expect.soft(cutoffIsOpen(nextDeliveryDate)).toBe(true);
+  expect.soft(earlierEligibleScheduled).toHaveLength(0);
+  expect.soft(
+    after.deliveries.some(
+      (delivery) =>
+        dayKey(delivery.scheduledDate) === dayKey(nextDeliveryDate) &&
+        ["scheduled", "generated"].includes(delivery.status),
+    ),
+  ).toBe(true);
   expect.soft(after.stripe.remoteSubscription.pauseCollection).toBeNull();
   expect.soft(successfulIntentSnapshot(after)).toEqual(
     successfulIntentSnapshot(before),

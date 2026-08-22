@@ -1,16 +1,44 @@
-name: Deploy to VPS
+name: Verify and deploy to VPS
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    env:
-      REPO_DIR: ${{ github.event.repository.name }}
+permissions:
+  contents: read
 
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Run backend release suite
+        working-directory: server
+        run: npm run test:release
+
+  client-quality:
+    name: Client lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,14 +50,116 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
-      # Build client on GitHub runner
-      - name: Build client
+      - name: Install client dependencies
         working-directory: client
-        run: |
-          npm ci
-          npm run build
+        run: npm ci
 
-      # Setup SSH (native) — avoids appleboy/ssh-action 504 issues
+      - name: Lint and build the release client
+        working-directory: client
+        run: npm run check:release
+
+      - name: Store the verified client build
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-client-build
+          path: client/build
+          if-no-files-found: error
+          retention-days: 3
+
+  subscription-e2e:
+    name: Subscription E2E (Stripe test mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+      JWT_ACCESS_SECRET: ci-only-subscription-access-secret
+      JWT_REFRESH_SECRET: ci-only-subscription-refresh-secret
+      STRIPE_DEFAULT_CURRENCY: GBP
+      TZ: Europe/London
+      E2E_CLIENT_DIR: ${{ github.workspace }}/portal-client
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Checkout customer portal
+        uses: actions/checkout@v4
+        with:
+          repository: Litwebs/Levants-client
+          token: ${{ secrets.PORTAL_CLIENT_READ_TOKEN }}
+          path: portal-client
+
+      - name: Require Stripe test-mode secrets
+        shell: bash
+        run: |
+          [[ "$STRIPE_SECRET_KEY" == sk_test_* ]]
+          [[ "$STRIPE_PUBLISHABLE_KEY" == pk_test_* ]]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            portal-client/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Install client dependencies
+        working-directory: portal-client
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: server
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Stripe CLI
+        run: |
+          curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor | sudo tee /usr/share/keyrings/stripe.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | sudo tee /etc/apt/sources.list.d/stripe.list
+          sudo apt-get update
+          sudo apt-get install -y stripe
+
+      - name: Run all subscription and signed-webhook E2E tests
+        working-directory: server
+        run: npm run test:e2e:subscriptions:ci
+
+      - name: Store E2E diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: subscription-e2e-diagnostics
+          path: |
+            server/playwright-report
+            server/test-results/playwright
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deploy:
+    name: Deploy verified commit
+    if: github.event_name == 'push'
+    needs:
+      - backend-tests
+      - client-quality
+      - subscription-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    env:
+      REPO_DIR: ${{ github.event.repository.name }}
+
+    steps:
+      - name: Download the verified client build
+        uses: actions/download-artifact@v4
+        with:
+          name: verified-client-build
+          path: client/build
+
       - name: Setup SSH key
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -40,27 +170,30 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p ${{ secrets.VPS_PORT }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      # Run backend deploy (no client build) on VPS
-      - name: SSH into VPS and deploy backend
+      - name: Deploy backend
         run: |
           REPO_URL="https://github.com/${{ github.repository }}.git"
           ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \
-            "cd /root/LWS-Scripts && export SKIP_CLIENT_BUILD=1 && ./05-auto-deploy.sh \"$REPO_URL\""
+            "cd /root/LWS-Scripts && export SKIP_CLIENT_BUILD=1 DEPLOY_SHA=${{ github.sha }} && ./05-auto-deploy.sh \"$REPO_URL\""
 
-      # Upload client build LAST so it isn't overwritten by git operations on the VPS.
+      - name: Verify the exact tested commit was deployed
+        run: |
+          REMOTE_SHA=$(ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} "git -C /root/LWS-Scripts/${REPO_DIR} rev-parse HEAD")
+          test "$REMOTE_SHA" = "${{ github.sha }}"
+
       - name: Prepare VPS build directory
         run: |
           ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \
             "rm -rf /root/LWS-Scripts/${REPO_DIR}/client/build && mkdir -p /root/LWS-Scripts/${REPO_DIR}/client/build"
 
-      - name: Upload client build to VPS
+      - name: Upload verified client build
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: root
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          source: "client/build"
-          target: "/root/LWS-Scripts/${{ github.event.repository.name }}/client"
+          source: client/build
+          target: /root/LWS-Scripts/${{ github.event.repository.name }}/client
           strip_components: 1
           overwrite: true

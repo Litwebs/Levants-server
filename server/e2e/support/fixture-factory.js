@@ -439,17 +439,19 @@ async function replaceDeliverySchedule({
 
     const sourceItems = planForDay(subscription, scheduledDate.getDay());
     const items = orderItems(sourceItems);
-    const total = totalMajor(sourceItems);
+    const subtotal = totalMajor(sourceItems);
+    const deliveryFee = 1;
+    const total = subtotal + deliveryFee;
     const order = await Order.create({
       customer: subscription.customer,
       items,
       currency: "GBP",
-      subtotal: total,
+      subtotal,
       deliveryAddress: subscription.deliveryAddress,
       deliveryDate: scheduledDate,
       customerInstructions: "",
       location: { lat: 51.5074, lng: -0.1278 },
-      deliveryFee: 0,
+      deliveryFee,
       total,
       status: "paid",
       deliveryStatus: "ordered",

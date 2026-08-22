@@ -206,8 +206,8 @@ test("add before cutoff then cancel refunds the combined initial and delta charg
 
   expect(initialIntent).toMatchObject({
     id: fixture.initialPaymentIntentId,
-    amount: 1_300,
-    amountReceived: 1_300,
+    amount: 1_400,
+    amountReceived: 1_400,
     currency: "gbp",
     status: "succeeded",
   });
@@ -220,7 +220,7 @@ test("add before cutoff then cancel refunds the combined initial and delta charg
   });
   expect(quantity(funded.subscription.items, fixture.variants.EGGS.id)).toBe(1);
   expect(funded.orders).toHaveLength(1);
-  expect(Number(funded.orders[0].amountPaid)).toBe(15);
+  expect(Number(funded.orders[0].amountPaid)).toBe(16);
 
   const cancelResponse = await request.post(`${base}/cancel`, {
     headers,
@@ -231,7 +231,7 @@ test("add before cutoff then cancel refunds the combined initial and delta charg
     timeout: 60_000,
   });
   const cancelBody = await expectSuccessfulResponse(cancelResponse);
-  expect(cancelBody.data.refundedMinor).toBe(1_500);
+  expect(cancelBody.data.refundedMinor).toBe(1_600);
 
   const cancelled = await getState(request, fixture.subscriptionId);
   const cancellationRefunds = relevantRefunds(cancelled).filter(
@@ -250,7 +250,7 @@ test("add before cutoff then cancel refunds the combined initial and delta charg
 
   expect(refundedByIntent).toEqual(
     new Map([
-      [fixture.initialPaymentIntentId, 1_300],
+      [fixture.initialPaymentIntentId, 1_400],
       [deltaIntents[0].id, 200],
     ]),
   );
@@ -259,7 +259,7 @@ test("add before cutoff then cancel refunds the combined initial and delta charg
       (total, refund) => total + Number(refund.amount),
       0,
     ),
-  ).toBe(1_500);
+  ).toBe(1_600);
   expect(cancelled.subscription.status).toBe("cancelled");
   expect(cancelled.stripe.remoteSubscription.status).toBe("canceled");
 });
@@ -460,7 +460,7 @@ test("automatic resume charges a delivery whose prior invoice was fully refunded
     resumeRequiresPayment: true,
   });
   const before = await getState(request, fixture.subscriptionId);
-  expect(fixture.resumeRequiredMinor).toBe(1_300);
+  expect(fixture.resumeRequiredMinor).toBe(1_400);
   expect(fixture.resumeFundingRefundId).toMatch(/^re_/);
   expect(
     before.stripe.refunds.some(

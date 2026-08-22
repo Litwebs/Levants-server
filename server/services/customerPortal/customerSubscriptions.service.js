@@ -47,6 +47,15 @@ function normalizeWeekdays(days = []) {
   return [...new Set(cleaned)].sort((a, b) => a - b);
 }
 
+function sameWeekdays(left = [], right = []) {
+  const normalizedLeft = normalizeWeekdays(left);
+  const normalizedRight = normalizeWeekdays(right);
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((day, index) => day === normalizedRight[index])
+  );
+}
+
 function resolveDeliveryDays({
   frequency,
   preferredDeliveryDay,
@@ -377,30 +386,56 @@ function calculateFirstSubscriptionDeliveryDate({
  * Pre-generate upcoming SubscriptionDelivery slots (3 upcoming).
  */
 async function scheduleUpcomingDeliveries(subscription, session) {
-  const slots = [];
+  if (!subscription?.nextDeliveryDate) return;
+
+  const today = startOfDay(new Date());
   let nextDate = new Date(subscription.nextDeliveryDate);
   const deliveryDays = getEffectiveDeliveryDays(subscription);
+  let guard = 0;
 
-  for (let i = 0; i < 3; i++) {
-    // Check if a slot for this date already exists
-    const exists = await SubscriptionDelivery.findOne({
-      subscription: subscription._id,
-      scheduledDate: nextDate,
-    }).session(session || null);
-
-    if (!exists) {
-      slots.push({
-        subscription: subscription._id,
-        customer: subscription.customer,
-        scheduledDate: new Date(nextDate),
-        status: "scheduled",
-      });
-    }
-    nextDate = addFrequencyDays(nextDate, subscription.frequency, deliveryDays);
+  // A missed invoice used to leave nextDeliveryDate in the past forever. Move
+  // the slot-generation cursor forward without discarding the old slots (the
+  // reconciliation/audit path still needs them).
+  while (nextDate < today && guard < 400) {
+    nextDate = addFrequencyDays(
+      nextDate,
+      subscription.frequency,
+      deliveryDays,
+    );
+    guard += 1;
   }
 
-  if (slots.length > 0) {
-    await SubscriptionDelivery.insertMany(slots, { session: session || null });
+  const existingFutureSlots = await SubscriptionDelivery.find({
+    subscription: subscription._id,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: { $gte: today },
+  })
+    .select("scheduledDate")
+    .session(session || null)
+    .lean();
+  const futureDates = new Set(
+    existingFutureSlots.map((slot) => new Date(slot.scheduledDate).getTime()),
+  );
+
+  guard = 0;
+  while (futureDates.size < 3 && guard < 400) {
+    const scheduledDate = new Date(nextDate);
+    const timestamp = scheduledDate.getTime();
+    if (!futureDates.has(timestamp)) {
+      await SubscriptionDelivery.updateOne(
+        { subscription: subscription._id, scheduledDate },
+        {
+          $setOnInsert: {
+            customer: subscription.customer,
+            status: "scheduled",
+          },
+        },
+        { upsert: true, session: session || undefined },
+      );
+      futureDates.add(timestamp);
+    }
+    nextDate = addFrequencyDays(nextDate, subscription.frequency, deliveryDays);
+    guard += 1;
   }
 }
 
@@ -1729,32 +1764,11 @@ async function CreateSubscription({
   // pre-pays the upcoming delivery, so a real payment exists to refund against
   // if the customer reduces the order before the cut-off. `error_if_incomplete`
   // ensures we don't create a subscription unless that first payment succeeds.
-  let stripeSub;
-  try {
-    stripeSub = await stripe.subscriptions.create({
-      customer: customer.stripeCustomerId,
-      items: [{ price: stripePrice.id }],
-      default_payment_method: defaultPmId,
-      payment_behavior: "error_if_incomplete",
-      metadata: {
-        customerId: String(customer._id),
-      },
-    });
-  } catch (err) {
-    // Tidy up the Stripe price we created for this failed attempt.
-    try {
-      await stripe.prices.update(stripePrice.id, { active: false });
-    } catch {
-      // Non-fatal
-    }
-    return Response(
-      false,
-      err?.message || "We couldn't take payment for your subscription",
-      null,
-    );
-  }
-
-  const subscription = await Subscription.create({
+  // Reserve the local identity before contacting Stripe and include it in the
+  // remote metadata. If an invoice webhook wins the race with the DB save, the
+  // handler can identify this subscription and return a retryable error instead
+  // of acknowledging and permanently losing the fulfillment event.
+  const subscription = new Subscription({
     customer: customer._id,
     frequency,
     preferredDeliveryDay: resolvedDays.primaryDay,
@@ -1777,10 +1791,46 @@ async function CreateSubscription({
     deliveryDayPlans: resolvedDayPlans,
     notes: notes || null,
     status: "active",
-    stripeSubscriptionId: stripeSub.id,
     stripeProductId: stripeProduct.id,
     stripePriceId: stripePrice.id,
   });
+  await subscription.validate();
+
+  let stripeSub;
+  try {
+    stripeSub = await stripe.subscriptions.create({
+      customer: customer.stripeCustomerId,
+      items: [{ price: stripePrice.id }],
+      default_payment_method: defaultPmId,
+      payment_behavior: "error_if_incomplete",
+      expand: ["latest_invoice.payment_intent"],
+      metadata: {
+        customerId: String(customer._id),
+        subscriptionId: String(subscription._id),
+        subscriptionNumber: subscription.subscriptionNumber,
+      },
+    });
+  } catch (err) {
+    // Tidy up the Stripe price we created for this failed attempt.
+    try {
+      await stripe.prices.update(stripePrice.id, { active: false });
+    } catch {
+      // Non-fatal
+    }
+    try {
+      await stripe.products.update(stripeProduct.id, { active: false });
+    } catch {
+      // Non-fatal
+    }
+    return Response(
+      false,
+      err?.message || "We couldn't take payment for your subscription",
+      null,
+    );
+  }
+
+  subscription.stripeSubscriptionId = stripeSub.id;
+  await subscription.save();
 
   // Back-fill metadata with our local subscription ID
   await stripe.subscriptions.update(stripeSub.id, {
@@ -1792,6 +1842,27 @@ async function CreateSubscription({
   });
 
   await scheduleUpcomingDeliveries(subscription);
+
+  // Do not depend exclusively on asynchronous webhook delivery for the first
+  // fulfillment order. Stripe has already taken payment at this point, so
+  // process the expanded paid invoice synchronously as an idempotent fallback.
+  const initialInvoice =
+    stripeSub.latest_invoice && typeof stripeSub.latest_invoice === "object"
+      ? stripeSub.latest_invoice
+      : null;
+  if (initialInvoice?.paid || initialInvoice?.status === "paid") {
+    try {
+      const {
+        HandleSubscriptionInvoicePaid,
+      } = require("../subscriptions/subscriptionWebhook.service");
+      await HandleSubscriptionInvoicePaid(initialInvoice);
+    } catch (err) {
+      console.error(
+        `[CreateSubscription] Paid initial invoice ${initialInvoice.id} could not be fulfilled immediately:`,
+        err,
+      );
+    }
+  }
 
   await CustomerNotification.create({
     customer: customer._id,
@@ -1965,10 +2036,17 @@ async function UpdateSubscription({
   }
 
   const { isPastCutoff } = await getCutoffStatus(subscription);
+  const currentResolvedDays = resolveDeliveryDays({
+    frequency: subscription.frequency,
+    preferredDeliveryDay: subscription.preferredDeliveryDay,
+    preferredDeliveryDays: subscription.preferredDeliveryDays,
+  });
   const scheduleChangeRequested =
-    frequency !== undefined ||
-    preferredDeliveryDay !== undefined ||
-    preferredDeliveryDays !== undefined;
+    targetFrequency !== subscription.frequency ||
+    !sameWeekdays(
+      resolvedDays.days,
+      currentResolvedDays.ok ? currentResolvedDays.days : [],
+    );
 
   const dayPlanChangeRequested = deliveryDayPlans !== undefined;
   const shouldUseDayPlans =
@@ -2369,12 +2447,6 @@ async function UpdateSubscription({
     }
   }
 
-  const currentResolvedDays = resolveDeliveryDays({
-    frequency: subscription.frequency,
-    preferredDeliveryDay: subscription.preferredDeliveryDay,
-    preferredDeliveryDays: subscription.preferredDeliveryDays,
-  });
-
   const removedDeliveryDays =
     !dayPlanChangeRequested &&
     scheduleChangeRequested &&
@@ -2503,6 +2575,16 @@ async function UpdateSubscription({
         getEffectiveDeliveryDays(subscription),
       )
     : null;
+  const stagedDayPlanEffectiveFrom =
+    dayPlanChangeRequested && lockedChangedDeliveryDays.length > 0
+      ? calculateFirstSubscriptionDeliveryDate({
+          frequency: targetFrequency,
+          preferredDeliveryDay: lockedChangedDeliveryDays[0],
+          preferredDeliveryDays: lockedChangedDeliveryDays,
+          referenceDate: new Date(),
+          settings,
+        })
+      : effectiveFromDate;
   let shouldSyncStripePrice = false;
 
   if (scheduleChangeRequested) {
@@ -2525,7 +2607,7 @@ async function UpdateSubscription({
         : {}),
       items: resolvedSubscriptionItems,
       deliveryDayPlans: resolvedDeliveryDayPlans,
-      effectiveFrom: effectiveFromDate,
+      effectiveFrom: stagedDayPlanEffectiveFrom,
     };
   }
 
@@ -2590,8 +2672,43 @@ async function UpdateSubscription({
       .sort({ deliveryDate: 1 })
       .exec();
 
+    const selectedDaySet = new Set(resolvedDays.days.map(Number));
+    const occupiedDates = new Set(
+      openOrders
+        .filter((order) => {
+          if (!order.deliveryDate) return false;
+          const orderDay = new Date(order.deliveryDate).getDay();
+          const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
+          const isLocked = cutoffAt
+            ? now.getTime() >= cutoffAt.getTime()
+            : false;
+          return selectedDaySet.has(orderDay) || isLocked;
+        })
+        .map((order) => deliveryDateKey(order.deliveryDate)),
+    );
+    const ordersToReschedule = openOrders.filter((order) => {
+      if (!order.deliveryDate) return false;
+      if (selectedDaySet.has(new Date(order.deliveryDate).getDay())) {
+        return false;
+      }
+      const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
+      return cutoffAt ? now.getTime() < cutoffAt.getTime() : true;
+    });
+
     let scheduledDate = new Date(nextDeliveryDate);
-    for (const order of openOrders) {
+    for (const order of ordersToReschedule) {
+      let collisionGuard = 0;
+      while (
+        occupiedDates.has(deliveryDateKey(scheduledDate)) &&
+        collisionGuard < 100
+      ) {
+        scheduledDate = addFrequencyDays(
+          scheduledDate,
+          subscription.frequency,
+          resolvedDays.days,
+        );
+        collisionGuard += 1;
+      }
       order.deliveryDate = scheduledDate;
       await order.save();
       await SubscriptionDelivery.updateMany(
@@ -2602,6 +2719,7 @@ async function UpdateSubscription({
         },
         { $set: { scheduledDate } },
       );
+      occupiedDates.add(deliveryDateKey(scheduledDate));
       scheduledDate = addFrequencyDays(
         scheduledDate,
         subscription.frequency,
@@ -2617,8 +2735,8 @@ async function UpdateSubscription({
     });
     await scheduleUpcomingDeliveries(subscription);
 
-    if (openOrders.length > 0) {
-      updateMessage += ` (${openOrders.length} order${openOrders.length > 1 ? "s" : ""} rescheduled to the next eligible delivery date)`;
+    if (ordersToReschedule.length > 0) {
+      updateMessage += ` (${ordersToReschedule.length} order${ordersToReschedule.length > 1 ? "s" : ""} rescheduled to the next eligible delivery date)`;
     }
   }
 

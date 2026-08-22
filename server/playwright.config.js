@@ -7,6 +7,9 @@ const {
   CLIENT_ORIGIN,
   CONTROL_ORIGIN,
 } = require("./e2e/support/constants");
+const portalClientRoot = process.env.E2E_CLIENT_DIR
+  ? path.resolve(process.env.E2E_CLIENT_DIR)
+  : path.resolve(__dirname, "../../Levants-client");
 
 module.exports = defineConfig({
   testDir: "./e2e/portal-subscriptions",
@@ -43,7 +46,7 @@ module.exports = defineConfig({
     },
     {
       command: "npm run dev -- --host 127.0.0.1 --port 4173",
-      cwd: path.resolve(__dirname, "../../Levants-client"),
+      cwd: portalClientRoot,
       url: CLIENT_ORIGIN,
       timeout: 120_000,
       reuseExistingServer: false,

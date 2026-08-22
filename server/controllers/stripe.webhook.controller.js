@@ -76,45 +76,30 @@ const HandleStripeWebhook = async (req, res) => {
 
     // ── Stripe Subscription billing events ──────────────────────────────────
     case "invoice.payment_succeeded":
-      try {
-        await subscriptionWebhookService.HandleSubscriptionInvoicePaid(
-          event.data.object,
-        );
-      } catch (err) {
-        // Log but don't fail — Stripe will retry on 5xx only
-        console.error("[Webhook] invoice.payment_succeeded error:", err);
-        return res.json({ received: true });
-      }
+      // Let processing errors return 5xx. Acknowledging a failed fulfillment
+      // event makes Stripe consider it delivered and permanently loses the
+      // order; a non-2xx response gives us a safe, idempotent retry.
+      await subscriptionWebhookService.HandleSubscriptionInvoicePaid(
+        event.data.object,
+      );
       break;
 
     case "invoice.payment_failed":
-      try {
-        await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(
-          event.data.object,
-        );
-      } catch (err) {
-        return res.json({ received: true });
-      }
+      await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(
+        event.data.object,
+      );
       break;
 
     case "customer.subscription.updated":
-      try {
-        await subscriptionWebhookService.HandleStripeSubscriptionUpdated(
-          event.data.object,
-        );
-      } catch (err) {
-        return res.json({ received: true });
-      }
+      await subscriptionWebhookService.HandleStripeSubscriptionUpdated(
+        event.data.object,
+      );
       break;
 
     case "customer.subscription.deleted":
-      try {
-        await subscriptionWebhookService.HandleStripeSubscriptionDeleted(
-          event.data.object,
-        );
-      } catch (err) {
-        return res.json({ received: true });
-      }
+      await subscriptionWebhookService.HandleStripeSubscriptionDeleted(
+        event.data.object,
+      );
       break;
 
     default:

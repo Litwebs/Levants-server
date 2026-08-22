@@ -15,6 +15,10 @@ function buildPaymentVisibilityQuery({
   requestedStatuses,
   normalizedOrderSource,
 } = {}) {
+  const visibleWebsiteStatuses = requestedStatuses.filter(
+    (status) => status !== "pending" && status !== "unpaid",
+  );
+
   if (normalizedOrderSource === "imported") {
     return {
       status: {
@@ -27,7 +31,7 @@ function buildPaymentVisibilityQuery({
   if (normalizedOrderSource === "website") {
     return {
       status: {
-        $in: requestedStatuses,
+        $in: visibleWebsiteStatuses,
       },
       "metadata.manualImport": { $ne: true },
     };
@@ -40,7 +44,7 @@ function buildPaymentVisibilityQuery({
         "metadata.manualImport": true,
       },
       {
-        status: { $in: requestedStatuses },
+        status: { $in: visibleWebsiteStatuses },
         "metadata.manualImport": { $ne: true },
       },
     ],

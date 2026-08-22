@@ -6,11 +6,11 @@ const { createPortalCustomer, loginPortalCustomer } = require("./helpers");
 
 describe("Portal Addresses", () => {
   let accessToken;
-  let customerId;
+  let customer;
 
   beforeEach(async () => {
     const creds = await createPortalCustomer();
-    customerId = creds.customer._id.toString();
+    customer = creds.customer;
     const auth = await loginPortalCustomer(creds);
     accessToken = auth.accessToken;
   });
@@ -30,8 +30,8 @@ describe("Portal Addresses", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
         line1: "10 New Street",
-        city: "Manchester",
-        postcode: "M1 1AA",
+        city: "Bradford",
+        postcode: "BD1 1AA",
         country: "United Kingdom",
         isDefault: false,
       });
@@ -40,7 +40,24 @@ describe("Portal Addresses", () => {
     expect(res.body.data.address.line1).toBe("10 New Street");
   });
 
+  it("rejects an address outside the delivery area", async () => {
+    const res = await request(app)
+      .post("/api/portal/addresses")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        line1: "10 New Street",
+        city: "Manchester",
+        postcode: "M1 1AA",
+        country: "United Kingdom",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/do not currently deliver/i);
+  });
+
   it("cannot access another customer's addresses", async () => {
+    customer.addresses[0].line1 = "Private First Customer Address";
+    await customer.save();
     const other = await createPortalCustomer();
     const otherAuth = await loginPortalCustomer(other);
 
@@ -52,8 +69,10 @@ describe("Portal Addresses", () => {
 
     // Should only return their own addresses, not another customer's
     expect(res.status).toBe(200);
-    const ids = (res.body.data.addresses ?? []).map((a: any) => a._id);
-    // If the other customer has no overlapping addresses with customer 1 this passes
-    expect(typeof ids).toBe("object");
+    const lines = (res.body.data.addresses ?? []).map(
+      (address) => address.line1,
+    );
+    expect(lines).toContain("1 Test Street");
+    expect(lines).not.toContain("Private First Customer Address");
   });
 });

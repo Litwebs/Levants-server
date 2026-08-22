@@ -17,9 +17,15 @@ function readSourceEnvironment() {
     : path.join(SERVER_ROOT, ".env");
 
   if (!fs.existsSync(envPath)) {
+    if (
+      process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_") &&
+      process.env.STRIPE_PUBLISHABLE_KEY?.startsWith("pk_test_")
+    ) {
+      return {};
+    }
     throw new Error(
       `Real-Stripe E2E requires an env file at ${envPath}. ` +
-        "Set E2E_ENV_FILE to use a different test-only file.",
+        "Set E2E_ENV_FILE or export both Stripe test-mode keys.",
     );
   }
 

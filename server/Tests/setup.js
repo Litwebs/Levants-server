@@ -1,15 +1,24 @@
+process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_123";
+// Unit/integration tests capture or mock outbound email. Supplying an explicit
+// non-live key keeps the Resend SDK from rejecting module initialization in a
+// clean CI environment without granting tests access to production email.
+process.env.RESEND_EMAIL_KEY =
+  process.env.RESEND_EMAIL_KEY || "re_test_never_send";
+process.env.FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV || "localhost:3000";
+process.env.CLIENT_FRONT_URL_DEV =
+  process.env.CLIENT_FRONT_URL_DEV || process.env.FRONTEND_URL_DEV;
+
 const mongoose = require("mongoose");
 const { MongoMemoryReplSet } = require("mongodb-memory-server");
 const { seedDefaultRoles } = require("../scripts/seedDefaultRoles"); // ✅ ADD
 const { seedBusinessInfo } = require("../scripts/seedBusinessInfo"); // ✅ ADD
 
-process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_123";
-process.env.FRONTEND_URL_DEV = process.env.FRONTEND_URL_DEV || "localhost:3000";
-process.env.CLIENT_FRONT_URL_DEV =
-  process.env.CLIENT_FRONT_URL_DEV || process.env.FRONTEND_URL_DEV;
-
 // Keep test output clean (opt-out by setting JEST_SHOW_CONSOLE=1)
 const showConsole = process.env.JEST_SHOW_CONSOLE === "1";
+
+// Starting a replica set and building every unique index can exceed Jest's
+// five-second default on CI or a busy development machine.
+jest.setTimeout(30_000);
 
 jest.mock("stripe", () => {
   return jest.fn(() => ({
@@ -70,6 +79,10 @@ jest.mock("stripe", () => {
     },
     invoices: {
       retrieve: jest.fn(async (id) => ({ id })),
+      list: jest.fn(async () => ({ data: [] })),
+    },
+    webhookEndpoints: {
+      list: jest.fn(async () => ({ data: [] })),
     },
     subscriptions: {
       update: jest.fn(async (id) => ({ id })),
@@ -132,12 +145,15 @@ beforeAll(async () => {
     require("../models/session.model").init(),
     require("../models/passwordResetToken.model").init(),
     require("../models/customer.model").init(),
+    require("../models/category.model").init(),
     require("../models/product.model").init(),
     require("../models/variant.model").init(),
     require("../models/discount.model").init(),
     require("../models/discountRedemption.model").init(),
     require("../models/order.model").init(),
     require("../models/subscription.model").init(),
+    require("../models/subscriptionDelivery.model").init(),
+    require("../models/payment.model").init(),
     require("../models/broadcast.model").init(),
     require("../models/deliveryBatch.model").init(),
     require("../models/route.model").init(),

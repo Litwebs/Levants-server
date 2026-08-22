@@ -17,6 +17,10 @@ const {
   FinalizeScheduledCancellations,
   scheduleUpcomingDeliveries,
 } = require("../services/customerPortal/customerSubscriptions.service");
+const {
+  ReconcileRecentPaidSubscriptionInvoices,
+  VerifySubscriptionWebhookConfiguration,
+} = require("../services/subscriptions/subscriptionWebhook.service");
 
 /**
  * ScheduleUpcomingSlots
@@ -25,6 +29,7 @@ const {
  * pre-created in the SubscriptionDelivery collection (for UI visibility).
  */
 async function ScheduleUpcomingSlots() {
+  const reconciliation = await ReconcileRecentPaidSubscriptionInvoices();
   const finalized = await FinalizeScheduledCancellations();
   const resumed = await AutoResumePausedSubscriptions();
   const subscriptions = await Subscription.find({
@@ -45,21 +50,34 @@ async function ScheduleUpcomingSlots() {
   }
 
   logger.info(
-    `[SubscriptionCron] Finalized ${finalized} cancellations, auto-resumed ${resumed} paused subscriptions, and scheduled upcoming slots for ${scheduled} subscriptions`,
+    `[SubscriptionCron] Reconciled ${reconciliation.reconciled} missed invoices, finalized ${finalized} cancellations, auto-resumed ${resumed} paused subscriptions, and scheduled upcoming slots for ${scheduled} subscriptions`,
   );
 }
 
 function startSubscriptionGenerationCron() {
+  // Pull-based safety net: an endpoint configuration mistake or a transient
+  // delivery failure must not silently separate billing from fulfillment.
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      await ReconcileRecentPaidSubscriptionInvoices();
+    } catch (err) {
+      logger.error("[SubscriptionCron] Invoice reconciliation failed", err);
+    }
+  });
+
   // Run once daily at 06:00 to pre-schedule upcoming delivery slots
   cron.schedule("0 6 * * *", async () => {
     try {
+      await VerifySubscriptionWebhookConfiguration();
       await ScheduleUpcomingSlots();
     } catch (err) {
       logger.error("[SubscriptionCron] Slot scheduling cron failed", err);
     }
   });
 
-  logger.cron("Subscription slot scheduling (daily 06:00)");
+  logger.cron(
+    "Subscription invoice reconciliation (15 min) and slot scheduling (daily 06:00)",
+  );
 }
 
 module.exports = {

@@ -248,15 +248,15 @@ test.describe("real Stripe-signed subscription invoice webhooks", () => {
       deliveryStatus: "ordered",
       orderType: "subscription_generated",
       subscription: subscription._id,
-      total: 10,
-      amountPaid: 10,
+      total: 11,
+      amountPaid: 11,
     });
     expect(orderItems(order.items)).toEqual(expectedItems(requestedItems, fixture));
     expect(localWeekday(order.deliveryDate)).toBe(fixture.deliveryDays[0]);
     expect(id(delivery.order)).toBe(id(order._id));
     expect(localWeekday(delivery.scheduledDate)).toBe(fixture.deliveryDays[0]);
 
-    const invoiceId = expectRealInvoiceLinkage(state, [order], 1_000);
+    const invoiceId = expectRealInvoiceLinkage(state, [order], 1_100);
     expect(order.stripeInvoiceId).toBe(invoiceId);
   });
 
@@ -329,12 +329,12 @@ test.describe("real Stripe-signed subscription invoice webhooks", () => {
         expectedPlanItems.reduce(
           (total, item) => total + item.unitPrice * item.quantity,
           0,
-        ),
+        ) + 1,
       );
       expect(Number(order.amountPaid)).toBe(Number(order.total));
     }
 
-    const invoiceId = expectRealInvoiceLinkage(state, state.orders, 1_500);
+    const invoiceId = expectRealInvoiceLinkage(state, state.orders, 1_700);
     expect(
       state.orders.every((order) => order.stripeInvoiceId === invoiceId),
     ).toBe(true);
