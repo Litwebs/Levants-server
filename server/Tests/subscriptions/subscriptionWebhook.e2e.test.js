@@ -647,7 +647,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(updated.pausedAt).toBeTruthy();
   });
 
-  it("pauses subscription on payment_failed; order still created if invoice later succeeds", async () => {
+  it("reactivates a payment-failure pause when the invoice retry succeeds", async () => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
     const nextDelivery = new Date("2026-08-16T09:00:00.000Z");
@@ -679,6 +679,7 @@ describe("Subscription Stripe webhook E2E", () => {
 
     const paused = await Subscription.findById(subscription._id).lean();
     expect(paused.status).toBe("paused");
+    expect(paused.pauseReason).toBe("payment_failed");
 
     // If Stripe fires invoice.payment_succeeded (e.g. manual payment capture), an
     // order is still created so the delivery is fulfilled.
@@ -700,6 +701,62 @@ describe("Subscription Stripe webhook E2E", () => {
       stripeInvoiceId: "in_test_retry_1",
     }).lean();
     expect(order).toBeTruthy();
+
+    const recovered = await Subscription.findById(subscription._id).lean();
+    expect(recovered.status).toBe("active");
+    expect(recovered.pausedAt).toBeNull();
+    expect(recovered.pausedUntil).toBeNull();
+    expect(recovered.pauseReason).toBeNull();
+    expect(stripe.subscriptions.update).toHaveBeenLastCalledWith(
+      "sub_test_webhook_retry_success_1",
+      { pause_collection: "" },
+    );
+  });
+
+  it("does not reactivate an intentional pause when an invoice is paid", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date("2026-08-16T09:00:00.000Z");
+    const pausedUntil = new Date("2026-08-30T09:00:00.000Z");
+
+    const subscription = await createSubscriptionFixture({
+      customer: customer._id,
+      stripeSubscriptionId: "sub_test_intentional_pause_paid_1",
+      nextDeliveryDate: nextDelivery,
+      items: [buildSubscriptionItem(product, variant, 1)],
+      status: "paused",
+    });
+    subscription.pausedAt = new Date("2026-08-01T09:00:00.000Z");
+    subscription.pausedUntil = pausedUntil;
+    subscription.pauseReason = "customer";
+    await subscription.save();
+
+    await SubscriptionDelivery.create({
+      subscription: subscription._id,
+      customer: customer._id,
+      scheduledDate: nextDelivery,
+      status: "scheduled",
+    });
+
+    const success = await postStripeEvent({
+      type: "invoice.payment_succeeded",
+      data: {
+        object: {
+          id: "in_test_intentional_pause_paid_1",
+          subscription: "sub_test_intentional_pause_paid_1",
+          payment_intent: "pi_test_intentional_pause_paid_1",
+        },
+      },
+    });
+    expect(success.status).toBe(200);
+
+    const stillPaused = await Subscription.findById(subscription._id).lean();
+    expect(stillPaused.status).toBe("paused");
+    expect(stillPaused.pauseReason).toBe("customer");
+    expect(new Date(stillPaused.pausedUntil).toISOString()).toBe(
+      pausedUntil.toISOString(),
+    );
+    expect(stripe.subscriptions.update).not.toHaveBeenCalled();
   });
 
   it("ignores invoice.payment_succeeded without subscription id", async () => {

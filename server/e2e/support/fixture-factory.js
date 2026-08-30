@@ -16,6 +16,7 @@ const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const passwordUtil = require("../../utils/password.util");
 const stripe = require("../../utils/stripe.util");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
+const { API_ORIGIN } = require("./constants");
 
 const SUCCESS_METHOD = "pm_card_visa";
 const DECLINING_METHOD = "pm_card_chargeCustomerFail";
@@ -744,6 +745,75 @@ async function setPaymentOutcome(subscriptionId, outcome) {
   return { outcome, paymentMethodId: attachedPaymentMethodId };
 }
 
+async function preparePaymentRetry(subscriptionId) {
+  const fixture = tracked.fixtures.get(String(subscriptionId));
+  if (!fixture) throw new Error("Unknown E2E subscription fixture");
+
+  const subscription = await Subscription.findById(subscriptionId);
+  const delivery = await SubscriptionDelivery.findOne({
+    subscription: subscriptionId,
+    status: "scheduled",
+  }).sort({ scheduledDate: 1 });
+  if (!subscription || !delivery) {
+    throw new Error("Payment-retry fixture requires a scheduled delivery");
+  }
+
+  subscription.nextDeliveryDate = delivery.scheduledDate;
+  await subscription.save();
+
+  return {
+    invoiceId: `in_e2e_retry_${fixture.scenarioId.replace(/[^a-z0-9]/gi, "")}`,
+    deliveryDate: delivery.scheduledDate,
+  };
+}
+
+async function deliverSignedInvoiceEvent(subscriptionId, type, invoiceId) {
+  const fixture = tracked.fixtures.get(String(subscriptionId));
+  if (!fixture) throw new Error("Unknown E2E subscription fixture");
+  if (!["invoice.payment_failed", "invoice.payment_succeeded"].includes(type)) {
+    throw new Error(`Unsupported E2E invoice event ${type}`);
+  }
+
+  const payload = JSON.stringify({
+    id: `evt_e2e_${crypto.randomUUID().replace(/-/g, "")}`,
+    object: "event",
+    type,
+    data: {
+      object: {
+        id: invoiceId,
+        object: "invoice",
+        subscription: fixture.stripeSubscriptionId,
+        currency: "gbp",
+        ...(type === "invoice.payment_succeeded"
+          ? {
+              payment_intent: `pi_e2e_retry_${fixture.scenarioId.replace(/[^a-z0-9]/gi, "")}`,
+              status_transitions: { paid_at: Math.floor(Date.now() / 1000) },
+            }
+          : {}),
+      },
+    },
+  });
+  const signature = stripe.webhooks.generateTestHeaderString({
+    payload,
+    secret: process.env.STRIPE_WEBHOOK_SECRET,
+  });
+  const response = await fetch(`${API_ORIGIN}/api/webhooks/stripe`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": signature,
+    },
+    body: payload,
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Signed ${type} delivery failed (${response.status}): ${await response.text()}`,
+    );
+  }
+
+  return { delivered: true, type, invoiceId };
+}
+
 async function crossCutoff(subscriptionId) {
   const fixture = tracked.fixtures.get(String(subscriptionId));
   if (!fixture) throw new Error("Unknown E2E subscription fixture");
@@ -885,8 +955,10 @@ module.exports = {
   autoResume,
   createFixture,
   crossCutoff,
+  deliverSignedInvoiceEvent,
   finalizeCancellation,
   getState,
+  preparePaymentRetry,
   reset,
   setPaymentOutcome,
 };

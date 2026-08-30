@@ -4,9 +4,11 @@ const { test, expect } = require("@playwright/test");
 const {
   API_ORIGIN,
   createFixture,
+  deliverSignedInvoiceEvent,
   getState,
   login,
   portalHeaders,
+  preparePaymentRetry,
   reset,
 } = require("../support/e2e-client");
 
@@ -348,5 +350,88 @@ test.describe("real Stripe-signed subscription invoice webhooks", () => {
         orderIds.has(id(delivery.order)),
       ),
     ).toBe(true);
+  });
+
+  test("a successful invoice retry reactivates a payment-failure pause and creates the paid order", async ({
+    request,
+  }) => {
+    const fixture = await createFixture(request, {
+      cadence: "weekly-single-day",
+      timing: "before-cutoff",
+    });
+    const retry = await preparePaymentRetry(request, fixture.subscriptionId);
+    const before = await getState(request, fixture.subscriptionId);
+
+    await deliverSignedInvoiceEvent(
+      request,
+      fixture.subscriptionId,
+      "invoice.payment_failed",
+      retry.invoiceId,
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const state = await getState(request, fixture.subscriptionId);
+          return {
+            status: state.subscription.status,
+            pauseReason: state.subscription.pauseReason,
+            stripePauseBehavior:
+              state.stripe.remoteSubscription.pauseCollection?.behavior || null,
+            orderCount: state.orders.length,
+          };
+        },
+        { message: "The failed invoice did not pause local and Stripe billing" },
+      )
+      .toEqual({
+        status: "paused",
+        pauseReason: "payment_failed",
+        stripePauseBehavior: "void",
+        orderCount: before.orders.length,
+      });
+
+    await deliverSignedInvoiceEvent(
+      request,
+      fixture.subscriptionId,
+      "invoice.payment_succeeded",
+      retry.invoiceId,
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const state = await getState(request, fixture.subscriptionId);
+          const retryOrders = state.orders.filter(
+            (order) => order.stripeInvoiceId === retry.invoiceId,
+          );
+          return {
+            status: state.subscription.status,
+            pauseReason: state.subscription.pauseReason,
+            pausedAt: state.subscription.pausedAt,
+            pausedUntil: state.subscription.pausedUntil,
+            stripePause: state.stripe.remoteSubscription.pauseCollection,
+            orderCount: state.orders.length,
+            retryOrderCount: retryOrders.length,
+            retryOrderStatus: retryOrders[0]?.status || null,
+            retryOrderDeliveryDate: retryOrders[0]?.deliveryDate || null,
+          };
+        },
+        {
+          timeout: 30_000,
+          message:
+            "The successful retry did not restore the subscription and fulfillment state",
+        },
+      )
+      .toEqual({
+        status: "active",
+        pauseReason: null,
+        pausedAt: null,
+        pausedUntil: null,
+        stripePause: null,
+        orderCount: before.orders.length + 1,
+        retryOrderCount: 1,
+        retryOrderStatus: "paid",
+        retryOrderDeliveryDate: new Date(retry.deliveryDate).toISOString(),
+      });
   });
 });

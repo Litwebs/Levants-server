@@ -78,6 +78,22 @@ function createControlApp() {
     ),
   );
   app.post(
+    "/state/:subscriptionId/payment-retry/prepare",
+    asyncRoute((req) =>
+      fixtures.preparePaymentRetry(req.params.subscriptionId),
+    ),
+  );
+  app.post(
+    "/state/:subscriptionId/payment-retry/event",
+    asyncRoute((req) =>
+      fixtures.deliverSignedInvoiceEvent(
+        req.params.subscriptionId,
+        req.body?.type,
+        req.body?.invoiceId,
+      ),
+    ),
+  );
+  app.post(
     "/state/:subscriptionId/cross-cutoff",
     asyncRoute((req) => fixtures.crossCutoff(req.params.subscriptionId)),
   );
