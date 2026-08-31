@@ -758,6 +758,7 @@ async function activatePausedSubscription(
   subscription.status = "active";
   subscription.pausedAt = null;
   subscription.pausedUntil = null;
+  subscription.pauseReason = null;
   subscription.nextDeliveryDate = nextDeliveryDate;
   await subscription.save();
 
@@ -3018,6 +3019,7 @@ async function PauseSubscription({
   subscription.status = "paused";
   subscription.pausedAt = new Date();
   subscription.pausedUntil = pauseResume.resumeDate;
+  subscription.pauseReason = "customer";
   await subscription.save();
 
   await SubscriptionDelivery.updateMany(

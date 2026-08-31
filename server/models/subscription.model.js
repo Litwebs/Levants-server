@@ -189,6 +189,15 @@ const subscriptionSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Identifies who/what paused the subscription. A successful Stripe retry
+    // may automatically recover payment-failure pauses, but must not override
+    // a pause intentionally requested by a customer or applied in Stripe.
+    pauseReason: {
+      type: String,
+      enum: ["customer", "payment_failed", "stripe"],
+      default: null,
+    },
+
     cancelledAt: {
       type: Date,
       default: null,

@@ -134,6 +134,15 @@ function addBillingWindowDays(date, frequency) {
   return next;
 }
 
+function isPaymentFailurePause(subscription) {
+  if (subscription.status !== "paused") return false;
+  if (subscription.pauseReason === "payment_failed") return true;
+
+  // Payment-failure pauses created before pauseReason was introduced have no
+  // resume date. Customer/admin pauses always have a bounded pausedUntil date.
+  return !subscription.pauseReason && !subscription.pausedUntil;
+}
+
 function resolveOrderItemsForDelivery(subscription, deliveryDate) {
   const deliveryWeekday = new Date(deliveryDate).getDay();
   const dayPlan = Array.isArray(subscription.deliveryDayPlans)
@@ -408,6 +417,24 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     subscription.nextDeliveryDate = billingWindowEnd;
   }
 
+  // A successful retry settles the debt that caused this specific pause. Clear
+  // Stripe's future-invoice pause and reactivate locally. Deliberate customer
+  // pauses are left untouched even if an outstanding invoice is later paid.
+  if (isPaymentFailurePause(subscription)) {
+    if (subscription.stripeSubscriptionId) {
+      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+        pause_collection: "",
+      });
+    }
+    subscription.status = "active";
+    subscription.pausedAt = null;
+    subscription.pausedUntil = null;
+    subscription.pauseReason = null;
+    logger.info(
+      `[SubscriptionWebhook] Reactivated subscription ${subscription.subscriptionNumber} after invoice ${invoice.id} recovered`,
+    );
+  }
+
   // Safety net: if a deferred price sync was ever queued, apply it now so
   // future deliveries bill the new amount.
   if (subscription.pendingPriceSync) {
@@ -478,6 +505,7 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
 
     subscription.status = "paused";
     subscription.pausedAt = subscription.pausedAt || new Date();
+    subscription.pauseReason = "payment_failed";
     await subscription.save();
   }
 
@@ -539,12 +567,15 @@ async function HandleStripeSubscriptionUpdated(stripeSub) {
     if (subscription.status !== "paused") {
       subscription.status = "paused";
       subscription.pausedAt = subscription.pausedAt || new Date();
+      subscription.pauseReason = subscription.pauseReason || "stripe";
       changed = true;
     }
   } else if (stripeSub.status === "active" || stripeSub.status === "trialing") {
     if (subscription.status === "paused") {
       subscription.status = "active";
       subscription.pausedAt = null;
+      subscription.pausedUntil = null;
+      subscription.pauseReason = null;
       changed = true;
     }
   }

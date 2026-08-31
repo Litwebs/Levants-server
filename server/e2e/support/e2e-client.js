@@ -76,6 +76,31 @@ async function setPaymentOutcome(request, subscriptionId, outcome) {
   return responseJson(response, "Stripe payment-method switch");
 }
 
+async function preparePaymentRetry(request, subscriptionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/payment-retry/prepare`,
+    { headers: controlHeaders },
+  );
+  return responseJson(response, "Payment-retry preparation");
+}
+
+async function deliverSignedInvoiceEvent(
+  request,
+  subscriptionId,
+  type,
+  invoiceId,
+) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/payment-retry/event`,
+    {
+      headers: controlHeaders,
+      data: { type, invoiceId },
+      timeout: 30_000,
+    },
+  );
+  return responseJson(response, `Signed ${type} delivery`);
+}
+
 async function crossCutoff(request, subscriptionId) {
   const response = await request.post(
     `${CONTROL_ORIGIN}/state/${subscriptionId}/cross-cutoff`,
@@ -138,11 +163,13 @@ module.exports = {
   createFixture,
   clearEmails,
   crossCutoff,
+  deliverSignedInvoiceEvent,
   finalizeCancellation,
   getState,
   getEmails,
   login,
   portalHeaders,
+  preparePaymentRetry,
   reset,
   setPaymentOutcome,
 };
