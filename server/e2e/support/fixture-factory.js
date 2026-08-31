@@ -497,6 +497,12 @@ async function createFixture(options = {}) {
   const cadence = options.cadence || "weekly-single-day";
   const timing = options.timing || "before-cutoff";
   const config = cadenceConfig(cadence, timing);
+  if (options.portalCreationDays === true) {
+    // The customer creation form deliberately offers the business delivery
+    // days only. Keep UI fixtures deterministic instead of deriving an
+    // unsupported weekday from today's date.
+    config.deliveryDays = [0, 3];
+  }
 
   await SubscriptionSettings.findOneAndUpdate(
     { singletonKey: "subscription-settings" },
