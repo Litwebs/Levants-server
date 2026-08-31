@@ -151,6 +151,7 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
     cadence: "weekly-single-day",
     timing: "before-cutoff",
     createSubscription: false,
+    portalCreationDays: true,
   });
 
   await signIn(page, fixture.credentials, "/portal/subscriptions/new");
