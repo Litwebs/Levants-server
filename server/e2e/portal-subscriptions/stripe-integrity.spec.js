@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("crypto");
 const { test, expect } = require("@playwright/test");
 const {
   API_ORIGIN,
@@ -144,6 +145,119 @@ test.beforeEach(async ({ request }) => {
 
 test.afterAll(async ({ request }) => {
   await reset(request);
+});
+
+test("one-time add-on charges once and changes only the upcoming delivery", async ({
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const token = await login(request, fixture.credentials);
+  const before = await getState(request, fixture.subscriptionId);
+  const recurringBefore = subscriptionMutationSnapshot(before.subscription);
+  const remotePriceBefore = before.stripe.remoteSubscription.currentPriceId;
+  const upcomingBefore = before.deliveries[0];
+  const upcomingOrderBefore = before.orders.find(
+    (order) => id(order._id) === id(upcomingBefore.order),
+  );
+  const operationId = crypto.randomUUID();
+  const quantityToAdd = 2;
+  const expectedChargeMinor = Math.round(
+    Number(fixture.variants.EGGS.price) * quantityToAdd * 100,
+  );
+  const endpoint = `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`;
+  const payload = {
+    operationId,
+    items: [
+      { variantId: fixture.variants.EGGS.id, quantity: quantityToAdd },
+    ],
+  };
+
+  const response = await request.post(endpoint, {
+    headers: portalHeaders(token),
+    data: payload,
+    timeout: 60_000,
+  });
+  const body = await expectSuccessfulResponse(response);
+  expect(body.data.chargedMinor).toBe(expectedChargeMinor);
+
+  const retryResponse = await request.post(endpoint, {
+    headers: portalHeaders(token),
+    data: payload,
+    timeout: 60_000,
+  });
+  const retryBody = await expectSuccessfulResponse(retryResponse);
+  expect(retryBody.message).toMatch(/already paid/i);
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(subscriptionMutationSnapshot(after.subscription)).toEqual(
+    recurringBefore,
+  );
+  expect(after.stripe.remoteSubscription.currentPriceId).toBe(
+    remotePriceBefore,
+  );
+
+  const deliveryWithAddOn = after.deliveries.find(
+    (delivery) => id(delivery._id) === id(upcomingBefore._id),
+  );
+  expect(deliveryWithAddOn.addOns).toHaveLength(1);
+  expect(deliveryWithAddOn.addOns[0]).toMatchObject({
+    operationId,
+    amountMinor: expectedChargeMinor,
+    items: [
+      expect.objectContaining({
+        variant: fixture.variants.EGGS.id,
+        quantity: quantityToAdd,
+      }),
+    ],
+  });
+  expect(
+    after.deliveries
+      .filter((delivery) => id(delivery._id) !== id(upcomingBefore._id))
+      .every((delivery) => (delivery.addOns || []).length === 0),
+  ).toBe(true);
+
+  const updatedOrder = after.orders.find(
+    (order) => id(order._id) === id(upcomingBefore.order),
+  );
+  expect(
+    updatedOrder.items.filter((item) => item.isSubscriptionAddOn),
+  ).toEqual([
+    expect.objectContaining({
+      variant: fixture.variants.EGGS.id,
+      quantity: quantityToAdd,
+    }),
+  ]);
+  expect(Number(updatedOrder.total)).toBe(
+    Number(upcomingOrderBefore.total) + expectedChargeMinor / 100,
+  );
+  expect(
+    updatedOrder.paymentAllocations.filter(
+      (allocation) => allocation.source === "delivery_add_on",
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      amountMinor: expectedChargeMinor,
+      idempotencyKey: `delivery-add-on:${operationId}`,
+    }),
+  ]);
+
+  const addOnIntents = after.stripe.paymentIntents.filter(
+    (intent) =>
+      intent.metadata?.type === "delivery_add_on" &&
+      intent.metadata?.operationId === operationId,
+  );
+  expect(addOnIntents).toEqual([
+    expect.objectContaining({
+      amount: expectedChargeMinor,
+      amountReceived: expectedChargeMinor,
+      currency: "gbp",
+      status: "succeeded",
+    }),
+  ]);
 });
 
 test("before-cutoff weekly to fortnightly change keeps Mongo and Stripe cadence synchronized", async ({

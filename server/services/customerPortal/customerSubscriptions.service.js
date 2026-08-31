@@ -926,6 +926,10 @@ async function chargeDeltaNow(
   amountMinor,
   description,
   idempotencyKey,
+  {
+    metadataType = "subscription_modification",
+    metadata = {},
+  } = {},
 ) {
   if (!amountMinor || amountMinor <= 0)
     return { ok: true, paymentIntent: null };
@@ -958,7 +962,8 @@ async function chargeDeltaNow(
         metadata: {
           subscriptionId: String(subscription._id),
           subscriptionNumber: subscription.subscriptionNumber,
-          type: "subscription_modification",
+          type: metadataType,
+          ...metadata,
         },
       },
       idempotencyKey ? { idempotencyKey } : undefined,
@@ -971,6 +976,78 @@ async function chargeDeltaNow(
         err?.message || "We couldn't charge your card for the extra items",
     };
   }
+}
+
+async function attachDeliveryAddOnToOrder({
+  delivery,
+  subscription,
+  addOn,
+}) {
+  if (!delivery?.order || !addOn) return null;
+  const orderId = delivery.order?._id || delivery.order;
+
+  const order = await Order.findOne({
+    _id: orderId,
+    subscription: subscription._id,
+    customer: subscription.customer,
+    status: { $in: ["paid", "partially_paid", "partially_refunded"] },
+    deliveryStatus: "ordered",
+  });
+  if (!order) return null;
+
+  const allocationKey = `delivery-add-on:${addOn.operationId}`;
+  const alreadyAttached = (order.paymentAllocations || []).some(
+    (allocation) => allocation.idempotencyKey === allocationKey,
+  );
+
+  if (!alreadyAttached) {
+    order.items.push(
+      ...addOn.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.subtotal,
+        isSubscriptionAddOn: true,
+      })),
+    );
+    const addOnMajor = Number(addOn.amountMinor || 0) / 100;
+    order.subtotal = Number(order.subtotal || 0) + addOnMajor;
+    order.total = Number(order.total || 0) + addOnMajor;
+    order.amountPaid = Number(order.amountPaid || 0) + addOnMajor;
+    order.paymentAllocations.push({
+      paymentIntentId: addOn.stripePaymentIntentId,
+      source: "delivery_add_on",
+      amountMinor: addOn.amountMinor,
+      idempotencyKey: allocationKey,
+    });
+    await order.save();
+  }
+
+  await Payment.findOneAndUpdate(
+    {
+      subscription: subscription._id,
+      providerReference: addOn.stripePaymentIntentId,
+    },
+    {
+      $set: { order: order._id },
+      $setOnInsert: {
+        customer: subscription.customer,
+        subscription: subscription._id,
+        amount: Number(addOn.amountMinor || 0) / 100,
+        currency: "gbp",
+        status: "paid",
+        providerReference: addOn.stripePaymentIntentId,
+        paidAt: addOn.paidAt,
+        notes: `One-time add-on for delivery ${deliveryDateKey(delivery.scheduledDate)}`,
+      },
+    },
+    { upsert: true, new: true },
+  );
+
+  return order;
 }
 
 async function refundAcrossSubscriptionPayments(
@@ -1003,20 +1080,37 @@ async function refundAcrossSubscriptionPayments(
     customer: customer.stripeCustomerId,
     limit: 100,
   });
+  const fundedOrder = orderId
+    ? await Order.findById(orderId).select("paymentAllocations").lean()
+    : null;
+  const allocatedSupplementalIntentIds = new Set(
+    (fundedOrder?.paymentAllocations || [])
+      .filter((allocation) =>
+        ["modification", "delivery_add_on", "resume"].includes(
+          allocation.source,
+        ),
+      )
+      .map((allocation) => allocation.paymentIntentId)
+      .filter(Boolean),
+  );
   const primary = intentPage.data.find(
     (intent) => intent.id === primaryPaymentIntentId,
   );
-  const modifications = intentPage.data
+  const supplementalIntents = intentPage.data
     .filter(
       (intent) =>
         intent.id !== primaryPaymentIntentId &&
         intent.status === "succeeded" &&
         String(intent.metadata?.subscriptionId || "") ===
           String(subscription._id) &&
-        intent.metadata?.type === "subscription_modification",
+        ["subscription_modification", "delivery_add_on"].includes(
+          intent.metadata?.type,
+        ) &&
+        (allocatedSupplementalIntentIds.size === 0 ||
+          allocatedSupplementalIntentIds.has(intent.id)),
     )
     .sort((left, right) => Number(left.created) - Number(right.created));
-  const candidates = [primary, ...modifications].filter(Boolean);
+  const candidates = [primary, ...supplementalIntents].filter(Boolean);
   let remainingMinor = amountMinor;
   const refunds = [];
 
@@ -3444,6 +3538,229 @@ async function CancelSubscription({
 }
 
 /**
+ * Add paid, one-time products to the customer's single next delivery without
+ * changing the recurring subscription contents or Stripe recurring price.
+ */
+async function AddNextDeliveryAddOn({
+  customerId,
+  subscriptionId,
+  operationId,
+  items,
+} = {}) {
+  const subscription = await Subscription.findOne({
+    _id: subscriptionId,
+    customer: customerId,
+  });
+  if (!subscription) return Response(false, "Subscription not found", null);
+  if (subscription.status !== "active") {
+    return Response(
+      false,
+      "One-time add-ons are only available for active subscriptions.",
+      null,
+    );
+  }
+
+  const deliveryCandidates = await SubscriptionDelivery.find({
+    subscription: subscription._id,
+    customer: customerId,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: { $gte: startOfDay(new Date()) },
+  })
+    .populate("order", "status deliveryStatus")
+    .sort({ scheduledDate: 1 });
+  const nextDelivery = deliveryCandidates.find(
+    (delivery) =>
+      delivery.status === "scheduled" ||
+      (delivery.status === "generated" &&
+        delivery.order?.deliveryStatus === "ordered" &&
+        ["paid", "partially_paid", "partially_refunded"].includes(
+          delivery.order?.status,
+        )),
+  );
+  if (!nextDelivery) {
+    return Response(false, "No upcoming delivery is available", null);
+  }
+
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const cutoffAt = computeCutoffDate(nextDelivery.scheduledDate, settings);
+  if (!cutoffAt || Date.now() >= cutoffAt.getTime()) {
+    return Response(
+      false,
+      "The cut-off for your next delivery has passed.",
+      null,
+    );
+  }
+
+  const existingAddOn = (nextDelivery.addOns || []).find(
+    (addOn) => addOn.operationId === operationId,
+  );
+  if (existingAddOn) {
+    const order = await attachDeliveryAddOnToOrder({
+      delivery: nextDelivery,
+      subscription,
+      addOn: existingAddOn,
+    });
+    return Response(true, "This add-on was already paid and saved.", {
+      delivery: nextDelivery,
+      order,
+      chargedMinor: existingAddOn.amountMinor,
+    });
+  }
+
+  const requestedByVariant = new Map();
+  for (const item of items || []) {
+    const variantId = String(item.variantId);
+    requestedByVariant.set(
+      variantId,
+      (requestedByVariant.get(variantId) || 0) + Number(item.quantity || 0),
+    );
+  }
+  const variantIds = [...requestedByVariant.keys()];
+  const variants = await ProductVariant.find({
+    _id: { $in: variantIds },
+    status: "active",
+  }).populate("product", "name status");
+  if (variants.length !== variantIds.length) {
+    return Response(false, "One or more products are unavailable", null);
+  }
+
+  const variantsById = new Map(
+    variants.map((variant) => [String(variant._id), variant]),
+  );
+  const addOnItems = [];
+  let amountMinor = 0;
+  for (const [variantId, quantity] of requestedByVariant) {
+    const variant = variantsById.get(variantId);
+    if (!variant?.product || variant.product.status !== "active") {
+      return Response(false, "One or more products are unavailable", null);
+    }
+    const available =
+      Number(variant.stockQuantity || 0) - Number(variant.reservedQuantity || 0);
+    if (quantity > available) {
+      return Response(
+        false,
+        `Only ${Math.max(0, available)} of "${variant.product.name} – ${variant.name}" are available.`,
+        null,
+      );
+    }
+
+    const unitPriceMinor = Math.round(Number(variant.price || 0) * 100);
+    const itemMinor = unitPriceMinor * quantity;
+    amountMinor += itemMinor;
+    addOnItems.push({
+      product: variant.product._id,
+      variant: variant._id,
+      name: `${variant.product.name} – ${variant.name}`,
+      sku: variant.sku,
+      unitPrice: Number(variant.price || 0),
+      quantity,
+      subtotal: itemMinor / 100,
+    });
+  }
+  if (amountMinor <= 0) {
+    return Response(false, "The selected add-on total must be greater than £0", null);
+  }
+
+  const customer = await Customer.findById(customerId);
+  const payment = await chargeDeltaNow(
+    subscription,
+    customer,
+    amountMinor,
+    `One-time add-on for ${deliveryDateKey(nextDelivery.scheduledDate)} – ${subscription.subscriptionNumber}`,
+    `subscription:${subscription._id}:delivery-add-on:${nextDelivery._id}:${operationId}`,
+    {
+      metadataType: "delivery_add_on",
+      metadata: {
+        subscriptionDeliveryId: String(nextDelivery._id),
+        operationId,
+        deliveryDate: deliveryDateKey(nextDelivery.scheduledDate),
+      },
+    },
+  );
+  if (
+    !payment.ok ||
+    !payment.paymentIntent ||
+    payment.paymentIntent.status !== "succeeded"
+  ) {
+    return Response(
+      false,
+      payment.message || "We couldn't charge your card for this add-on",
+      null,
+    );
+  }
+
+  const addOn = {
+    operationId,
+    items: addOnItems,
+    amountMinor,
+    stripePaymentIntentId: payment.paymentIntent.id,
+    paidAt: new Date(),
+  };
+  let savedDelivery = await SubscriptionDelivery.findOneAndUpdate(
+    {
+      _id: nextDelivery._id,
+      "addOns.operationId": { $ne: operationId },
+    },
+    { $push: { addOns: addOn } },
+    { new: true },
+  );
+  if (!savedDelivery) {
+    savedDelivery = await SubscriptionDelivery.findById(nextDelivery._id);
+  }
+  const savedAddOn = (savedDelivery?.addOns || []).find(
+    (candidate) => candidate.operationId === operationId,
+  );
+  if (!savedDelivery || !savedAddOn) {
+    throw new Error("The payment succeeded but the delivery add-on was not saved");
+  }
+
+  await Payment.findOneAndUpdate(
+    {
+      subscription: subscription._id,
+      providerReference: savedAddOn.stripePaymentIntentId,
+    },
+    {
+      $setOnInsert: {
+        customer: customerId,
+        subscription: subscription._id,
+        amount: amountMinor / 100,
+        currency: "gbp",
+        status: "paid",
+        providerReference: savedAddOn.stripePaymentIntentId,
+        paidAt: savedAddOn.paidAt,
+        notes: `One-time add-on for delivery ${deliveryDateKey(savedDelivery.scheduledDate)}`,
+      },
+    },
+    { upsert: true, new: true },
+  );
+
+  const order = await attachDeliveryAddOnToOrder({
+    delivery: savedDelivery,
+    subscription,
+    addOn: savedAddOn,
+  });
+
+  await CustomerNotification.create({
+    customer: customerId,
+    type: "subscription_updated",
+    title: "One-time add-on confirmed",
+    message: `${formatMinor(amountMinor)} was charged for your delivery on ${formatDateLabel(savedDelivery.scheduledDate)}. Your recurring subscription was not changed.`,
+    relatedOrder: order?._id || null,
+    relatedSubscription: subscription._id,
+  });
+
+  return Response(
+    true,
+    `Add-on confirmed for ${formatDateLabel(savedDelivery.scheduledDate)}. Your card was charged ${formatMinor(amountMinor)}.`,
+    {
+      delivery: savedDelivery,
+      order,
+      chargedMinor: amountMinor,
+    },
+  );
+}
+
+/**
  * Add item to a subscription.
  */
 async function AddSubscriptionItem({
@@ -3702,6 +4019,7 @@ module.exports = {
   ResumeSubscription,
   CancelSubscription,
   AddSubscriptionItem,
+  AddNextDeliveryAddOn,
   UpdateSubscriptionItem,
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,

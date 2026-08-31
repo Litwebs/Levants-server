@@ -143,6 +143,108 @@ test.afterAll(async ({ request }) => {
   await reset(request);
 });
 
+test("customer adds a charged one-time product to only the next delivery", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  const before = await getState(request, fixture.subscriptionId);
+  const recurringItemsBefore = before.subscription.items.map((item) => ({
+    variant: id(item.variant),
+    quantity: Number(item.quantity),
+  }));
+
+  await signIn(page, fixture.credentials, detailPath);
+  await page
+    .getByRole("link", { name: "Add to next delivery", exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    `/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`,
+  );
+  await expect(
+    page.getByRole("heading", {
+      name: "Add to your next delivery",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Charged now and delivered once. Future deliveries are unchanged.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  const addOnProductHeading = page.getByRole("heading", {
+    name: new RegExp(`^${escapeRegex(fixture.variants.EGGS.name)} - `),
+  });
+  const addOnProductCard = addOnProductHeading.locator(
+    "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' card-product ')][1]",
+  );
+  await addOnProductCard
+    .getByRole("button", { name: "Add once", exact: true })
+    .click();
+  await page
+    .getByRole("button", {
+      name: `Increase ${fixture.variants.EGGS.name} quantity`,
+      exact: true,
+    })
+    .click();
+
+  const addOnResponse = waitForApiResponse(
+    page,
+    "POST",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`,
+  );
+  await page
+    .getByRole("button", { name: /Pay £.+ and add once/ })
+    .click();
+  await expectApiSuccess(await addOnResponse);
+  await expect(page).toHaveURL(detailPath);
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(
+    after.subscription.items.map((item) => ({
+      variant: id(item.variant),
+      quantity: Number(item.quantity),
+    })),
+  ).toEqual(recurringItemsBefore);
+  expect(after.stripe.remoteSubscription.currentPriceId).toBe(
+    before.stripe.remoteSubscription.currentPriceId,
+  );
+
+  expect(after.deliveries[0].addOns).toHaveLength(1);
+  expect(after.deliveries[0].addOns[0]).toMatchObject({
+    items: [
+      expect.objectContaining({
+        variant: fixture.variants.EGGS.id,
+        quantity: 2,
+      }),
+    ],
+  });
+  expect(
+    after.deliveries
+      .slice(1)
+      .every((delivery) => (delivery.addOns || []).length === 0),
+  ).toBe(true);
+
+  const upcomingOrder = after.orders.find(
+    (order) => id(order._id) === id(after.deliveries[0].order),
+  );
+  expect(
+    upcomingOrder.items.filter((item) => item.isSubscriptionAddOn),
+  ).toEqual([
+    expect.objectContaining({
+      variant: fixture.variants.EGGS.id,
+      quantity: 2,
+    }),
+  ]);
+});
+
 test("creates a weekly subscription with a saved real Stripe test card", async ({
   page,
   request,

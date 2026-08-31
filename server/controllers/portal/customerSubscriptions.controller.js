@@ -105,6 +105,18 @@ const AddSubscriptionItem = async (req, res) => {
   return sendOk(res, result.data, { message: result.message });
 };
 
+const AddNextDeliveryAddOn = async (req, res) => {
+  const result = await service.AddNextDeliveryAddOn({
+    customerId: req.customer._id,
+    subscriptionId: req.params.subscriptionId,
+    operationId: req.body.operationId,
+    items: req.body.items,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
 const UpdateSubscriptionItem = async (req, res) => {
   const result = await service.UpdateSubscriptionItem({
     customerId: req.customer._id,
@@ -153,6 +165,7 @@ module.exports = {
   ResumeSubscription,
   CancelSubscription,
   AddSubscriptionItem,
+  AddNextDeliveryAddOn,
   UpdateSubscriptionItem,
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,

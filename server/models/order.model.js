@@ -45,6 +45,13 @@ const orderItemSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+
+    // True only for a one-off item attached to a subscription delivery. This
+    // keeps fulfilment consolidated without changing the recurring plan.
+    isSubscriptionAddOn: {
+      type: Boolean,
+      default: false,
+    },
   },
   { _id: false },
 );
@@ -241,7 +248,12 @@ const orderSchema = new mongoose.Schema(
             stripeInvoiceId: { type: String, default: null, index: true },
             source: {
               type: String,
-              enum: ["subscription_invoice", "modification", "resume"],
+              enum: [
+                "subscription_invoice",
+                "modification",
+                "resume",
+                "delivery_add_on",
+              ],
               required: true,
             },
             amountMinor: { type: Number, required: true, min: 0 },

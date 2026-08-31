@@ -287,18 +287,35 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
         order: existing._id,
         subscription: subscription._id,
         status: "paid",
+        providerReference: stripePaymentIntentId || null,
       });
       if (!hasPayment) {
+        const invoiceFundedAmount = (existing.items || [])
+          .filter((item) => !item.isSubscriptionAddOn)
+          .reduce((sum, item) => sum + Number(item.subtotal || 0), 0) +
+          Number(existing.deliveryFee || 0);
         await Payment.create({
           customer: subscription.customer._id,
           order: existing._id,
           subscription: subscription._id,
-          amount: existing.amountPaid ?? existing.total,
+          amount: invoiceFundedAmount,
           currency: invoice.currency || "gbp",
           status: "paid",
           providerReference: stripePaymentIntentId || null,
           paidAt,
         });
+      }
+      const addOnIntentIds = (slot.addOns || [])
+        .map((addOn) => addOn.stripePaymentIntentId)
+        .filter(Boolean);
+      if (addOnIntentIds.length > 0) {
+        await Payment.updateMany(
+          {
+            subscription: subscription._id,
+            providerReference: { $in: addOnIntentIds },
+          },
+          { $set: { order: existing._id } },
+        );
       }
       createdOrders.push(existing);
       continue;
@@ -308,7 +325,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       subscription,
       deliveryDate,
     );
-    const orderItems = sourceItems.map((item) => ({
+    const subscriptionOrderItems = sourceItems.map((item) => ({
       product: item.product,
       variant: item.variant,
       name: item.name,
@@ -316,12 +333,38 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       price: item.unitPrice,
       quantity: item.quantity,
       subtotal: item.unitPrice * item.quantity,
+      isSubscriptionAddOn: false,
     }));
+    const paidAddOns = Array.isArray(slot.addOns) ? slot.addOns : [];
+    const addOnOrderItems = paidAddOns.flatMap((addOn) =>
+      (addOn.items || []).map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.subtotal,
+        isSubscriptionAddOn: true,
+      })),
+    );
+    const orderItems = [...subscriptionOrderItems, ...addOnOrderItems];
 
-    const subtotal = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
+    const subscriptionSubtotal = subscriptionOrderItems.reduce(
+      (sum, item) => sum + item.subtotal,
+      0,
+    );
+    const addOnSubtotal = addOnOrderItems.reduce(
+      (sum, item) => sum + item.subtotal,
+      0,
+    );
+    const subtotal = subscriptionSubtotal + addOnSubtotal;
     const deliveryFee = SUBSCRIPTION_DELIVERY_FEE;
     const total = subtotal + deliveryFee;
     const amountPaid = total;
+    const subscriptionInvoiceAmountMinor = Math.round(
+      (subscriptionSubtotal + deliveryFee) * 100,
+    );
 
     let order;
     try {
@@ -349,16 +392,24 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
         subscription: subscription._id,
         stripePaymentIntentId,
         stripeInvoiceId: invoice.id,
-        paymentAllocations: stripePaymentIntentId
-          ? [
-              {
-                paymentIntentId: stripePaymentIntentId,
-                stripeInvoiceId: invoice.id,
-                source: "subscription_invoice",
-                amountMinor: Math.round(amountPaid * 100),
-              },
-            ]
-          : [],
+        paymentAllocations: [
+          ...(stripePaymentIntentId
+            ? [
+                {
+                  paymentIntentId: stripePaymentIntentId,
+                  stripeInvoiceId: invoice.id,
+                  source: "subscription_invoice",
+                  amountMinor: subscriptionInvoiceAmountMinor,
+                },
+              ]
+            : []),
+          ...paidAddOns.map((addOn) => ({
+            paymentIntentId: addOn.stripePaymentIntentId,
+            source: "delivery_add_on",
+            amountMinor: addOn.amountMinor,
+            idempotencyKey: `delivery-add-on:${addOn.operationId}`,
+          })),
+        ],
         paidAt,
         reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       });
@@ -398,12 +449,25 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       customer: subscription.customer._id,
       order: order._id,
       subscription: subscription._id,
-      amount: total,
+      amount: subscriptionInvoiceAmountMinor / 100,
       currency: invoice.currency || "gbp",
       status: "paid",
       providerReference: stripePaymentIntentId || null,
       paidAt,
     });
+
+    const addOnIntentIds = paidAddOns
+      .map((addOn) => addOn.stripePaymentIntentId)
+      .filter(Boolean);
+    if (addOnIntentIds.length > 0) {
+      await Payment.updateMany(
+        {
+          subscription: subscription._id,
+          providerReference: { $in: addOnIntentIds },
+        },
+        { $set: { order: order._id } },
+      );
+    }
 
     createdOrders.push(order);
     newlyCreatedOrderCount += 1;
