@@ -111,6 +111,16 @@ describe("Portal Subscriptions", () => {
   let variantId;
 
   beforeEach(async () => {
+    stripe.customers.retrieve.mockResolvedValue({
+      id: "cus_test_mock",
+      deleted: false,
+      invoice_settings: { default_payment_method: "pm_test_default" },
+    });
+    stripe.testHelpers.testClocks.retrieve.mockResolvedValue({
+      id: "clock_test",
+      frozen_time: null,
+    });
+
     const creds = await createPortalCustomer();
     customer = creds.customer;
     const auth = await loginPortalCustomer(creds);
@@ -1845,7 +1855,9 @@ describe("Portal Subscriptions", () => {
     const sub = await createBasicSubscription();
 
     const nextDelivery = new Date();
-    nextDelivery.setDate(nextDelivery.getDate() + 2);
+    // Keep this safely before the default two-day cut-off even when the suite
+    // runs late at night.
+    nextDelivery.setDate(nextDelivery.getDate() + 3);
     nextDelivery.setHours(9, 0, 0, 0);
 
     await Subscription.findByIdAndUpdate(sub._id, {
@@ -2080,18 +2092,20 @@ describe("Portal Subscriptions", () => {
 
     const now = new Date();
     const firstDelivery = new Date(now);
-    firstDelivery.setHours(now.getHours() + 2, 0, 0, 0);
+    firstDelivery.setDate(firstDelivery.getDate() + 1);
+    firstDelivery.setHours(9, 0, 0, 0);
     const secondDelivery = new Date(firstDelivery);
     secondDelivery.setDate(secondDelivery.getDate() + 1);
-    const pastCutoffTime = `${String((now.getHours() + 23) % 24).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
         singletonKey: "subscription-settings",
         deliveryDays: [0, 1, 2, 3, 4, 5, 6],
-        cutoffDaysBefore: 0,
-        cutoffTime: pastCutoffTime,
+        // First delivery cut-off: today at midnight (locked).
+        // Second delivery cut-off: tomorrow at midnight (still open).
+        cutoffDaysBefore: 1,
+        cutoffTime: "00:00",
       },
       { upsert: true },
     );
@@ -2225,18 +2239,19 @@ describe("Portal Subscriptions", () => {
 
     const now = new Date();
     const firstDelivery = new Date(now);
-    firstDelivery.setHours(now.getHours() + 2, 0, 0, 0);
+    firstDelivery.setDate(firstDelivery.getDate() + 1);
+    firstDelivery.setHours(9, 0, 0, 0);
     const secondDelivery = new Date(firstDelivery);
-    secondDelivery.setHours(now.getHours() + 4, 0, 0, 0);
-    const pastCutoffTime = `${String((now.getHours() + 23) % 24).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    secondDelivery.setDate(secondDelivery.getDate() + 1);
 
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
         singletonKey: "subscription-settings",
         deliveryDays: [0, 1, 2, 3, 4, 5, 6],
-        cutoffDaysBefore: 0,
-        cutoffTime: pastCutoffTime,
+        // Both cut-offs are at or before today's midnight.
+        cutoffDaysBefore: 2,
+        cutoffTime: "00:00",
       },
       { upsert: true },
     );
@@ -3307,7 +3322,8 @@ describe("Portal Subscriptions", () => {
   it("resume keeps retained slot when available and recalculates when none exists", async () => {
     const subWithSlot = await createBasicSubscription();
     const slotDate = new Date();
-    slotDate.setDate(slotDate.getDate() + 2);
+    // Remain safely ahead of the default two-day cut-off at every run time.
+    slotDate.setDate(slotDate.getDate() + 3);
     slotDate.setHours(9, 0, 0, 0);
 
     await Subscription.findByIdAndUpdate(subWithSlot._id, {
