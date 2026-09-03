@@ -150,12 +150,13 @@ async function createBatch(req, res) {
 }
 
 /**
- * Aggregate required stock across a set of orders.
- * Supports either `orderIds` (JSON or comma/newline string) or an uploaded XLSX/CSV as `ordersFile`.
+ * Aggregate required stock for a delivery date, selected order IDs, or an
+ * uploaded XLSX/CSV file.
  */
 async function getOrdersStockRequirements(req, res) {
   try {
     const orderIds = parseStringArrayField(req.body?.orderIds) || [];
+    const deliveryDate = String(req.body?.deliveryDate || "").trim();
     const orderTypeScope = String(
       req.body?.orderTypeScope || "both",
     ).toLowerCase();
@@ -184,6 +185,7 @@ async function getOrdersStockRequirements(req, res) {
       orderIds,
       ordersSheet,
       orderTypeScope,
+      deliveryDate,
     });
 
     if (!result.success) {

@@ -516,6 +516,10 @@ async function createFixture(options = {}) {
   );
 
   const variants = await createCatalog(scenarioId);
+  if (options.addOnStock !== undefined) {
+    variants.EGGS.stockQuantity = Number(options.addOnStock);
+    await variants.EGGS.save();
+  }
   const customerData = await createCustomer(scenarioId, {
     withPaymentMethod: options.withPaymentMethod !== false,
     subscriptionUpdates: options.subscriptionUpdates !== false,
@@ -635,8 +639,19 @@ async function createFixture(options = {}) {
     createPaidOrders,
   });
 
+  if (options.withoutUpcomingDeliveries === true) {
+    await Promise.all([
+      SubscriptionDelivery.deleteMany({ subscription: subscription._id }),
+      Order.deleteMany({ subscription: subscription._id }),
+    ]);
+    deliveries.splice(0, deliveries.length);
+    orders.splice(0, orders.length);
+  }
+
   if (options.lifecycle === "resume") {
-    const selectedResumeDate = atOffset(-1);
+    const selectedResumeDate = atOffset(
+      options.pauseStillActive === true ? 10 : -1,
+    );
     const previousDeliveryDate = new Date(config.dates[0]);
     previousDeliveryDate.setDate(
       previousDeliveryDate.getDate() + (cadence === "fortnightly" ? -14 : -7),
@@ -659,6 +674,11 @@ async function createFixture(options = {}) {
 
   if (options.funds === "insufficient") {
     await attachMethod(customerData.remoteCustomer.id, DECLINING_METHOD);
+  }
+  if (options.withoutDefaultPaymentMethod === true) {
+    await stripe.customers.update(customerData.remoteCustomer.id, {
+      invoice_settings: { default_payment_method: "" },
+    });
   }
 
   const reloaded = await Subscription.findById(subscription._id).lean();
