@@ -126,6 +126,7 @@ type OrdersContextType = {
     orderIds?: string[];
     ordersFile?: File;
     orderTypeScope?: "both" | "normal" | "subscription";
+    deliveryDate?: string;
   }) => Promise<OrdersStockRequirements>;
 };
 
@@ -493,11 +494,13 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       orderIds?: string[];
       ordersFile?: File;
       orderTypeScope?: "both" | "normal" | "subscription";
+      deliveryDate?: string;
     }) => {
       try {
         const orderIds = Array.isArray(params?.orderIds) ? params.orderIds : [];
         const file = params?.ordersFile;
         const orderTypeScope = params?.orderTypeScope || "both";
+        const deliveryDate = params?.deliveryDate;
 
         const res = file
           ? await api.post(
@@ -507,6 +510,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
                 if (orderIds.length)
                   fd.append("orderIds", JSON.stringify(orderIds));
                 fd.append("orderTypeScope", orderTypeScope);
+                if (deliveryDate) fd.append("deliveryDate", deliveryDate);
                 fd.append("ordersFile", file);
                 return fd;
               })(),
@@ -517,6 +521,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
           : await api.post("/admin/delivery/orders/stock", {
               orderIds,
               orderTypeScope,
+              deliveryDate,
             });
 
         const data = unwrapData<OrdersStockRequirements>(res.data);
