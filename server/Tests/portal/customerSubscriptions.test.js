@@ -3331,6 +3331,9 @@ describe("Portal Subscriptions", () => {
       pausedUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
       nextDeliveryDate: null,
     });
+    // createBasicSubscription pre-generates delivery slots. Isolate this case
+    // so the explicitly retained slot below is the first eligible one.
+    await SubscriptionDelivery.deleteMany({ subscription: subWithSlot._id });
     await SubscriptionDelivery.create({
       subscription: subWithSlot._id,
       customer: customer._id,
