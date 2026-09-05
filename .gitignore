@@ -23,6 +23,7 @@ pids/
 
 # Build output
 dist/
+client/build/
 .out/
 .tmp/
 temp/
