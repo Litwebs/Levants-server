@@ -82,11 +82,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Resolve customer portal ref
+        id: portal-ref
+        shell: bash
+        env:
+          SERVER_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          portal_ref="main"
+          # Cross-repository feature branches share a name; the server branch
+          # adds a "-server" suffix (for example, feature/foo-server).
+          candidate_ref="${SERVER_HEAD_REF%-server}"
+
+          if [[ -n "$SERVER_HEAD_REF" && "$candidate_ref" != "$SERVER_HEAD_REF" ]] && \
+            git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
+              "refs/heads/$candidate_ref" > /dev/null 2>&1; then
+            portal_ref="$candidate_ref"
+          fi
+
+          echo "ref=$portal_ref" >> "$GITHUB_OUTPUT"
+          echo "Customer portal E2E ref: $portal_ref"
+
       - name: Checkout customer portal
         uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
           token: ${{ secrets.PORTAL_CLIENT_READ_TOKEN }}
+          ref: ${{ steps.portal-ref.outputs.ref }}
           path: portal-client
 
       - name: Require Stripe test-mode secrets
