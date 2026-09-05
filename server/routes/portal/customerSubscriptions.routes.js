@@ -15,6 +15,7 @@ const {
   createSubscriptionSchema,
   updateSubscriptionSchema,
   subscriptionItemSchema,
+  nextDeliveryAddOnSchema,
   updateSubscriptionItemSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
@@ -77,6 +78,13 @@ router.post(
   validateParams(subscriptionIdParamSchema),
   validateBody(subscriptionItemSchema),
   asyncHandler(controller.AddSubscriptionItem),
+);
+
+router.post(
+  "/:subscriptionId/next-delivery/add-ons",
+  validateParams(subscriptionIdParamSchema),
+  validateBody(nextDeliveryAddOnSchema),
+  asyncHandler(controller.AddNextDeliveryAddOn),
 );
 
 router.patch(

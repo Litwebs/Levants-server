@@ -11,6 +11,10 @@ suite does not modify or compensate for application logic. Known ambiguities,
 manual exclusions, and the complete row-to-test mapping are recorded in
 [RULE_COVERAGE.md](./RULE_COVERAGE.md).
 
+The paid next-delivery add-on feature has its own auditable journey, payment,
+guard, scope, and fulfilment matrix in
+[ADD_ON_COVERAGE.md](./ADD_ON_COVERAGE.md).
+
 ## Exact workbook coverage
 
 `rule-matrix.js` exports exactly the 54 populated rows from the workbook's
@@ -41,11 +45,11 @@ sheet are mapped in [RULE_COVERAGE.md](./RULE_COVERAGE.md#ten-cross-cutting-inva
 | Lane             | Spec                         | What it proves                                                                                                                                                                                                                                                            | Stripe CLI                                        |
 | ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | Rule matrix      | `subscription-rules.spec.js` | All 54 workbook rows through authenticated portal APIs, isolated models, and real Stripe test-mode objects                                                                                                                                                                | Not required                                      |
-| UI               | `portal-ui.spec.js`          | Five Chromium journeys: create a weekly subscription with a saved card, increase quantity before cut-off, stage a removal after cut-off while preserving the locked order, pause/manual resume, and save a new card through real Stripe Elements                          | Not required                                      |
-| Stripe integrity | `stripe-integrity.spec.js`   | Six checks covering Stripe cadence intervals, combined initial-plus-delta cancellation refunds, Stripe Refund-to-local order refund-history linkage, declined-add atomicity, funded-edit Price replacement/current-price selection, and payment-required automatic resume | Required only for the refund-webhook linkage case |
+| UI               | `portal-ui.spec.js`          | Chromium customer journeys including add-on confirmation/cancellation, multi-item purchase, decline/retry, cut-off and paused guards, snapshot totals, and delivery details, alongside the subscription creation and management journeys                            | Not required                                      |
+| Stripe integrity | `stripe-integrity.spec.js`   | Real-Stripe checks including add-on amount/idempotency, repeat purchases, decline atomicity, guards and ownership, plus cadence, cancellation refunds, refund linkage, recurring edits, and automatic resume                                             | Required only for the refund-webhook linkage case |
 | Webhook          | `stripe-webhooks.spec.js`    | Two real, Stripe-signed initial-invoice checks for exact single-day and multi-day order/delivery creation                                                                                                                                                                 | Required                                          |
 
-Playwright currently discovers 73 scenarios in total. Use
+Playwright currently discovers 83 scenarios in total. Use
 `npx playwright test --list` as the authoritative inventory; CI runs the
 complete list with Stripe CLI webhook forwarding enabled.
 

@@ -1058,4 +1058,114 @@ describe("Subscription Stripe webhook E2E", () => {
     }).lean();
     expect(order).toBeTruthy();
   });
+
+  it("merges a paid next-delivery add-on into the fulfillment order without recurring it", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const { product: addOnProduct, variant: addOnVariant } =
+      await createProductAndVariant();
+    const nextDelivery = new Date("2026-10-04T09:00:00.000Z");
+    const operationId = crypto.randomUUID();
+    const addOnPaymentIntentId = "pi_test_delivery_add_on_1";
+    const subscription = await createSubscriptionFixture({
+      customer: customer._id,
+      stripeSubscriptionId: "sub_test_delivery_add_on_1",
+      nextDeliveryDate: nextDelivery,
+      items: [buildSubscriptionItem(product, variant, 1)],
+    });
+
+    await SubscriptionDelivery.create({
+      subscription: subscription._id,
+      customer: customer._id,
+      scheduledDate: nextDelivery,
+      status: "scheduled",
+      addOns: [
+        {
+          operationId,
+          items: [
+            {
+              product: addOnProduct._id,
+              variant: addOnVariant._id,
+              name: `${addOnProduct.name} – ${addOnVariant.name}`,
+              sku: addOnVariant.sku,
+              unitPrice: addOnVariant.price,
+              quantity: 2,
+              subtotal: 5,
+            },
+          ],
+          amountMinor: 500,
+          stripePaymentIntentId: addOnPaymentIntentId,
+          paidAt: new Date("2026-10-01T09:00:00.000Z"),
+        },
+      ],
+    });
+    const addOnPayment = await Payment.create({
+      customer: customer._id,
+      subscription: subscription._id,
+      amount: 5,
+      currency: "gbp",
+      status: "paid",
+      providerReference: addOnPaymentIntentId,
+      paidAt: new Date("2026-10-01T09:00:00.000Z"),
+    });
+
+    const res = await postStripeEvent({
+      type: "invoice.payment_succeeded",
+      data: {
+        object: {
+          id: "in_test_delivery_add_on_1",
+          subscription: "sub_test_delivery_add_on_1",
+          payment_intent: "pi_test_subscription_invoice_add_on_1",
+          currency: "gbp",
+        },
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const order = await Order.findOne({
+      subscription: subscription._id,
+      stripeInvoiceId: "in_test_delivery_add_on_1",
+    }).lean();
+    expect(order.items).toHaveLength(2);
+    expect(order.items.filter((item) => item.isSubscriptionAddOn)).toEqual([
+      expect.objectContaining({
+        variant: addOnVariant._id,
+        quantity: 2,
+        subtotal: 5,
+      }),
+    ]);
+    expect(order.subtotal).toBe(7.5);
+    expect(order.deliveryFee).toBe(1);
+    expect(order.total).toBe(8.5);
+    expect(order.amountPaid).toBe(8.5);
+    expect(order.paymentAllocations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          paymentIntentId: "pi_test_subscription_invoice_add_on_1",
+          source: "subscription_invoice",
+          amountMinor: 350,
+        }),
+        expect.objectContaining({
+          paymentIntentId: addOnPaymentIntentId,
+          source: "delivery_add_on",
+          amountMinor: 500,
+          idempotencyKey: `delivery-add-on:${operationId}`,
+        }),
+      ]),
+    );
+
+    const linkedAddOnPayment = await Payment.findById(addOnPayment._id).lean();
+    expect(linkedAddOnPayment.order.toString()).toBe(order._id.toString());
+    const invoicePayment = await Payment.findOne({
+      order: order._id,
+      providerReference: "pi_test_subscription_invoice_add_on_1",
+    }).lean();
+    expect(invoicePayment.amount).toBe(3.5);
+
+    const recurringAfter = await Subscription.findById(subscription._id).lean();
+    expect(recurringAfter.items).toHaveLength(1);
+    expect(recurringAfter.items[0].variant.toString()).toBe(
+      variant._id.toString(),
+    );
+  });
 });

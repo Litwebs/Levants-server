@@ -27,9 +27,12 @@ interface Props {
     orderIds?: string[];
     ordersFile?: File;
     orderTypeScope?: "both" | "normal" | "subscription";
+    deliveryDate?: string;
   }) => Promise<OrdersStockRequirements | null>;
   setSelectedOrders: (ids: string[]) => void;
 }
+
+type StockSource = "delivery_date" | "selected_orders" | "file";
 
 const OrdersBulkActions = ({
   selectedOrders,
@@ -56,6 +59,9 @@ const OrdersBulkActions = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
   const [isCalculatingStock, setIsCalculatingStock] = useState(false);
+  const [stockSource, setStockSource] =
+    useState<StockSource>("delivery_date");
+  const [stockDeliveryDate, setStockDeliveryDate] = useState(today);
   const [stockOrderTypeScope, setStockOrderTypeScope] = useState<
     "both" | "normal" | "subscription"
   >("both");
@@ -67,22 +73,32 @@ const OrdersBulkActions = ({
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
-    if (selectedOrders.length === 0) setIsExpanded(false);
-  }, [selectedOrders.length]);
+    if (selectedOrders.length === 0 && stockSource === "selected_orders") {
+      setStockSource("delivery_date");
+    }
+  }, [selectedOrders.length, stockSource]);
 
   if (!canUpdateOrders && !canReadDelivery && !canDeleteOrders) return null;
-  if (!selectedOrders.length) return null;
+  if (!selectedOrders.length && !canReadDelivery) return null;
+
+  const hasSelectedOrders = selectedOrders.length > 0;
+  const canCalculateStock =
+    (stockSource === "delivery_date" && Boolean(stockDeliveryDate)) ||
+    (stockSource === "selected_orders" && hasSelectedOrders) ||
+    (stockSource === "file" && Boolean(ordersFile));
 
   return (
     <>
       <Card className={styles.bulkActions}>
         <div className={styles.bulkContent}>
           <span className={styles.bulkCount}>
-            {selectedOrders.length} orders selected
+            {hasSelectedOrders
+              ? `${selectedOrders.length} ${selectedOrders.length === 1 ? "order" : "orders"} selected`
+              : "Stock planning"}
           </span>
 
           <div className={styles.bulkButtons}>
-            {canUpdateOrders || canReadDelivery ? (
+            {(hasSelectedOrders && canUpdateOrders) || canReadDelivery ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -90,7 +106,7 @@ const OrdersBulkActions = ({
                 aria-controls="orders-bulk-actions-panel"
                 onClick={() => setIsExpanded((expanded) => !expanded)}
               >
-                Bulk actions
+                {hasSelectedOrders ? "Bulk actions" : "Stock needed"}
                 {isExpanded ? (
                   <ChevronUp size={16} />
                 ) : (
@@ -98,7 +114,7 @@ const OrdersBulkActions = ({
                 )}
               </Button>
             ) : null}
-            {canDeleteOrders ? (
+            {hasSelectedOrders && canDeleteOrders ? (
               <Button
                 variant="danger"
                 size="sm"
@@ -108,13 +124,15 @@ const OrdersBulkActions = ({
                 Delete Selected
               </Button>
             ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelectedOrders([])}
-            >
-              Clear Selection
-            </Button>
+            {hasSelectedOrders ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedOrders([])}
+              >
+                Clear Selection
+              </Button>
+            ) : null}
           </div>
         </div>
 
@@ -125,7 +143,7 @@ const OrdersBulkActions = ({
           }`}
           aria-hidden={!isExpanded}
         >
-          {canUpdateOrders && (
+          {hasSelectedOrders && canUpdateOrders && (
             <div className={styles.bulkSection}>
               <div className={styles.bulkSectionTitle}>Delivery</div>
 
@@ -207,6 +225,11 @@ const OrdersBulkActions = ({
           {canReadDelivery && (
             <div className={styles.bulkSection}>
               <div className={styles.bulkSectionTitle}>Stock Needed</div>
+              <p className={styles.bulkSectionHelp}>
+                Select a source. A delivery date includes paid one-time orders,
+                scheduled subscriptions, and confirmed one-time add-ons for
+                that day.
+              </p>
 
               <input
                 ref={fileInputRef}
@@ -221,64 +244,118 @@ const OrdersBulkActions = ({
 
               <div className={styles.bulkSectionRow}>
                 <div className={styles.filterGroup}>
-                  <label className={styles.filterLabel}>Order type</label>
+                  <label className={styles.filterLabel}>Calculate from</label>
                   <select
                     className={styles.filterInput}
-                    value={stockOrderTypeScope}
+                    value={stockSource}
                     onChange={(e) =>
-                      setStockOrderTypeScope(
-                        e.target.value as "both" | "normal" | "subscription",
-                      )
+                      setStockSource(e.target.value as StockSource)
                     }
                   >
-                    <option value="both">Both</option>
-                    <option value="normal">Normal orders</option>
-                    <option value="subscription">Subscription orders</option>
+                    <option value="delivery_date">Delivery date</option>
+                    <option
+                      value="selected_orders"
+                      disabled={!hasSelectedOrders}
+                    >
+                      Selected orders
+                    </option>
+                    <option value="file">Uploaded file</option>
                   </select>
                 </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {ordersFile ? "Change File" : "Choose File"}
-                </Button>
+                {stockSource === "delivery_date" ? (
+                  <div className={styles.filterGroup}>
+                    <label className={styles.filterLabel}>
+                      Stock delivery date
+                    </label>
+                    <input
+                      type="date"
+                      className={styles.filterInput}
+                      value={stockDeliveryDate}
+                      onChange={(e) => setStockDeliveryDate(e.target.value)}
+                    />
+                  </div>
+                ) : null}
 
-                {ordersFile && (
+                {stockSource !== "file" ? (
+                  <div className={styles.filterGroup}>
+                    <label className={styles.filterLabel}>Order type</label>
+                    <select
+                      className={styles.filterInput}
+                      value={stockOrderTypeScope}
+                      onChange={(e) =>
+                        setStockOrderTypeScope(
+                          e.target.value as
+                            | "both"
+                            | "normal"
+                            | "subscription",
+                        )
+                      }
+                    >
+                      <option value="both">All orders</option>
+                      <option value="normal">One-time orders</option>
+                      <option value="subscription">Subscriptions</option>
+                    </select>
+                  </div>
+                ) : null}
+
+                {stockSource === "file" ? (
                   <>
-                    <span
-                      className={styles.bulkFileName}
-                      title={ordersFile.name}
-                    >
-                      {ordersFile.name}
-                    </span>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setOrdersFile(null);
-                        if (fileInputRef.current)
-                          fileInputRef.current.value = "";
-                      }}
+                      onClick={() => fileInputRef.current?.click()}
                     >
-                      Clear File
+                      {ordersFile ? "Change file" : "Choose file"}
                     </Button>
+
+                    {ordersFile ? (
+                      <>
+                        <span
+                          className={styles.bulkFileName}
+                          title={ordersFile.name}
+                        >
+                          {ordersFile.name}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setOrdersFile(null);
+                            if (fileInputRef.current)
+                              fileInputRef.current.value = "";
+                          }}
+                        >
+                          Clear file
+                        </Button>
+                      </>
+                    ) : null}
                   </>
-                )}
+                ) : null}
 
                 <Button
                   variant="outline"
                   size="sm"
                   isLoading={isCalculatingStock}
+                  disabled={!canCalculateStock}
                   onClick={async () => {
-                    if (isCalculatingStock) return;
+                    if (isCalculatingStock || !canCalculateStock) return;
                     setIsCalculatingStock(true);
                     try {
                       const data = await getOrdersStockRequirements({
-                        orderIds: selectedOrders,
-                        ordersFile: ordersFile || undefined,
+                        orderIds:
+                          stockSource === "selected_orders"
+                            ? selectedOrders
+                            : undefined,
+                        ordersFile:
+                          stockSource === "file"
+                            ? ordersFile || undefined
+                            : undefined,
                         orderTypeScope: stockOrderTypeScope,
+                        deliveryDate:
+                          stockSource === "delivery_date"
+                            ? stockDeliveryDate
+                            : undefined,
                       });
                       setStockResult(data);
                       if (data) setIsStockModalOpen(true);
@@ -302,6 +379,14 @@ const OrdersBulkActions = ({
           title="Stock Needed"
           size="lg"
         >
+          {stockResult.sources?.deliveryDate ? (
+            <p className={styles.stockResultSummary}>
+              Requirements for {stockResult.sources.deliveryDate}: {" "}
+              {stockResult.sources.ordersFound || 0} order records and {" "}
+              {stockResult.sources.scheduledSubscriptionDeliveriesFound || 0}
+              {" "}scheduled subscription deliveries.
+            </p>
+          ) : null}
           <Table>
             <TableHeader>
               <TableRow>
@@ -316,7 +401,7 @@ const OrdersBulkActions = ({
               {stockResult.items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={3} className={styles.emptyTableCell}>
-                    No items found for these orders.
+                    No stock is needed for this selection.
                   </TableCell>
                 </TableRow>
               ) : (

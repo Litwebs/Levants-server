@@ -145,6 +145,9 @@ export type OrdersStockRequirements = {
   sources?: {
     orderIdsProvided?: number;
     ordersFound?: number;
+    orderTypeScope?: "both" | "normal" | "subscription";
+    deliveryDate?: string | null;
+    scheduledSubscriptionDeliveriesFound?: number;
     sheet?: {
       originalName?: string;
       detectedType?: string;

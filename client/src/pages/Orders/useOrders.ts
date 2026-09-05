@@ -713,12 +713,14 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
     orderIds?: string[];
     ordersFile?: File;
     orderTypeScope?: "both" | "normal" | "subscription";
+    deliveryDate?: string;
   }): Promise<OrdersStockRequirements | null> => {
     try {
       const data = await getOrdersStockRequirementsApi({
         orderIds: params?.orderIds,
         ordersFile: params?.ordersFile,
         orderTypeScope: params?.orderTypeScope,
+        deliveryDate: params?.deliveryDate,
       });
       return data;
     } catch (err: any) {

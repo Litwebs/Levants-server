@@ -6,6 +6,7 @@ const {
   createFixture,
   getState,
   reset,
+  setPaymentOutcome,
 } = require("../support/e2e-client");
 
 const DAY_NAMES = [
@@ -99,6 +100,14 @@ function waitForApiResponse(page, method, pathname) {
   });
 }
 
+function deliveryAddOnIntents(state) {
+  return state.stripe.paymentIntents.filter(
+    (intent) =>
+      intent.metadata?.type === "delivery_add_on" &&
+      id(intent.metadata?.subscriptionId) === id(state.subscription._id),
+  );
+}
+
 async function expectApiSuccess(response) {
   const body = await response.json().catch(() => null);
   expect(response.ok(), body?.message || JSON.stringify(body)).toBe(true);
@@ -135,12 +144,369 @@ function subscriptionItemCard(section, itemName) {
     );
 }
 
+function addOnProductCard(page, productName) {
+  return page
+    .getByRole("heading", {
+      name: new RegExp(`^${escapeRegex(productName)} - `),
+    })
+    .locator(
+      "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' card-product ')][1]",
+    );
+}
+
+async function selectAddOn(page, variant, quantity = 1) {
+  await addOnProductCard(page, variant.name)
+    .getByRole("button", { name: "Add once", exact: true })
+    .click();
+  for (let current = 1; current < quantity; current += 1) {
+    await page
+      .getByRole("button", {
+        name: `Increase ${variant.name} quantity`,
+        exact: true,
+      })
+      .click();
+  }
+}
+
 test.beforeEach(async ({ request }) => {
   await reset(request);
 });
 
 test.afterAll(async ({ request }) => {
   await reset(request);
+});
+
+test("customer adds a charged one-time product to only the next delivery", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  const before = await getState(request, fixture.subscriptionId);
+  const recurringItemsBefore = before.subscription.items.map((item) => ({
+    variant: id(item.variant),
+    quantity: Number(item.quantity),
+  }));
+
+  await signIn(page, fixture.credentials, detailPath);
+  await page
+    .getByRole("link", { name: "Add to next delivery", exact: true })
+    .click();
+  await expect(page).toHaveURL(
+    `/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`,
+  );
+  await expect(
+    page.getByRole("heading", {
+      name: "Add to your next delivery",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Charged now and delivered once. Future deliveries are unchanged.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  await selectAddOn(page, fixture.variants.EGGS, 2);
+  await selectAddOn(page, fixture.variants.MILK, 1);
+
+  await page
+    .getByRole("button", { name: /Pay £.+ and add once/ })
+    .click();
+  const confirmation = page.getByRole("alertdialog");
+  await expect(confirmation).toBeVisible();
+  await expect(
+    confirmation.getByText(
+      /cannot be changed or reversed.*charged immediately/i,
+    ),
+  ).toBeVisible();
+  await confirmation.getByRole("button", { name: "Go back" }).click();
+  await expect(confirmation).toBeHidden();
+
+  const afterCancelledConfirmation = await getState(
+    request,
+    fixture.subscriptionId,
+  );
+  expect(afterCancelledConfirmation.deliveries[0].addOns || []).toHaveLength(0);
+  expect(deliveryAddOnIntents(afterCancelledConfirmation)).toHaveLength(0);
+
+  await page
+    .getByRole("button", { name: /Pay £.+ and add once/ })
+    .click();
+  await expect(confirmation).toBeVisible();
+  const addOnResponse = waitForApiResponse(
+    page,
+    "POST",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`,
+  );
+  await confirmation
+    .getByRole("button", { name: /Charge £.+ now/ })
+    .click();
+  await expectApiSuccess(await addOnResponse);
+  await expect(page).toHaveURL(detailPath);
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(
+    after.subscription.items.map((item) => ({
+      variant: id(item.variant),
+      quantity: Number(item.quantity),
+    })),
+  ).toEqual(recurringItemsBefore);
+  expect(after.stripe.remoteSubscription.currentPriceId).toBe(
+    before.stripe.remoteSubscription.currentPriceId,
+  );
+
+  expect(after.deliveries[0].addOns).toHaveLength(1);
+  expect(after.deliveries[0].addOns[0]).toMatchObject({
+    items: expect.arrayContaining([
+      expect.objectContaining({
+        variant: fixture.variants.EGGS.id,
+        quantity: 2,
+      }),
+      expect.objectContaining({
+        variant: fixture.variants.MILK.id,
+        quantity: 1,
+      }),
+    ]),
+  });
+  expect(
+    after.deliveries
+      .slice(1)
+      .every((delivery) => (delivery.addOns || []).length === 0),
+  ).toBe(true);
+
+  const upcomingOrder = after.orders.find(
+    (order) => id(order._id) === id(after.deliveries[0].order),
+  );
+  const expectedNextDeliveryTotal = new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+  }).format(Number(upcomingOrder.total));
+  await expect(page.getByText("One-time add-ons", { exact: true })).toBeVisible();
+  const snapshotAddOnItems = page.getByRole("list", {
+    name: "Items added to next delivery",
+  });
+  await expect(snapshotAddOnItems).toContainText(fixture.variants.EGGS.name);
+  await expect(snapshotAddOnItems).toContainText("× 2");
+  await expect(snapshotAddOnItems).toContainText(fixture.variants.MILK.name);
+  await expect(
+    page.getByText("Next delivery total", { exact: true }).locator("xpath=.."),
+  ).toContainText(expectedNextDeliveryTotal);
+  const generatedStatus = page.getByText("Generated", { exact: true });
+  await expect(generatedStatus).toBeVisible();
+  await expect(
+    generatedStatus.locator("xpath=preceding-sibling::span[1]"),
+  ).toHaveClass(/bg-emerald-500/);
+
+  const deliveryButtons = page.getByRole("button", {
+    name: /View details for/i,
+  });
+  await expect(deliveryButtons).toHaveCount(after.deliveries.length);
+  await deliveryButtons.first().click();
+  const firstDeliveryDetails = page.getByRole("region", {
+    name: /Delivery details for/i,
+  });
+  await expect(firstDeliveryDetails).toBeVisible();
+  await expect(
+    firstDeliveryDetails.getByText(fixture.variants.EGGS.name, { exact: false }),
+  ).toBeVisible();
+  await expect(
+    firstDeliveryDetails.getByText("Delivery total", { exact: true }),
+  ).toBeVisible();
+
+  await deliveryButtons.nth(1).click();
+  await expect(
+    page.getByRole("region", { name: /Delivery details for/i }),
+  ).toBeVisible();
+  expect(
+    upcomingOrder.items.filter((item) => item.isSubscriptionAddOn),
+  ).toEqual(
+    expect.arrayContaining([
+    expect.objectContaining({
+      variant: fixture.variants.EGGS.id,
+      quantity: 2,
+    }),
+      expect.objectContaining({
+        variant: fixture.variants.MILK.id,
+        quantity: 1,
+      }),
+    ]),
+  );
+});
+
+test("declined add-on payment changes nothing and succeeds after the customer retries with funds", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "insufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  const addOnPath = `${detailPath}/next-delivery/add-ons`;
+  const endpoint =
+    `/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`;
+  const before = await getState(request, fixture.subscriptionId);
+  const recurringBefore = before.subscription.items.map((item) => ({
+    variant: id(item.variant),
+    quantity: Number(item.quantity),
+  }));
+  const ordersBefore = before.orders.map(orderSnapshot);
+
+  await signIn(page, fixture.credentials, detailPath);
+  await page
+    .getByRole("link", { name: "Add to next delivery", exact: true })
+    .click();
+  await expect(page).toHaveURL(addOnPath);
+  await selectAddOn(page, fixture.variants.EGGS, 1);
+
+  await page
+    .getByRole("button", { name: /Pay £.+ and add once/ })
+    .click();
+  const declinedResponsePromise = waitForApiResponse(page, "POST", endpoint);
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: /Charge £.+ now/ })
+    .click();
+  const declinedResponse = await declinedResponsePromise;
+  const declinedBody = await declinedResponse.json();
+  expect(declinedResponse.status()).toBe(400);
+  expect(declinedBody.success).toBe(false);
+  expect(declinedBody.message).toMatch(/declin|fund|charge|payment/i);
+  await expect(page).toHaveURL(addOnPath);
+  await expect(
+    page.getByText(/declin|insufficient funds|couldn't charge/i).first(),
+  ).toBeVisible();
+
+  const declined = await getState(request, fixture.subscriptionId);
+  expect(declined.subscription.items.map((item) => ({
+    variant: id(item.variant),
+    quantity: Number(item.quantity),
+  }))).toEqual(recurringBefore);
+  expect(declined.orders.map(orderSnapshot)).toEqual(ordersBefore);
+  expect(
+    declined.deliveries.every(
+      (delivery) => (delivery.addOns || []).length === 0,
+    ),
+  ).toBe(true);
+  expect(
+    deliveryAddOnIntents(declined).filter(
+      (intent) => intent.status === "succeeded",
+    ),
+  ).toHaveLength(0);
+
+  await setPaymentOutcome(request, fixture.subscriptionId, "sufficient");
+  await page
+    .getByRole("button", { name: /Pay £.+ and add once/ })
+    .click();
+  const retryResponsePromise = waitForApiResponse(page, "POST", endpoint);
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: /Charge £.+ now/ })
+    .click();
+  await expectApiSuccess(await retryResponsePromise);
+  await expect(page).toHaveURL(detailPath);
+
+  const recovered = await getState(request, fixture.subscriptionId);
+  expect(recovered.deliveries[0].addOns).toHaveLength(1);
+  expect(recovered.deliveries[0].addOns[0].items).toEqual([
+    expect.objectContaining({
+      variant: fixture.variants.EGGS.id,
+      quantity: 1,
+    }),
+  ]);
+  expect(
+    deliveryAddOnIntents(recovered).filter(
+      (intent) => intent.status === "succeeded",
+    ),
+  ).toHaveLength(1);
+  expect(
+    recovered.orders
+      .find((order) => id(order._id) === id(recovered.deliveries[0].order))
+      .items.filter((item) => item.isSubscriptionAddOn),
+  ).toEqual([
+    expect.objectContaining({
+      variant: fixture.variants.EGGS.id,
+      quantity: 1,
+    }),
+  ]);
+});
+
+test("add-ons are unavailable after the next delivery cut-off", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "after-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  const before = await getState(request, fixture.subscriptionId);
+
+  await signIn(page, fixture.credentials, detailPath);
+  await page
+    .getByRole("link", { name: "Add to next delivery", exact: true })
+    .click();
+  await expect(page).toHaveURL(`${detailPath}/next-delivery/add-ons`);
+  await expect(
+    page.getByText(
+      "The cut-off for this delivery has passed, so it can no longer accept add-ons.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Pay £.+ and add once/ }),
+  ).toHaveCount(0);
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(after.deliveries.map((delivery) => delivery.addOns || [])).toEqual(
+    before.deliveries.map((delivery) => delivery.addOns || []),
+  );
+  expect(deliveryAddOnIntents(after)).toHaveLength(0);
+});
+
+test("paused subscriptions cannot open or purchase a one-time add-on", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "resume-open",
+    lifecycle: "resume",
+    pauseStillActive: true,
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+
+  await signIn(page, fixture.credentials, detailPath);
+  await expect(
+    page.getByRole("link", { name: "Add to next delivery", exact: true }),
+  ).toHaveCount(0);
+  await page.goto(`${detailPath}/next-delivery/add-ons`);
+  await expect(
+    page.getByText(
+      "One-time add-ons are available only while the subscription is active.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Pay £.+ and add once/ }),
+  ).toHaveCount(0);
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(
+    after.deliveries.every(
+      (delivery) => (delivery.addOns || []).length === 0,
+    ),
+  ).toBe(true);
+  expect(deliveryAddOnIntents(after)).toHaveLength(0);
 });
 
 test("creates a weekly subscription with a saved real Stripe test card", async ({

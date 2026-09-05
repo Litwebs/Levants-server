@@ -2,6 +2,45 @@
 
 const mongoose = require("mongoose");
 
+const deliveryAddOnItemSchema = new mongoose.Schema(
+  {
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
+    },
+    variant: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductVariant",
+      required: true,
+    },
+    name: { type: String, required: true },
+    sku: { type: String, required: true },
+    unitPrice: { type: Number, required: true, min: 0 },
+    quantity: { type: Number, required: true, min: 1 },
+    subtotal: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const deliveryAddOnSchema = new mongoose.Schema(
+  {
+    operationId: { type: String, required: true },
+    items: {
+      type: [deliveryAddOnItemSchema],
+      required: true,
+      validate: {
+        validator: (items) => Array.isArray(items) && items.length > 0,
+        message: "A delivery add-on must contain at least one item",
+      },
+    },
+    amountMinor: { type: Number, required: true, min: 1 },
+    stripePaymentIntentId: { type: String, required: true },
+    paidAt: { type: Date, required: true },
+  },
+  { _id: false },
+);
+
 /**
  * SubscriptionDelivery – one scheduled delivery slot for a subscription.
  * Each active subscription generates upcoming SubscriptionDelivery records
@@ -62,6 +101,13 @@ const subscriptionDeliverySchema = new mongoose.Schema(
     generatedAt: {
       type: Date,
       default: null,
+    },
+
+    // Paid one-off products for this delivery only. These are merged into the
+    // linked Order now, or when the subscription invoice generates it later.
+    addOns: {
+      type: [deliveryAddOnSchema],
+      default: [],
     },
   },
   {

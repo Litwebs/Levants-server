@@ -343,6 +343,14 @@
   letter-spacing: 0.03em;
 }
 
+.bulkSectionHelp {
+  max-width: 680px;
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--color-gray-600);
+}
+
 .bulkSectionRow {
   display: flex;
   gap: var(--space-2);
@@ -365,6 +373,12 @@
 
 .bulkStockResults {
   margin-top: var(--space-3);
+}
+
+.stockResultSummary {
+  margin: 0 0 var(--space-4);
+  color: var(--color-gray-600);
+  font-size: var(--text-sm);
 }
 
 /* Table */

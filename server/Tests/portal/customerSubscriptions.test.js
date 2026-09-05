@@ -10,6 +10,7 @@ const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const Order = require("../../models/order.model");
+const Payment = require("../../models/payment.model");
 const StoreCreditTransaction = require("../../models/storeCreditTransaction.model");
 const stripe = require("../../utils/stripe.util");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
@@ -63,6 +64,7 @@ jest.mock("../../utils/stripe.util", () => {
     paymentIntents: {
       create: jest.fn(async () => ({
         id: `pi_test_${++paymentIntentCounter}`,
+        status: "succeeded",
       })),
     },
     refunds: {
@@ -142,6 +144,35 @@ describe("Portal Subscriptions", () => {
 
     expect(createRes.status).toBe(201);
     return createRes.body.data.subscription;
+  }
+
+  async function prepareUpcomingDeliveries(subscriptionId) {
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      {
+        singletonKey: "subscription-settings",
+        deliveryDays: [0, 1, 2, 3, 4, 5, 6],
+        cutoffDaysBefore: 0,
+        cutoffTime: "23:59",
+      },
+      { upsert: true },
+    );
+
+    const deliveries = await SubscriptionDelivery.find({
+      subscription: subscriptionId,
+    }).sort({ scheduledDate: 1 });
+    for (let index = 0; index < deliveries.length; index += 1) {
+      const scheduledDate = new Date(
+        Date.now() + (index + 7) * 24 * 60 * 60 * 1000,
+      );
+      scheduledDate.setHours(12, 0, 0, 0);
+      deliveries[index].scheduledDate = scheduledDate;
+      await deliveries[index].save();
+    }
+    await Subscription.findByIdAndUpdate(subscriptionId, {
+      nextDeliveryDate: deliveries[0].scheduledDate,
+    });
+    return deliveries;
   }
 
   it("creates a subscription", async () => {
@@ -3300,6 +3331,9 @@ describe("Portal Subscriptions", () => {
       pausedUntil: new Date(Date.now() + 24 * 60 * 60 * 1000),
       nextDeliveryDate: null,
     });
+    // createBasicSubscription pre-generates delivery slots. Isolate this case
+    // so the explicitly retained slot below is the first eligible one.
+    await SubscriptionDelivery.deleteMany({ subscription: subWithSlot._id });
     await SubscriptionDelivery.create({
       subscription: subWithSlot._id,
       customer: customer._id,
@@ -3770,6 +3804,173 @@ describe("Portal Subscriptions", () => {
 
     const stored = await Subscription.findById(sub._id).lean();
     expect(stored.pendingChanges).toBeTruthy();
+  });
+
+  it("charges a one-time item for only the next scheduled delivery", async () => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const { variant: addOnVariant } = await createTestProduct();
+    const recurringBefore = await Subscription.findById(sub._id).lean();
+    const operationId = crypto.randomUUID();
+
+    stripe.paymentIntents.create.mockClear();
+    stripe.prices.create.mockClear();
+    stripe.subscriptions.update.mockClear();
+
+    const res = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId,
+        items: [{ variantId: addOnVariant._id.toString(), quantity: 2 }],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.chargedMinor).toBe(500);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 500,
+        confirm: true,
+        off_session: true,
+        metadata: expect.objectContaining({
+          type: "delivery_add_on",
+          operationId,
+          subscriptionDeliveryId: deliveries[0]._id.toString(),
+        }),
+      }),
+      expect.objectContaining({
+        idempotencyKey: expect.stringContaining(operationId),
+      }),
+    );
+
+    const storedDeliveries = await SubscriptionDelivery.find({
+      subscription: sub._id,
+    }).sort({ scheduledDate: 1 });
+    expect(storedDeliveries[0].addOns).toHaveLength(1);
+    expect(storedDeliveries[0].addOns[0].items[0].quantity).toBe(2);
+    expect(storedDeliveries.slice(1).every((delivery) => !delivery.addOns.length)).toBe(
+      true,
+    );
+
+    const recurringAfter = await Subscription.findById(sub._id).lean();
+    expect(recurringAfter.items.map((item) => item.toObject?.() || item)).toEqual(
+      recurringBefore.items.map((item) => item.toObject?.() || item),
+    );
+    expect(stripe.prices.create).not.toHaveBeenCalled();
+    expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+
+    const payment = await Payment.findOne({
+      subscription: sub._id,
+      providerReference: storedDeliveries[0].addOns[0].stripePaymentIntentId,
+    }).lean();
+    expect(payment).toMatchObject({ amount: 5, status: "paid", order: null });
+  });
+
+  it("adds the paid item to an already-generated order exactly once", async () => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const storedSub = await Subscription.findById(sub._id).lean();
+    const recurringSubtotal = storedSub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+    const order = await Order.create({
+      customer: customer._id,
+      items: storedSub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.unitPrice * item.quantity,
+      })),
+      deliveryAddress: storedSub.deliveryAddress,
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: deliveries[0].scheduledDate,
+      deliveryFee: 0,
+      subtotal: recurringSubtotal,
+      total: recurringSubtotal,
+      amountPaid: recurringSubtotal,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: `pi_subscription_${crypto.randomUUID()}`,
+      paidAt: new Date(),
+    });
+    deliveries[0].order = order._id;
+    deliveries[0].status = "generated";
+    deliveries[0].generatedAt = new Date();
+    await deliveries[0].save();
+
+    const { variant: addOnVariant } = await createTestProduct();
+    const operationId = crypto.randomUUID();
+    stripe.paymentIntents.create.mockClear();
+    const payload = {
+      operationId,
+      items: [{ variantId: addOnVariant._id.toString(), quantity: 1 }],
+    };
+
+    const first = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+    const retry = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(retry.body.message).toMatch(/already paid/i);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+
+    const updatedOrder = await Order.findById(order._id).lean();
+    expect(updatedOrder.items.filter((item) => item.isSubscriptionAddOn)).toHaveLength(
+      1,
+    );
+    expect(updatedOrder.subtotal).toBe(recurringSubtotal + 2.5);
+    expect(updatedOrder.total).toBe(recurringSubtotal + 2.5);
+    expect(updatedOrder.amountPaid).toBe(recurringSubtotal + 2.5);
+    expect(
+      updatedOrder.paymentAllocations.filter(
+        (allocation) => allocation.source === "delivery_add_on",
+      ),
+    ).toHaveLength(1);
+
+    const addOnPayment = await Payment.findOne({
+      subscription: sub._id,
+      order: order._id,
+    }).lean();
+    expect(addOnPayment).toMatchObject({ amount: 2.5, status: "paid" });
+  });
+
+  it("rejects a next-delivery add-on after its cut-off without charging", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    const { variant: addOnVariant } = await createTestProduct();
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      { cutoffDaysBefore: 30, cutoffTime: "00:00" },
+    );
+    stripe.paymentIntents.create.mockClear();
+
+    const res = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        items: [{ variantId: addOnVariant._id.toString(), quantity: 1 }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/cut-off/i);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(await Payment.countDocuments({ subscription: sub._id })).toBe(0);
   });
 
   it("falls back to store credit when card refund cannot be processed", async () => {

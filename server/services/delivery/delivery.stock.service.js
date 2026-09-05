@@ -3,16 +3,77 @@
 const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
+const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const { compareManifestItems } = require("../../utils/manifestItemOrder.util");
+const { toUtcIsoOnBatchDate } = require("../../utils/routeTime.util");
 const {
   buildManualRow,
   parseSkuQtyList,
 } = require("../../utils/deliveryImport.util");
 
+const DELIVERY_TIME_ZONE =
+  process.env.DELIVERY_TIME_ZONE ||
+  process.env.BUSINESS_TIME_ZONE ||
+  "Europe/London";
+
+const ELIGIBLE_ORDER_STATUSES = [
+  "paid",
+  "partially_paid",
+  "partially_refunded",
+];
+
+function getDeliveryDayRange(deliveryDate) {
+  const normalized = String(deliveryDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+
+  const date = new Date(`${normalized}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return null;
+
+  // Reject rollover dates such as 2026-02-31.
+  if (date.toISOString().slice(0, 10) !== normalized) return null;
+
+  const nextDate = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1),
+  );
+  const start = new Date(
+    toUtcIsoOnBatchDate(date, "00:00", DELIVERY_TIME_ZONE),
+  );
+  const end = new Date(
+    toUtcIsoOnBatchDate(nextDate, "00:00", DELIVERY_TIME_ZONE),
+  );
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return { start, end };
+}
+
+function resolveSubscriptionItemsForDelivery(subscription, scheduledDate) {
+  const weekdayName = new Intl.DateTimeFormat("en-US", {
+    timeZone: DELIVERY_TIME_ZONE,
+    weekday: "short",
+  }).format(new Date(scheduledDate));
+  const deliveryWeekday = [
+    "Sun",
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat",
+  ].indexOf(weekdayName);
+  const dayPlan = Array.isArray(subscription?.deliveryDayPlans)
+    ? subscription.deliveryDayPlans.find(
+        (plan) => Number(plan?.day) === Number(deliveryWeekday),
+      )
+    : null;
+
+  return dayPlan?.items?.length ? dayPlan.items : subscription?.items || [];
+}
+
 async function getOrdersStockRequirements({
   orderIds,
   ordersSheet,
   orderTypeScope = "both",
+  deliveryDate,
 } = {}) {
   try {
     const ids = Array.isArray(orderIds)
@@ -31,11 +92,33 @@ async function getOrdersStockRequirements({
     };
     const orderTypeFilter = scopeToOrderType[normalizedScope] || null;
 
-    if (!ids.length && !hasSheet) {
+    if (!["both", "normal", "subscription"].includes(normalizedScope)) {
       return {
         success: false,
         statusCode: 400,
-        message: "Provide orderIds or upload an ordersFile (xlsx/csv)",
+        message: "orderTypeScope must be both, normal, or subscription",
+      };
+    }
+
+    const normalizedDeliveryDate = String(deliveryDate || "").trim();
+    const deliveryDayRange = normalizedDeliveryDate
+      ? getDeliveryDayRange(normalizedDeliveryDate)
+      : null;
+
+    if (normalizedDeliveryDate && !deliveryDayRange) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "deliveryDate must be a valid date in YYYY-MM-DD format",
+      };
+    }
+
+    if (!ids.length && !hasSheet && !deliveryDayRange) {
+      return {
+        success: false,
+        statusCode: 400,
+        message:
+          "Provide a deliveryDate, orderIds, or upload an ordersFile (xlsx/csv)",
       };
     }
 
@@ -79,8 +162,17 @@ async function getOrdersStockRequirements({
     };
 
     let ordersFound = 0;
-    if (ids.length) {
-      const orderQuery = { _id: { $in: ids } };
+    if (ids.length || deliveryDayRange) {
+      const orderQuery = deliveryDayRange
+        ? {
+            deliveryDate: {
+              $gte: deliveryDayRange.start,
+              $lt: deliveryDayRange.end,
+            },
+            status: { $in: ELIGIBLE_ORDER_STATUSES },
+            archived: { $ne: true },
+          }
+        : { _id: { $in: ids } };
       if (orderTypeFilter) {
         orderQuery.orderType = orderTypeFilter;
       }
@@ -106,6 +198,73 @@ async function getOrdersStockRequirements({
               orderDbId: String(order._id),
             },
           });
+        }
+      }
+    }
+
+    let scheduledSubscriptionDeliveriesFound = 0;
+    if (deliveryDayRange && normalizedScope !== "normal") {
+      // Generated slots are represented by their Order above. Only ungenerated
+      // slots are expanded here, which prevents recurring items and add-ons
+      // from being counted twice.
+      const scheduledDeliveries = await SubscriptionDelivery.find({
+        scheduledDate: {
+          $gte: deliveryDayRange.start,
+          $lt: deliveryDayRange.end,
+        },
+        status: { $in: ["scheduled", "rescheduled"] },
+        order: null,
+      })
+        .populate({
+          path: "subscription",
+          select: "subscriptionNumber items deliveryDayPlans",
+        })
+        .lean();
+
+      scheduledSubscriptionDeliveriesFound = Array.isArray(
+        scheduledDeliveries,
+      )
+        ? scheduledDeliveries.length
+        : 0;
+
+      for (const delivery of scheduledDeliveries || []) {
+        const subscription = delivery?.subscription;
+        if (!subscription || typeof subscription !== "object") continue;
+
+        const orderRef = {
+          orderId:
+            subscription.subscriptionNumber ||
+            `subscription-delivery-${String(delivery._id)}`,
+          orderDbId: null,
+        };
+
+        for (const item of resolveSubscriptionItemsForDelivery(
+          subscription,
+          delivery.scheduledDate,
+        )) {
+          upsert({
+            variantId: item.variant,
+            productId: item.product,
+            sku: item.sku,
+            name: item.name,
+            unitPrice: item.unitPrice,
+            quantity: item.quantity,
+            orderRef,
+          });
+        }
+
+        for (const addOn of delivery.addOns || []) {
+          for (const item of addOn.items || []) {
+            upsert({
+              variantId: item.variant,
+              productId: item.product,
+              sku: item.sku,
+              name: item.name,
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+              orderRef,
+            });
+          }
         }
       }
     }
@@ -206,6 +365,8 @@ async function getOrdersStockRequirements({
           orderIdsProvided: ids.length,
           ordersFound,
           orderTypeScope: normalizedScope,
+          deliveryDate: normalizedDeliveryDate || null,
+          scheduledSubscriptionDeliveriesFound,
           sheet: hasSheet
             ? {
                 originalName: ordersSheet?.originalName,
