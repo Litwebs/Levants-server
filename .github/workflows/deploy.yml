@@ -191,6 +191,14 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p ${{ secrets.VPS_PORT }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Restore stale generated admin build on VPS
+        run: |
+          ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \
+            'repo_dir="/root/LWS-Scripts/${{ github.event.repository.name }}"; \
+            if git -C "$repo_dir" ls-files --error-unmatch client/build/index.html > /dev/null 2>&1; then \
+              git -C "$repo_dir" restore --source=HEAD --staged --worktree -- client/build; \
+            fi'
+
       - name: Deploy backend
         run: |
           REPO_URL="https://github.com/${{ github.repository }}.git"
