@@ -100,6 +100,24 @@ describe("PUT /api/admin/orders/bulk/delivery-status (Delivered email)", () => {
 
     expect(sendEmail).toHaveBeenCalledTimes(2);
 
+    const firstEmail = sendEmail.mock.calls.find(
+      ([recipient]) => recipient === customer1.email,
+    );
+    const secondEmail = sendEmail.mock.calls.find(
+      ([recipient]) => recipient === customer2.email,
+    );
+
+    expect(firstEmail[3].proofSrc).toBe("cid:delivery-proof-photo");
+    expect(firstEmail[4].attachments).toEqual([
+      {
+        filename: "delivery-proof.jpg",
+        path: "https://cdn.test.com/pod-1.jpg",
+        contentId: "delivery-proof-photo",
+      },
+    ]);
+    expect(secondEmail[3].proofSrc).toBe("");
+    expect(secondEmail[4].attachments).toBeUndefined();
+
     const updated1 = await Order.findById(order1._id);
     const updated2 = await Order.findById(order2._id);
 
