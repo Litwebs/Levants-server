@@ -226,9 +226,11 @@ const OrdersBulkActions = ({
             <div className={styles.bulkSection}>
               <div className={styles.bulkSectionTitle}>Stock Needed</div>
               <p className={styles.bulkSectionHelp}>
-                Select a source. A delivery date includes paid one-time orders,
-                scheduled subscriptions, and confirmed one-time add-ons for
-                that day.
+                Count orders for a delivery date or selected orders, and optionally
+                add a sheet to get one combined total. A delivery date includes
+                paid one-time orders, scheduled subscriptions, and confirmed
+                one-time add-ons for that day. Only add sheet orders that are not
+                already included. All rows in the uploaded sheet are counted.
               </p>
 
               <input
@@ -244,8 +246,9 @@ const OrdersBulkActions = ({
 
               <div className={styles.bulkSectionRow}>
                 <div className={styles.filterGroup}>
-                  <label className={styles.filterLabel}>Calculate from</label>
+                  <label htmlFor="stock-source" className={styles.filterLabel}>Calculate from</label>
                   <select
+                    id="stock-source"
                     className={styles.filterInput}
                     value={stockSource}
                     onChange={(e) =>
@@ -259,16 +262,17 @@ const OrdersBulkActions = ({
                     >
                       Selected orders
                     </option>
-                    <option value="file">Uploaded file</option>
+                    <option value="file">Uploaded file only</option>
                   </select>
                 </div>
 
                 {stockSource === "delivery_date" ? (
                   <div className={styles.filterGroup}>
-                    <label className={styles.filterLabel}>
+                    <label htmlFor="stock-delivery-date" className={styles.filterLabel}>
                       Stock delivery date
                     </label>
                     <input
+                      id="stock-delivery-date"
                       type="date"
                       className={styles.filterInput}
                       value={stockDeliveryDate}
@@ -279,8 +283,9 @@ const OrdersBulkActions = ({
 
                 {stockSource !== "file" ? (
                   <div className={styles.filterGroup}>
-                    <label className={styles.filterLabel}>Order type</label>
+                    <label htmlFor="stock-order-type" className={styles.filterLabel}>Order type</label>
                     <select
+                      id="stock-order-type"
                       className={styles.filterInput}
                       value={stockOrderTypeScope}
                       onChange={(e) =>
@@ -299,14 +304,14 @@ const OrdersBulkActions = ({
                   </div>
                 ) : null}
 
-                {stockSource === "file" ? (
+                {(
                   <>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      {ordersFile ? "Change file" : "Choose file"}
+                      {ordersFile ? "Change file" : stockSource === "file" ? "Choose file" : "Add sheet (optional)"}
                     </Button>
 
                     {ordersFile ? (
@@ -331,7 +336,7 @@ const OrdersBulkActions = ({
                       </>
                     ) : null}
                   </>
-                ) : null}
+                )}
 
                 <Button
                   variant="outline"
@@ -347,10 +352,7 @@ const OrdersBulkActions = ({
                           stockSource === "selected_orders"
                             ? selectedOrders
                             : undefined,
-                        ordersFile:
-                          stockSource === "file"
-                            ? ordersFile || undefined
-                            : undefined,
+                        ordersFile: ordersFile || undefined,
                         orderTypeScope: stockOrderTypeScope,
                         deliveryDate:
                           stockSource === "delivery_date"
@@ -385,6 +387,12 @@ const OrdersBulkActions = ({
               {stockResult.sources.ordersFound || 0} order records and {" "}
               {stockResult.sources.scheduledSubscriptionDeliveriesFound || 0}
               {" "}scheduled subscription deliveries.
+            </p>
+          ) : null}
+          {stockResult.sources?.sheet ? (
+            <p className={styles.stockResultSummary}>
+              Includes {stockResult.sources.sheet.usableRows || 0} sheet rows
+              from {stockResult.sources.sheet.originalName || "the uploaded file"}.
             </p>
           ) : null}
           <Table>

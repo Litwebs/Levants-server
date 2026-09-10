@@ -295,6 +295,31 @@ describe("POST /api/admin/delivery/orders/stock (E2E)", () => {
     const subscriptionsOnly = await getStock("subscription");
     expect(subscriptionsOnly.status).toBe(200);
     expect(subscriptionsOnly.body.data.items[0].totalQuantity).toBe(10);
+
+    await ProductVariant.updateOne(
+      { _id: variant._id },
+      { $set: { status: "active" } },
+    );
+    const combined = await request(app)
+      .post("/api/admin/delivery/orders/stock")
+      .set("Cookie", adminCookie)
+      .field("deliveryDate", "2026-09-06")
+      .field("orderTypeScope", "both")
+      .attach("ordersFile", Buffer.from(`name,order\nSheet customer,5x ${variant.sku}\n`), "orders.csv");
+
+    expect(combined.status).toBe(200);
+    expect(combined.body.data.items[0].totalQuantity).toBe(17);
+    expect(combined.body.data.sources.sheet.usableRows).toBe(1);
+
+    for (const adjacentDate of ["2026-09-05", "2026-09-07"]) {
+      const adjacent = await request(app)
+        .post("/api/admin/delivery/orders/stock")
+        .set("Cookie", adminCookie)
+        .send({ deliveryDate: adjacentDate, orderTypeScope: "subscription" });
+      expect(adjacent.status).toBe(200);
+      expect(adjacent.body.data.items).toEqual([]);
+      expect(adjacent.body.data.sources.scheduledSubscriptionDeliveriesFound).toBe(0);
+    }
   });
 
   test("rejects an invalid delivery date", async () => {

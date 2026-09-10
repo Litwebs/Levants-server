@@ -570,29 +570,49 @@ describe("Portal Subscriptions", () => {
     expect(new Set(weekdays).size).toBeGreaterThan(1);
   });
 
-  it("extends three future slots even when nextDeliveryDate is stale", async () => {
+  it.each([0, 1])("extends three upcoming slots from a stale date (%i days after Sunday)", async (daysAfterSunday) => {
     const sub = await createBasicSubscription();
-    const staleDate = new Date();
-    staleDate.setDate(staleDate.getDate() - 35);
-    staleDate.setHours(0, 0, 0, 0);
-    await Subscription.findByIdAndUpdate(sub._id, {
-      nextDeliveryDate: staleDate,
+    // Exercise both a delivery day and the following day, independently of
+    // the weekday/time when CI runs. Keep database/network timers real.
+    const now = new Date(2026, 8, 6 + daysAfterSunday, 14, 38);
+    jest.useFakeTimers({
+      now,
+      doNotFake: [
+        "hrtime", "nextTick", "performance", "queueMicrotask",
+        "setImmediate", "clearImmediate", "setInterval", "clearInterval",
+        "setTimeout", "clearTimeout",
+      ],
     });
-    await SubscriptionDelivery.deleteMany({ subscription: sub._id });
+    try {
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+      const staleDate = new Date(2026, 7, 2);
+      await Subscription.findByIdAndUpdate(sub._id, {
+        nextDeliveryDate: staleDate,
+      });
+      await SubscriptionDelivery.deleteMany({ subscription: sub._id });
 
-    const stored = await Subscription.findById(sub._id);
-    await subscriptionService.scheduleUpcomingDeliveries(stored);
+      const stored = await Subscription.findById(sub._id);
+      await subscriptionService.scheduleUpcomingDeliveries(stored);
 
-    const futureSlots = await SubscriptionDelivery.find({
-      subscription: sub._id,
-      scheduledDate: { $gte: new Date() },
-    }).lean();
-    expect(futureSlots).toHaveLength(3);
-    expect(
-      futureSlots.every(
-        (slot) => new Date(slot.scheduledDate).getDay() === 0,
-      ),
-    ).toBe(true);
+      const futureSlots = await SubscriptionDelivery.find({
+        subscription: sub._id,
+        // Slots are delivery dates: today's midnight slot is still upcoming.
+        scheduledDate: { $gte: today },
+      }).sort({ scheduledDate: 1 }).lean();
+      expect(futureSlots).toHaveLength(3);
+      expect(
+        futureSlots.every(
+          (slot) => new Date(slot.scheduledDate).getDay() === 0,
+        ),
+      ).toBe(true);
+      expect(futureSlots.map((slot) => new Date(slot.scheduledDate).getTime()))
+        .toEqual([0, 7, 14].map((offset) =>
+          new Date(2026, 8, (daysAfterSunday === 0 ? 6 : 13) + offset).getTime(),
+        ));
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("can pause, resume, and cancel subscription", async () => {
