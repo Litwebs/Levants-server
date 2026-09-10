@@ -60,7 +60,8 @@ describe("PUT /api/admin/orders/:orderId/status (Delivered email)", () => {
       paidAt: new Date(),
     });
 
-    const proofUrl = "https://cdn.test.com/pod.jpg";
+    const proofUrl =
+      "https://res.cloudinary.com/levants/image/upload/v123/delivery-proofs/pod.heic";
 
     const res = await request(app)
       .put(`/api/admin/orders/${order._id}/status`)
@@ -75,12 +76,24 @@ describe("PUT /api/admin/orders/:orderId/status (Delivered email)", () => {
 
     expect(sendEmail).toHaveBeenCalledTimes(1);
 
-    const [to, subject, templateName, params] = sendEmail.mock.calls[0];
+    const [to, subject, templateName, params, options] =
+      sendEmail.mock.calls[0];
     expect(to).toBe(customer.email);
     expect(String(subject)).toMatch(/delivered/i);
     expect(templateName).toBe("deliveryProof");
     expect(params.orderId).toBeDefined();
     expect(params.proofUrl).toBe(proofUrl);
+    expect(params.proofSrc).toBe("cid:delivery-proof-photo");
+    expect(options).toEqual({
+      fromName: "Levants",
+      attachments: [
+        {
+          filename: "delivery-proof.jpg",
+          path: "https://res.cloudinary.com/levants/image/upload/f_jpg,q_auto:good,w_1200,c_limit/v123/delivery-proofs/pod.heic",
+          contentId: "delivery-proof-photo",
+        },
+      ],
+    });
 
     const updated = await Order.findById(order._id);
     expect(updated.deliveryStatus).toBe("delivered");

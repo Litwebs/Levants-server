@@ -2,12 +2,14 @@ module.exports = ({
   name = "there",
   orderId,
   proofUrl,
+  proofSrc,
   deliveryNote,
   deliveredAt,
   reviewsUrl,
   logoSrc = "./assets/logo.png",
 }) => {
   const safeProofUrl = String(proofUrl || "").trim();
+  const safeProofSrc = String(proofSrc || safeProofUrl).trim();
   const safeNoteRaw = String(deliveryNote || "").trim();
 
   const escapeHtml = (value) =>
@@ -95,9 +97,9 @@ ${
 <div style="margin:0 0 18px 0;">
 <div style="font-size:13px;font-weight:600;color:#2b2b2b;margin-bottom:8px;">Delivery proof</div>
 ${
-  safeProofUrl
+  safeProofSrc
     ? `
-<img src="${safeProofUrl}" alt="Delivery proof" width="560"
+<img src="${escapeHtml(safeProofSrc)}" alt="Delivery proof" width="560"
      style="display:block;width:100%;max-width:560px;height:auto;border-radius:10px;border:1px solid #ece6dc;" />
 `
     : `

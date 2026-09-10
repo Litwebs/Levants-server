@@ -12,6 +12,58 @@ const sendEmail = require("../../Integration/Email.service");
 const { uploadAndCreateFile } = require("../files.service");
 const { buildActiveOrderIdQuery } = require("../../utils/ordersAdmin.util");
 
+const DELIVERY_PROOF_CONTENT_ID = "delivery-proof-photo";
+const CLOUDINARY_UPLOAD_PATH = "/image/upload/";
+
+function getEmailCompatibleProofUrl(proofUrl) {
+  try {
+    const url = new URL(proofUrl);
+    const uploadIndex = url.pathname.indexOf(CLOUDINARY_UPLOAD_PATH);
+
+    if (url.hostname === "res.cloudinary.com" && uploadIndex !== -1) {
+      const insertAt = uploadIndex + CLOUDINARY_UPLOAD_PATH.length;
+      url.pathname = `${url.pathname.slice(0, insertAt)}f_jpg,q_auto:good,w_1200,c_limit/${url.pathname.slice(insertAt)}`;
+      return url.toString();
+    }
+  } catch (_) {}
+
+  return proofUrl;
+}
+
+function getDeliveryProofFilename(proofUrl) {
+  try {
+    const extension = path.posix
+      .extname(new URL(proofUrl).pathname)
+      .toLowerCase();
+
+    if (/^\.[a-z0-9]{2,5}$/.test(extension)) {
+      return `delivery-proof${extension}`;
+    }
+  } catch (_) {}
+
+  return "delivery-proof.jpg";
+}
+
+function buildDeliveryProofEmailOptions(proofUrl) {
+  const options = { fromName: "Levants" };
+  if (!proofUrl) return options;
+
+  const attachmentUrl = getEmailCompatibleProofUrl(proofUrl);
+
+  options.attachments = [
+    {
+      filename:
+        attachmentUrl === proofUrl
+          ? getDeliveryProofFilename(attachmentUrl)
+          : "delivery-proof.jpg",
+      path: attachmentUrl,
+      contentId: DELIVERY_PROOF_CONTENT_ID,
+    },
+  ];
+
+  return options;
+}
+
 async function UpdateOrderStatus({
   orderId,
   deliveryStatus,
@@ -191,13 +243,12 @@ async function UpdateOrderStatus({
             name: customer?.firstName || "there",
             orderId: order.orderId,
             proofUrl,
+            proofSrc: proofUrl ? `cid:${DELIVERY_PROOF_CONTENT_ID}` : "",
             deliveryNote: note,
             deliveredAt: new Date().toLocaleString("en-GB"),
             reviewsUrl,
           },
-          {
-            fromName: "Levants",
-          },
+          buildDeliveryProofEmailOptions(proofUrl),
         );
 
         if (emailRes?.success) {
@@ -305,11 +356,12 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
             name: customer?.firstName || "there",
             orderId: order.orderId,
             proofUrl,
+            proofSrc: proofUrl ? `cid:${DELIVERY_PROOF_CONTENT_ID}` : "",
             deliveryNote: note,
             deliveredAt: new Date().toLocaleString("en-GB"),
             reviewsUrl,
           },
-          { fromName: "Levants" },
+          buildDeliveryProofEmailOptions(proofUrl),
         );
 
         if (emailRes?.success) {
