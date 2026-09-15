@@ -188,6 +188,44 @@ describe("GET /api/admin/orders (Admin)", () => {
     );
   });
 
+  test("separates website and subscription orders with search and payment filters", async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+    const base = {
+      customer: customer._id,
+      items: [{ product: product._id, variant: variant._id, name: variant.name,
+        sku: variant.sku, price: variant.price, quantity: 1, subtotal: variant.price }],
+      subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 0,
+      total: variant.price,
+      status: "paid",
+      paidAt: new Date(),
+      reservationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    };
+    const website = await Order.create(base);
+    // Older website orders may predate the orderType field.
+    await Order.collection.updateOne({ _id: website._id }, { $unset: { orderType: "" } });
+    const subscription = await Order.create({ ...base, orderType: "subscription_generated" });
+    const linked = await Order.create({ ...base, subscription: product._id });
+    await Order.create({ ...base, orderType: "subscription_generated", status: "unpaid" });
+    await Order.create({ ...base, metadata: { manualImport: true } });
+    for (const [orderSource, expected] of [
+      ["website", [String(website._id)]],
+      ["subscription", [String(subscription._id), String(linked._id)]],
+    ]) {
+      for (const extra of [{}, { search: "paid", paymentStatus: "paid" }]) {
+        const res = await request(app).get("/api/admin/orders")
+          .query({ orderSource, ...extra }).set("Cookie", adminCookie);
+        expect(res.status).toBe(200);
+        expect(res.body.data.orders.map((order) => order._id).sort()).toEqual(expected.sort());
+      }
+    }
+  });
+
   test("hides unpaid website orders while keeping imported pending orders visible", async () => {
     const adminCookie = await loginAsAdmin(app);
 

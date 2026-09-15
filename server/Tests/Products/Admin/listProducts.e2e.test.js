@@ -56,6 +56,45 @@ describe("GET /api/admin/products (E2E)", () => {
     expect(Array.isArray(res.body.data.products)).toBe(true);
   });
 
+  test("returns each variant's own image URL and handles missing images", async () => {
+    const admin = await createUser({ role: "admin" });
+    const login = await request(app).post("/api/auth/login").send({
+      email: admin.email,
+      password: "secret123",
+    });
+    const product = await createProductInDb({ userId: admin._id });
+    for (const name of ["Pint", "Two litre", "No image"]) {
+      const image = name === "No image" ? null : await File.create({
+        originalName: `${name}.jpg`,
+        filename: `test/${name}`,
+        mimeType: "image/jpeg",
+        sizeBytes: 1,
+        url: `https://example.com/${encodeURIComponent(name)}.jpg`,
+        uploadedBy: admin._id,
+      });
+      await Variant.create({
+        product: product._id,
+        name,
+        sku: name,
+        price: 1,
+        stockQuantity: 10,
+        status: "active",
+        thumbnailImage: image?._id || null,
+      });
+    }
+    const res = await request(app)
+      .get("/api/admin/products")
+      .set("Cookie", getSetCookieHeader(login));
+    expect(res.status).toBe(200);
+    const listed = res.body.data.products.find((p) => p._id === String(product._id));
+    expect(listed.thumbnailImage.url).toBe("https://example.com/thumb.jpg");
+    for (const name of ["Pint", "Two litre"]) {
+      expect(listed.variants.find((v) => v.name === name).thumbnailImage.url)
+        .toBe(`https://example.com/${encodeURIComponent(name)}.jpg`);
+    }
+    expect(listed.variants.find((v) => v.name === "No image").thumbnailImage).toBeNull();
+  });
+
   test("returns all categories in meta", async () => {
     const admin = await createUser({ role: "admin" });
 

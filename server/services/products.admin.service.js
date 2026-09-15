@@ -201,7 +201,9 @@ async function ListProducts({
   const variants = await Variant.find({
     product: { $in: productIds },
     status: { $ne: "archived" },
-  }).lean();
+  })
+    .populate("thumbnailImage", "url")
+    .lean();
 
   const variantsByProduct = variants.reduce((acc, v) => {
     acc[v.product] ??= [];

@@ -23,6 +23,7 @@ type VariantOption = {
   price: number;
   status: string;
   sku?: string;
+  thumbnailImage?: string | { url?: string } | null;
   description?: string | null;
   ingredients?: string | null;
   allergens?: string[];
@@ -64,7 +65,7 @@ const initialForm = {
 const STEPS = ["Customer", "Schedule", "Products", "Review"];
 const PRODUCTS_PER_PAGE = 8;
 
-const getImageUrl = (image?: string | { url?: string }) =>
+const getImageUrl = (image?: string | { url?: string } | null) =>
   typeof image === "string" ? image : image?.url || "";
 
 export default function CreateSubscriptionInviteModal() {
@@ -130,7 +131,9 @@ export default function CreateSubscriptionInviteModal() {
               category: product.category || "",
               productAllergens: product.allergens || [],
               storageNotes: product.storageNotes || "",
-              imageUrl: getImageUrl(product.thumbnailImage),
+              imageUrl:
+                getImageUrl(variant.thumbnailImage) ||
+                getImageUrl(product.thumbnailImage),
             })),
         ),
     [products],
@@ -521,7 +524,7 @@ export default function CreateSubscriptionInviteModal() {
                           {variant.imageUrl ? (
                             <img
                               src={variant.imageUrl}
-                              alt={variant.productName}
+                              alt={variant.name}
                             />
                           ) : (
                             <Package size={26} />

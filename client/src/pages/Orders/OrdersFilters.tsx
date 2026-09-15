@@ -148,6 +148,7 @@ const OrdersFilters = ({
               options={[
                 { value: "all", label: "All Sources" },
                 { value: "website", label: "Website" },
+                { value: "subscription", label: "Subscriptions" },
                 { value: "imported", label: "Imported" },
               ]}
             />

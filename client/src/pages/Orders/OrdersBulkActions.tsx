@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/common";
-import { AlertTriangle, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarDays, Package, Upload, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
 import { useEffect, useRef, useState } from "react";
@@ -55,6 +55,8 @@ const OrdersBulkActions = ({
 
   const [deliveryDate, setDeliveryDate] = useState(today);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [deliveryStatus, setDeliveryStatus] = useState("");
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
@@ -70,7 +72,7 @@ const OrdersBulkActions = ({
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   useEffect(() => {
     if (selectedOrders.length === 0 && stockSource === "selected_orders") {
@@ -106,7 +108,7 @@ const OrdersBulkActions = ({
                 aria-controls="orders-bulk-actions-panel"
                 onClick={() => setIsExpanded((expanded) => !expanded)}
               >
-                {hasSelectedOrders ? "Bulk actions" : "Stock needed"}
+                {isExpanded ? "Hide tools" : "Show tools"}
                 {isExpanded ? (
                   <ChevronUp size={16} />
                 ) : (
@@ -116,12 +118,13 @@ const OrdersBulkActions = ({
             ) : null}
             {hasSelectedOrders && canDeleteOrders ? (
               <Button
-                variant="danger"
+                variant="ghost"
+                className={styles.bulkDeleteButton}
                 size="sm"
                 onClick={() => setIsDeleteConfirmOpen(true)}
               >
                 <Trash2 size={16} />
-                Delete Selected
+                Delete…
               </Button>
             ) : null}
             {hasSelectedOrders ? (
@@ -145,12 +148,14 @@ const OrdersBulkActions = ({
         >
           {hasSelectedOrders && canUpdateOrders && (
             <div className={styles.bulkSection}>
-              <div className={styles.bulkSectionTitle}>Delivery</div>
+              <h3 className={styles.bulkSectionTitle}><CalendarDays size={20} aria-hidden="true" /> Update delivery</h3>
+
 
               <div className={styles.bulkSectionRow}>
                 <div className={styles.filterGroup}>
-                  <label className={styles.filterLabel}>Delivery date</label>
+                  <label htmlFor="bulk-delivery-date" className={styles.filterLabel}>Delivery date</label>
                   <input
+                    id="bulk-delivery-date"
                     type="date"
                     className={styles.filterInput}
                     min={today}
@@ -174,49 +179,32 @@ const OrdersBulkActions = ({
                     }
                   }}
                 >
-                  Assign Delivery Date
+                  Set delivery date
                 </Button>
               </div>
 
               <div className={styles.bulkSectionRow}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => bulkUpdateStatus("ordered")}
-                >
-                  Mark Ordered
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => bulkUpdateStatus("dispatched")}
-                >
-                  Mark Dispatched
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => bulkUpdateStatus("in_transit")}
-                >
-                  Mark In Transit
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => bulkUpdateStatus("delivered")}
-                >
-                  Mark Delivered
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => bulkUpdateStatus("returned")}
-                >
-                  Mark Returned
+                <div className={styles.filterGroup}>
+                  <label htmlFor="bulk-delivery-status" className={styles.filterLabel}>Delivery status</label>
+                  <select id="bulk-delivery-status" className={styles.filterInput}
+                    value={deliveryStatus} onChange={(e) => setDeliveryStatus(e.target.value)}>
+                    <option value="">Choose a status…</option>
+                    <option value="ordered">Ordered</option>
+                    <option value="dispatched">Dispatched</option>
+                    <option value="in_transit">In transit</option>
+                    <option value="delivered">Delivered</option>
+                    <option value="returned">Returned</option>
+                  </select>
+                </div>
+                <Button variant="outline" size="sm" disabled={!deliveryStatus}
+                  isLoading={isUpdatingStatus}
+                  onClick={async () => {
+                    if (!deliveryStatus || isUpdatingStatus) return;
+                    setIsUpdatingStatus(true);
+                    try { await bulkUpdateStatus(deliveryStatus); }
+                    finally { setIsUpdatingStatus(false); }
+                  }}>
+                  Update status
                 </Button>
               </div>
             </div>
@@ -224,14 +212,8 @@ const OrdersBulkActions = ({
 
           {canReadDelivery && (
             <div className={styles.bulkSection}>
-              <div className={styles.bulkSectionTitle}>Stock Needed</div>
-              <p className={styles.bulkSectionHelp}>
-                Count orders for a delivery date or selected orders, and optionally
-                add a sheet to get one combined total. A delivery date includes
-                paid one-time orders, scheduled subscriptions, and confirmed
-                one-time add-ons for that day. Only add sheet orders that are not
-                already included. All rows in the uploaded sheet are counted.
-              </p>
+              <h3 className={styles.bulkSectionTitle}><Package size={20} aria-hidden="true" /> Plan stock</h3>
+
 
               <input
                 ref={fileInputRef}
@@ -246,7 +228,7 @@ const OrdersBulkActions = ({
 
               <div className={styles.bulkSectionRow}>
                 <div className={styles.filterGroup}>
-                  <label htmlFor="stock-source" className={styles.filterLabel}>Calculate from</label>
+                  <label htmlFor="stock-source" className={styles.filterLabel}>Count orders from</label>
                   <select
                     id="stock-source"
                     className={styles.filterInput}
@@ -260,7 +242,7 @@ const OrdersBulkActions = ({
                       value="selected_orders"
                       disabled={!hasSelectedOrders}
                     >
-                      Selected orders
+                      Selected orders ({selectedOrders.length})
                     </option>
                     <option value="file">Uploaded file only</option>
                   </select>
@@ -269,7 +251,7 @@ const OrdersBulkActions = ({
                 {stockSource === "delivery_date" ? (
                   <div className={styles.filterGroup}>
                     <label htmlFor="stock-delivery-date" className={styles.filterLabel}>
-                      Stock delivery date
+                      Delivery date
                     </label>
                     <input
                       id="stock-delivery-date"
@@ -283,7 +265,7 @@ const OrdersBulkActions = ({
 
                 {stockSource !== "file" ? (
                   <div className={styles.filterGroup}>
-                    <label htmlFor="stock-order-type" className={styles.filterLabel}>Order type</label>
+                    <label htmlFor="stock-order-type" className={styles.filterLabel}>Include</label>
                     <select
                       id="stock-order-type"
                       className={styles.filterInput}
@@ -304,13 +286,23 @@ const OrdersBulkActions = ({
                   </div>
                 ) : null}
 
-                {(
+              </div>
+
+              <div className={styles.stockScopeNote} role="status">
+                {stockSource === "delivery_date"
+                  ? "Counts this delivery date, not the table selection."
+                  : stockSource === "selected_orders"
+                    ? `Counts ${selectedOrders.length} selected orders, filtered by type.`
+                    : "Counts all order rows in your uploaded sheet."}
+              </div>
+              <div className={styles.bulkUploadRow}>
                   <>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => fileInputRef.current?.click()}
                     >
+                      <Upload size={16} aria-hidden="true" />
                       {ordersFile ? "Change file" : stockSource === "file" ? "Choose file" : "Add sheet (optional)"}
                     </Button>
 
@@ -336,10 +328,13 @@ const OrdersBulkActions = ({
                       </>
                     ) : null}
                   </>
-                )}
-
+              </div>
+              {ordersFile && stockSource !== "file" && (
+                <p className={styles.bulkSectionHelp}>All sheet rows are added. Only upload orders not already counted.</p>
+              )}
+              <div className={styles.stockCalculateRow}>
                 <Button
-                  variant="outline"
+                  variant="primary"
                   size="sm"
                   isLoading={isCalculatingStock}
                   disabled={!canCalculateStock}
@@ -366,7 +361,7 @@ const OrdersBulkActions = ({
                     }
                   }}
                 >
-                  Get Stock Needed
+                  Calculate stock needed
                 </Button>
               </div>
             </div>

@@ -34,6 +34,22 @@ function buildPaymentVisibilityQuery({
         $in: visibleWebsiteStatuses,
       },
       "metadata.manualImport": { $ne: true },
+      orderType: { $ne: "subscription_generated" },
+      subscription: null,
+    };
+  }
+
+  if (normalizedOrderSource === "subscription") {
+    return {
+      $and: [
+        buildPaymentVisibilityQuery({ requestedStatuses }),
+        {
+          $or: [
+            { orderType: "subscription_generated" },
+            { subscription: { $ne: null } },
+          ],
+        },
+      ],
     };
   }
 
