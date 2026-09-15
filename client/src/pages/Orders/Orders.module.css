@@ -291,9 +291,9 @@
 
 /* Bulk Actions */
 .bulkActions {
-  padding: var(--space-3) var(--space-4);
-  background-color: var(--color-primary-bg);
-  border: 1px solid var(--color-primary);
+  padding: var(--space-4);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
 }
 
 .bulkContent {
@@ -317,11 +317,10 @@
 }
 
 .bulkSections {
-  margin-top: var(--space-3);
-  display: flex;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  align-items: flex-start;
+  margin-top: var(--space-4);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
 }
 
 .bulkSectionsCollapsed {
@@ -329,21 +328,100 @@
 }
 
 .bulkSection {
+  --bulk-control-height: 40px;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 280px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-gray-200);
 }
 
 .bulkSectionTitle {
-  font-size: var(--text-xs);
+  flex: 0 0 160px;
+  white-space: nowrap;
+  align-self: flex-end;
+  height: var(--bulk-control-height);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-base);
   font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+}
+
+.bulkSection .filterLabel {
+  height: 18px;
+  line-height: 18px;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.bulkSection .filterGroup {
+  flex: 0 1 175px;
+  min-width: 0;
+}
+
+.bulkSection .filterInput {
+  width: 100%;
+  min-width: 0;
+  height: var(--bulk-control-height);
+  min-height: var(--bulk-control-height);
+  box-sizing: border-box;
+  line-height: 20px;
+}
+
+.bulkSection button {
+  height: var(--bulk-control-height);
+  min-height: var(--bulk-control-height);
+  box-sizing: border-box;
+}
+
+.stockScopeNote {
+  order: 10;
+  flex-basis: 100%;
+  margin-left: 172px;
   color: var(--color-gray-600);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.bulkUploadRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.stockCalculateRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
+.bulkDeleteButton {
+  color: var(--color-danger, #dc2626);
+}
+
+@media (max-width: 600px) {
+  .bulkSection { --bulk-control-height: 44px; }
+  .bulkSectionTitle { flex-basis: 100%; }
+  .bulkSectionRow { width: 100%; }
+  .bulkSection .filterGroup { flex: 1 1 140px; }
+  .stockScopeNote { margin-left: 0; }
+  .bulkSectionRow > button,
+  .stockCalculateRow > button {
+    width: 100%;
+    min-height: 44px;
+  }
 }
 
 .bulkSectionHelp {
+  order: 11;
+  flex-basis: 100%;
   max-width: 680px;
   margin: 0;
   font-size: var(--text-sm);
@@ -353,9 +431,22 @@
 
 .bulkSectionRow {
   display: flex;
+  max-width: 100%;
   gap: var(--space-2);
   flex-wrap: wrap;
   align-items: flex-end;
+}
+
+@media (min-width: 900px) {
+  .bulkSectionRow {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+
+  .bulkSection .filterGroup {
+    flex: 0 0 170px;
+    width: 170px;
+  }
 }
 
 .bulkFileInput {

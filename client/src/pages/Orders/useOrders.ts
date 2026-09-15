@@ -450,6 +450,7 @@ const refresh = useCallback(
   // Reset to page 1 when any filter changes (excluding pagination)
   useEffect(() => {
     setPage(1);
+    setSelectedOrders([]);
   }, [
     searchQuery,
     deliveryStatusFilter,
