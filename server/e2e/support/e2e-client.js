@@ -135,6 +135,26 @@ async function finalizeCancellation(request, subscriptionId, referenceDate) {
   return responseJson(response, "Scheduled cancellation finalization");
 }
 
+async function failNextStripePriceSyncs(request, subscriptionId, count = 1) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/stripe-price-sync/fail-next`,
+    {
+      headers: controlHeaders,
+      data: { count },
+      timeout: 30_000,
+    },
+  );
+  return responseJson(response, "Stripe price sync fault injection");
+}
+
+async function reconcileStripePrice(request, subscriptionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/stripe-price-sync/reconcile`,
+    { headers: controlHeaders, timeout: 30_000 },
+  );
+  return responseJson(response, "Stripe price reconciliation");
+}
+
 async function login(request, credentials) {
   const response = await request.post(`${API_ORIGIN}/api/portal/auth/login`, {
     data: credentials,
@@ -164,12 +184,14 @@ module.exports = {
   clearEmails,
   crossCutoff,
   deliverSignedInvoiceEvent,
+  failNextStripePriceSyncs,
   finalizeCancellation,
   getState,
   getEmails,
   login,
   portalHeaders,
   preparePaymentRetry,
+  reconcileStripePrice,
   reset,
   setPaymentOutcome,
 };
