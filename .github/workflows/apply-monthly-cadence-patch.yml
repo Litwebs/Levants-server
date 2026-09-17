@@ -1,0 +1,108 @@
+name: Apply monthly cadence patch
+
+on:
+  push:
+    branches:
+      - fix/subscription-monthly-calendar-cadence
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/subscription-monthly-calendar-cadence
+          fetch-depth: 0
+
+      - name: Apply guarded source patch
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          function replaceOnce(path, before, after) {
+            const source = fs.readFileSync(path, 'utf8');
+            if (source.includes(after)) {
+              console.log(`${path}: replacement already applied`);
+              return;
+            }
+            if (!source.includes(before)) {
+              throw new Error(`${path}: expected source block not found`);
+            }
+            const updated = source.replace(before, after);
+            fs.writeFileSync(path, updated);
+            console.log(`${path}: patched`);
+          }
+
+          const servicePath = 'server/services/customerPortal/customerSubscriptions.service.js';
+          replaceOnce(
+            servicePath,
+            `const stripe = require("../../utils/stripe.util");\nconst { Response } = require("../../utils/response.util");`,
+            `const stripe = require("../../utils/stripe.util");\nconst { Response } = require("../../utils/response.util");\nconst {\n  addCalendarMonthPreservingWeekdayOccurrence,\n} = require("../../utils/subscriptionCadence.util");`,
+          );
+          replaceOnce(
+            servicePath,
+            `const FREQUENCY_DAYS = {\n  weekly: 7,\n  every_two_weeks: 14,\n  monthly: 30,\n};`,
+            `const FREQUENCY_DAYS = {\n  weekly: 7,\n  every_two_weeks: 14,\n};`,
+          );
+          replaceOnce(
+            servicePath,
+            `function addFrequencyDays(date, frequency, preferredDays = []) {\n  if (frequency === "weekly") {\n    return calculateNextDeliveryDate(\n      preferredDays[0] ?? 2,\n      frequency,\n      date,\n      preferredDays,\n    );\n  }\n\n  const d = new Date(date);\n  d.setDate(d.getDate() + (FREQUENCY_DAYS[frequency] || 7));\n  return d;\n}`,
+            `function addFrequencyDays(date, frequency, preferredDays = []) {\n  if (frequency === "weekly") {\n    return calculateNextDeliveryDate(\n      preferredDays[0] ?? 2,\n      frequency,\n      date,\n      preferredDays,\n    );\n  }\n\n  if (frequency === "monthly") {\n    return addCalendarMonthPreservingWeekdayOccurrence(\n      date,\n      preferredDays[0] ?? new Date(date).getDay(),\n    );\n  }\n\n  const d = new Date(date);\n  d.setDate(d.getDate() + (FREQUENCY_DAYS[frequency] || 7));\n  return d;\n}`,
+          );
+
+          const webhookPath = 'server/services/subscriptions/subscriptionWebhook.service.js';
+          replaceOnce(
+            webhookPath,
+            `const stripe = require("../../utils/stripe.util");`,
+            `const stripe = require("../../utils/stripe.util");\nconst {\n  addCalendarMonthPreservingWeekdayOccurrence,\n} = require("../../utils/subscriptionCadence.util");`,
+          );
+          replaceOnce(
+            webhookPath,
+            `const BILLING_WINDOW_DAYS = {\n  weekly: 7,\n  every_two_weeks: 14,\n  monthly: 30,\n};`,
+            `const BILLING_WINDOW_DAYS = {\n  weekly: 7,\n  every_two_weeks: 14,\n};`,
+          );
+          replaceOnce(
+            webhookPath,
+            `function addBillingWindowDays(date, frequency) {\n  const next = new Date(date);\n  next.setDate(next.getDate() + (BILLING_WINDOW_DAYS[frequency] || 7));\n  return next;\n}`,
+            `function addBillingWindowDays(date, frequency, preferredDeliveryDay) {\n  if (frequency === "monthly") {\n    return addCalendarMonthPreservingWeekdayOccurrence(\n      date,\n      preferredDeliveryDay ?? new Date(date).getDay(),\n    );\n  }\n\n  const next = new Date(date);\n  next.setDate(next.getDate() + (BILLING_WINDOW_DAYS[frequency] || 7));\n  return next;\n}`,
+          );
+          replaceOnce(
+            webhookPath,
+            `  const billingWindowEnd = addBillingWindowDays(\n    billingWindowStart,\n    subscription.frequency,\n  );`,
+            `  const billingWindowEnd = addBillingWindowDays(\n    billingWindowStart,\n    subscription.frequency,\n    subscription.preferredDeliveryDay,\n  );`,
+          );
+
+          const seedPath = 'server/scripts/seedPortalData.js';
+          replaceOnce(
+            seedPath,
+            `const SupportRequest = require("../models/supportRequest.model");`,
+            `const SupportRequest = require("../models/supportRequest.model");\nconst {\n  addCalendarMonthPreservingWeekdayOccurrence,\n} = require("../utils/subscriptionCadence.util");`,
+          );
+          replaceOnce(
+            seedPath,
+            `        const slots = [];\n        for (let s = 0; s < 3; s++) {\n          const freqDays = { weekly: 7, every_two_weeks: 14, monthly: 30 }[frequency];\n          slots.push({\n            subscription: sub._id,\n            customer: customer._id,\n            scheduledDate: addDays(nextDelivery, freqDays * s),\n            status: "scheduled",\n          });\n        }`,
+            `        const slots = [];\n        let scheduledDate = new Date(nextDelivery);\n        for (let s = 0; s < 3; s++) {\n          slots.push({\n            subscription: sub._id,\n            customer: customer._id,\n            scheduledDate: new Date(scheduledDate),\n            status: "scheduled",\n          });\n          if (frequency === "monthly") {\n            scheduledDate = addCalendarMonthPreservingWeekdayOccurrence(\n              scheduledDate,\n              sub.preferredDeliveryDay,\n            );\n          } else {\n            scheduledDate = addDays(\n              scheduledDate,\n              frequency === "every_two_weeks" ? 14 : 7,\n            );\n          }\n        }`,
+          );
+          NODE
+
+          git diff --check
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/services/customerPortal/customerSubscriptions.service.js \
+                  server/services/subscriptions/subscriptionWebhook.service.js \
+                  server/scripts/seedPortalData.js
+          git commit -m "Use calendar months for monthly subscription cadence"
+          git push origin HEAD:fix/subscription-monthly-calendar-cadence
