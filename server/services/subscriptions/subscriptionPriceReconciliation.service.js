@@ -153,6 +153,16 @@ function buildTransitionKey(subscription, currentPriceId, expected) {
   ].join(":");
 }
 
+function isSubscriptionRecord(value) {
+  if (!value || typeof value !== "object" || !value._id) return false;
+  return (
+    typeof value.save === "function" ||
+    Object.prototype.hasOwnProperty.call(value, "stripeSubscriptionId") ||
+    Object.prototype.hasOwnProperty.call(value, "frequency") ||
+    Object.prototype.hasOwnProperty.call(value, "items")
+  );
+}
+
 /**
  * Compare the local desired recurring state to Stripe and repair divergence.
  * The method is deliberately idempotent: retrying the same remote transition
@@ -160,10 +170,9 @@ function buildTransitionKey(subscription, currentPriceId, expected) {
  * second logical price transition.
  */
 async function reconcileSubscriptionPrice(subscriptionOrId) {
-  const subscription =
-    subscriptionOrId && typeof subscriptionOrId === "object"
-      ? subscriptionOrId
-      : await Subscription.findById(subscriptionOrId);
+  const subscription = isSubscriptionRecord(subscriptionOrId)
+    ? subscriptionOrId
+    : await Subscription.findById(subscriptionOrId);
 
   if (!subscription) {
     return { ok: false, action: "missing", message: "Subscription not found" };
