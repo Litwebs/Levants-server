@@ -3,6 +3,7 @@
 const express = require("express");
 const { CONTROL_TOKEN } = require("./constants");
 const fixtures = require("./fixture-factory");
+const Order = require("../../models/order.model");
 const Subscription = require("../../models/subscription.model");
 const stripe = require("../../utils/stripe.util");
 const {
@@ -50,6 +51,27 @@ async function failNextStripePriceCreates(subscriptionId, requestedCount) {
   };
 
   return { injected: true, count };
+}
+
+async function removeCapturedPaymentBacking(subscriptionId) {
+  const subscription = await Subscription.findById(subscriptionId).lean();
+  if (!subscription) {
+    throw new Error("Subscription fixture not found");
+  }
+
+  const result = await Order.updateMany(
+    {
+      subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded"] },
+      deliveryStatus: "ordered",
+    },
+    { $set: { stripePaymentIntentId: null } },
+  );
+
+  return {
+    matchedCount: Number(result.matchedCount ?? result.n ?? 0),
+    modifiedCount: Number(result.modifiedCount ?? result.nModified ?? 0),
+  };
 }
 
 function asyncRoute(handler) {
@@ -123,6 +145,10 @@ function createControlApp() {
         req.body?.outcome,
       ),
     ),
+  );
+  app.post(
+    "/state/:subscriptionId/payment-backing/remove",
+    asyncRoute((req) => removeCapturedPaymentBacking(req.params.subscriptionId)),
   );
   app.post(
     "/state/:subscriptionId/payment-retry/prepare",
