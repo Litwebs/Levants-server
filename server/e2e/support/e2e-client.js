@@ -76,6 +76,14 @@ async function setPaymentOutcome(request, subscriptionId, outcome) {
   return responseJson(response, "Stripe payment-method switch");
 }
 
+async function removeCapturedPaymentBacking(request, subscriptionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/payment-backing/remove`,
+    { headers: controlHeaders },
+  );
+  return responseJson(response, "Captured payment backing removal");
+}
+
 async function preparePaymentRetry(request, subscriptionId) {
   const response = await request.post(
     `${CONTROL_ORIGIN}/state/${subscriptionId}/payment-retry/prepare`,
@@ -192,6 +200,7 @@ module.exports = {
   portalHeaders,
   preparePaymentRetry,
   reconcileStripePrice,
+  removeCapturedPaymentBacking,
   reset,
   setPaymentOutcome,
 };
