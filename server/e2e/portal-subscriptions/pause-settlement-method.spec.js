@@ -107,6 +107,6 @@ test("customer can choose store credit when pausing a prepaid subscription", asy
   expect(after.credits).toHaveLength(ledgerCountBefore + 1);
   expect(after.credits.at(-1)).toMatchObject({
     type: "subscription_refund",
-    amountMinor: creditedMinor,
+    amount: creditedMinor,
   });
 });
