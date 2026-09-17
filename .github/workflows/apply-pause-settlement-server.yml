@@ -1,0 +1,79 @@
+name: Apply pause settlement server patch
+
+on:
+  push:
+    branches:
+      - feature/subscription-portal-hardening-server
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/subscription-portal-hardening-server
+          fetch-depth: 0
+
+      - name: Apply guarded server patch
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          function replaceOnce(path, before, after) {
+            const source = fs.readFileSync(path, 'utf8');
+            if (source.includes(after)) {
+              console.log(`${path}: replacement already applied`);
+              return;
+            }
+            if (!source.includes(before)) {
+              throw new Error(`${path}: expected source block not found`);
+            }
+            fs.writeFileSync(path, source.replace(before, after));
+            console.log(`${path}: patched`);
+          }
+
+          const validatorPath = 'server/validators/portal.validators.js';
+          replaceOnce(
+            validatorPath,
+            `const cancelSubscriptionSchema = Joi.object({\n  reason: Joi.string().trim().max(500).allow(null, "").optional(),\n  refundMethod: Joi.string().valid("credit", "refund").optional(),\n}).unknown(false);`,
+            `const pauseSubscriptionSchema = Joi.object({\n  resumeOn: Joi.date().iso().required(),\n  refundMethod: Joi.string().valid("credit", "refund").optional(),\n}).unknown(false);\n\nconst cancelSubscriptionSchema = Joi.object({\n  reason: Joi.string().trim().max(500).allow(null, "").optional(),\n  refundMethod: Joi.string().valid("credit", "refund").optional(),\n}).unknown(false);`,
+          );
+          replaceOnce(
+            validatorPath,
+            `  subscriptionItemIdParamSchema,\n  cancelSubscriptionSchema,`,
+            `  subscriptionItemIdParamSchema,\n  pauseSubscriptionSchema,\n  cancelSubscriptionSchema,`,
+          );
+
+          const routePath = 'server/routes/portal/customerSubscriptions.routes.js';
+          replaceOnce(
+            routePath,
+            `  subscriptionItemIdParamSchema,\n  cancelSubscriptionSchema,`,
+            `  subscriptionItemIdParamSchema,\n  pauseSubscriptionSchema,\n  cancelSubscriptionSchema,`,
+          );
+          replaceOnce(
+            routePath,
+            `router.post(\n  "/:subscriptionId/pause",\n  validateParams(subscriptionIdParamSchema),\n  asyncHandler(controller.PauseSubscription),\n);`,
+            `router.post(\n  "/:subscriptionId/pause",\n  validateParams(subscriptionIdParamSchema),\n  validateBody(pauseSubscriptionSchema),\n  asyncHandler(controller.PauseSubscription),\n);`,
+          );
+          NODE
+
+          git diff --check
+
+      - name: Commit server patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/validators/portal.validators.js \
+                  server/routes/portal/customerSubscriptions.routes.js
+          git commit -m "Validate pause settlement method"
+          git push origin HEAD:feature/subscription-portal-hardening-server
