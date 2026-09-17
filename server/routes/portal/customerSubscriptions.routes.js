@@ -19,6 +19,7 @@ const {
   updateSubscriptionItemSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
+  pauseSubscriptionSchema,
   cancelSubscriptionSchema,
 } = require("../../validators/portal.validators");
 
@@ -57,6 +58,7 @@ router.patch(
 router.post(
   "/:subscriptionId/pause",
   validateParams(subscriptionIdParamSchema),
+  validateBody(pauseSubscriptionSchema),
   asyncHandler(controller.PauseSubscription),
 );
 
