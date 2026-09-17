@@ -10,6 +10,9 @@ const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
 const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
+const {
+  addCalendarMonthPreservingWeekdayOccurrence,
+} = require("../../utils/subscriptionCadence.util");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
 const storeCreditService = require("../storeCredit.service");
 const {
@@ -25,7 +28,6 @@ const STRIPE_INTERVALS = {
 const FREQUENCY_DAYS = {
   weekly: 7,
   every_two_weeks: 14,
-  monthly: 30,
 };
 
 const WEEKDAY_NAMES = [
@@ -337,6 +339,13 @@ function addFrequencyDays(date, frequency, preferredDays = []) {
       frequency,
       date,
       preferredDays,
+    );
+  }
+
+  if (frequency === "monthly") {
+    return addCalendarMonthPreservingWeekdayOccurrence(
+      date,
+      preferredDays[0] ?? new Date(date).getDay(),
     );
   }
 
