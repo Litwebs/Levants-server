@@ -17,6 +17,9 @@ const CustomerNotification = require("../../models/customerNotification.model");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
 const {
+  addCalendarMonthPreservingWeekdayOccurrence,
+} = require("../../utils/subscriptionCadence.util");
+const {
   sendSubscriptionUpdateEmail,
 } = require("../customerPortal/subscriptionEmailNotifications.service");
 
@@ -113,7 +116,6 @@ const SUBSCRIPTION_DELIVERY_FEE = 1;
 const BILLING_WINDOW_DAYS = {
   weekly: 7,
   every_two_weeks: 14,
-  monthly: 30,
 };
 
 function startOfDay(value) {
@@ -128,7 +130,14 @@ function endOfDay(value) {
   return date;
 }
 
-function addBillingWindowDays(date, frequency) {
+function addBillingWindowDays(date, frequency, preferredDeliveryDay) {
+  if (frequency === "monthly") {
+    return addCalendarMonthPreservingWeekdayOccurrence(
+      date,
+      preferredDeliveryDay ?? new Date(date).getDay(),
+    );
+  }
+
   const next = new Date(date);
   next.setDate(next.getDate() + (BILLING_WINDOW_DAYS[frequency] || 7));
   return next;
@@ -215,6 +224,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
   const billingWindowEnd = addBillingWindowDays(
     billingWindowStart,
     subscription.frequency,
+    subscription.preferredDeliveryDay,
   );
 
   const deliverySlots = await SubscriptionDelivery.find({
