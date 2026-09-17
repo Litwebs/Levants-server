@@ -18,6 +18,8 @@ jest.mock("../../utils/logger.util", () => ({
   info: jest.fn(),
 }));
 
+const mongoose = require("mongoose");
+const Subscription = require("../../models/subscription.model");
 const stripe = require("../../utils/stripe.util");
 const {
   reconcileSubscriptionPrice,
@@ -86,6 +88,7 @@ function remotePrice({
 describe("subscription recurring price reconciliation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   test("expected price uses pending post-cutoff items and multi-day delivery fees", () => {
@@ -106,6 +109,27 @@ describe("subscription recurring price reconciliation", () => {
     expect(expected.deliveryDays).toEqual([0, 3]);
     expect(expected.interval).toBe("week");
     expect(expected.intervalCount).toBe(1);
+  });
+
+  test("Mongo ObjectId input is treated as an id and loads the subscription record", async () => {
+    const objectId = new mongoose.Types.ObjectId("507f1f77bcf86cd799439011");
+    const subscription = makeSubscription();
+    const findById = jest
+      .spyOn(Subscription, "findById")
+      .mockResolvedValue(subscription);
+    stripe.subscriptions.retrieve.mockResolvedValue(
+      remoteSubscription(remotePrice({ id: "price_old", amount: 600 })),
+    );
+
+    const result = await reconcileSubscriptionPrice(objectId);
+
+    expect(findById).toHaveBeenCalledWith(objectId);
+    expect(result).toMatchObject({
+      ok: true,
+      action: "synced",
+      priceId: "price_old",
+    });
+    expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith("sub_test");
   });
 
   test("matching remote price is a no-op and clears a stale pending marker", async () => {
