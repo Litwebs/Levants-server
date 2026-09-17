@@ -21,6 +21,9 @@ const {
   ReconcileRecentPaidSubscriptionInvoices,
   VerifySubscriptionWebhookConfiguration,
 } = require("../services/subscriptions/subscriptionWebhook.service");
+const {
+  reconcileSubscriptionPrices,
+} = require("../services/subscriptions/subscriptionPriceReconciliation.service");
 
 /**
  * ScheduleUpcomingSlots
@@ -30,6 +33,10 @@ const {
  */
 async function ScheduleUpcomingSlots() {
   const reconciliation = await ReconcileRecentPaidSubscriptionInvoices();
+  const priceReconciliation = await reconcileSubscriptionPrices({
+    onlyPending: false,
+    limit: 500,
+  });
   const finalized = await FinalizeScheduledCancellations();
   const resumed = await AutoResumePausedSubscriptions();
   const subscriptions = await Subscription.find({
@@ -50,7 +57,7 @@ async function ScheduleUpcomingSlots() {
   }
 
   logger.info(
-    `[SubscriptionCron] Reconciled ${reconciliation.reconciled} missed invoices, finalized ${finalized} cancellations, auto-resumed ${resumed} paused subscriptions, and scheduled upcoming slots for ${scheduled} subscriptions`,
+    `[SubscriptionCron] Reconciled ${reconciliation.reconciled} missed invoices, checked ${priceReconciliation.checked} recurring prices (${priceReconciliation.repaired} repaired, ${priceReconciliation.pending} pending), finalized ${finalized} cancellations, auto-resumed ${resumed} paused subscriptions, and scheduled upcoming slots for ${scheduled} subscriptions`,
   );
 }
 
@@ -60,12 +67,23 @@ function startSubscriptionGenerationCron() {
   cron.schedule("*/15 * * * *", async () => {
     try {
       await ReconcileRecentPaidSubscriptionInvoices();
+      const priceReconciliation = await reconcileSubscriptionPrices({
+        onlyPending: true,
+        limit: 200,
+      });
+      if (priceReconciliation.checked > 0) {
+        logger.info(
+          `[SubscriptionCron] Retried ${priceReconciliation.checked} pending recurring price syncs (${priceReconciliation.repaired} repaired, ${priceReconciliation.pending} still pending)`,
+        );
+      }
     } catch (err) {
-      logger.error("[SubscriptionCron] Invoice reconciliation failed", err);
+      logger.error("[SubscriptionCron] Invoice/price reconciliation failed", err);
     }
   });
 
-  // Run once daily at 06:00 to pre-schedule upcoming delivery slots
+  // Run once daily at 06:00 to pre-schedule upcoming delivery slots and audit
+  // every active recurring price. The full audit catches historical divergence
+  // that predates the pendingPriceSync marker.
   cron.schedule("0 6 * * *", async () => {
     try {
       await VerifySubscriptionWebhookConfiguration();
@@ -76,7 +94,7 @@ function startSubscriptionGenerationCron() {
   });
 
   logger.cron(
-    "Subscription invoice reconciliation (15 min) and slot scheduling (daily 06:00)",
+    "Subscription invoice/price reconciliation (15 min) and slot scheduling + full price audit (daily 06:00)",
   );
 }
 
