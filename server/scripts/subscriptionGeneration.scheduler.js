@@ -83,7 +83,7 @@ function startSubscriptionGenerationCron() {
 
   // Run once daily at 06:00 to pre-schedule upcoming delivery slots and audit
   // every active recurring price. The full audit catches historical divergence
-  // that predates the pendingPriceSync marker.
+  // that predates the stripePriceSyncPending reliability marker.
   cron.schedule("0 6 * * *", async () => {
     try {
       await VerifySubscriptionWebhookConfiguration();

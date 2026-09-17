@@ -57,7 +57,7 @@ test("recurring price sync failure is marked pending and reconciliation repairs 
 
   // One failure hits the legacy service sync attempt and the second hits the
   // controller-level integrity reconciliation. The API must persist a durable
-  // pending marker instead of silently pretending billing is synchronized.
+  // reliability marker instead of silently pretending billing is synchronized.
   await failNextStripePriceSyncs(request, fixture.subscriptionId, 2);
 
   const response = await request.post(
@@ -82,7 +82,8 @@ test("recurring price sync failure is marked pending and reconciliation repairs 
   expect(
     quantity(pending.subscription.items, fixture.variants.EGGS.id),
   ).toBe(originalEggQuantity + 1);
-  expect(pending.subscription.pendingPriceSync).toBe(true);
+  expect(pending.subscription.stripePriceSyncPending).toBe(true);
+  expect(pending.subscription.pendingPriceSync).toBe(false);
   expect(pending.subscription.stripePriceId).toBe(originalRemotePriceId);
   expect(pending.stripe.remoteSubscription.currentPriceId).toBe(
     originalRemotePriceId,
@@ -96,6 +97,7 @@ test("recurring price sync failure is marked pending and reconciliation repairs 
   expect(repair).toMatchObject({ ok: true, action: "repaired" });
 
   const repaired = await getState(request, fixture.subscriptionId);
+  expect(repaired.subscription.stripePriceSyncPending).toBe(false);
   expect(repaired.subscription.pendingPriceSync).toBe(false);
   expect(repaired.stripe.remoteSubscription.currentPriceId).not.toBe(
     originalRemotePriceId,
@@ -115,6 +117,8 @@ test("recurring price sync failure is marked pending and reconciliation repairs 
   expect(secondRepair).toMatchObject({ ok: true, action: "synced" });
 
   const finalState = await getState(request, fixture.subscriptionId);
+  expect(finalState.subscription.stripePriceSyncPending).toBe(false);
+  expect(finalState.subscription.pendingPriceSync).toBe(false);
   expect(finalState.subscription.stripePriceId).toBe(repairedPriceId);
   expect(finalState.stripe.remoteSubscription.currentPriceId).toBe(
     repairedPriceId,

@@ -304,6 +304,15 @@ const subscriptionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    // Reliability marker only: the recurring Stripe price failed to synchronize
+    // and should be retried by reconciliation. Keep this separate from
+    // pendingPriceSync, which has invoice-bound deferral semantics.
+    stripePriceSyncPending: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,

@@ -17,7 +17,7 @@ async function reconcileBillingForMutation(result) {
   };
 
   if (result.data.subscription) {
-    result.data.subscription.pendingPriceSync = !sync.ok;
+    result.data.subscription.stripePriceSyncPending = !sync.ok;
     if (sync.priceId) {
       result.data.subscription.stripePriceId = sync.priceId;
     }

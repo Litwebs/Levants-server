@@ -44,6 +44,7 @@ function makeSubscription(overrides = {}) {
     ],
     pendingChanges: null,
     pendingPriceSync: false,
+    stripePriceSyncPending: false,
     stripeSubscriptionId: "sub_test",
     stripeProductId: "prod_test",
     stripePriceId: "price_old",
@@ -111,6 +112,28 @@ describe("subscription recurring price reconciliation", () => {
     expect(expected.intervalCount).toBe(1);
   });
 
+  test("pending cadence metadata does not override the live cadence used by the existing Stripe sync", () => {
+    const subscription = makeSubscription({
+      frequency: "weekly",
+      preferredDeliveryDay: 3,
+      preferredDeliveryDays: [3],
+      pendingChanges: {
+        items: [{ unitPrice: 2.5, quantity: 2 }],
+        frequency: "monthly",
+        preferredDeliveryDay: 5,
+        preferredDeliveryDays: [5],
+      },
+    });
+
+    const expected = resolveExpectedStripePrice(subscription);
+
+    expect(expected.frequency).toBe("weekly");
+    expect(expected.interval).toBe("week");
+    expect(expected.intervalCount).toBe(1);
+    expect(expected.deliveryDays).toEqual([3]);
+    expect(expected.amountMinor).toBe(600);
+  });
+
   test("Mongo ObjectId input is treated as an id and loads the subscription record", async () => {
     const objectId = new mongoose.Types.ObjectId("507f1f77bcf86cd799439011");
     const subscription = makeSubscription();
@@ -132,9 +155,10 @@ describe("subscription recurring price reconciliation", () => {
     expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith("sub_test");
   });
 
-  test("matching remote price is a no-op and clears a stale pending marker", async () => {
+  test("matching remote price clears only the reliability retry marker and preserves deferred sync state", async () => {
     const subscription = makeSubscription({
       pendingPriceSync: true,
+      stripePriceSyncPending: true,
       stripePriceId: "price_stale_local_id",
     });
     stripe.subscriptions.retrieve.mockResolvedValue(
@@ -148,14 +172,15 @@ describe("subscription recurring price reconciliation", () => {
       action: "synced",
       priceId: "price_remote",
     });
-    expect(subscription.pendingPriceSync).toBe(false);
+    expect(subscription.stripePriceSyncPending).toBe(false);
+    expect(subscription.pendingPriceSync).toBe(true);
     expect(subscription.stripePriceId).toBe("price_remote");
     expect(subscription.save).toHaveBeenCalledTimes(1);
     expect(stripe.prices.create).not.toHaveBeenCalled();
     expect(stripe.subscriptions.update).not.toHaveBeenCalled();
   });
 
-  test("failed repair is persisted as pending and a later retry repairs the same subscription", async () => {
+  test("failed repair is persisted on the reliability marker and a later retry repairs the same subscription", async () => {
     const subscription = makeSubscription();
     stripe.subscriptions.retrieve.mockResolvedValue(
       remoteSubscription(remotePrice({ amount: 500 })),
@@ -173,7 +198,8 @@ describe("subscription recurring price reconciliation", () => {
       action: "pending",
       pending: true,
     });
-    expect(subscription.pendingPriceSync).toBe(true);
+    expect(subscription.stripePriceSyncPending).toBe(true);
+    expect(subscription.pendingPriceSync).toBe(false);
     expect(subscription.stripePriceId).toBe("price_old");
 
     const repaired = await reconcileSubscriptionPrice(subscription);
@@ -183,6 +209,7 @@ describe("subscription recurring price reconciliation", () => {
       action: "repaired",
       priceId: "price_repaired",
     });
+    expect(subscription.stripePriceSyncPending).toBe(false);
     expect(subscription.pendingPriceSync).toBe(false);
     expect(subscription.stripePriceId).toBe("price_repaired");
     expect(stripe.subscriptions.update).toHaveBeenCalledWith(

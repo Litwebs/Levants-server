@@ -19,24 +19,18 @@ function normalizeWeekdays(days = []) {
   return [...new Set(cleaned)].sort((left, right) => left - right);
 }
 
-function pendingValue(subscription, key) {
-  const pending = subscription?.pendingChanges;
-  if (!pending) return undefined;
-  const value = pending[key];
-  return value === undefined ? undefined : value;
-}
-
 /**
  * Resolve the recurring billing state that Stripe should currently hold.
  *
- * Post-cut-off item edits intentionally live in pendingChanges while Stripe is
- * already moved to the price for the following billable delivery. Therefore
- * pending billing fields take precedence over the live subscription snapshot.
- * This mirrors the existing subscription service rules without changing when a
- * customer is charged, refunded, paused, resumed, or delivered to.
+ * Post-cut-off item/day-plan edits deliberately store the future recurring item
+ * set in pendingChanges.items and sync Stripe to that item total immediately,
+ * with proration disabled. Cadence/day fields, however, are applied to the live
+ * subscription snapshot by the existing service before Stripe is synchronized.
+ * Only pending items therefore take precedence here; cadence is always read from
+ * the live subscription so reconciliation mirrors the existing billing rules.
  */
 function resolveExpectedStripePrice(subscription) {
-  const pendingItems = pendingValue(subscription, "items");
+  const pendingItems = subscription?.pendingChanges?.items;
   const items =
     Array.isArray(pendingItems) && pendingItems.length > 0
       ? pendingItems
@@ -44,30 +38,19 @@ function resolveExpectedStripePrice(subscription) {
         ? subscription.items
         : [];
 
-  const pendingFrequency = pendingValue(subscription, "frequency");
-  const frequency = pendingFrequency || subscription?.frequency || "weekly";
+  const frequency = subscription?.frequency || "weekly";
   const interval = STRIPE_INTERVALS[frequency] || STRIPE_INTERVALS.weekly;
 
-  const pendingPreferredDays = pendingValue(
-    subscription,
-    "preferredDeliveryDays",
-  );
-  const pendingPreferredDay = pendingValue(subscription, "preferredDeliveryDay");
   const livePreferredDays = subscription?.preferredDeliveryDays;
   const livePreferredDay = subscription?.preferredDeliveryDay;
 
   let deliveryDays = normalizeWeekdays(
-    Array.isArray(pendingPreferredDays) && pendingPreferredDays.length > 0
-      ? pendingPreferredDays
-      : Array.isArray(livePreferredDays) && livePreferredDays.length > 0
-        ? livePreferredDays
-        : [],
+    Array.isArray(livePreferredDays) && livePreferredDays.length > 0
+      ? livePreferredDays
+      : [],
   );
 
-  const fallbackDay =
-    pendingPreferredDay !== undefined && pendingPreferredDay !== null
-      ? Number(pendingPreferredDay)
-      : Number(livePreferredDay);
+  const fallbackDay = Number(livePreferredDay);
   if (
     deliveryDays.length === 0 &&
     Number.isInteger(fallbackDay) &&
@@ -125,7 +108,7 @@ function remotePriceMatches(remotePrice, expected, stripeProductId) {
 
 async function persistPendingState(subscription, error) {
   if (!subscription) return;
-  subscription.pendingPriceSync = true;
+  subscription.stripePriceSyncPending = true;
   try {
     await subscription.save();
   } catch (saveError) {
@@ -202,8 +185,8 @@ async function reconcileSubscriptionPrice(subscriptionOrId) {
         subscription.stripePriceId = remotePriceId;
         changed = true;
       }
-      if (subscription.pendingPriceSync) {
-        subscription.pendingPriceSync = false;
+      if (subscription.stripePriceSyncPending) {
+        subscription.stripePriceSyncPending = false;
         changed = true;
       }
       if (changed) await subscription.save();
@@ -253,7 +236,7 @@ async function reconcileSubscriptionPrice(subscriptionOrId) {
 
     const previousPriceId = remotePriceId || subscription.stripePriceId;
     subscription.stripePriceId = newPrice.id;
-    subscription.pendingPriceSync = false;
+    subscription.stripePriceSyncPending = false;
     await subscription.save();
 
     if (previousPriceId && previousPriceId !== newPrice.id) {
@@ -301,7 +284,7 @@ async function reconcileSubscriptionPrices({
     stripeProductId: { $nin: [null, ""] },
   };
   if (subscriptionId) filter._id = subscriptionId;
-  if (onlyPending && !subscriptionId) filter.pendingPriceSync = true;
+  if (onlyPending && !subscriptionId) filter.stripePriceSyncPending = true;
 
   const subscriptions = await Subscription.find(filter).limit(
     Math.max(1, Math.min(Number(limit) || 100, 500)),
