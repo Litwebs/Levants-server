@@ -5,6 +5,7 @@ const {
   API_ORIGIN,
   createFixture,
   getState,
+  removeCapturedPaymentBacking,
   reset,
 } = require("../support/e2e-client");
 
@@ -109,4 +110,99 @@ test("customer can choose store credit when pausing a prepaid subscription", asy
     type: "subscription_refund",
     amount: creditedMinor,
   });
+});
+
+test("customer can recover with store credit when a card refund has no captured payment backing", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  const before = await getState(request, fixture.subscriptionId);
+  const creditBefore = Number(before.customer.creditBalance || 0);
+  const ledgerCountBefore = before.credits.length;
+
+  const removed = await removeCapturedPaymentBacking(
+    request,
+    fixture.subscriptionId,
+  );
+  expect(removed.modifiedCount).toBeGreaterThan(0);
+
+  await signIn(page, fixture.credentials, detailPath);
+  await page
+    .getByRole("button", { name: "Pause Subscription", exact: true })
+    .click();
+
+  const pauseDialog = page.getByRole("dialog", {
+    name: "Pause Subscription?",
+  });
+  await expect(pauseDialog).toBeVisible();
+  await pauseDialog.locator('input[type="date"]').fill(fixture.resumeOn);
+
+  const failedResponsePromise = waitForPauseResponse(
+    page,
+    fixture.subscriptionId,
+  );
+  await pauseDialog
+    .getByRole("button", { name: "Pause subscription", exact: true })
+    .click();
+
+  const failedResponse = await failedResponsePromise;
+  const failedBody = await failedResponse.json().catch(() => null);
+  expect(failedResponse.status()).toBe(400);
+  expect(failedBody?.success).toBe(false);
+  expect(failedBody?.message).toMatch(/choose store credit instead/i);
+  await expect(pauseDialog).toBeVisible();
+
+  const afterFailedRefund = await getState(request, fixture.subscriptionId);
+  expect(afterFailedRefund.subscription.status).toBe("active");
+  expect(Number(afterFailedRefund.customer.creditBalance || 0)).toBe(
+    creditBefore,
+  );
+  expect(afterFailedRefund.credits).toHaveLength(ledgerCountBefore);
+  expect(afterFailedRefund.stripe.remoteSubscription.pauseCollection).toBeNull();
+
+  const settlementMethod = pauseDialog.getByRole("combobox", {
+    name: "Settlement method",
+  });
+  await settlementMethod.click();
+  await page.getByRole("option", { name: "Store credit", exact: true }).click();
+  await expect(settlementMethod).toContainText("Store credit");
+
+  const creditResponsePromise = waitForPauseResponse(
+    page,
+    fixture.subscriptionId,
+  );
+  await pauseDialog
+    .getByRole("button", { name: "Pause subscription", exact: true })
+    .click();
+
+  const creditResponse = await creditResponsePromise;
+  const creditBody = await creditResponse.json().catch(() => null);
+  expect(
+    creditResponse.ok(),
+    creditBody?.message || JSON.stringify(creditBody),
+  ).toBe(true);
+  expect(creditBody?.success).toBe(true);
+  expect(creditBody?.data?.subscription?.status).toBe("paused");
+  expect(Number(creditBody?.data?.creditedMinor || 0)).toBeGreaterThan(0);
+  expect(Number(creditBody?.data?.refundedMinor || 0)).toBe(0);
+
+  const retryPayload = creditResponse.request().postDataJSON();
+  expect(retryPayload).toMatchObject({
+    resumeOn: fixture.resumeOn,
+    refundMethod: "credit",
+  });
+
+  const afterCredit = await getState(request, fixture.subscriptionId);
+  const creditedMinor = Number(creditBody.data.creditedMinor);
+  expect(afterCredit.subscription.status).toBe("paused");
+  expect(Number(afterCredit.customer.creditBalance || 0)).toBe(
+    creditBefore + creditedMinor,
+  );
+  expect(afterCredit.credits).toHaveLength(ledgerCountBefore + 1);
 });
