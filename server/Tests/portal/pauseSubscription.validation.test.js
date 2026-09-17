@@ -44,14 +44,26 @@ describe("pause subscription request validation", () => {
     expect(error.details[0].path).toEqual(["refundMethod"]);
   });
 
-  test("requires a valid resume date", () => {
+  test("leaves resume-date business validation to the existing service", () => {
     const missing = pauseSubscriptionSchema.validate({ refundMethod: "credit" });
     const invalid = pauseSubscriptionSchema.validate({
       resumeOn: "not-a-date",
       refundMethod: "credit",
     });
 
-    expect(missing.error).toBeDefined();
-    expect(invalid.error).toBeDefined();
+    expect(missing.error).toBeUndefined();
+    expect(invalid.error).toBeUndefined();
+    expect(invalid.value.resumeOn).toBe("not-a-date");
+  });
+
+  test("rejects unknown pause request fields", () => {
+    const { error } = pauseSubscriptionSchema.validate({
+      resumeOn: "2026-10-01",
+      refundMethod: "credit",
+      unexpected: true,
+    });
+
+    expect(error).toBeDefined();
+    expect(error.details[0].path).toEqual(["unexpected"]);
   });
 });
