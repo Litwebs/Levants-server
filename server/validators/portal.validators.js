@@ -144,8 +144,11 @@ const subscriptionItemIdParamSchema = Joi.object({
   itemId: objectId.required(),
 }).unknown(true);
 
+// The service already owns the resume-date business validation and its
+// customer-facing error messages. The route schema intentionally leaves
+// resumeOn untouched while constraining the newly exposed settlement choice.
 const pauseSubscriptionSchema = Joi.object({
-  resumeOn: Joi.date().iso().required(),
+  resumeOn: Joi.any().optional(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
