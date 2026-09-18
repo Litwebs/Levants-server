@@ -724,8 +724,8 @@ test("increases quantity before cut-off and updates Mongo, the paid order, and S
 
   const updateResponsePromise = waitForApiResponse(
     page,
-    "PATCH",
-    `/api/portal/subscriptions/${fixture.subscriptionId}/items/${fixture.variants.MILK.itemId}`,
+    "PUT",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/items`,
   );
   await page
     .getByRole("button", { name: "Save product changes", exact: true })
@@ -818,8 +818,8 @@ test("stages an after-cutoff removal while preserving the locked delivery order"
 
   const removeResponsePromise = waitForApiResponse(
     page,
-    "DELETE",
-    `/api/portal/subscriptions/${fixture.subscriptionId}/items/${fixture.variants.BUTTER.itemId}`,
+    "PUT",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/items`,
   );
   await page
     .getByRole("button", { name: "Save product changes", exact: true })
