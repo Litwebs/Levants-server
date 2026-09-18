@@ -4112,4 +4112,51 @@ describe("Portal Support Requests", () => {
     expect(Array.isArray(res.body.data.requests)).toBe(true);
     expect(res.body.data.requests.length).toBeGreaterThan(0);
   });
+  it("replaces single-day product edits in one mutation and settles only the net decrease", async () => {
+    const { variant: secondVariant } = await createTestProduct();
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [
+          { variantId, quantity: 2 },
+          { variantId: secondVariant._id.toString(), quantity: 1 },
+        ],
+      });
+
+    expect(createRes.status).toBe(201);
+    const subscription = createRes.body.data.subscription;
+    await prepareUpcomingDeliveries(subscription._id);
+
+    const primaryItem = subscription.items.find(
+      (item) => String(item.variant) === String(variantId),
+    );
+    expect(primaryItem).toBeTruthy();
+
+    stripe.paymentIntents.create.mockClear();
+
+    const replaceRes = await request(app)
+      .put(`/api/portal/subscriptions/${subscription._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        items: [{ itemId: primaryItem._id, quantity: 1 }],
+        refundMethod: "credit",
+      });
+
+    expect(replaceRes.status).toBe(200);
+    expect(replaceRes.body.data.subscription.items).toHaveLength(1);
+    expect(replaceRes.body.data.subscription.items[0].quantity).toBe(1);
+    expect(replaceRes.body.data.creditedMinor).toBe(500);
+    expect(replaceRes.body.data.refundedMinor).toBe(0);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+
+    const saved = await Subscription.findById(subscription._id).lean();
+    expect(saved.items).toHaveLength(1);
+    expect(String(saved.items[0].variant)).toBe(String(variantId));
+    expect(saved.items[0].quantity).toBe(1);
+  });
+
 });

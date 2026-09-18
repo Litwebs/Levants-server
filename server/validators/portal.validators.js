@@ -129,6 +129,21 @@ const updateSubscriptionItemSchema = Joi.object({
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
+const replaceSubscriptionItemsSchema = Joi.object({
+  items: Joi.array()
+    .items(
+      Joi.object({
+        itemId: objectId.required(),
+        quantity: Joi.number().integer().min(1).required(),
+      }).unknown(false),
+    )
+    .min(1)
+    .max(100)
+    .unique("itemId")
+    .required(),
+  refundMethod: Joi.string().valid("credit", "refund").optional(),
+}).unknown(false);
+
 const subscriptionIdParamSchema = Joi.object({
   subscriptionId: objectId.required(),
 }).unknown(true);
@@ -243,6 +258,7 @@ module.exports = {
   subscriptionItemSchema,
   nextDeliveryAddOnSchema,
   updateSubscriptionItemSchema,
+  replaceSubscriptionItemsSchema,
   subscriptionIdParamSchema,
   subscriptionLookupIdParamSchema,
   subscriptionItemIdParamSchema,

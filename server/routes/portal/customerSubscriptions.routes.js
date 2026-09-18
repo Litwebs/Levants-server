@@ -17,6 +17,7 @@ const {
   subscriptionItemSchema,
   nextDeliveryAddOnSchema,
   updateSubscriptionItemSchema,
+  replaceSubscriptionItemsSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
   pauseSubscriptionSchema,
@@ -80,6 +81,13 @@ router.post(
   validateParams(subscriptionIdParamSchema),
   validateBody(subscriptionItemSchema),
   asyncHandler(controller.AddSubscriptionItem),
+);
+
+router.put(
+  "/:subscriptionId/items",
+  validateParams(subscriptionIdParamSchema),
+  validateBody(replaceSubscriptionItemsSchema),
+  asyncHandler(controller.ReplaceSubscriptionItems),
 );
 
 router.post(

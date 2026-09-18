@@ -147,6 +147,19 @@ const AddNextDeliveryAddOn = async (req, res) => {
   return sendOk(res, result.data, { message: result.message });
 };
 
+const ReplaceSubscriptionItems = async (req, res) => {
+  let result = await service.ReplaceSubscriptionItems({
+    customerId: req.customer._id,
+    subscriptionId: req.params.subscriptionId,
+    items: req.body.items,
+    refundMethod: req.body.refundMethod,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  result = await reconcileBillingForMutation(result);
+  return sendOk(res, result.data, { message: result.message });
+};
+
 const UpdateSubscriptionItem = async (req, res) => {
   let result = await service.UpdateSubscriptionItem({
     customerId: req.customer._id,
@@ -198,6 +211,7 @@ module.exports = {
   CancelSubscription,
   AddSubscriptionItem,
   AddNextDeliveryAddOn,
+  ReplaceSubscriptionItems,
   UpdateSubscriptionItem,
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,
