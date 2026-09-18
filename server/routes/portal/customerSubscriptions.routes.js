@@ -17,8 +17,10 @@ const {
   subscriptionItemSchema,
   nextDeliveryAddOnSchema,
   updateSubscriptionItemSchema,
+  replaceSubscriptionItemsSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
+  pauseSubscriptionSchema,
   cancelSubscriptionSchema,
 } = require("../../validators/portal.validators");
 
@@ -57,6 +59,7 @@ router.patch(
 router.post(
   "/:subscriptionId/pause",
   validateParams(subscriptionIdParamSchema),
+  validateBody(pauseSubscriptionSchema),
   asyncHandler(controller.PauseSubscription),
 );
 
@@ -78,6 +81,13 @@ router.post(
   validateParams(subscriptionIdParamSchema),
   validateBody(subscriptionItemSchema),
   asyncHandler(controller.AddSubscriptionItem),
+);
+
+router.put(
+  "/:subscriptionId/items",
+  validateParams(subscriptionIdParamSchema),
+  validateBody(replaceSubscriptionItemsSchema),
+  asyncHandler(controller.ReplaceSubscriptionItems),
 );
 
 router.post(

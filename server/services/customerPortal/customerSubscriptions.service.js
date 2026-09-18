@@ -10,6 +10,9 @@ const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
 const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
+const {
+  addCalendarMonthPreservingWeekdayOccurrence,
+} = require("../../utils/subscriptionCadence.util");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
 const storeCreditService = require("../storeCredit.service");
 const {
@@ -25,7 +28,6 @@ const STRIPE_INTERVALS = {
 const FREQUENCY_DAYS = {
   weekly: 7,
   every_two_weeks: 14,
-  monthly: 30,
 };
 
 const WEEKDAY_NAMES = [
@@ -337,6 +339,13 @@ function addFrequencyDays(date, frequency, preferredDays = []) {
       frequency,
       date,
       preferredDays,
+    );
+  }
+
+  if (frequency === "monthly") {
+    return addCalendarMonthPreservingWeekdayOccurrence(
+      date,
+      preferredDays[0] ?? new Date(date).getDay(),
     );
   }
 
@@ -3834,6 +3843,97 @@ async function AddSubscriptionItem({
 }
 
 /**
+ * Replace the complete item set for a single-day subscription edit in one
+ * service mutation. The caller sends the desired final state, so removals and
+ * quantity changes are settled once through the existing applyItemChange rules
+ * instead of being charged/refunded independently per HTTP request.
+ */
+async function ReplaceSubscriptionItems({
+  customerId,
+  subscriptionId,
+  items,
+  refundMethod = "credit",
+} = {}) {
+  const subscription = await Subscription.findOne({
+    _id: subscriptionId,
+    customer: customerId,
+  });
+  if (!subscription) return Response(false, "Subscription not found", null);
+  if (subscription.status !== "active") {
+    return Response(
+      false,
+      "Paused or cancelled subscriptions cannot be changed.",
+      null,
+    );
+  }
+
+  const baseline = subscription.pendingChanges?.items?.length
+    ? itemsToPlain(subscription.pendingChanges.items)
+    : itemsToPlain(subscription.items);
+  const baselineById = new Map(
+    baseline
+      .filter((item) => item?._id)
+      .map((item) => [String(item._id), item]),
+  );
+
+  const requested = new Map();
+  for (const item of items || []) {
+    const itemId = String(item?.itemId || "");
+    if (!itemId || requested.has(itemId)) {
+      return Response(
+        false,
+        "Each subscription item can only be included once.",
+        null,
+      );
+    }
+    requested.set(itemId, Number(item.quantity));
+  }
+
+  if (requested.size === 0) {
+    return Response(
+      false,
+      "Cannot remove the last item. Please cancel the subscription instead.",
+      null,
+    );
+  }
+
+  const hasUnknownItem = [...requested.keys()].some(
+    (itemId) => !baselineById.has(itemId),
+  );
+  if (hasUnknownItem) {
+    return Response(
+      false,
+      "One or more subscription items changed. Please refresh and try again.",
+      null,
+    );
+  }
+
+  const nextItems = baseline
+    .filter((item) => requested.has(String(item._id)))
+    .map((item) => ({
+      ...item,
+      quantity: requested.get(String(item._id)),
+    }));
+
+  if (nextItems.length === 0) {
+    return Response(
+      false,
+      "Cannot remove the last item. Please cancel the subscription instead.",
+      null,
+    );
+  }
+
+  const customer = await Customer.findById(customerId);
+  return applyItemChange(
+    subscription,
+    customer,
+    nextItems,
+    "Subscription items updated",
+    refundMethod,
+  );
+}
+
+/**
  * Update a subscription item quantity.
  */
 async function UpdateSubscriptionItem({
@@ -4020,6 +4120,7 @@ module.exports = {
   CancelSubscription,
   AddSubscriptionItem,
   AddNextDeliveryAddOn,
+  ReplaceSubscriptionItems,
   UpdateSubscriptionItem,
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,
