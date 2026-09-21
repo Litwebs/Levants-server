@@ -300,6 +300,7 @@ async function createCustomer(
     withPaymentMethod = true,
     subscriptionUpdates = true,
     creditBalance = 0,
+    address = null,
   } = {},
 ) {
   let clock = null;
@@ -344,10 +345,10 @@ async function createCustomer(
       {
         label: "E2E Home",
         fullName: "Stripe E2E",
-        line1: "1 Subscription Test Lane",
-        city: "London",
-        postcode: "SW1A 1AA",
-        country: "United Kingdom",
+        line1: address?.line1 || "1 Subscription Test Lane",
+        city: address?.city || "London",
+        postcode: address?.postcode || "SW1A 1AA",
+        country: address?.country || "United Kingdom",
         isDefault: true,
       },
     ],
@@ -529,6 +530,7 @@ async function createFixture(options = {}) {
     withPaymentMethod: options.withPaymentMethod !== false,
     subscriptionUpdates: options.subscriptionUpdates !== false,
     creditBalance: options.creditBalance,
+    address: options.address,
   });
   const addressId = customerData.customer.addresses[0]._id.toString();
 

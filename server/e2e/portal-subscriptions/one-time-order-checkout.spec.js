@@ -36,6 +36,12 @@ test("subscription customer places a real one-time order with store credit and s
     timing: "before-cutoff",
     funds: "sufficient",
     creditBalance: 10_000,
+    address: {
+      line1: "1 E2E Dairy Lane",
+      city: "Bradford",
+      postcode: "BD5 0AL",
+      country: "United Kingdom",
+    },
   });
   await clearEmails(request);
 
@@ -72,9 +78,21 @@ test("subscription customer places a real one-time order with store credit and s
     page.getByRole("button", { name: /Place Order - £0\.00/i }),
   ).toBeVisible();
 
+  const checkoutResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/portal/orders/checkout",
+  );
   await page
     .getByRole("button", { name: /Place Order - £0\.00/i })
     .click();
+
+  const checkoutResponse = await checkoutResponsePromise;
+  expect(checkoutResponse.status()).toBe(200);
+  const checkoutBody = await checkoutResponse.json();
+  expect(checkoutBody.success).toBe(true);
+  expect(checkoutBody.data?.paidWithCredit).toBe(true);
+  expect(checkoutBody.data?.orderId).toBeTruthy();
 
   await expect(page).toHaveURL(/\/checkout\/success\?credit=1&order_id=/);
   await expect(

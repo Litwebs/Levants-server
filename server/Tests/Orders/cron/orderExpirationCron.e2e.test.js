@@ -68,7 +68,16 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
       return query;
     });
 
-    // 3) Strip session option for variant update
+    // 3) Make transaction-scoped Order.findOne(...).session(session) ignore
+    // the fake session while leaving ordinary findOne queries unchanged.
+    const originalFindOne = Order.findOne.bind(Order);
+    jest.spyOn(Order, "findOne").mockImplementation((filter) => {
+      const query = originalFindOne(filter);
+      query.session = () => originalFindOne(filter);
+      return query;
+    });
+
+    // 4) Strip session option for variant update
     const originalFindByIdAndUpdate = Variant.findByIdAndUpdate.bind(Variant);
     jest
       .spyOn(Variant, "findByIdAndUpdate")
@@ -78,7 +87,7 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
         return originalFindByIdAndUpdate(id, update, safeOpts);
       });
 
-    // 4) Strip session option for order.save
+    // 5) Strip session option for order.save
     const originalSave = Order.prototype.save;
     jest.spyOn(Order.prototype, "save").mockImplementation(function (opts) {
       const safeOpts = { ...(opts || {}) };

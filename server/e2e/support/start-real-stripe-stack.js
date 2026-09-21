@@ -115,6 +115,9 @@ async function start() {
     return handleStripeWebhook(req, res);
   };
 
+  const geocode = require(`${SERVER_ROOT}/Integration/google.geocode`);
+  geocode.geocodeAddress = async () => ({ lat: 53.7939, lng: -1.7521 });
+
   const app = require(`${SERVER_ROOT}/app`);
   fixtureFactory = require(`${SERVER_ROOT}/e2e/support/fixture-factory`);
   const { createControlApp } = require(`${SERVER_ROOT}/e2e/support/control-app`);
