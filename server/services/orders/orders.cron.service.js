@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
 const { reconcileReservedStock } = require("./orders.stock.service");
+const { ReconcileCheckoutSession } = require("./orders.webhook.service");
 
 let _stripe;
 function getStripe() {
@@ -14,14 +15,55 @@ async function ExpirePendingOrders() {
   const now = new Date();
   let expiredCount = 0;
 
+  // Reconcile Stripe first, outside the Mongo transaction. A paid Checkout
+  // session must never be cancelled locally just because its webhook was late.
+  const expiredCandidates = await Order.find({
+    status: "pending",
+    reservationExpiresAt: { $lte: now },
+  })
+    .select("_id stripeCheckoutSessionId")
+    .lean();
+
+  const safeToExpireIds = [];
+  for (const candidate of expiredCandidates) {
+    if (!candidate.stripeCheckoutSessionId) {
+      safeToExpireIds.push(candidate._id);
+      continue;
+    }
+
+    const reconciliation = await ReconcileCheckoutSession({
+      checkoutSessionId: candidate.stripeCheckoutSessionId,
+    });
+
+    if (!reconciliation.success && reconciliation.message === "Payment is not complete") {
+      safeToExpireIds.push(candidate._id);
+      continue;
+    }
+
+    if (!reconciliation.success) {
+      console.warn(
+        "Skipping pending order expiry because Stripe could not be reconciled",
+        {
+          orderId: String(candidate._id),
+          checkoutSessionId: candidate.stripeCheckoutSessionId,
+          reason: reconciliation.message,
+        },
+      );
+    }
+  }
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const orders = await Order.find({
-      status: "pending",
-      reservationExpiresAt: { $lte: now },
-    }).session(session);
+    const orders =
+      safeToExpireIds.length > 0
+        ? await Order.find({
+            _id: { $in: safeToExpireIds },
+            status: "pending",
+            reservationExpiresAt: { $lte: now },
+          }).session(session)
+        : [];
 
     const checkoutSessionsToExpire = [];
 

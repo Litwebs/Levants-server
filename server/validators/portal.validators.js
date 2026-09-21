@@ -184,26 +184,6 @@ const updateSupportStatusSchema = Joi.object({
   assignedTo: objectId.allow(null, "").optional(),
 }).unknown(false);
 
-const customerPortalOrderSchema = Joi.object({
-  items: Joi.array()
-    .items(
-      Joi.object({
-        variantId: objectId.required(),
-        quantity: Joi.number().integer().min(1).required(),
-      }),
-    )
-    .min(1)
-    .required(),
-  deliveryAddressId: objectId.required(),
-  discountCode: Joi.string().trim().uppercase().min(3).max(32).optional(),
-  deliveryDate: Joi.date().iso().greater("now").optional(),
-  customerInstructions: Joi.string()
-    .trim()
-    .max(1000)
-    .allow(null, "")
-    .optional(),
-}).unknown(false);
-
 const cancelOrderSchema = Joi.object({
   reason: Joi.string().trim().max(500).allow(null, "").optional(),
 }).unknown(false);
@@ -243,7 +223,6 @@ module.exports = {
   supportRequestIdParamSchema,
   addSupportNoteSchema,
   updateSupportStatusSchema,
-  customerPortalOrderSchema,
   cancelOrderSchema,
   updateOrderDeliverySchema,
   updatePaymentStatusSchema,

@@ -181,9 +181,10 @@ async function HandlePaymentSuccess(session) {
     // Don't fail webhook processing due to notification failures
   }
 
-  // Notify customer about successful order/payment and create the matching
-  // in-app confirmation. Both are idempotent/best-effort.
-  await retryCustomerConfirmation(order);
+  // Reload the order because finalizeStockForOrder updates it in the database.
+  // The original document still says "pending" at this point.
+  const finalizedOrder = await Order.findById(order._id);
+  await retryCustomerConfirmation(finalizedOrder);
 }
 
 async function ReconcileCheckoutSession({ checkoutSessionId } = {}) {
