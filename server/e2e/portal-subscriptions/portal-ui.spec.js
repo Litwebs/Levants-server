@@ -798,6 +798,158 @@ test("new subscription uses the delivery days configured by the server", async (
   ).toBeDisabled();
 });
 
+test("multi-day add-products requires day assignment and updates every selected day in one request", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-multi-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  const addProductsPath = `${detailPath}/add-products`;
+  const before = await getState(request, fixture.subscriptionId);
+  const mutationRequests = [];
+
+  page.on("request", (req) => {
+    const url = new URL(req.url());
+    if (
+      url.origin === API_ORIGIN &&
+      url.pathname === `/api/portal/subscriptions/${fixture.subscriptionId}` &&
+      req.method() === "PATCH"
+    ) {
+      mutationRequests.push(req);
+    }
+  });
+
+  await signIn(page, fixture.credentials, addProductsPath);
+  await expect(
+    page.getByRole("heading", { name: "Select Products", exact: true }),
+  ).toBeVisible();
+
+  const eggsCard = addOnProductCard(page, fixture.variants.EGGS.name);
+  await eggsCard
+    .getByRole("button", { name: "Add to subscription", exact: true })
+    .click();
+
+  const selectedProducts = page
+    .getByRole("heading", { name: "Selected Products", exact: true })
+    .locator("xpath=ancestor::section[1]");
+  await expect(
+    selectedProducts.getByText(fixture.variants.EGGS.name, { exact: true }),
+  ).toBeVisible();
+
+  const saveButton = selectedProducts.getByRole("button", {
+    name: "Save selected products",
+    exact: true,
+  });
+  await expect(saveButton).toBeDisabled();
+  await expect(
+    selectedProducts.getByText(
+      /Choose at least one delivery day for each selected product to continue/i,
+    ),
+  ).toBeVisible();
+
+  // A disabled control must remain a hard client-side guard: even a direct DOM
+  // click cannot send the update request while the new product is unassigned.
+  await saveButton.evaluate((button) => button.click());
+  expect(mutationRequests).toHaveLength(0);
+
+  const selectedDayNames = fixture.deliveryDays.map((day) => DAY_NAMES[day]);
+  for (const dayName of selectedDayNames) {
+    await selectedProducts
+      .getByRole("button", { name: dayName, exact: true })
+      .click();
+  }
+
+  await expect(saveButton).toBeEnabled();
+  await expect(
+    selectedProducts.getByText(
+      `${selectedDayNames.length} delivery days selected`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  const responsePromise = waitForApiResponse(
+    page,
+    "PATCH",
+    `/api/portal/subscriptions/${fixture.subscriptionId}`,
+  );
+  await saveButton.click();
+  const response = await responsePromise;
+  const body = await expectApiSuccess(response);
+  await expect(page).toHaveURL(detailPath);
+
+  expect(mutationRequests).toHaveLength(1);
+
+  const payload = response.request().postDataJSON();
+  expect(new Set(payload.preferredDeliveryDays)).toEqual(
+    new Set(fixture.deliveryDays),
+  );
+  expect(new Set(payload.changedDeliveryDays)).toEqual(
+    new Set(fixture.deliveryDays),
+  );
+  expect(payload.deliveryDayPlans).toHaveLength(fixture.deliveryDays.length);
+
+  for (const day of fixture.deliveryDays) {
+    const plan = payload.deliveryDayPlans.find(
+      (candidate) => Number(candidate.day) === Number(day),
+    );
+    expect(plan).toBeTruthy();
+    expect(plan.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          variantId: fixture.variants.EGGS.id,
+          quantity: 1,
+        }),
+      ]),
+    );
+  }
+
+  const after = await getState(request, fixture.subscriptionId);
+  for (const day of fixture.deliveryDays) {
+    const plan = after.subscription.deliveryDayPlans.find(
+      (candidate) => Number(candidate.day) === Number(day),
+    );
+    expect(plan).toBeTruthy();
+    expect(
+      plan.items.some(
+        (item) =>
+          id(item.variant) === id(fixture.variants.EGGS.id) &&
+          Number(item.quantity) === 1,
+      ),
+    ).toBe(true);
+  }
+
+  expect(
+    itemQuantity(after.subscription.items, fixture.variants.EGGS.id),
+  ).toBe(fixture.deliveryDays.length);
+
+  const successfulBefore = modificationIntents(before).filter(
+    (intent) => intent.status === "succeeded",
+  );
+  const successfulAfter = modificationIntents(after).filter(
+    (intent) => intent.status === "succeeded",
+  );
+  expect(successfulAfter).toHaveLength(successfulBefore.length + 1);
+
+  const newIntent = successfulAfter.find(
+    (intent) =>
+      !successfulBefore.some((existing) => existing.id === intent.id),
+  );
+  expect(newIntent).toBeTruthy();
+  expect(Number(newIntent.amount)).toBe(
+    Math.round(
+      Number(fixture.variants.EGGS.price) *
+        100 *
+        fixture.deliveryDays.length,
+    ),
+  );
+
+  expect(body.data?.subscription?.deliveryDayPlans).toBeTruthy();
+});
+
 test("renders prepared multi-day subscriptions with the correct per-day product split", async ({
   page,
   request,
