@@ -5,9 +5,11 @@ const {
   API_ORIGIN,
   createFixture,
   getState,
+  login,
   reset,
   setPaymentOutcome,
 } = require("../support/e2e-client");
+const { CLIENT_ORIGIN } = require("../support/constants");
 
 const DAY_NAMES = [
   "Sunday",
@@ -174,6 +176,105 @@ test.beforeEach(async ({ request }) => {
 
 test.afterAll(async ({ request }) => {
   await reset(request);
+});
+
+function businessCutoffTwoHoursFromNow() {
+  const now = new Date();
+  const target = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const read = (value) => {
+    const parts = formatter.formatToParts(value);
+    const part = (type) =>
+      Number(parts.find((candidate) => candidate.type === type)?.value);
+    return {
+      year: part("year"),
+      month: part("month"),
+      day: part("day"),
+      hour: part("hour"),
+      minute: part("minute"),
+    };
+  };
+  const today = read(now);
+  const future = read(target);
+  const todayUtc = Date.UTC(today.year, today.month - 1, today.day);
+  const futureUtc = Date.UTC(future.year, future.month - 1, future.day);
+  const dayDelta = Math.round((futureUtc - todayUtc) / (24 * 60 * 60 * 1000));
+
+  return {
+    cutoffDaysBefore: 4 - dayDelta,
+    cutoffTime: `${String(future.hour).padStart(2, "0")}:${String(
+      future.minute,
+    ).padStart(2, "0")}`,
+  };
+}
+
+test("server cut-off instant stays authoritative in a different browser timezone", async ({
+  browser,
+  request,
+}) => {
+  const cutoff = businessCutoffTwoHoursFromNow();
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+    cutoffDaysBefore: cutoff.cutoffDaysBefore,
+    cutoffTime: cutoff.cutoffTime,
+  });
+
+  const token = await login(request, fixture.credentials);
+  const detailResponse = await request.get(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  const detailBody = await expectApiSuccess(detailResponse);
+  expect(detailBody.data?.cutoff?.timeZone).toBe("Europe/London");
+  expect(
+    new Date(detailBody.data?.cutoff?.cutoffAt).getTime(),
+  ).toBeGreaterThan(Date.now());
+
+  const deliveriesResponse = await request.get(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/deliveries?page=1&pageSize=20`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  const deliveriesBody = await expectApiSuccess(deliveriesResponse);
+  const nextDelivery = deliveriesBody.data?.deliveries?.[0];
+  expect(nextDelivery?.cutoffAt).toBeTruthy();
+  expect(new Date(nextDelivery.cutoffAt).getTime()).toBeGreaterThan(Date.now());
+
+  const context = await browser.newContext({
+    baseURL: CLIENT_ORIGIN,
+    timezoneId: "Pacific/Kiritimati",
+  });
+  const page = await context.newPage();
+  try {
+    const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+    await signIn(page, fixture.credentials, detailPath);
+    await page.goto(`${detailPath}/next-delivery/add-ons`);
+
+    await expect(
+      page.getByText(
+        "Charged now and delivered once. Future deliveries are unchanged.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/The cut-off for this delivery has passed/i),
+    ).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 });
 
 test("customer adds a charged one-time product to only the next delivery", async ({

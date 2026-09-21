@@ -517,13 +517,26 @@ async function createFixture(options = {}) {
     config.deliveryDays = [0, 3];
   }
 
+  const requestedCutoffDaysBefore = Number(options.cutoffDaysBefore);
+  const cutoffDaysBefore =
+    Number.isInteger(requestedCutoffDaysBefore) &&
+    requestedCutoffDaysBefore >= 0 &&
+    requestedCutoffDaysBefore <= 7
+      ? requestedCutoffDaysBefore
+      : 2;
+  const cutoffTime =
+    typeof options.cutoffTime === "string" &&
+    /^([01]\\d|2[0-3]):[0-5]\\d$/.test(options.cutoffTime)
+      ? options.cutoffTime
+      : "22:00";
+
   await SubscriptionSettings.findOneAndUpdate(
     { singletonKey: "subscription-settings" },
     {
       singletonKey: "subscription-settings",
       deliveryDays: config.deliveryDays,
-      cutoffDaysBefore: 2,
-      cutoffTime: "22:00",
+      cutoffDaysBefore,
+      cutoffTime,
     },
     { upsert: true, new: true },
   );

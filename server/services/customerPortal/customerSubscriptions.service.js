@@ -13,6 +13,12 @@ const { Response } = require("../../utils/response.util");
 const {
   addCalendarMonthPreservingWeekdayOccurrence,
 } = require("../../utils/subscriptionCadence.util");
+const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
+  computeSubscriptionCutoffDate,
+  getNextWeekdayDateInTimeZone,
+} = require("../../utils/subscriptionCutoff.util");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
 const storeCreditService = require("../storeCredit.service");
 const {
@@ -509,31 +515,53 @@ async function syncStripeSubscriptionPrice(subscription, itemsOverride) {
 
 // ── Cut-off helpers ─────────────────────────────────────────────────────────
 
-function parseCutoffTime(timeStr) {
-  const [h, m] = String(timeStr || "22:00")
-    .split(":")
-    .map((n) => Number(n));
-  return { h: Number.isFinite(h) ? h : 22, m: Number.isFinite(m) ? m : 0 };
-}
-
 /**
- * The modification cut-off for a given delivery date:
- * deliveryDate − cutoffDaysBefore days, at cutoffTime.
+ * The modification cut-off for a given delivery date, resolved as an exact
+ * instant in the business delivery timezone.
  */
-function computeCutoffDate(nextDeliveryDate, settings) {
-  if (!nextDeliveryDate) return null;
-  const cutoff = new Date(nextDeliveryDate);
-  cutoff.setDate(cutoff.getDate() - (Number(settings?.cutoffDaysBefore) || 0));
-  const { h, m } = parseCutoffTime(settings?.cutoffTime);
-  cutoff.setHours(h, m, 0, 0);
-  return cutoff;
-}
+const computeCutoffDate = computeSubscriptionCutoffDate;
 
 async function getCutoffStatus(subscription) {
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const cutoffAt = computeCutoffDate(subscription.nextDeliveryDate, settings);
   const isPastCutoff = cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
   return { settings, cutoffAt, isPastCutoff };
+}
+
+function buildDeliveryDayCutoffs(
+  subscription,
+  settings,
+  referenceDate = new Date(),
+) {
+  const reference = new Date(referenceDate);
+  const referenceMs = reference.getTime();
+
+  return getEffectiveDeliveryDays(subscription).map((day) => {
+    const deliveryDate = getNextWeekdayDateInTimeZone(
+      day,
+      reference,
+      SUBSCRIPTION_TIME_ZONE,
+    );
+    const cutoffAt = computeCutoffDate(deliveryDate, settings);
+    const effectiveFrom =
+      subscription?.frequency === "weekly" && deliveryDate
+        ? addCalendarDaysInTimeZone(
+            deliveryDate,
+            7,
+            SUBSCRIPTION_TIME_ZONE,
+          )
+        : null;
+
+    return {
+      day,
+      deliveryDate,
+      cutoffAt,
+      effectiveFrom,
+      isPastCutoff: cutoffAt
+        ? referenceMs >= cutoffAt.getTime()
+        : false,
+    };
+  });
 }
 
 function startOfDay(value) {
@@ -2057,7 +2085,13 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
     upcomingDeliveryDate || enriched.nextDeliveryDate,
     settings,
   );
-  const isPastCutoff = cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
+  const now = new Date();
+  const isPastCutoff = cutoffAt ? now.getTime() >= cutoffAt.getTime() : false;
+  const deliveryDayCutoffs = buildDeliveryDayCutoffs(
+    enriched,
+    settings,
+    now,
+  );
 
   return Response(true, null, {
     subscription: {
@@ -2072,6 +2106,8 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
       cutoffDaysBefore: settings.cutoffDaysBefore,
       cutoffTime: settings.cutoffTime,
       deliveryDays: settings.deliveryDays,
+      timeZone: SUBSCRIPTION_TIME_ZONE,
+      deliveryDayCutoffs,
     },
   });
 }
@@ -4066,14 +4102,23 @@ async function GetSubscriptionDeliveries({
     .limit(pageSize)
     .lean();
 
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const nowMs = Date.now();
   const normalizedDeliveries = deliveries.map((delivery) => {
     const orderStatus = String(delivery?.order?.status || "").toLowerCase();
-    if (orderStatus !== "refunded") {
-      return delivery;
-    }
+    const normalized =
+      orderStatus === "refunded"
+        ? {
+            ...delivery,
+            status: "cancelled",
+          }
+        : delivery;
+    const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
+
     return {
-      ...delivery,
-      status: "cancelled",
+      ...normalized,
+      cutoffAt,
+      isPastCutoff: cutoffAt ? nowMs >= cutoffAt.getTime() : false,
     };
   });
 
@@ -4094,6 +4139,7 @@ async function GetSubscriptionSettingsForCustomer() {
       deliveryDays: settings.deliveryDays,
       cutoffDaysBefore: settings.cutoffDaysBefore,
       cutoffTime: settings.cutoffTime,
+      timeZone: SUBSCRIPTION_TIME_ZONE,
     },
   });
 }
