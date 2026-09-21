@@ -651,6 +651,12 @@ test("new subscription uses the delivery days configured by the server", async (
   await expect(
     page.getByRole("heading", { name: "New Subscription", exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Choose one or more of the delivery days currently offered.",
+      { exact: true },
+    ),
+  ).toBeVisible();
 
   const tuesday = page.getByRole("button", { name: /^Tuesday/ });
   const friday = page.getByRole("button", { name: /^Friday/ });
