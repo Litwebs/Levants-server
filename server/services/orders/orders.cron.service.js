@@ -3,12 +3,43 @@ const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
 const { reconcileReservedStock } = require("./orders.stock.service");
 const { ReconcileCheckoutSession } = require("./orders.webhook.service");
+const {
+  sendOrderConfirmationEmailToCustomer,
+} = require("./orders.notifications.service");
 
 let _stripe;
 function getStripe() {
   if (_stripe) return _stripe;
   _stripe = require("../../utils/stripe.util");
   return _stripe;
+}
+
+async function RetryRecentOrderConfirmations({ now = new Date() } = {}) {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const candidates = await Order.find({
+    orderType: "one_time",
+    status: "paid",
+    paidAt: { $gte: since },
+    "metadata.orderConfirmationSentAt": { $exists: false },
+  })
+    .select("_id")
+    .limit(20)
+    .lean();
+
+  let attempted = 0;
+  for (const order of candidates) {
+    try {
+      await sendOrderConfirmationEmailToCustomer({ orderId: order._id });
+      attempted += 1;
+    } catch (err) {
+      console.warn("Order confirmation retry failed", {
+        orderId: String(order._id),
+        error: err?.message,
+      });
+    }
+  }
+
+  return { attempted };
 }
 
 async function ExpirePendingOrders() {
@@ -125,8 +156,15 @@ async function ExpirePendingOrders() {
   } catch (err) {
     console.error("❌ Reserved stock reconciliation failed:", err);
   }
+
+  try {
+    await RetryRecentOrderConfirmations({ now });
+  } catch (err) {
+    console.error("❌ Order confirmation retry failed:", err);
+  }
 }
 
 module.exports = {
   ExpirePendingOrders,
+  RetryRecentOrderConfirmations,
 };

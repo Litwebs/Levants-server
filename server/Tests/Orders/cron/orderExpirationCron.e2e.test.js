@@ -1,4 +1,8 @@
 // Tests/Orders/cron/orderExpirationCron.e2e.test.js
+jest.mock("../../../Integration/Email.service", () =>
+  jest.fn(async () => ({ success: true, response: { id: "email_test" } })),
+);
+
 const mongoose = require("mongoose");
 
 const Order = require("../../../models/order.model");
@@ -6,6 +10,8 @@ const Product = require("../../../models/product.model");
 const Variant = require("../../../models/variant.model");
 const stripe = require("../../../utils/stripe.util");
 const File = require("../../../models/file.model");
+const Customer = require("../../../models/customer.model");
+const sendEmail = require("../../../Integration/Email.service");
 
 const {
   runOrderExpirationJob,
@@ -115,6 +121,52 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
       status: "active",
       thumbnailImage: file._id,
     });
+  });
+
+  test("recent paid one-time order retries a missing confirmation exactly once", async () => {
+    const customer = await Customer.create({
+      firstName: "Retry",
+      lastName: "Customer",
+      email: "retry-confirmation@test.com",
+      phone: "07000000000",
+      isGuest: false,
+      status: "active",
+    });
+
+    const paidOrder = await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: "Cron Variant",
+          sku: variant.sku,
+          price: 10,
+          quantity: 1,
+          subtotal: 10,
+        },
+      ],
+      subtotal: 10,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 1,
+      total: 11,
+      status: "paid",
+      orderType: "one_time",
+      paidAt: new Date(),
+    });
+
+    await runOrderExpirationJob();
+
+    let refreshed = await Order.findById(paidOrder._id).lean();
+    expect(refreshed.metadata?.orderConfirmationSentAt).toBeTruthy();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+
+    await runOrderExpirationJob();
+
+    refreshed = await Order.findById(paidOrder._id).lean();
+    expect(refreshed.metadata?.orderConfirmationSentAt).toBeTruthy();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
   test("expired orders are cancelled and stock is released", async () => {
