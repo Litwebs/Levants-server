@@ -497,10 +497,23 @@ async function createFixture(options = {}) {
   const cadence = options.cadence || "weekly-single-day";
   const timing = options.timing || "before-cutoff";
   const config = cadenceConfig(cadence, timing);
-  if (options.portalCreationDays === true) {
-    // The customer creation form deliberately offers the business delivery
-    // days only. Keep UI fixtures deterministic instead of deriving an
-    // unsupported weekday from today's date.
+  const requestedDeliveryDays = Array.isArray(options.deliveryDays)
+    ? Array.from(
+        new Set(
+          options.deliveryDays
+            .map((day) => Number(day))
+            .filter(
+              (day) => Number.isInteger(day) && day >= 0 && day <= 6,
+            ),
+        ),
+      )
+    : [];
+
+  if (requestedDeliveryDays.length > 0) {
+    config.deliveryDays = requestedDeliveryDays;
+  } else if (options.portalCreationDays === true) {
+    // Keep the legacy UI creation fixture deterministic while allowing
+    // individual tests to supply different configured business delivery days.
     config.deliveryDays = [0, 3];
   }
 

@@ -636,6 +636,60 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
   ).toBe(true);
 });
 
+test("new subscription uses the delivery days configured by the server", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    createSubscription: false,
+    deliveryDays: [2, 5],
+  });
+
+  await signIn(page, fixture.credentials, "/portal/subscriptions/new");
+  await expect(
+    page.getByRole("heading", { name: "New Subscription", exact: true }),
+  ).toBeVisible();
+
+  const tuesday = page.getByRole("button", { name: /^Tuesday/ });
+  const friday = page.getByRole("button", { name: /^Friday/ });
+
+  await expect(tuesday).toBeVisible();
+  await expect(friday).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^Sunday/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^Wednesday/ }),
+  ).toHaveCount(0);
+
+  await expect(tuesday).toHaveAttribute("aria-pressed", "true");
+  await friday.click();
+  await expect(tuesday).toHaveAttribute("aria-pressed", "true");
+  await expect(friday).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "How often would you like delivery?",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Multiple delivery days use a weekly plan because each selected day is a separate order each week.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Every 2 weeks/ }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /Monthly/ }),
+  ).toBeDisabled();
+});
+
 test("renders prepared multi-day subscriptions with the correct per-day product split", async ({
   page,
   request,
