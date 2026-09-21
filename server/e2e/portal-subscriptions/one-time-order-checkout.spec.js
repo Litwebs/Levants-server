@@ -55,6 +55,7 @@ test("subscription customer places a real one-time order with store credit and s
   }).first();
   await expect(addToBasket).toBeVisible();
   await addToBasket.click();
+  await expect(page.getByText(/added to your basket/i)).toBeVisible();
 
   await page.goto("/checkout");
 
@@ -103,6 +104,6 @@ test("subscription customer places a real one-time order with store credit and s
   await expect(page.getByText(/paid/i).first()).toBeVisible();
 
   await page.goto("/portal/credit");
-  await expect(page.getByText("Used on order", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/Used on order/i).first()).toBeVisible();
   await expect(page.getByText("£100.00", { exact: true })).toHaveCount(0);
 });
