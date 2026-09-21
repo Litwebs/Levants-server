@@ -1124,6 +1124,98 @@ test("pauses and manually resumes a subscription through the lifecycle UI", asyn
   expect(resumedState.stripe.remoteSubscription.pauseCollection).toBeNull();
 });
 
+test("resume failure keeps a paused subscription recoverable in the lifecycle UI", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+
+  await signIn(page, fixture.credentials, detailPath);
+
+  await page
+    .getByRole("button", { name: "Pause Subscription", exact: true })
+    .click();
+  const pauseDialog = page.getByRole("dialog", {
+    name: "Pause Subscription?",
+  });
+  await pauseDialog.locator('input[type="date"]').fill(fixture.resumeOn);
+
+  const pauseResponsePromise = waitForApiResponse(
+    page,
+    "POST",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/pause`,
+  );
+  await pauseDialog
+    .getByRole("button", { name: "Pause subscription", exact: true })
+    .click();
+  const pauseBody = await expectApiSuccess(await pauseResponsePromise);
+  expect(pauseBody.data?.subscription?.status).toBe("paused");
+
+  const resumeUrl =
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/resume`;
+  let failedResumeRequests = 0;
+  await page.route(resumeUrl, async (route) => {
+    failedResumeRequests += 1;
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: false,
+        message: "Resume temporarily unavailable",
+      }),
+    });
+  });
+
+  await page
+    .getByRole("button", { name: "Resume Subscription", exact: true })
+    .click();
+  const failedResumeDialog = page.getByRole("dialog", {
+    name: "Resume Subscription?",
+  });
+  await failedResumeDialog
+    .getByRole("button", { name: "Resume", exact: true })
+    .click();
+
+  await expect(
+    page.getByText("Resume temporarily unavailable", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("Paused", { exact: true })).toBeVisible();
+  expect(failedResumeRequests).toBe(1);
+
+  const pausedState = await getState(request, fixture.subscriptionId);
+  expect(pausedState.subscription.status).toBe("paused");
+
+  await page.unroute(resumeUrl);
+
+  await page
+    .getByRole("button", { name: "Resume Subscription", exact: true })
+    .click();
+  const retryDialog = page.getByRole("dialog", {
+    name: "Resume Subscription?",
+  });
+  const resumeResponsePromise = waitForApiResponse(
+    page,
+    "POST",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/resume`,
+  );
+  await retryDialog.getByRole("button", { name: "Resume", exact: true }).click();
+  const resumeBody = await expectApiSuccess(await resumeResponsePromise);
+  expect(resumeBody.data?.subscription?.status).toBe("active");
+
+  await expect(page.getByText("Active", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Subscription resumed", { exact: true }).first(),
+  ).toBeVisible();
+
+  const resumedState = await getState(request, fixture.subscriptionId);
+  expect(resumedState.subscription.status).toBe("active");
+});
+
 test("adds a new default card through a real Stripe Elements SetupIntent", async ({
   page,
   request,
