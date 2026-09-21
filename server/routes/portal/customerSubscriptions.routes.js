@@ -8,6 +8,7 @@ const {
 const {
   validateBody,
   validateParams,
+  validateQuery,
 } = require("../../middleware/validate.middleware");
 
 const controller = require("../../controllers/portal/customerSubscriptions.controller");
@@ -22,6 +23,7 @@ const {
   subscriptionItemIdParamSchema,
   pauseSubscriptionSchema,
   cancelSubscriptionSchema,
+  portalListQuerySchema,
 } = require("../../validators/portal.validators");
 
 const router = express.Router();
@@ -34,7 +36,11 @@ router.post(
   asyncHandler(controller.CreateSubscription),
 );
 
-router.get("/", asyncHandler(controller.ListSubscriptions));
+router.get(
+  "/",
+  validateQuery(portalListQuerySchema),
+  asyncHandler(controller.ListSubscriptions),
+);
 
 router.get("/settings", asyncHandler(controller.GetSubscriptionSettings));
 

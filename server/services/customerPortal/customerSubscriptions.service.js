@@ -2039,26 +2039,45 @@ async function ListSubscriptions({
     .limit(pageSize)
     .lean();
 
-  const subscriptionsWithScheduleLabels = await Promise.all(
-    subscriptions.map(async (subscription) => {
-      const effectiveDays = getEffectiveDeliveryDays(subscription);
-      const preferredDeliveryDaysLabel = effectiveDays
-        .map((day) => WEEKDAY_NAMES[day])
-        .filter(Boolean)
-        .join(", ");
-      const upcomingDeliveryDate = await getUpcomingDeliveryDate(
-        subscription._id,
-      );
+  const subscriptionIds = subscriptions.map((subscription) => subscription._id);
+  const upcomingBySubscription = new Map();
 
-      return {
-        ...subscription,
-        preferredDeliveryDaysLabel,
-        upcomingDeliveryDate: upcomingDeliveryDate
-          ? upcomingDeliveryDate.toISOString()
-          : null,
-      };
-    }),
-  );
+  if (subscriptionIds.length > 0) {
+    const upcomingDeliveries = await SubscriptionDelivery.find({
+      subscription: { $in: subscriptionIds },
+      status: { $in: ["scheduled", "generated"] },
+      scheduledDate: { $gte: startOfDay(new Date()) },
+    })
+      .select("subscription scheduledDate")
+      .sort({ scheduledDate: 1 })
+      .lean();
+
+    for (const delivery of upcomingDeliveries) {
+      const key = String(delivery.subscription);
+      if (!upcomingBySubscription.has(key) && delivery.scheduledDate) {
+        upcomingBySubscription.set(key, new Date(delivery.scheduledDate));
+      }
+    }
+  }
+
+  const subscriptionsWithScheduleLabels = subscriptions.map((subscription) => {
+    const effectiveDays = getEffectiveDeliveryDays(subscription);
+    const preferredDeliveryDaysLabel = effectiveDays
+      .map((day) => WEEKDAY_NAMES[day])
+      .filter(Boolean)
+      .join(", ");
+    const upcomingDeliveryDate = upcomingBySubscription.get(
+      String(subscription._id),
+    );
+
+    return {
+      ...subscription,
+      preferredDeliveryDaysLabel,
+      upcomingDeliveryDate: upcomingDeliveryDate
+        ? upcomingDeliveryDate.toISOString()
+        : null,
+    };
+  });
 
   return Response(true, null, {
     subscriptions: subscriptionsWithScheduleLabels,

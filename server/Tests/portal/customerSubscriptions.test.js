@@ -2534,6 +2534,82 @@ describe("Portal Subscriptions", () => {
     expect(listedActive.preferredDeliveryDaysLabel).toBe("Sunday, Wednesday");
   });
 
+  it("validates subscription list pagination query parameters", async () => {
+    await createBasicSubscription();
+
+    const invalidPage = await request(app)
+      .get("/api/portal/subscriptions?page=0&pageSize=20")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(invalidPage.status).toBe(400);
+    expect(invalidPage.body.message).toMatch(/page/i);
+
+    const invalidPageSize = await request(app)
+      .get("/api/portal/subscriptions?page=1&pageSize=101")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(invalidPageSize.status).toBe(400);
+    expect(invalidPageSize.body.message).toMatch(/pageSize/i);
+  });
+
+  it("loads upcoming dates for the subscription list with one delivery query", async () => {
+    const first = await createBasicSubscription();
+    const second = await createBasicSubscription();
+
+    await SubscriptionDelivery.deleteMany({
+      subscription: { $in: [first._id, second._id] },
+    });
+
+    const firstUpcoming = new Date();
+    firstUpcoming.setDate(firstUpcoming.getDate() + 1);
+    firstUpcoming.setHours(9, 0, 0, 0);
+
+    const secondUpcoming = new Date();
+    secondUpcoming.setDate(secondUpcoming.getDate() + 2);
+    secondUpcoming.setHours(9, 0, 0, 0);
+
+    await SubscriptionDelivery.create([
+      {
+        subscription: first._id,
+        customer: customer._id,
+        scheduledDate: firstUpcoming,
+        status: "scheduled",
+      },
+      {
+        subscription: second._id,
+        customer: customer._id,
+        scheduledDate: secondUpcoming,
+        status: "generated",
+      },
+    ]);
+
+    const findSpy = jest.spyOn(SubscriptionDelivery, "find");
+
+    const listRes = await request(app)
+      .get("/api/portal/subscriptions?page=1&pageSize=20")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    const findCalls = findSpy.mock.calls.length;
+    findSpy.mockRestore();
+
+    expect(listRes.status).toBe(200);
+    expect(findCalls).toBe(1);
+
+    const firstListed = listRes.body.data.subscriptions.find(
+      (subscription) => subscription._id === first._id.toString(),
+    );
+    const secondListed = listRes.body.data.subscriptions.find(
+      (subscription) => subscription._id === second._id.toString(),
+    );
+
+    expect(new Date(firstListed.upcomingDeliveryDate).toISOString()).toBe(
+      firstUpcoming.toISOString(),
+    );
+    expect(new Date(secondListed.upcomingDeliveryDate).toISOString()).toBe(
+      secondUpcoming.toISOString(),
+    );
+  });
+
   it("includes the soonest scheduled delivery for display without changing nextDeliveryDate", async () => {
     const sub = await createBasicSubscription();
 
