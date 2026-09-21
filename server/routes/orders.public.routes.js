@@ -4,9 +4,18 @@ const asyncHandler = require("../utils/asyncHandler.util");
 const { validateBody } = require("../middleware/validate.middleware");
 
 const controller = require("../controllers/orders.public.controller");
-const { createOrderSchema } = require("../validators/order.validators");
+const {
+  createOrderSchema,
+  checkoutConfirmSchema,
+} = require("../validators/order.validators");
 
 const router = express.Router();
+
+router.post(
+  "/checkout/confirm",
+  validateBody(checkoutConfirmSchema),
+  asyncHandler(controller.ConfirmCheckout),
+);
 
 /**
  * CREATE order (public – guest checkout)

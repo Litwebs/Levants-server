@@ -4,6 +4,8 @@ const {
 } = require("./orders.stock.service");
 
 const Order = require("../../models/order.model");
+const CustomerNotification = require("../../models/customerNotification.model");
+const stripe = require("../../utils/stripe.util");
 const { recordRedemption } = require("../discounts.public.service");
 const storeCreditService = require("../storeCredit.service");
 const {
@@ -32,6 +34,41 @@ function getStripePricingFromSession(session) {
   };
 }
 
+async function ensureOrderConfirmedNotification(order) {
+  if (!order?._id || !order?.customer) return;
+  await CustomerNotification.updateOne(
+    {
+      customer: order.customer,
+      type: "order_confirmed",
+      relatedOrder: order._id,
+    },
+    {
+      $setOnInsert: {
+        customer: order.customer,
+        type: "order_confirmed",
+        title: "Order confirmed",
+        message: `Your order #${order.orderId} has been confirmed.`,
+        relatedOrder: order._id,
+      },
+    },
+    { upsert: true },
+  );
+}
+
+async function retryCustomerConfirmation(order) {
+  if (!order || order.status !== "paid") return;
+  try {
+    await ensureOrderConfirmedNotification(order);
+  } catch {
+    // In-app confirmation is best-effort.
+  }
+  try {
+    await sendOrderConfirmationEmailToCustomer({ orderId: order._id });
+  } catch {
+    // Email remains best-effort; browser reconciliation can retry it.
+  }
+}
+
 async function HandlePaymentSuccess(session) {
   const orderId = session.metadata?.orderId;
   if (!orderId) return;
@@ -56,13 +93,15 @@ async function HandlePaymentSuccess(session) {
     await order.save();
   }
 
-  // Already finalized or in refund flow: do nothing.
+  // If payment was already finalized, browser reconciliation still gets a
+  // chance to repair a missed customer confirmation without charging again.
   if (
     order.status === "paid" ||
     order.status === "refund_pending" ||
     order.status === "refunded" ||
     order.status === "partially_refunded"
   ) {
+    await retryCustomerConfirmation(order);
     return;
   }
 
@@ -142,12 +181,58 @@ async function HandlePaymentSuccess(session) {
     // Don't fail webhook processing due to notification failures
   }
 
-  // Notify customer about successful order/payment (best-effort, idempotent)
-  try {
-    await sendOrderConfirmationEmailToCustomer({ orderId: order._id });
-  } catch (e) {
-    // Don't fail webhook processing due to notification failures
+  // Notify customer about successful order/payment and create the matching
+  // in-app confirmation. Both are idempotent/best-effort.
+  await retryCustomerConfirmation(order);
+}
+
+async function ReconcileCheckoutSession({ checkoutSessionId } = {}) {
+  const sessionId = String(checkoutSessionId || "").trim();
+  if (!sessionId) {
+    return { success: false, message: "Checkout session is required" };
   }
+
+  let checkoutSession;
+  try {
+    checkoutSession = await stripe.checkout.sessions.retrieve(sessionId);
+  } catch {
+    return { success: false, message: "Checkout session not found" };
+  }
+
+  const orderId = checkoutSession?.metadata?.orderId;
+  if (!orderId) {
+    return { success: false, message: "Checkout session is not linked to an order" };
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order || String(order.stripeCheckoutSessionId || "") !== sessionId) {
+    return { success: false, message: "Order not found for checkout session" };
+  }
+
+  if (checkoutSession.payment_status !== "paid") {
+    return {
+      success: false,
+      message: "Payment is not complete",
+      data: { orderId: order._id, status: order.status },
+    };
+  }
+
+  await HandlePaymentSuccess(checkoutSession);
+
+  const finalized = await Order.findById(order._id).lean();
+  if (!finalized || finalized.status !== "paid") {
+    return { success: false, message: "Order payment could not be confirmed" };
+  }
+
+  return {
+    success: true,
+    data: {
+      orderId: finalized._id,
+      orderNumber: finalized.orderId,
+      status: finalized.status,
+      paidAt: finalized.paidAt || null,
+    },
+  };
 }
 
 async function HandlePaymentExpired(session) {
@@ -216,6 +301,7 @@ async function HandleRefundFailed(refund) {
 
 module.exports = {
   HandlePaymentSuccess,
+  ReconcileCheckoutSession,
   HandlePaymentExpired,
   HandlePaymentFailed,
   HandleRefundSucceeded,

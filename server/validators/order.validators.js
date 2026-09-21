@@ -10,13 +10,8 @@ const deliveryAddressSchema = Joi.object({
   country: Joi.string().trim().min(2).max(100).required(),
 });
 
-const createOrderSchema = Joi.object({
-  customerId: objectId.required(),
-
+const checkoutOrderFields = {
   discountCode: Joi.string().trim().uppercase().min(3).max(32).optional(),
-
-  // Store credit to apply, in MINOR units (pence).
-  creditToApplyMinor: Joi.number().integer().min(0).optional(),
 
   deliveryAddress: deliveryAddressSchema.required(),
 
@@ -37,6 +32,22 @@ const createOrderSchema = Joi.object({
     )
     .min(1)
     .required(),
+};
+
+const createOrderSchema = Joi.object({
+  customerId: objectId.required(),
+  ...checkoutOrderFields,
+}).unknown(false);
+
+const authenticatedCheckoutOrderSchema = Joi.object({
+  ...checkoutOrderFields,
+  // Store credit is account-scoped and is only accepted on the authenticated
+  // customer checkout endpoint.
+  creditToApplyMinor: Joi.number().integer().min(0).optional(),
+}).unknown(false);
+
+const checkoutConfirmSchema = Joi.object({
+  checkoutSessionId: Joi.string().trim().min(8).max(255).required(),
 }).unknown(false);
 
 const updateOrderStatusSchema = Joi.object({
@@ -100,6 +111,8 @@ const bulkDeleteOrdersSchema = Joi.object({
 
 module.exports = {
   createOrderSchema,
+  authenticatedCheckoutOrderSchema,
+  checkoutConfirmSchema,
   updateOrderStatusSchema,
   updateOrderPaymentSchema,
   bulkUpdateDeliveryStatusSchema,
