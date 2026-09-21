@@ -52,12 +52,13 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
       endSession: jest.fn(),
     }));
 
-    // 2) Make Order.find(...).session(session) ignore session
+    // 2) Keep normal query chaining for pre-expiry reconciliation while making
+    // transaction-scoped Order.find(...).session(session) ignore the test session.
     const originalFind = Order.find.bind(Order);
     jest.spyOn(Order, "find").mockImplementation((filter) => {
-      return {
-        session: () => originalFind(filter),
-      };
+      const query = originalFind(filter);
+      query.session = () => originalFind(filter);
+      return query;
     });
 
     // 3) Strip session option for variant update
