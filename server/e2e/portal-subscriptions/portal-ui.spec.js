@@ -4,6 +4,7 @@ const { test, expect } = require("@playwright/test");
 const {
   API_ORIGIN,
   createFixture,
+  finalizeCancellation,
   getState,
   login,
   reset,
@@ -1022,6 +1023,94 @@ test("stages an after-cutoff removal while preserving the locked delivery order"
   expect(modificationIntents(after)).toHaveLength(
     modificationIntents(before).length,
   );
+});
+
+test("scheduled cancellation notice remains visible through the final protected delivery day", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "after-cutoff",
+    funds: "sufficient",
+  });
+  const token = await login(request, fixture.credentials);
+
+  const cancelResponse = await request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/cancel`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        reason: "Scheduled cancellation UI timing",
+        refundMethod: "refund",
+      },
+    },
+  );
+  const cancelBody = await expectApiSuccess(cancelResponse);
+  expect(cancelBody.data?.subscription?.isCancellationScheduled).toBe(true);
+
+  const scheduled = await getState(request, fixture.subscriptionId);
+  const effectiveAt = new Date(
+    scheduled.subscription.cancellationEffectiveAfter,
+  );
+  expect(Number.isNaN(effectiveAt.getTime())).toBe(false);
+
+  const duringProtectedDay = new Date(effectiveAt);
+  duringProtectedDay.setHours(18, 0, 0, 0);
+
+  const early = await finalizeCancellation(
+    request,
+    fixture.subscriptionId,
+    duringProtectedDay.toISOString(),
+  );
+  expect(early.finalized).toBe(0);
+
+  await page.addInitScript(
+    ({ fixedNow }) => {
+      Date.now = () => fixedNow;
+    },
+    { fixedNow: duringProtectedDay.getTime() },
+  );
+
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  await signIn(page, fixture.credentials, detailPath);
+
+  await expect(
+    page.getByText(
+      /Subscription scheduled for cancellation\. Your protected delivery remains scheduled; future deliveries are stopped\./i,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Final protected delivery date:/i),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/The cancellation completes after this day\./i),
+  ).toBeVisible();
+
+  const stillScheduled = await getState(request, fixture.subscriptionId);
+  expect(stillScheduled.subscription.status).toBe("active");
+  expect(stillScheduled.subscription.isCancellationScheduled).toBe(true);
+
+  const afterProtectedDay = new Date(effectiveAt);
+  afterProtectedDay.setDate(afterProtectedDay.getDate() + 1);
+  afterProtectedDay.setHours(0, 1, 0, 0);
+
+  const finalized = await finalizeCancellation(
+    request,
+    fixture.subscriptionId,
+    afterProtectedDay.toISOString(),
+  );
+  expect(finalized.finalized).toBe(1);
+
+  await page.reload();
+  await expect(
+    page.getByText(/Subscription scheduled for cancellation/i),
+  ).toHaveCount(0);
+  await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+
+  const finalState = await getState(request, fixture.subscriptionId);
+  expect(finalState.subscription.status).toBe("cancelled");
+  expect(finalState.subscription.isCancellationScheduled).toBe(false);
 });
 
 test("pauses and manually resumes a subscription through the lifecycle UI", async ({
