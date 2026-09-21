@@ -53,6 +53,7 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
     // 1) no-op session/transactions
     jest.spyOn(mongoose, "startSession").mockImplementation(async () => ({
       startTransaction: jest.fn(),
+      inTransaction: jest.fn(() => true),
       commitTransaction: jest.fn(),
       abortTransaction: jest.fn(),
       endSession: jest.fn(),
@@ -154,6 +155,7 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
       status: "paid",
       orderType: "one_time",
       paidAt: new Date(),
+      reservationExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
     });
 
     await runOrderExpirationJob();
