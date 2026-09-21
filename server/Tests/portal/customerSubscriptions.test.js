@@ -15,6 +15,10 @@ const StoreCreditTransaction = require("../../models/storeCreditTransaction.mode
 const stripe = require("../../utils/stripe.util");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
+const {
+  computeSubscriptionCutoffDate,
+  zonedParts,
+} = require("../../utils/subscriptionCutoff.util");
 const crypto = require("crypto");
 
 // Mock geocode so tests don't make real HTTP calls
@@ -2614,16 +2618,16 @@ describe("Portal Subscriptions", () => {
     ).toBe(upcomingDelivery.toISOString());
 
     const cutoffAt = new Date(res.body.data.cutoff.cutoffAt);
-    const expectedCutoff = new Date(upcomingDelivery);
-    expectedCutoff.setDate(
-      expectedCutoff.getDate() - res.body.data.cutoff.cutoffDaysBefore,
+    const expectedCutoff = computeSubscriptionCutoffDate(
+      upcomingDelivery,
+      {
+        cutoffDaysBefore: res.body.data.cutoff.cutoffDaysBefore,
+        cutoffTime: res.body.data.cutoff.cutoffTime,
+      },
+      "Europe/London",
     );
 
-    const [hh, mm] = String(res.body.data.cutoff.cutoffTime || "00:00")
-      .split(":")
-      .map(Number);
-    expectedCutoff.setHours(hh || 0, mm || 0, 0, 0);
-
+    expect(res.body.data.cutoff.timeZone).toBe("Europe/London");
     expect(cutoffAt.toISOString()).toBe(expectedCutoff.toISOString());
   });
 
@@ -3706,8 +3710,9 @@ describe("Portal Subscriptions", () => {
     const cutoffAt = new Date(now.getTime() + 2 * 60 * 1000);
     cutoffAt.setSeconds(0, 0);
 
-    const hh = String(cutoffAt.getHours()).padStart(2, "0");
-    const mm = String(cutoffAt.getMinutes()).padStart(2, "0");
+    const londonClock = zonedParts(cutoffAt, "Europe/London");
+    const hh = String(londonClock.hour).padStart(2, "0");
+    const mm = String(londonClock.minute).padStart(2, "0");
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
@@ -3747,8 +3752,9 @@ describe("Portal Subscriptions", () => {
     const cutoffAt = new Date(now.getTime() + 3 * 60 * 1000);
     cutoffAt.setSeconds(0, 0);
 
-    const hh = String(cutoffAt.getHours()).padStart(2, "0");
-    const mm = String(cutoffAt.getMinutes()).padStart(2, "0");
+    const londonClock = zonedParts(cutoffAt, "Europe/London");
+    const hh = String(londonClock.hour).padStart(2, "0");
+    const mm = String(londonClock.minute).padStart(2, "0");
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
@@ -3790,8 +3796,9 @@ describe("Portal Subscriptions", () => {
     const cutoffAt = new Date(now.getTime() + 2 * 60 * 1000);
     cutoffAt.setSeconds(0, 0);
 
-    const hh = String(cutoffAt.getHours()).padStart(2, "0");
-    const mm = String(cutoffAt.getMinutes()).padStart(2, "0");
+    const londonClock = zonedParts(cutoffAt, "Europe/London");
+    const hh = String(londonClock.hour).padStart(2, "0");
+    const mm = String(londonClock.minute).padStart(2, "0");
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
