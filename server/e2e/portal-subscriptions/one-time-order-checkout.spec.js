@@ -32,8 +32,9 @@ test("subscription customer places a real one-time order with store credit and s
   request,
 }) => {
   const fixture = await createFixture(request, {
-    createSubscription: false,
-    withPaymentMethod: false,
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
     creditBalance: 10_000,
   });
   await clearEmails(request);
