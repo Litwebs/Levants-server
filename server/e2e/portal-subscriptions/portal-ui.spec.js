@@ -1109,7 +1109,7 @@ test("pauses and manually resumes a subscription through the lifecycle UI", asyn
   expect(resumeBody.data?.subscription?.status).toBe("active");
 
   await expect(
-    page.getByText("Subscription resumed.", { exact: true }).first(),
+    page.getByText("Subscription resumed", { exact: true }).first(),
   ).toBeVisible();
   await expect(page.getByText("Active", { exact: true })).toBeVisible();
   await expect(page.getByText(/This subscription is paused/i)).toHaveCount(0);
