@@ -104,6 +104,90 @@ describe("sendOrderConfirmationEmailToCustomer", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
+  test("concurrent confirmation attempts send the customer email only once", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, price: 5.5 });
+    const order = await createOrder({
+      status: "paid",
+      customer,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: variant.price,
+          quantity: 1,
+          subtotal: variant.price,
+        },
+      ],
+      overrides: { paidAt: new Date() },
+    });
+
+    const [first, second] = await Promise.all([
+      notifService.sendOrderConfirmationEmailToCustomer({
+        orderId: order._id,
+      }),
+      notifService.sendOrderConfirmationEmailToCustomer({
+        orderId: order._id,
+      }),
+    ]);
+
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+
+    const updated = await Order.findById(order._id).lean();
+    expect(updated.metadata?.orderConfirmationSentAt).toBeTruthy();
+    expect(updated.metadata?.orderConfirmationClaim).toBeUndefined();
+  });
+
+  test("failed confirmation send releases its claim so a later retry can succeed", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, price: 5.5 });
+    const order = await createOrder({
+      status: "paid",
+      customer,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: variant.price,
+          quantity: 1,
+          subtotal: variant.price,
+        },
+      ],
+      overrides: { paidAt: new Date() },
+    });
+
+    sendEmail.mockResolvedValueOnce({
+      success: false,
+      error: new Error("temporary email outage"),
+    });
+
+    const failed = await notifService.sendOrderConfirmationEmailToCustomer({
+      orderId: order._id,
+    });
+    expect(failed.success).toBe(false);
+
+    let afterFailure = await Order.findById(order._id).lean();
+    expect(afterFailure.metadata?.orderConfirmationSentAt).toBeUndefined();
+    expect(afterFailure.metadata?.orderConfirmationClaim).toBeUndefined();
+
+    const retried = await notifService.sendOrderConfirmationEmailToCustomer({
+      orderId: order._id,
+    });
+    expect(retried.success).toBe(true);
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+
+    afterFailure = await Order.findById(order._id).lean();
+    expect(afterFailure.metadata?.orderConfirmationSentAt).toBeTruthy();
+  });
+
   test("sends confirmation email for a paid order", async () => {
     const customer = await createCustomer();
     const product = await createProduct();

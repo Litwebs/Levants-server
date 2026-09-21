@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const Order = require("../../../models/order.model");
 const Product = require("../../../models/product.model");
 const Variant = require("../../../models/variant.model");
+const stripe = require("../../../utils/stripe.util");
 const File = require("../../../models/file.model");
 
 const {
@@ -149,6 +150,64 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
 
     expect(updatedOrder.status).toBe("cancelled");
     expect(updatedOrder.expiresAt).toBeInstanceOf(Date);
+    expect(updatedVariant.reservedQuantity).toBe(0);
+  });
+
+  test("expired pending order is finalized instead of cancelled when Stripe says it was paid", async () => {
+    const paidAtStripeOrder = await Order.create({
+      customer: new mongoose.Types.ObjectId(),
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: "Cron Variant",
+          sku: variant.sku,
+          price: 10,
+          quantity: 1,
+          subtotal: 10,
+        },
+      ],
+      subtotal: 10,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 1,
+      total: 11,
+      status: "pending",
+      stripeCheckoutSessionId: "cs_test_expired_but_paid",
+      reservationExpiresAt: new Date(Date.now() - 60 * 1000),
+      metadata: {
+        // Avoid external email work in this cron-focused test.
+        orderConfirmationSentAt: new Date().toISOString(),
+      },
+    });
+
+    await Variant.findByIdAndUpdate(variant._id, {
+      $set: { reservedQuantity: 1 },
+    });
+
+    stripe.checkout.sessions.retrieve.mockResolvedValue({
+      id: "cs_test_expired_but_paid",
+      payment_status: "paid",
+      payment_intent: "pi_test_expired_but_paid",
+      amount_subtotal: 1100,
+      amount_total: 1100,
+      total_details: { amount_discount: 0 },
+      currency: "gbp",
+      created: Math.floor(Date.now() / 1000),
+      metadata: { orderId: String(paidAtStripeOrder._id) },
+    });
+
+    await runOrderExpirationJob();
+
+    const updatedOrder = await Order.findById(paidAtStripeOrder._id).lean();
+    const updatedVariant = await Variant.findById(variant._id).lean();
+
+    expect(updatedOrder.status).toBe("paid");
+    expect(updatedOrder.expiresAt).toBeUndefined();
+    expect(updatedOrder.stripePaymentIntentId).toBe(
+      "pi_test_expired_but_paid",
+    );
+    expect(updatedVariant.stockQuantity).toBe(9);
     expect(updatedVariant.reservedQuantity).toBe(0);
   });
 
