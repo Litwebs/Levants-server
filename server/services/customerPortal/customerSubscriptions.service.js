@@ -1610,7 +1610,10 @@ async function applyItemChange(
             customer: customer._id,
             status: "active",
           },
-          { $set: { items: nextItems } },
+          {
+            $set: { items: nextItems },
+            $inc: { customerVersion: 1 },
+          },
           { new: true, runValidators: true, session },
         );
         if (!updatedSubscription) {

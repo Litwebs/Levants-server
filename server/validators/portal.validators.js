@@ -69,6 +69,7 @@ const createSubscriptionSchema = Joi.object({
   .unknown(false);
 
 const updateSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
   operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
@@ -107,6 +108,7 @@ const updateSubscriptionSchema = Joi.object({
 }).unknown(false);
 
 const subscriptionItemSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
   operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   variantId: objectId.required(),
   quantity: Joi.number().integer().min(1).required(),
@@ -128,12 +130,14 @@ const nextDeliveryAddOnSchema = Joi.object({
 }).unknown(false);
 
 const updateSubscriptionItemSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
   operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   quantity: Joi.number().integer().min(1).required(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
 const replaceSubscriptionItemsSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
   operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   items: Joi.array()
     .items(
@@ -168,16 +172,19 @@ const subscriptionItemIdParamSchema = Joi.object({
 // customer-facing error messages. The route schema intentionally leaves
 // resumeOn untouched while constraining the newly exposed settlement choice.
 const resumeSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
   operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
 }).unknown(false);
 
 const pauseSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
   operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   resumeOn: Joi.any().optional(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
 const cancelSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
   operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   reason: Joi.string().trim().max(500).allow(null, "").optional(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),

@@ -54,6 +54,7 @@ async function runMutation(
     customerId: req.customer._id,
     subscriptionId,
     operationId: req.body?.operationId,
+    expectedVersion: req.body?.expectedVersion,
     mutationType,
     payload,
     reserveResourceId,
@@ -63,7 +64,10 @@ async function runMutation(
 
 function sendMutationError(res, result) {
   const conflict =
-    result?.data?.idempotencyConflict || result?.data?.idempotencyInProgress;
+    result?.data?.idempotencyConflict ||
+    result?.data?.idempotencyInProgress ||
+    result?.data?.staleSubscription ||
+    result?.data?.subscriptionBusy;
   return sendErr(res, {
     statusCode: conflict ? 409 : 400,
     message: result?.message || "Subscription change failed",

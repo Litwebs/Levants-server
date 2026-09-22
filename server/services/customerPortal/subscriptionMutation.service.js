@@ -2,10 +2,12 @@
 
 const crypto = require("crypto");
 const mongoose = require("mongoose");
+const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
 const { Response } = require("../../utils/response.util");
 
 const PROCESSING_LEASE_MS = 2 * 60 * 1000;
+const CUSTOMER_MUTATION_LEASE_MS = 2 * 60 * 1000;
 
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -47,19 +49,213 @@ function conflictResponse() {
   );
 }
 
+function staleResponse(currentVersion) {
+  return Response(
+    false,
+    "This subscription changed while you were editing it. Refresh the subscription and try again.",
+    {
+      staleSubscription: true,
+      currentVersion,
+    },
+  );
+}
+
+function busyResponse(currentVersion) {
+  return Response(
+    false,
+    "Another subscription change is still being processed. Please try again shortly.",
+    {
+      subscriptionBusy: true,
+      retryable: true,
+      currentVersion,
+    },
+  );
+}
+
+async function readSubscriptionConcurrencyState(customerId, subscriptionId) {
+  return Subscription.findOne({
+    _id: subscriptionId,
+    customer: customerId,
+  })
+    .select("customerVersion +customerMutationLock")
+    .lean();
+}
+
+async function claimSubscriptionMutationLock({
+  customerId,
+  subscriptionId,
+  expectedVersion,
+  operationId,
+}) {
+  if (!subscriptionId) {
+    return { ok: true, lockOperationId: null, currentVersion: null };
+  }
+
+  const current = await readSubscriptionConcurrencyState(
+    customerId,
+    subscriptionId,
+  );
+  if (!current) {
+    return {
+      ok: false,
+      response: Response(false, "Subscription not found", null),
+    };
+  }
+
+  const currentVersion = Number(current.customerVersion || 0);
+  const hasExpectedVersion =
+    expectedVersion !== undefined &&
+    expectedVersion !== null &&
+    expectedVersion !== "";
+  if (
+    hasExpectedVersion &&
+    Number(expectedVersion) !== currentVersion
+  ) {
+    return {
+      ok: false,
+      response: staleResponse(currentVersion),
+    };
+  }
+
+  const now = new Date();
+  const staleBefore = new Date(now.getTime() - CUSTOMER_MUTATION_LEASE_MS);
+  const lockOperationId =
+    operationId || `legacy:${crypto.randomUUID()}`;
+  const activeLock = current.customerMutationLock;
+  const lockIsFresh =
+    activeLock?.lockedAt &&
+    new Date(activeLock.lockedAt).getTime() > staleBefore.getTime();
+
+  if (
+    lockIsFresh &&
+    activeLock.operationId &&
+    activeLock.operationId !== lockOperationId
+  ) {
+    return {
+      ok: false,
+      response: busyResponse(currentVersion),
+    };
+  }
+
+  const claimed = await Subscription.findOneAndUpdate(
+    {
+      _id: subscriptionId,
+      customer: customerId,
+      customerVersion: currentVersion,
+      $or: [
+        { customerMutationLock: null },
+        { customerMutationLock: { $exists: false } },
+        { "customerMutationLock.lockedAt": { $lte: staleBefore } },
+        { "customerMutationLock.operationId": lockOperationId },
+      ],
+    },
+    {
+      $set: {
+        customerMutationLock: {
+          operationId: lockOperationId,
+          lockedAt: now,
+        },
+      },
+    },
+    {
+      new: true,
+      timestamps: false,
+      select: "customerVersion +customerMutationLock",
+    },
+  ).lean();
+
+  if (!claimed) {
+    const latest = await readSubscriptionConcurrencyState(
+      customerId,
+      subscriptionId,
+    );
+    const latestVersion = Number(latest?.customerVersion || 0);
+    if (
+      hasExpectedVersion &&
+      Number(expectedVersion) !== latestVersion
+    ) {
+      return {
+        ok: false,
+        response: staleResponse(latestVersion),
+      };
+    }
+    return {
+      ok: false,
+      response: busyResponse(latestVersion),
+    };
+  }
+
+  return {
+    ok: true,
+    lockOperationId,
+    currentVersion,
+  };
+}
+
+async function releaseSubscriptionMutationLock({
+  customerId,
+  subscriptionId,
+  lockOperationId,
+}) {
+  if (!subscriptionId || !lockOperationId) return;
+  await Subscription.updateOne(
+    {
+      _id: subscriptionId,
+      customer: customerId,
+      "customerMutationLock.operationId": lockOperationId,
+    },
+    { $unset: { customerMutationLock: 1 } },
+    { timestamps: false },
+  ).catch(() => {});
+}
+
+async function executeSubscriptionConcurrencyGuard({
+  customerId,
+  subscriptionId,
+  expectedVersion,
+  operationId,
+  execute,
+}) {
+  const claim = await claimSubscriptionMutationLock({
+    customerId,
+    subscriptionId,
+    expectedVersion,
+    operationId,
+  });
+  if (!claim.ok) return claim.response;
+
+  try {
+    return await execute();
+  } finally {
+    await releaseSubscriptionMutationLock({
+      customerId,
+      subscriptionId,
+      lockOperationId: claim.lockOperationId,
+    });
+  }
+}
+
 async function executeIdempotentSubscriptionMutation({
   customerId,
   subscriptionId = null,
   operationId,
+  expectedVersion,
   mutationType,
   payload = {},
   reserveResourceId = false,
   execute,
 }) {
   if (!operationId) {
-    return execute({
-      resourceId: subscriptionId || null,
-      isReplay: false,
+    return executeSubscriptionConcurrencyGuard({
+      customerId,
+      subscriptionId,
+      expectedVersion,
+      operationId: null,
+      execute: () =>
+        execute({
+          resourceId: subscriptionId || null,
+          isReplay: false,
+        }),
     });
   }
 
@@ -94,9 +290,7 @@ async function executeIdempotentSubscriptionMutation({
     });
   }
 
-  if (!mutation) {
-    return inProgressResponse();
-  }
+  if (!mutation) return inProgressResponse();
 
   if (
     mutation.mutationType !== mutationType ||
@@ -149,9 +343,16 @@ async function executeIdempotentSubscriptionMutation({
   }
 
   try {
-    const result = await execute({
-      resourceId: mutation.resourceId || resourceId,
-      isReplay: mutation.attempts > 1,
+    const result = await executeSubscriptionConcurrencyGuard({
+      customerId,
+      subscriptionId,
+      expectedVersion,
+      operationId,
+      execute: () =>
+        execute({
+          resourceId: mutation.resourceId || resourceId,
+          isReplay: mutation.attempts > 1,
+        }),
     });
 
     if (result?.success) {
@@ -199,4 +400,5 @@ async function executeIdempotentSubscriptionMutation({
 
 module.exports = {
   executeIdempotentSubscriptionMutation,
+  executeSubscriptionConcurrencyGuard,
 };
