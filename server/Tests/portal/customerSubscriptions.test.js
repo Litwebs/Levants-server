@@ -3686,7 +3686,13 @@ describe("Portal Subscriptions", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ quantity: 1, refundMethod: "refund" });
 
-    expect(updateRes.status).toBe(200);
+    if (updateRes.status !== 200) {
+      throw new Error(
+        `Card decrease failed with ${updateRes.status}: ${JSON.stringify(
+          updateRes.body,
+        )}`,
+      );
+    }
     expect(updateRes.body.message).toMatch(/refunded/i);
     expect(updateRes.body.data.refundedMinor).toBe(500);
     expect(stripe.refunds.create).toHaveBeenCalled();
@@ -4445,7 +4451,11 @@ describe("Portal Subscriptions", () => {
     const finalOrder = await Order.findById(order._id).lean();
     expect(finalSub.items[0].quantity).toBe(1);
     expect(finalCustomer.creditBalance).toBe(500);
-    expect(finalOrder.amountPaid).toBe(subtotal - 5);
+    // Store credit refunds value to the customer's wallet but does not reverse
+    // the original card capture, so amountPaid remains the captured amount.
+    expect(finalOrder.amountPaid).toBe(subtotal);
+    expect(finalOrder.total).toBe(subtotal - 5);
+    expect(finalOrder.items[0].quantity).toBe(1);
     expect(
       await StoreCreditTransaction.countDocuments({
         customer: customer._id,
