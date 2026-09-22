@@ -268,44 +268,80 @@ async function reconcileSubscriptionPrice(subscriptionOrId) {
 }
 
 /**
- * Reconcile a batch of subscriptions. Frequent automation should use
- * onlyPending=true; the daily integrity pass uses false so it also catches old
- * silent divergences created before this safety net existed.
+ * Reconcile every matching subscription in bounded cursor pages. Frequent
+ * automation uses onlyPending=true; the daily integrity pass uses false so it
+ * also catches old silent divergences created before this safety net existed.
+ *
+ * Cursor pagination is deliberate: a fixed 200/500-record ceiling can starve
+ * subscriptions forever as the customer base grows.
  */
 async function reconcileSubscriptionPrices({
   subscriptionId,
   onlyPending = true,
-  limit = 100,
+  batchSize,
+  limit,
+  onBatch,
 } = {}) {
-  const filter = {
+  const baseFilter = {
     status: { $in: ["active", "paused"] },
     isCancellationScheduled: { $ne: true },
     stripeSubscriptionId: { $nin: [null, ""] },
     stripeProductId: { $nin: [null, ""] },
   };
-  if (subscriptionId) filter._id = subscriptionId;
-  if (onlyPending && !subscriptionId) filter.stripePriceSyncPending = true;
+  if (subscriptionId) baseFilter._id = subscriptionId;
+  if (onlyPending && !subscriptionId) {
+    baseFilter.stripePriceSyncPending = true;
+  }
 
-  const subscriptions = await Subscription.find(filter).limit(
-    Math.max(1, Math.min(Number(limit) || 100, 500)),
+  const safeBatchSize = Math.max(
+    1,
+    Math.min(Number(batchSize ?? limit) || 100, 500),
   );
-
   const summary = {
-    checked: subscriptions.length,
+    checked: 0,
     synced: 0,
     repaired: 0,
     pending: 0,
+    batches: 0,
   };
 
-  for (const subscription of subscriptions) {
-    const result = await reconcileSubscriptionPrice(subscription);
-    if (!result.ok) {
-      summary.pending += 1;
-    } else if (result.action === "repaired") {
-      summary.repaired += 1;
-    } else {
-      summary.synced += 1;
+  let afterId = null;
+  while (true) {
+    const filter = { ...baseFilter };
+    if (afterId && !subscriptionId) {
+      filter._id = { $gt: afterId };
     }
+
+    const subscriptions = await Subscription.find(filter)
+      .sort({ _id: 1 })
+      .limit(subscriptionId ? 1 : safeBatchSize)
+      .exec();
+
+    if (subscriptions.length === 0) break;
+
+    for (const subscription of subscriptions) {
+      const result = await reconcileSubscriptionPrice(subscription);
+      summary.checked += 1;
+      if (!result.ok) {
+        summary.pending += 1;
+      } else if (result.action === "repaired") {
+        summary.repaired += 1;
+      } else {
+        summary.synced += 1;
+      }
+    }
+
+    summary.batches += 1;
+    afterId = subscriptions.at(-1)._id;
+
+    if (typeof onBatch === "function") {
+      await onBatch({
+        ...summary,
+        afterId,
+      });
+    }
+
+    if (subscriptionId || subscriptions.length < safeBatchSize) break;
   }
 
   return summary;

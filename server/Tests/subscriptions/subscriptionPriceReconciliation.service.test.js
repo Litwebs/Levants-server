@@ -23,6 +23,7 @@ const Subscription = require("../../models/subscription.model");
 const stripe = require("../../utils/stripe.util");
 const {
   reconcileSubscriptionPrice,
+  reconcileSubscriptionPrices,
   resolveExpectedStripePrice,
 } = require("../../services/subscriptions/subscriptionPriceReconciliation.service");
 
@@ -250,4 +251,61 @@ describe("subscription recurring price reconciliation", () => {
     expect(stripe.prices.create).toHaveBeenCalledTimes(1);
     expect(stripe.subscriptions.update).toHaveBeenCalledTimes(1);
   });
+  test("cursor pagination reconciles more than 500 subscriptions without starvation", async () => {
+    const subscriptions = Array.from({ length: 501 }, (_, index) =>
+      makeSubscription({
+        _id: new mongoose.Types.ObjectId(
+          String(index + 1).padStart(24, "0"),
+        ),
+        subscriptionNumber: `SUB-PAGE-${index + 1}`,
+        stripeSubscriptionId: `sub_page_${index + 1}`,
+      }),
+    );
+
+    jest.spyOn(Subscription, "find").mockImplementation((filter) => {
+      let startIndex = 0;
+      if (filter?._id?.$gt) {
+        const cursor = String(filter._id.$gt);
+        const found = subscriptions.findIndex(
+          (subscription) => String(subscription._id) === cursor,
+        );
+        startIndex = found + 1;
+      }
+
+      const query = {
+        _limit: 100,
+        sort: jest.fn().mockReturnThis(),
+        limit: jest.fn(function setLimit(value) {
+          this._limit = value;
+          return this;
+        }),
+        exec: jest.fn(async function execute() {
+          return subscriptions.slice(startIndex, startIndex + this._limit);
+        }),
+      };
+      return query;
+    });
+
+    stripe.subscriptions.retrieve.mockImplementation(async (subscriptionId) =>
+      remoteSubscription(
+        remotePrice({
+          id: `price_${subscriptionId}`,
+          amount: 600,
+        }),
+      ),
+    );
+
+    const summary = await reconcileSubscriptionPrices({
+      onlyPending: false,
+      batchSize: 200,
+    });
+
+    expect(summary.checked).toBe(501);
+    expect(summary.batches).toBe(3);
+    expect(summary.pending).toBe(0);
+    expect(summary.synced).toBe(501);
+    expect(Subscription.find).toHaveBeenCalledTimes(3);
+    expect(stripe.subscriptions.retrieve).toHaveBeenCalledTimes(501);
+  });
+
 });
