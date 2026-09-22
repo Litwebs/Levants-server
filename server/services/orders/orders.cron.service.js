@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
 const { reconcileReservedStock } = require("./orders.stock.service");
+const { ReconcileCheckoutSession } = require("./orders.webhook.service");
+const {
+  sendOrderConfirmationEmailToCustomer,
+} = require("./orders.notifications.service");
 
 let _stripe;
 function getStripe() {
@@ -10,18 +14,87 @@ function getStripe() {
   return _stripe;
 }
 
+async function RetryRecentOrderConfirmations({ now = new Date() } = {}) {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const candidates = await Order.find({
+    orderType: "one_time",
+    status: "paid",
+    paidAt: { $gte: since },
+    "metadata.orderConfirmationSentAt": { $exists: false },
+  })
+    .select("_id")
+    .limit(20)
+    .lean();
+
+  let attempted = 0;
+  for (const order of candidates) {
+    try {
+      await sendOrderConfirmationEmailToCustomer({ orderId: order._id });
+      attempted += 1;
+    } catch (err) {
+      console.warn("Order confirmation retry failed", {
+        orderId: String(order._id),
+        error: err?.message,
+      });
+    }
+  }
+
+  return { attempted };
+}
+
 async function ExpirePendingOrders() {
   const now = new Date();
   let expiredCount = 0;
+
+  // Reconcile Stripe first, outside the Mongo transaction. A paid Checkout
+  // session must never be cancelled locally just because its webhook was late.
+  const expiredCandidates = await Order.find({
+    status: "pending",
+    reservationExpiresAt: { $lte: now },
+  })
+    .select("_id stripeCheckoutSessionId")
+    .lean();
+
+  const safeToExpireIds = [];
+  for (const candidate of expiredCandidates) {
+    if (!candidate.stripeCheckoutSessionId) {
+      safeToExpireIds.push(candidate._id);
+      continue;
+    }
+
+    const reconciliation = await ReconcileCheckoutSession({
+      checkoutSessionId: candidate.stripeCheckoutSessionId,
+    });
+
+    if (!reconciliation.success && reconciliation.message === "Payment is not complete") {
+      safeToExpireIds.push(candidate._id);
+      continue;
+    }
+
+    if (!reconciliation.success) {
+      console.warn(
+        "Skipping pending order expiry because Stripe could not be reconciled",
+        {
+          orderId: String(candidate._id),
+          checkoutSessionId: candidate.stripeCheckoutSessionId,
+          reason: reconciliation.message,
+        },
+      );
+    }
+  }
 
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const orders = await Order.find({
-      status: "pending",
-      reservationExpiresAt: { $lte: now },
-    }).session(session);
+    const orders =
+      safeToExpireIds.length > 0
+        ? await Order.find({
+            _id: { $in: safeToExpireIds },
+            status: "pending",
+            reservationExpiresAt: { $lte: now },
+          }).session(session)
+        : [];
 
     const checkoutSessionsToExpire = [];
 
@@ -83,8 +156,15 @@ async function ExpirePendingOrders() {
   } catch (err) {
     console.error("❌ Reserved stock reconciliation failed:", err);
   }
+
+  try {
+    await RetryRecentOrderConfirmations({ now });
+  } catch (err) {
+    console.error("❌ Order confirmation retry failed:", err);
+  }
 }
 
 module.exports = {
   ExpirePendingOrders,
+  RetryRecentOrderConfirmations,
 };

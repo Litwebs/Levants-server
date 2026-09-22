@@ -1,8 +1,9 @@
 "use strict";
 
 const ordersService = require("../../services/customerPortal/customerOrders.service");
+const checkoutService = require("../../services/orders/orders.public.service");
 const businessInfoService = require("../../services/businessInfo.service");
-const { sendOk, sendCreated, sendErr } = require("../../utils/response.util");
+const { sendOk, sendErr } = require("../../utils/response.util");
 
 const escapeHtml = (value) =>
   String(value ?? "")
@@ -349,14 +350,15 @@ function buildReceiptHtml(order, businessProfile) {
 </html>`;
 }
 
-const PlaceOrder = async (req, res) => {
-  const result = await ordersService.PlaceOrder({
+const CreateCheckout = async (req, res) => {
+  const result = await checkoutService.CreateOrder({
     customerId: req.customer._id,
     ...req.body,
   });
-  if (!result.success)
+  if (!result.success) {
     return sendErr(res, { statusCode: 400, message: result.message });
-  return sendCreated(res, result.data, { message: result.message });
+  }
+  return sendOk(res, result.data, { message: "Checkout created" });
 };
 
 const ListOrders = async (req, res) => {
@@ -454,18 +456,8 @@ const CancelOrder = async (req, res) => {
   return sendOk(res, result.data, { message: result.message });
 };
 
-const Reorder = async (req, res) => {
-  const result = await ordersService.Reorder({
-    customerId: req.customer._id,
-    orderId: req.params.orderId,
-  });
-  if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
-  return sendCreated(res, result.data, { message: "Reorder placed" });
-};
-
 module.exports = {
-  PlaceOrder,
+  CreateCheckout,
   ListOrders,
   GetOrder,
   UpdateOrderDelivery,
@@ -473,5 +465,4 @@ module.exports = {
   GetReceiptUrl,
   RenderCustomReceipt,
   CancelOrder,
-  Reorder,
 };

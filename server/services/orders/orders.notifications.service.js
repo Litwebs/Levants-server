@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const Role = require("../../models/role.model");
 const User = require("../../models/user.model");
 const Order = require("../../models/order.model");
@@ -131,35 +132,82 @@ async function sendNewOrderAlertEmailToUsers({ orderId }) {
   return { success: true, data: { sent } };
 }
 
+async function releaseOrderConfirmationClaim(orderId, claimToken) {
+  try {
+    await Order.updateOne(
+      {
+        _id: orderId,
+        "metadata.orderConfirmationClaim": claimToken,
+      },
+      {
+        $unset: {
+          "metadata.orderConfirmationClaim": 1,
+          "metadata.orderConfirmationClaimedAt": 1,
+        },
+      },
+    );
+  } catch {
+    // A stale claim is recoverable after the timeout below.
+  }
+}
+
 async function sendOrderConfirmationEmailToCustomer({ orderId }) {
   if (!orderId) return { success: false, message: "orderId is required" };
 
-  const order = await Order.findById(orderId).lean();
-  if (!order) return { success: false, message: "Order not found" };
+  const existing = await Order.findById(orderId).lean();
+  if (!existing) return { success: false, message: "Order not found" };
 
-  // Only send confirmations for successful orders
-  if (order.status !== "paid") {
-    // This is commonly the root cause when customers report missing confirmations.
-    // Keep it best-effort, but log for debugging.
+  if (existing.status !== "paid") {
     console.warn("[orders] confirmation email skipped (status not paid)", {
-      orderId: order._id?.toString?.() || String(orderId),
-      status: order.status,
+      orderId: existing._id?.toString?.() || String(orderId),
+      status: existing.status,
     });
     return { success: true, data: { skipped: true, reason: "not_paid" } };
   }
 
-  // Idempotency: skip if we've already sent it
-  const alreadySentAt = order?.metadata?.orderConfirmationSentAt;
-  if (alreadySentAt) {
+  if (existing?.metadata?.orderConfirmationSentAt) {
     return { success: true, data: { skipped: true, reason: "already_sent" } };
   }
 
-  const customer = await Customer.findById(order.customer)
+  // Claim the send atomically so the Stripe webhook and browser reconciliation
+  // cannot send the same confirmation at the same time. A stale claim can be
+  // reclaimed after five minutes if a process died mid-send.
+  const claimToken = crypto.randomUUID();
+  const staleBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const claimed = await Order.findOneAndUpdate(
+    {
+      _id: existing._id,
+      status: "paid",
+      "metadata.orderConfirmationSentAt": { $exists: false },
+      $or: [
+        { "metadata.orderConfirmationClaim": { $exists: false } },
+        { "metadata.orderConfirmationClaimedAt": { $lte: staleBefore } },
+      ],
+    },
+    {
+      $set: {
+        "metadata.orderConfirmationClaim": claimToken,
+        "metadata.orderConfirmationClaimedAt": new Date().toISOString(),
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!claimed) {
+    const latest = await Order.findById(orderId).lean();
+    if (latest?.metadata?.orderConfirmationSentAt) {
+      return { success: true, data: { skipped: true, reason: "already_sent" } };
+    }
+    return { success: true, data: { skipped: true, reason: "in_progress" } };
+  }
+
+  const customer = await Customer.findById(claimed.customer)
     .select("firstName lastName email")
     .lean();
 
   const to = String(customer?.email || "").trim();
   if (!to) {
+    await releaseOrderConfirmationClaim(claimed._id, claimToken);
     return { success: false, message: "Customer email not found" };
   }
 
@@ -167,10 +215,11 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
     console.warn(
       "[orders] confirmation email skipped (invalid customer email)",
       {
-        orderId: order._id?.toString?.() || String(orderId),
+        orderId: claimed._id?.toString?.() || String(orderId),
         to,
       },
     );
+    await releaseOrderConfirmationClaim(claimed._id, claimToken);
     return { success: true, data: { skipped: true, reason: "invalid_email" } };
   }
 
@@ -180,57 +229,68 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
 
   const templateParams = {
     name: customerName || "there",
-    orderId: order.orderId || order._id?.toString(),
-    items: (order.items || []).map((i) => ({
+    orderId: claimed.orderId || claimed._id?.toString(),
+    items: (claimed.items || []).map((i) => ({
       name: i.name,
       quantity: i.quantity,
       subtotal: formatMoney(i.subtotal),
     })),
-    total: formatMoney(order.total),
-    currency: order.currency || "GBP",
+    total: formatMoney(claimed.total),
+    currency: claimed.currency || "GBP",
     orderDate:
-      order.paidAt || order.createdAt
-        ? new Date(order.paidAt || order.createdAt).toLocaleString("en-GB", {
+      claimed.paidAt || claimed.createdAt
+        ? new Date(claimed.paidAt || claimed.createdAt).toLocaleString("en-GB", {
             timeZone: "Europe/London",
           })
         : undefined,
-    // Addresses are currently not persisted on the order/customer model
     billingAddress: undefined,
     shippingAddress: undefined,
   };
 
-  const subject = `Order Confirmation${order.orderId ? ` – ${order.orderId}` : ""}`;
+  const subject = `Order Confirmation${claimed.orderId ? ` – ${claimed.orderId}` : ""}`;
 
-  const result = await sendEmail(
-    to,
-    subject,
-    "orderConfirmation",
-    templateParams,
-  );
+  let result;
+  try {
+    result = await sendEmail(
+      to,
+      subject,
+      "orderConfirmation",
+      templateParams,
+    );
+  } catch (error) {
+    await releaseOrderConfirmationClaim(claimed._id, claimToken);
+    throw error;
+  }
 
   if (!result || result.success !== true) {
     console.error("[orders] confirmation email send failed", {
-      orderId: order._id?.toString?.() || String(orderId),
+      orderId: claimed._id?.toString?.() || String(orderId),
       to,
       error:
         result?.error?.message || result?.message || result?.error || "unknown",
     });
+    await releaseOrderConfirmationClaim(claimed._id, claimToken);
+    return result;
   }
 
-  if (result && result.success) {
-    // Best-effort marker for idempotency
-    try {
-      await Order.updateOne(
-        { _id: order._id },
-        {
-          $set: {
-            "metadata.orderConfirmationSentAt": new Date().toISOString(),
-          },
+  try {
+    await Order.updateOne(
+      {
+        _id: claimed._id,
+        "metadata.orderConfirmationClaim": claimToken,
+      },
+      {
+        $set: {
+          "metadata.orderConfirmationSentAt": new Date().toISOString(),
         },
-      );
-    } catch {
-      // ignore
-    }
+        $unset: {
+          "metadata.orderConfirmationClaim": 1,
+          "metadata.orderConfirmationClaimedAt": 1,
+        },
+      },
+    );
+  } catch {
+    // Provider accepted the email; do not turn the paid order into an error.
   }
 
   return result;

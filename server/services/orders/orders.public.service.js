@@ -448,7 +448,7 @@ async function CreateOrder({
               }
             : {}),
         },
-        success_url: buildFrontendUrl("/checkout/success"),
+        success_url: `${buildFrontendUrl("/checkout/success")}?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: buildFrontendUrl("/checkout/cancel"),
       });
 
