@@ -85,7 +85,14 @@ test.afterAll(async ({ request }) => {
 test("weekly multi-day creation picks the nearest selected weekday and keeps stepping through selected days", async ({
   request,
 }) => {
-  // Keep both selected days safely outside the default two-day modification\n  // cut-off so this cadence test is not dependent on the weekday CI happens\n  // to run. Cut-off skipping is covered separately by the rules/cut-off tests.\n  const currentWeekday = londonParts(new Date()).weekday;\n  const selectedDays = [\n    (currentWeekday + 3) % 7,\n    (currentWeekday + 5) % 7,\n  ];
+  // Keep both selected days safely outside the default two-day modification
+  // cut-off so this cadence test is not dependent on the weekday CI happens
+  // to run. Cut-off skipping is covered separately by the rules/cut-off tests.
+  const currentWeekday = londonParts(new Date()).weekday;
+  const selectedDays = [
+    (currentWeekday + 3) % 7,
+    (currentWeekday + 5) % 7,
+  ];
   const fixture = await createFixture(request, {
     createSubscription: false,
     deliveryDays: selectedDays,
