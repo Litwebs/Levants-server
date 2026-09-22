@@ -4199,50 +4199,6 @@ describe("Portal Subscriptions", () => {
     expect(saved.items[0].quantity).toBe(1);
   });
 
-});
-
-describe("Portal Support Requests", () => {
-  let accessToken;
-
-  beforeEach(async () => {
-    const creds = await createPortalCustomer();
-    const auth = await loginPortalCustomer(creds);
-    accessToken = auth.accessToken;
-  });
-
-  it("creates a support request", async () => {
-    const res = await request(app)
-      .post("/api/portal/support-requests")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        issueType: "general_enquiry",
-        subject: "Test subject",
-        message: "This is a test support message from a portal customer.",
-      });
-
-    expect(res.status).toBe(201);
-    expect(res.body.data.request.status).toBe("open");
-  });
-
-  it("lists only own support requests", async () => {
-    // Create request with first customer
-    await request(app)
-      .post("/api/portal/support-requests")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .send({
-        issueType: "delivery_issue",
-        subject: "Missing delivery",
-        message: "My delivery was not received.",
-      });
-
-    const res = await request(app)
-      .get("/api/portal/support-requests")
-      .set("Authorization", `Bearer ${accessToken}`);
-
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data.requests)).toBe(true);
-    expect(res.body.data.requests.length).toBeGreaterThan(0);
-  });
   it("replays a completed subscription creation operation without creating or charging twice", async () => {
     const operationId = crypto.randomUUID();
     stripe.products.create.mockClear();
@@ -4340,6 +4296,52 @@ describe("Portal Support Requests", () => {
     expect(first.status).toBe(200);
     expect(conflict.status).toBe(409);
     expect(conflict.body.message).toMatch(/operation ID/i);
+  });
+
+
+});
+
+describe("Portal Support Requests", () => {
+  let accessToken;
+
+  beforeEach(async () => {
+    const creds = await createPortalCustomer();
+    const auth = await loginPortalCustomer(creds);
+    accessToken = auth.accessToken;
+  });
+
+  it("creates a support request", async () => {
+    const res = await request(app)
+      .post("/api/portal/support-requests")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        issueType: "general_enquiry",
+        subject: "Test subject",
+        message: "This is a test support message from a portal customer.",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.request.status).toBe("open");
+  });
+
+  it("lists only own support requests", async () => {
+    // Create request with first customer
+    await request(app)
+      .post("/api/portal/support-requests")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        issueType: "delivery_issue",
+        subject: "Missing delivery",
+        message: "My delivery was not received.",
+      });
+
+    const res = await request(app)
+      .get("/api/portal/support-requests")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.data.requests)).toBe(true);
+    expect(res.body.data.requests.length).toBeGreaterThan(0);
   });
 
 });
