@@ -73,6 +73,7 @@ async function executeIdempotentSubscriptionMutation({
       : null;
 
   let mutation;
+  let createdNew = false;
   try {
     mutation = await SubscriptionMutation.create({
       customer: customerId,
@@ -84,6 +85,7 @@ async function executeIdempotentSubscriptionMutation({
       status: "processing",
       lockedAt: now,
     });
+    createdNew = true;
   } catch (error) {
     if (error?.code !== 11000) throw error;
     mutation = await SubscriptionMutation.findOne({
@@ -109,11 +111,10 @@ async function executeIdempotentSubscriptionMutation({
   }
 
   if (
+    !createdNew &&
     mutation.status === "processing" &&
-    mutation.createdAt &&
     mutation.lockedAt &&
-    mutation.lockedAt.getTime() > staleBefore.getTime() &&
-    mutation.attempts > 1
+    mutation.lockedAt.getTime() > staleBefore.getTime()
   ) {
     return inProgressResponse();
   }
