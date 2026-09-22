@@ -1237,10 +1237,22 @@ async function refundSubscriptionToCard(
           : `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
       },
     );
-    return { refundedMinor: amountMinor, stripeRefundId: refund.id };
+    return {
+      refundedMinor: amountMinor,
+      stripeRefundId: refund.id,
+      orderId: lastPaidOrder._id,
+      paymentIntentId: lastPaidOrder.stripePaymentIntentId,
+      currency: refund.currency || "gbp",
+    };
   } catch (err) {
     // Couldn't refund to card (no refundable balance, etc.) — caller falls back.
-    return { refundedMinor: 0, stripeRefundId: null, error: err };
+    return {
+      refundedMinor: 0,
+      stripeRefundId: null,
+      orderId: lastPaidOrder._id,
+      paymentIntentId: lastPaidOrder.stripePaymentIntentId,
+      error: err,
+    };
   }
 }
 
@@ -1259,15 +1271,19 @@ async function updateUpcomingSubscriptionOrder(
     refundedMinor = 0,
     paymentIntent = null,
     operationId = null,
+    session = null,
+    orderId = null,
+    refundRecord = null,
   } = {},
 ) {
-  const order = await Order.findOne({
+  let orderQuery = Order.findOne({
     subscription: subscription._id,
-    status: { $in: ["paid", "partially_refunded"] },
+    status: { $in: ["paid", "partially_refunded", "refunded"] },
     deliveryStatus: "ordered",
-  })
-    .sort({ deliveryDate: -1, createdAt: -1 })
-    .exec();
+    ...(orderId ? { _id: orderId } : {}),
+  }).sort({ deliveryDate: -1, createdAt: -1 });
+  if (session) orderQuery = orderQuery.session(session);
+  const order = await orderQuery.exec();
 
   if (!order) return false;
 
@@ -1307,11 +1323,37 @@ async function updateUpcomingSubscriptionOrder(
     });
   }
 
+  if (refundRecord?.stripeRefundId) {
+    order.refunds = Array.isArray(order.refunds) ? order.refunds : [];
+    const exists = order.refunds.some(
+      (refund) => refund.stripeRefundId === refundRecord.stripeRefundId,
+    );
+    if (!exists) {
+      order.refunds.push({
+        stripeRefundId: refundRecord.stripeRefundId,
+        paymentIntentId:
+          refundRecord.paymentIntentId || order.stripePaymentIntentId,
+        currency: refundRecord.currency || order.currency || "GBP",
+        amountMinor: refundedMinor,
+        amount: refundedMinor / 100,
+        status: "succeeded",
+        refundedAt: new Date(),
+        createdAt: new Date(),
+        restock: false,
+      });
+    }
+    order.refund = {
+      ...(order.refund || {}),
+      stripeRefundId: refundRecord.stripeRefundId,
+      refundedAt: order.refund?.refundedAt || new Date(),
+    };
+  }
+
   if (refundedMinor > 0) {
     order.status = "partially_refunded";
   }
 
-  await order.save();
+  await order.save(session ? { session } : undefined);
   return true;
 }
 
@@ -1515,9 +1557,6 @@ async function applyItemChange(
   if (deltaMinor < 0) {
     const owedMinor = Math.abs(deltaMinor);
 
-    // If the customer explicitly chose card refund, verify there is a paid order
-    // with a captured payment intent BEFORE we commit any changes. Failing early
-    // avoids the subscription being modified without any money being returned.
     if (refundMethod === "refund") {
       const hasPaidOrder = await Order.exists({
         subscription: subscription._id,
@@ -1533,13 +1572,11 @@ async function applyItemChange(
       }
     }
 
-    subscription.items = nextItems;
-    await subscription.save();
-    await syncStripeSubscriptionPrice(subscription);
-
-    let creditedMinor = 0;
     let refundedMinor = 0;
     let stripeRefundId = null;
+    let refundOrderId = null;
+    let refundPaymentIntentId = null;
+    let refundCurrency = "gbp";
 
     if (refundMethod === "refund") {
       const refundResult = await refundSubscriptionToCard(
@@ -1549,27 +1586,89 @@ async function applyItemChange(
       );
       refundedMinor = refundResult.refundedMinor;
       stripeRefundId = refundResult.stripeRefundId;
+      refundOrderId = refundResult.orderId || null;
+      refundPaymentIntentId = refundResult.paymentIntentId || null;
+      refundCurrency = refundResult.currency || "gbp";
     }
 
-    // Whatever couldn't be refunded to the card (or all of it, when the
-    // customer chose store credit) is granted as store credit.
     const remainderMinor = owedMinor - refundedMinor;
-    if (remainderMinor > 0) {
-      const creditResult = await storeCreditService.addCredit({
-        customerId: customer._id,
-        amountMinor: remainderMinor,
-        type: "subscription_refund",
-        reason: `Refund for reducing ${subscription.subscriptionNumber}`,
-        subscriptionId: subscription._id,
+    const creditKey = operationId
+      ? `subscription:${subscription._id}:mutation:${operationId}:decrease-credit`
+      : `subscription:${subscription._id}:decrease-credit:${owedMinor}:${new Date(
+          subscription.updatedAt || 0,
+        ).getTime()}`;
+
+    let creditedMinor = 0;
+    let committedSubscription = null;
+    const session = await mongoose.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        const updatedSubscription = await Subscription.findOneAndUpdate(
+          {
+            _id: subscription._id,
+            customer: customer._id,
+            status: "active",
+          },
+          { $set: { items: nextItems } },
+          { new: true, runValidators: true, session },
+        );
+        if (!updatedSubscription) {
+          throw new Error(
+            "Subscription changed while settlement was being applied",
+          );
+        }
+
+        if (remainderMinor > 0) {
+          const creditResult = await storeCreditService.addCredit({
+            customerId: customer._id,
+            amountMinor: remainderMinor,
+            type: "subscription_refund",
+            reason: `Refund for reducing ${subscription.subscriptionNumber}`,
+            subscriptionId: subscription._id,
+            idempotencyKey: creditKey,
+            session,
+          });
+          if (!creditResult.ok) {
+            throw new Error(
+              creditResult.message || "Store credit could not be recorded",
+            );
+          }
+          creditedMinor = remainderMinor;
+        }
+
+        await updateUpcomingSubscriptionOrder(
+          updatedSubscription,
+          nextItems,
+          {
+            refundedMinor,
+            operationId,
+            session,
+            orderId: refundOrderId,
+            refundRecord: stripeRefundId
+              ? {
+                  stripeRefundId,
+                  paymentIntentId: refundPaymentIntentId,
+                  currency: refundCurrency,
+                }
+              : null,
+          },
+        );
+
+        committedSubscription = updatedSubscription;
       });
-      if (creditResult.ok) creditedMinor = remainderMinor;
+    } finally {
+      await session.endSession();
     }
 
-    await updateUpcomingSubscriptionOrder(subscription, nextItems, {
-      refundedMinor,
-    });
+    if (!committedSubscription) {
+      throw new Error("Subscription settlement did not commit");
+    }
 
-    const enriched = await enrichSubscriptionWithVariantImages(subscription);
+    await syncStripeSubscriptionPrice(committedSubscription);
+    const enriched = await enrichSubscriptionWithVariantImages(
+      committedSubscription,
+    );
 
     let message;
     if (refundedMinor > 0 && creditedMinor > 0) {
@@ -1582,7 +1681,7 @@ async function applyItemChange(
 
     await sendSubscriptionUpdateEmail({
       customer,
-      subscription,
+      subscription: committedSubscription,
       title: actionLabel,
       message,
     });
@@ -2654,10 +2753,16 @@ async function UpdateSubscription({
         type: "subscription_refund",
         reason: `Refund for reducing ${subscription.subscriptionNumber}`,
         subscriptionId: subscription._id,
+        idempotencyKey: operationId
+          ? `subscription:${subscription._id}:mutation:${operationId}:day-plan-credit`
+          : `subscription:${subscription._id}:day-plan-credit:${remainderMinor}:${new Date(
+              subscription.updatedAt || 0,
+            ).getTime()}`,
       });
-      if (creditResult.ok) {
-        dayPlanCreditedMinor = remainderMinor;
+      if (!creditResult.ok) {
+        return Response(false, creditResult.message, null);
       }
+      dayPlanCreditedMinor = remainderMinor;
     }
 
     if (dayPlanRefundedMinor > 0 && dayPlanCreditedMinor > 0) {
@@ -2749,6 +2854,7 @@ async function UpdateSubscription({
           reason: `Refund for reducing delivery days on ${subscription.subscriptionNumber}`,
           subscriptionId: subscription._id,
           orderId: order._id,
+          idempotencyKey: `subscription:${subscription._id}:remove-day-credit:${order._id}:${amountMinor}`,
         });
 
         if (!creditResult.ok) {
@@ -3215,6 +3321,7 @@ async function PauseSubscription({
         reason: `Refund for pausing ${subscription.subscriptionNumber}`,
         subscriptionId: subscription._id,
         orderId: order._id,
+        idempotencyKey: `subscription:${subscription._id}:pause-credit:${order._id}:${amountMinor}`,
       });
       if (!credit.ok) {
         await restoreStripeBilling();
@@ -3451,6 +3558,7 @@ async function CancelSubscription({
             `Refund for cancelling ${subscription.subscriptionNumber}`,
           subscriptionId: subscription._id,
           orderId: refundableOrder._id,
+          idempotencyKey: `subscription:${subscription._id}:cancel-credit:${refundableOrder._id}:${refundAmountMinor}`,
         });
 
         if (!creditResult.ok) {
@@ -3538,6 +3646,7 @@ async function CancelSubscription({
             `Refund for cancelling ${subscription.subscriptionNumber}`,
           subscriptionId: subscription._id,
           orderId: refundableOrder._id,
+          idempotencyKey: `subscription:${subscription._id}:cancel-credit:${refundableOrder._id}:${refundAmountMinor}`,
         });
 
         if (!creditResult.ok) {

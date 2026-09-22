@@ -15,6 +15,8 @@ const StoreCreditTransaction = require("../../models/storeCreditTransaction.mode
 const stripe = require("../../utils/stripe.util");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
+const storeCreditService = require("../../services/storeCredit.service");
+const refundService = require("../../services/orders/orders.refund.service");
 const {
   computeSubscriptionCutoffDate,
   zonedParts,
@@ -4296,6 +4298,218 @@ describe("Portal Subscriptions", () => {
     expect(first.status).toBe(200);
     expect(conflict.status).toBe(409);
     expect(conflict.body.message).toMatch(/operation ID/i);
+  });
+
+
+  it("keeps wallet balance and ledger atomic when the ledger write fails", async () => {
+    await StoreCreditTransaction.init();
+    const failure = jest
+      .spyOn(StoreCreditTransaction, "create")
+      .mockRejectedValueOnce(new Error("Injected ledger failure"));
+
+    await expect(
+      storeCreditService.addCredit({
+        customerId: customer._id,
+        amountMinor: 500,
+        type: "subscription_refund",
+        reason: "Atomic wallet regression",
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    ).rejects.toThrow(/ledger failure/i);
+
+    failure.mockRestore();
+    const refreshed = await Customer.findById(customer._id).lean();
+    expect(refreshed.creditBalance).toBe(0);
+    expect(
+      await StoreCreditTransaction.countDocuments({ customer: customer._id }),
+    ).toBe(0);
+  });
+
+  it("replays the same wallet credit key without crediting twice", async () => {
+    await StoreCreditTransaction.init();
+    const idempotencyKey = `wallet:${crypto.randomUUID()}`;
+    const payload = {
+      customerId: customer._id,
+      amountMinor: 375,
+      type: "subscription_refund",
+      reason: "Wallet retry regression",
+      idempotencyKey,
+    };
+
+    const first = await storeCreditService.addCredit(payload);
+    const replay = await storeCreditService.addCredit(payload);
+
+    expect(first.ok).toBe(true);
+    expect(replay.ok).toBe(true);
+    expect(replay.replayed).toBe(true);
+
+    const refreshed = await Customer.findById(customer._id).lean();
+    expect(refreshed.creditBalance).toBe(375);
+    expect(
+      await StoreCreditTransaction.countDocuments({
+        customer: customer._id,
+        idempotencyKey,
+      }),
+    ).toBe(1);
+  });
+
+  it("rolls back a decrease if its order snapshot cannot commit, then retries once", async () => {
+    await StoreCreditTransaction.init();
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 3 }],
+      });
+    expect(createRes.status).toBe(201);
+
+    const sub = createRes.body.data.subscription;
+    const itemId = sub.items[0]._id;
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+    const order = await Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.unitPrice * item.quantity,
+      })),
+      deliveryAddress: sub.deliveryAddress,
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: deliveries[0].scheduledDate,
+      deliveryFee: 0,
+      subtotal,
+      total: subtotal,
+      amountPaid: subtotal,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 86400000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+    await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, {
+      status: "generated",
+      order: order._id,
+      generatedAt: new Date(),
+    });
+
+    const operationId = crypto.randomUUID();
+    const failure = jest
+      .spyOn(Order.prototype, "save")
+      .mockRejectedValueOnce(new Error("Injected order save failure"));
+
+    const first = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}/items/${itemId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId, quantity: 1, refundMethod: "credit" });
+
+    expect(first.status).toBe(500);
+    failure.mockRestore();
+
+    const failedSub = await Subscription.findById(sub._id).lean();
+    const failedCustomer = await Customer.findById(customer._id).lean();
+    const failedOrder = await Order.findById(order._id).lean();
+    expect(failedSub.items[0].quantity).toBe(3);
+    expect(failedCustomer.creditBalance).toBe(0);
+    expect(failedOrder.amountPaid).toBe(subtotal);
+    expect(
+      await StoreCreditTransaction.countDocuments({
+        customer: customer._id,
+        type: "subscription_refund",
+      }),
+    ).toBe(0);
+
+    const retry = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}/items/${itemId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId, quantity: 1, refundMethod: "credit" });
+
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.creditedMinor).toBe(500);
+
+    const finalSub = await Subscription.findById(sub._id).lean();
+    const finalCustomer = await Customer.findById(customer._id).lean();
+    const finalOrder = await Order.findById(order._id).lean();
+    expect(finalSub.items[0].quantity).toBe(1);
+    expect(finalCustomer.creditBalance).toBe(500);
+    expect(finalOrder.amountPaid).toBe(subtotal - 5);
+    expect(
+      await StoreCreditTransaction.countDocuments({
+        customer: customer._id,
+        type: "subscription_refund",
+      }),
+    ).toBe(1);
+  });
+
+  it("keeps a subscription edit refund partial after the live order total decreases", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 2 }],
+      });
+    expect(createRes.status).toBe(201);
+
+    const sub = createRes.body.data.subscription;
+    const order = await Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: 1,
+        subtotal: item.unitPrice,
+      })),
+      deliveryAddress: sub.deliveryAddress,
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: new Date(sub.nextDeliveryDate),
+      deliveryFee: 0,
+      subtotal: 2.5,
+      total: 2.5,
+      amountPaid: 2.5,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 86400000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: "pi_subscription_edit_partial",
+      paidAt: new Date(),
+      paymentAllocations: [{
+        paymentIntentId: "pi_subscription_edit_partial",
+        source: "subscription_invoice",
+        amountMinor: 500,
+      }],
+    });
+
+    await refundService.applyStripeRefundSucceeded({
+      paymentIntentId: "pi_subscription_edit_partial",
+      stripeRefundId: "re_subscription_edit_partial",
+      amountMinor: 250,
+      currency: "gbp",
+      orderId: order._id,
+    });
+
+    const updated = await Order.findById(order._id).lean();
+    expect(updated.status).toBe("partially_refunded");
   });
 
 

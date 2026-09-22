@@ -66,6 +66,13 @@ const storeCreditTransactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    idempotencyKey: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 240,
+    },
+
     metadata: {
       type: Object,
       default: {},
@@ -75,6 +82,13 @@ const storeCreditTransactionSchema = new mongoose.Schema(
 );
 
 storeCreditTransactionSchema.index({ customer: 1, createdAt: -1 });
+storeCreditTransactionSchema.index(
+  { customer: 1, idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: "string" } },
+  },
+);
 
 module.exports = mongoose.model(
   "StoreCreditTransaction",

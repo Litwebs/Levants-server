@@ -65,12 +65,35 @@ function hasPendingRefund(order) {
   return refunds.some((r) => r?.status === "pending");
 }
 
+function getCapturedPaymentMinor(order, refundedMinor = 0) {
+  const allocations = Array.isArray(order.paymentAllocations)
+    ? order.paymentAllocations
+    : [];
+  const allocatedMinor = allocations.reduce(
+    (sum, allocation) =>
+      sum + Math.max(0, Math.round(Number(allocation?.amountMinor || 0))),
+    0,
+  );
+  if (allocatedMinor > 0) return allocatedMinor;
+
+  const amountPaid = Number(order.amountPaid);
+  if (Number.isFinite(amountPaid) && amountPaid > 0) {
+    const paidMinor = toMinorUnits(amountPaid, order.currency || "GBP");
+    if (order.orderType === "subscription_generated" && refundedMinor > 0) {
+      return paidMinor + refundedMinor;
+    }
+    return paidMinor;
+  }
+
+  return getOrderTotalMinor(order);
+}
+
 function computeRefundDerivedOrderStatus(order) {
-  const totalMinor = getOrderTotalMinor(order);
   const refundedMinor = sumSucceededRefundedMinor(order);
+  const capturedMinor = getCapturedPaymentMinor(order, refundedMinor);
   const pending = hasPendingRefund(order);
 
-  if (totalMinor > 0 && refundedMinor >= totalMinor) return "refunded";
+  if (capturedMinor > 0 && refundedMinor >= capturedMinor) return "refunded";
   if (pending) return "refund_pending";
   if (refundedMinor > 0) return "partially_refunded";
   return "paid";
