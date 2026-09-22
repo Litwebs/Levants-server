@@ -4523,6 +4523,65 @@ describe("Portal Subscriptions", () => {
   });
 
 
+  it("rejects stale subscription edits instead of overwriting a newer version", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(createRes.status).toBe(201);
+    const sub = createRes.body.data.subscription;
+    const initialVersion = Number(sub.customerVersion || 0);
+
+    const first = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: initialVersion,
+        notes: "Saved from the first tab",
+      });
+
+    expect(first.status).toBe(200);
+    const nextVersion = first.body.data.subscription.customerVersion;
+    expect(nextVersion).toBe(initialVersion + 1);
+
+    const stale = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: initialVersion,
+        notes: "Stale overwrite",
+      });
+
+    expect(stale.status).toBe(409);
+    expect(stale.body.message).toMatch(/changed while you were editing/i);
+
+    const afterStale = await Subscription.findById(sub._id).lean();
+    expect(afterStale.notes).toBe("Saved from the first tab");
+    expect(afterStale.customerVersion).toBe(nextVersion);
+
+    const fresh = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: nextVersion,
+        notes: "Saved after refresh",
+      });
+
+    expect(fresh.status).toBe(200);
+    expect(fresh.body.data.subscription.customerVersion).toBe(nextVersion + 1);
+    expect(fresh.body.data.subscription.notes).toBe("Saved after refresh");
+  });
+
+
 });
 
 describe("Portal Support Requests", () => {
