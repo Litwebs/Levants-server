@@ -296,7 +296,12 @@ async function attachMethod(stripeCustomerId, paymentMethodId) {
 
 async function createCustomer(
   scenarioId,
-  { withPaymentMethod = true, subscriptionUpdates = true } = {},
+  {
+    withPaymentMethod = true,
+    subscriptionUpdates = true,
+    creditBalance = 0,
+    address = null,
+  } = {},
 ) {
   let clock = null;
   if (process.env.E2E_USE_TEST_CLOCKS !== "0") {
@@ -331,6 +336,7 @@ async function createCustomer(
     isGuest: false,
     status: "active",
     emailVerifiedAt: new Date(),
+    creditBalance: Math.max(0, Math.round(Number(creditBalance) || 0)),
     stripeCustomerId: remoteCustomer.id,
     notificationPreferences: {
       subscriptionUpdates,
@@ -339,10 +345,10 @@ async function createCustomer(
       {
         label: "E2E Home",
         fullName: "Stripe E2E",
-        line1: "1 Subscription Test Lane",
-        city: "London",
-        postcode: "SW1A 1AA",
-        country: "United Kingdom",
+        line1: address?.line1 || "1 Subscription Test Lane",
+        city: address?.city || "London",
+        postcode: address?.postcode || "SW1A 1AA",
+        country: address?.country || "United Kingdom",
         isDefault: true,
       },
     ],
@@ -549,6 +555,8 @@ async function createFixture(options = {}) {
   const customerData = await createCustomer(scenarioId, {
     withPaymentMethod: options.withPaymentMethod !== false,
     subscriptionUpdates: options.subscriptionUpdates !== false,
+    creditBalance: options.creditBalance,
+    address: options.address,
   });
   const addressId = customerData.customer.addresses[0]._id.toString();
 

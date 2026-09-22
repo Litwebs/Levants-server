@@ -13,11 +13,13 @@ const {
 
 const controller = require("../../controllers/portal/customerOrders.controller");
 const {
-  customerPortalOrderSchema,
   cancelOrderSchema,
   updateOrderDeliverySchema,
   portalListQuerySchema,
 } = require("../../validators/portal.validators");
+const {
+  authenticatedCheckoutOrderSchema,
+} = require("../../validators/order.validators");
 const { orderIdParamSchema } = require("../../validators/common.validators");
 
 const router = express.Router();
@@ -25,9 +27,9 @@ const router = express.Router();
 router.use(requireCustomerAuth);
 
 router.post(
-  "/",
-  validateBody(customerPortalOrderSchema),
-  asyncHandler(controller.PlaceOrder),
+  "/checkout",
+  validateBody(authenticatedCheckoutOrderSchema),
+  asyncHandler(controller.CreateCheckout),
 );
 
 router.get(
@@ -72,12 +74,6 @@ router.post(
   validateParams(orderIdParamSchema),
   validateBody(cancelOrderSchema),
   asyncHandler(controller.CancelOrder),
-);
-
-router.post(
-  "/:orderId/reorder",
-  validateParams(orderIdParamSchema),
-  asyncHandler(controller.Reorder),
 );
 
 module.exports = router;
