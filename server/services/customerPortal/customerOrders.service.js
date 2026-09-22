@@ -5,6 +5,7 @@ const Customer = require("../../models/customer.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
 const { geocodeAddress } = require("../../Integration/google.geocode");
+const logger = require("../../utils/logger.util");
 const { Response } = require("../../utils/response.util");
 const {
   computeSubscriptionCutoffDate,
@@ -163,8 +164,16 @@ async function UpdateOrderDelivery({
     if (geo && typeof geo.lat === "number" && typeof geo.lng === "number") {
       order.location = geo;
     }
-  } catch {
-    // Non-fatal: keep the order's existing location coordinates
+  } catch (error) {
+    // Geocoding must not block a valid address change, but it must be visible
+    // operationally so stale coordinates can be investigated/reconciled.
+    logger.warn(
+      `[PortalOrders] Geocoding failed while updating delivery for order ${order.orderId}; preserving existing coordinates`,
+      {
+        orderId: String(order._id),
+        error: error?.message || String(error),
+      },
+    );
   }
 
   order.deliveryAddress = {
