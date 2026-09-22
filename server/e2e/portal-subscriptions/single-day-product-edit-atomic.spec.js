@@ -97,10 +97,13 @@ test("single-day product edits use one replacement request and one settlement", 
   const body = await response.json().catch(() => null);
   expect(response.ok(), body?.message || JSON.stringify(body)).toBe(true);
 
-  expect(response.request().postDataJSON()).toEqual({
+  const requestBody = response.request().postDataJSON();
+  expect(requestBody).toMatchObject({
     items: [{ itemId: String(milk._id), quantity: 1 }],
     refundMethod: "credit",
+    expectedVersion: Number(before.subscription.customerVersion || 0),
   });
+  expect(requestBody.operationId).toEqual(expect.any(String));
 
   await expect
     .poll(() => itemMutations.map((entry) => entry.method))
