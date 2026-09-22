@@ -142,9 +142,9 @@ jobs:
 
           {
             echo "### Production release gate"
-            echo "- Server merge SHA: `$server_sha`"
-            echo "- Customer portal ref: `${{ steps.portal-ref.outputs.ref }}`"
-            echo "- Customer portal SHA: `$portal_sha`"
+            echo "- Server merge SHA: $server_sha"
+            echo "- Customer portal ref: ${{ steps.portal-ref.outputs.ref }}"
+            echo "- Customer portal SHA: $portal_sha"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require Stripe test-mode secrets
