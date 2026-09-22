@@ -18,7 +18,12 @@ const subscriptionService = require("../../services/customerPortal/customerSubsc
 const storeCreditService = require("../../services/storeCredit.service");
 const refundService = require("../../services/orders/orders.refund.service");
 const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
   computeSubscriptionCutoffDate,
+  formatDateKeyInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
   zonedParts,
 } = require("../../utils/subscriptionCutoff.util");
 const crypto = require("crypto");
@@ -313,7 +318,10 @@ describe("Portal Subscriptions", () => {
   });
 
   it("sets next delivery to next-week occurrence when selected day is today", async () => {
-    const todayWeekday = new Date().getDay();
+    const todayWeekday = weekdayInTimeZone(
+      new Date(),
+      SUBSCRIPTION_TIME_ZONE,
+    );
 
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -337,12 +345,17 @@ describe("Portal Subscriptions", () => {
     expect(res.status).toBe(201);
 
     const nextDelivery = new Date(res.body.data.subscription.nextDeliveryDate);
-    const now = new Date();
-    const diffDays = Math.round(
-      (nextDelivery.setHours(0, 0, 0, 0) - now.setHours(0, 0, 0, 0)) /
-        (24 * 60 * 60 * 1000),
+    const expected = addCalendarDaysInTimeZone(
+      new Date(),
+      7,
+      SUBSCRIPTION_TIME_ZONE,
     );
-    expect(diffDays).toBe(7);
+    expect(
+      formatDateKeyInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+    ).toBe(formatDateKeyInTimeZone(expected, SUBSCRIPTION_TIME_ZONE));
+    expect(
+      weekdayInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+    ).toBe(todayWeekday);
   });
 
   it("uses the immediate upcoming Sunday when subscribing on Friday before cutoff", async () => {
@@ -376,17 +389,12 @@ describe("Portal Subscriptions", () => {
       const nextDelivery = new Date(
         res.body.data.subscription.nextDeliveryDate,
       );
-      const expectedDelivery = new Date(fixedNow);
-      expectedDelivery.setDate(expectedDelivery.getDate() + 2);
-
-      const diffDays = Math.round(
-        (nextDelivery.setHours(0, 0, 0, 0) -
-          expectedDelivery.setHours(0, 0, 0, 0)) /
-          (24 * 60 * 60 * 1000),
-      );
-
-      expect(nextDelivery.getDay()).toBe(0);
-      expect(diffDays).toBe(0);
+      expect(
+        weekdayInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+      ).toBe(0);
+      expect(
+        formatDateKeyInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+      ).toBe("2026-05-10");
     } finally {
       nowSpy.mockRestore();
     }
@@ -571,16 +579,22 @@ describe("Portal Subscriptions", () => {
 
     const weekdays = deliveries
       .slice(0, 3)
-      .map((d) => new Date(d.scheduledDate).getDay());
+      .map((d) =>
+        weekdayInTimeZone(d.scheduledDate, SUBSCRIPTION_TIME_ZONE),
+      );
     expect(weekdays.every((day) => [0, 3].includes(day))).toBe(true);
     expect(new Set(weekdays).size).toBeGreaterThan(1);
   });
 
   it.each([0, 1])("extends three upcoming slots from a stale date (%i days after Sunday)", async (daysAfterSunday) => {
     const sub = await createBasicSubscription();
-    // Exercise both a delivery day and the following day, independently of
-    // the weekday/time when CI runs. Keep database/network timers real.
-    const now = new Date(2026, 8, 6 + daysAfterSunday, 14, 38);
+    // Exercise both a delivery day and the following day using fixed absolute
+    // instants. Assertions are made against the London business calendar.
+    const now = new Date(
+      daysAfterSunday === 0
+        ? "2026-09-06T14:38:00.000Z"
+        : "2026-09-07T14:38:00.000Z",
+    );
     jest.useFakeTimers({
       now,
       doNotFake: [
@@ -590,9 +604,8 @@ describe("Portal Subscriptions", () => {
       ],
     });
     try {
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-      const staleDate = new Date(2026, 7, 2);
+      const today = startOfDayInTimeZone(now, SUBSCRIPTION_TIME_ZONE);
+      const staleDate = new Date("2026-08-02T08:00:00.000Z");
       await Subscription.findByIdAndUpdate(sub._id, {
         nextDeliveryDate: staleDate,
       });
@@ -603,19 +616,32 @@ describe("Portal Subscriptions", () => {
 
       const futureSlots = await SubscriptionDelivery.find({
         subscription: sub._id,
-        // Slots are delivery dates: today's midnight slot is still upcoming.
         scheduledDate: { $gte: today },
       }).sort({ scheduledDate: 1 }).lean();
+
       expect(futureSlots).toHaveLength(3);
       expect(
         futureSlots.every(
-          (slot) => new Date(slot.scheduledDate).getDay() === 0,
+          (slot) =>
+            weekdayInTimeZone(
+              slot.scheduledDate,
+              SUBSCRIPTION_TIME_ZONE,
+            ) === 0,
         ),
       ).toBe(true);
-      expect(futureSlots.map((slot) => new Date(slot.scheduledDate).getTime()))
-        .toEqual([0, 7, 14].map((offset) =>
-          new Date(2026, 8, (daysAfterSunday === 0 ? 6 : 13) + offset).getTime(),
-        ));
+
+      const expectedKeys =
+        daysAfterSunday === 0
+          ? ["2026-09-06", "2026-09-13", "2026-09-20"]
+          : ["2026-09-13", "2026-09-20", "2026-09-27"];
+      expect(
+        futureSlots.map((slot) =>
+          formatDateKeyInTimeZone(
+            slot.scheduledDate,
+            SUBSCRIPTION_TIME_ZONE,
+          ),
+        ),
+      ).toEqual(expectedKeys);
     } finally {
       jest.useRealTimers();
     }
@@ -734,16 +760,12 @@ describe("Portal Subscriptions", () => {
         settings,
       });
 
-    expect([
-      nextSunday.getFullYear(),
-      nextSunday.getMonth(),
-      nextSunday.getDate(),
-    ]).toEqual([2026, 7, 16]);
-    expect([
-      nextWednesday.getFullYear(),
-      nextWednesday.getMonth(),
-      nextWednesday.getDate(),
-    ]).toEqual([2026, 7, 19]);
+    expect(
+      formatDateKeyInTimeZone(nextSunday, SUBSCRIPTION_TIME_ZONE),
+    ).toBe("2026-08-16");
+    expect(
+      formatDateKeyInTimeZone(nextWednesday, SUBSCRIPTION_TIME_ZONE),
+    ).toBe("2026-08-19");
   });
 
   it("cannot access another customer's subscription", async () => {
@@ -3558,7 +3580,10 @@ describe("Portal Subscriptions", () => {
     expect(after.preferredDeliveryDay).toBe(3);
     expect(after.preferredDeliveryDays).toEqual([3]);
 
-    const afterWeekday = new Date(after.nextDeliveryDate).getDay();
+    const afterWeekday = weekdayInTimeZone(
+      after.nextDeliveryDate,
+      SUBSCRIPTION_TIME_ZONE,
+    );
     expect(afterWeekday).toBe(3);
     expect(new Date(after.nextDeliveryDate).getTime()).not.toBe(
       new Date(before.nextDeliveryDate).getTime(),

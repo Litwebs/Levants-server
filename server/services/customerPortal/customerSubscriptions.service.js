@@ -603,7 +603,7 @@ function parsePauseResumeDate(resumeOn) {
   }
 
   const requested = startOfDay(resumeOn);
-  if (Number.isNaN(requested.getTime())) {
+  if (!requested || Number.isNaN(requested.getTime())) {
     return { ok: false, message: "Please choose a valid resume date." };
   }
 
