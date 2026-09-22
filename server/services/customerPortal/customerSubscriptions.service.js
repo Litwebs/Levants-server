@@ -1197,7 +1197,11 @@ async function refundAcrossSubscriptionPayments(
  * refunded to the card (minor units). Any shortfall is the caller's
  * responsibility to handle (e.g. fall back to store credit).
  */
-async function refundSubscriptionToCard(subscription, amountMinor) {
+async function refundSubscriptionToCard(
+  subscription,
+  amountMinor,
+  operationId,
+) {
   if (!amountMinor || amountMinor <= 0) {
     return { refundedMinor: 0, stripeRefundId: null };
   }
@@ -1228,7 +1232,9 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
         },
       },
       {
-        idempotencyKey: `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
+        idempotencyKey: operationId
+          ? `subscription:${subscription._id}:mutation:${operationId}:refund:${lastPaidOrder._id}:${amountMinor}`
+          : `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
       },
     );
     return { refundedMinor: amountMinor, stripeRefundId: refund.id };
@@ -1248,7 +1254,12 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
 async function updateUpcomingSubscriptionOrder(
   subscription,
   nextItems,
-  { chargedMinor = 0, refundedMinor = 0, paymentIntent = null } = {},
+  {
+    chargedMinor = 0,
+    refundedMinor = 0,
+    paymentIntent = null,
+    operationId = null,
+  } = {},
 ) {
   const order = await Order.findOne({
     subscription: subscription._id,
@@ -1275,15 +1286,24 @@ async function updateUpcomingSubscriptionOrder(
   order.total = newTotal + (order.deliveryFee || 0);
 
   // Money on the order is in pounds; settlement deltas are in pence.
-  const deltaPounds = (chargedMinor - refundedMinor) / 100;
+  const allocationKey = operationId
+    ? `subscription:${subscription._id}:mutation:${operationId}:order:${order._id}`
+    : `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`;
+  const chargeAlreadyApplied =
+    chargedMinor > 0 &&
+    (order.paymentAllocations || []).some(
+      (allocation) => allocation.idempotencyKey === allocationKey,
+    );
+  const effectiveChargedMinor = chargeAlreadyApplied ? 0 : chargedMinor;
+  const deltaPounds = (effectiveChargedMinor - refundedMinor) / 100;
   order.amountPaid = Math.max(0, (order.amountPaid || 0) + deltaPounds);
 
-  if (chargedMinor > 0 && paymentIntent?.id) {
+  if (chargedMinor > 0 && paymentIntent?.id && !chargeAlreadyApplied) {
     order.paymentAllocations.push({
       paymentIntentId: paymentIntent.id,
       source: "modification",
       amountMinor: chargedMinor,
-      idempotencyKey: `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`,
+      idempotencyKey: allocationKey,
     });
   }
 
@@ -1305,7 +1325,12 @@ async function updateUpcomingSubscriptionOrderForDay(
   subscription,
   weekday,
   dayItems,
-  { chargedMinor = 0, refundedMinor = 0, paymentIntent = null } = {},
+  {
+    chargedMinor = 0,
+    refundedMinor = 0,
+    paymentIntent = null,
+    operationId = null,
+  } = {},
 ) {
   const orders = await Order.find({
     subscription: subscription._id,
@@ -1337,15 +1362,24 @@ async function updateUpcomingSubscriptionOrderForDay(
   order.subtotal = newTotal;
   order.total = newTotal + (order.deliveryFee || 0);
 
-  const deltaPounds = (chargedMinor - refundedMinor) / 100;
+  const allocationKey = operationId
+    ? `subscription:${subscription._id}:mutation:${operationId}:order:${order._id}`
+    : `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`;
+  const chargeAlreadyApplied =
+    chargedMinor > 0 &&
+    (order.paymentAllocations || []).some(
+      (allocation) => allocation.idempotencyKey === allocationKey,
+    );
+  const effectiveChargedMinor = chargeAlreadyApplied ? 0 : chargedMinor;
+  const deltaPounds = (effectiveChargedMinor - refundedMinor) / 100;
   order.amountPaid = Math.max(0, (order.amountPaid || 0) + deltaPounds);
 
-  if (chargedMinor > 0 && paymentIntent?.id) {
+  if (chargedMinor > 0 && paymentIntent?.id && !chargeAlreadyApplied) {
     order.paymentAllocations.push({
       paymentIntentId: paymentIntent.id,
       source: "modification",
       amountMinor: chargedMinor,
-      idempotencyKey: `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`,
+      idempotencyKey: allocationKey,
     });
   }
 
@@ -1373,6 +1407,7 @@ async function applyItemChange(
   nextItems,
   actionLabel,
   refundMethod = "credit",
+  operationId,
 ) {
   const { isPastCutoff, settings } = await getCutoffStatus(subscription);
   const upcomingDeliveryDate = await getUpcomingDeliveryDate(subscription._id);
@@ -1444,6 +1479,9 @@ async function applyItemChange(
       customer,
       deltaMinor,
       `${actionLabel} – ${subscription.subscriptionNumber}`,
+      operationId
+        ? `subscription:${subscription._id}:mutation:${operationId}:charge`
+        : undefined,
     );
     if (!charge.ok) {
       return Response(false, charge.message, null);
@@ -1454,6 +1492,7 @@ async function applyItemChange(
     await updateUpcomingSubscriptionOrder(subscription, nextItems, {
       chargedMinor: deltaMinor,
       paymentIntent: charge.paymentIntent,
+      operationId,
     });
     const enriched = await enrichSubscriptionWithVariantImages(subscription);
     const message = `You've been charged ${formatMinor(deltaMinor)} for the added items on your upcoming delivery, and future invoices have been updated.`;
@@ -1506,6 +1545,7 @@ async function applyItemChange(
       const refundResult = await refundSubscriptionToCard(
         subscription,
         owedMinor,
+        operationId,
       );
       refundedMinor = refundResult.refundedMinor;
       stripeRefundId = refundResult.stripeRefundId;
@@ -1656,6 +1696,8 @@ async function CreateSubscription({
   deliveryInstructions,
   notes,
   items,
+  operationId,
+  reservedSubscriptionId,
 } = {}) {
   const customer = await Customer.findById(customerId);
   if (!customer) return Response(false, "Customer not found", null);
@@ -1880,17 +1922,27 @@ async function CreateSubscription({
   // ── Create Stripe Product + Price + Subscription ──────────────────────────
   const { interval, interval_count } = STRIPE_INTERVALS[frequency];
 
-  const stripeProduct = await stripe.products.create({
-    name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
-    metadata: { customerId: String(customer._id) },
-  });
+  const stripeProduct = await stripe.products.create(
+    {
+      name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
+      metadata: { customerId: String(customer._id) },
+    },
+    operationId
+      ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:product` }
+      : undefined,
+  );
 
-  const stripePrice = await stripe.prices.create({
-    product: stripeProduct.id,
-    currency: "gbp",
-    unit_amount: totalMinor,
-    recurring: { interval, interval_count },
-  });
+  const stripePrice = await stripe.prices.create(
+    {
+      product: stripeProduct.id,
+      currency: "gbp",
+      unit_amount: totalMinor,
+      recurring: { interval, interval_count },
+    },
+    operationId
+      ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:price` }
+      : undefined,
+  );
 
   // Charge immediately at subscribe. The first invoice is paid now and
   // pre-pays the upcoming delivery, so a real payment exists to refund against
@@ -1901,6 +1953,7 @@ async function CreateSubscription({
   // handler can identify this subscription and return a retryable error instead
   // of acknowledging and permanently losing the fulfillment event.
   const subscription = new Subscription({
+    ...(reservedSubscriptionId ? { _id: reservedSubscriptionId } : {}),
     customer: customer._id,
     frequency,
     preferredDeliveryDay: resolvedDays.primaryDay,
@@ -1930,18 +1983,23 @@ async function CreateSubscription({
 
   let stripeSub;
   try {
-    stripeSub = await stripe.subscriptions.create({
-      customer: customer.stripeCustomerId,
-      items: [{ price: stripePrice.id }],
-      default_payment_method: defaultPmId,
-      payment_behavior: "error_if_incomplete",
-      expand: ["latest_invoice.payment_intent"],
-      metadata: {
-        customerId: String(customer._id),
-        subscriptionId: String(subscription._id),
-        subscriptionNumber: subscription.subscriptionNumber,
+    stripeSub = await stripe.subscriptions.create(
+      {
+        customer: customer.stripeCustomerId,
+        items: [{ price: stripePrice.id }],
+        default_payment_method: defaultPmId,
+        payment_behavior: "error_if_incomplete",
+        expand: ["latest_invoice.payment_intent"],
+        metadata: {
+          customerId: String(customer._id),
+          subscriptionId: String(subscription._id),
+          subscriptionNumber: subscription.subscriptionNumber,
+        },
       },
-    });
+      operationId
+        ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:subscription` }
+        : undefined,
+    );
   } catch (err) {
     // Tidy up the Stripe price we created for this failed attempt.
     try {
@@ -2145,6 +2203,7 @@ async function UpdateSubscription({
   deliveryAddressId,
   notes,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -2543,6 +2602,9 @@ async function UpdateSubscription({
       customer,
       dayPlanChargeMinor,
       `Subscription change – ${subscription.subscriptionNumber}`,
+      operationId
+        ? `subscription:${subscription._id}:mutation:${operationId}:charge`
+        : undefined,
     );
     if (!charge.ok) {
       return Response(false, charge.message, null);
@@ -2578,6 +2640,7 @@ async function UpdateSubscription({
       const refundResult = await refundSubscriptionToCard(
         subscription,
         dayPlanRefundOwedMinor,
+        operationId,
       );
       dayPlanRefundedMinor = refundResult.refundedMinor;
       dayPlanStripeRefundId = refundResult.stripeRefundId;
@@ -2940,6 +3003,7 @@ async function UpdateSubscription({
           chargedMinor: Math.max(dayDeltaMinor, 0),
           refundedMinor: Math.max(-dayDeltaMinor, 0),
           paymentIntent: dayPlanPaymentIntent,
+          operationId,
         },
       );
     }
@@ -3833,6 +3897,7 @@ async function AddSubscriptionItem({
   variantId,
   quantity,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -3894,6 +3959,7 @@ async function AddSubscriptionItem({
     nextItems,
     "Subscription items updated",
     refundMethod,
+    operationId,
   );
 }
 
@@ -3908,6 +3974,7 @@ async function ReplaceSubscriptionItems({
   subscriptionId,
   items,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -3985,6 +4052,7 @@ async function ReplaceSubscriptionItems({
     nextItems,
     "Subscription items updated",
     refundMethod,
+    operationId,
   );
 }
 
@@ -3997,6 +4065,7 @@ async function UpdateSubscriptionItem({
   itemId,
   quantity,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -4031,6 +4100,7 @@ async function UpdateSubscriptionItem({
     nextItems,
     "Subscription items updated",
     refundMethod,
+    operationId,
   );
 }
 
@@ -4042,6 +4112,7 @@ async function RemoveSubscriptionItem({
   subscriptionId,
   itemId,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -4090,6 +4161,7 @@ async function RemoveSubscriptionItem({
     nextItems,
     "Subscription items updated",
     refundMethod,
+    operationId,
   );
 }
 

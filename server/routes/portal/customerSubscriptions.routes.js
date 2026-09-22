@@ -22,6 +22,7 @@ const {
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
   pauseSubscriptionSchema,
+  resumeSubscriptionSchema,
   cancelSubscriptionSchema,
   portalListQuerySchema,
 } = require("../../validators/portal.validators");
@@ -72,6 +73,7 @@ router.post(
 router.post(
   "/:subscriptionId/resume",
   validateParams(subscriptionIdParamSchema),
+  validateBody(resumeSubscriptionSchema),
   asyncHandler(controller.ResumeSubscription),
 );
 

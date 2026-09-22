@@ -24,6 +24,7 @@ const addressIdParamSchema = Joi.object({
 }).unknown(true);
 
 const createSubscriptionSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
     .required(),
@@ -68,6 +69,7 @@ const createSubscriptionSchema = Joi.object({
   .unknown(false);
 
 const updateSubscriptionSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
     .optional(),
@@ -105,6 +107,7 @@ const updateSubscriptionSchema = Joi.object({
 }).unknown(false);
 
 const subscriptionItemSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   variantId: objectId.required(),
   quantity: Joi.number().integer().min(1).required(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
@@ -125,11 +128,13 @@ const nextDeliveryAddOnSchema = Joi.object({
 }).unknown(false);
 
 const updateSubscriptionItemSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   quantity: Joi.number().integer().min(1).required(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
 const replaceSubscriptionItemsSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   items: Joi.array()
     .items(
       Joi.object({
@@ -162,12 +167,18 @@ const subscriptionItemIdParamSchema = Joi.object({
 // The service already owns the resume-date business validation and its
 // customer-facing error messages. The route schema intentionally leaves
 // resumeOn untouched while constraining the newly exposed settlement choice.
+const resumeSubscriptionSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
+}).unknown(false);
+
 const pauseSubscriptionSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   resumeOn: Joi.any().optional(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
 const cancelSubscriptionSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   reason: Joi.string().trim().max(500).allow(null, "").optional(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
@@ -243,6 +254,7 @@ module.exports = {
   subscriptionLookupIdParamSchema,
   subscriptionItemIdParamSchema,
   pauseSubscriptionSchema,
+  resumeSubscriptionSchema,
   cancelSubscriptionSchema,
   createSupportRequestSchema,
   supportRequestIdParamSchema,

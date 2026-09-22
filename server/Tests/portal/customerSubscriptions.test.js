@@ -4243,4 +4243,103 @@ describe("Portal Support Requests", () => {
     expect(Array.isArray(res.body.data.requests)).toBe(true);
     expect(res.body.data.requests.length).toBeGreaterThan(0);
   });
+  it("replays a completed subscription creation operation without creating or charging twice", async () => {
+    const operationId = crypto.randomUUID();
+    stripe.products.create.mockClear();
+    stripe.prices.create.mockClear();
+    stripe.subscriptions.create.mockClear();
+
+    const payload = {
+      operationId,
+      frequency: "weekly",
+      preferredDeliveryDay: 0,
+      deliveryAddressId: addressId,
+      items: [{ variantId, quantity: 1 }],
+    };
+
+    const first = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+    const second = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(second.body.data.subscription._id).toBe(
+      first.body.data.subscription._id,
+    );
+    expect(stripe.products.create).toHaveBeenCalledTimes(1);
+    expect(stripe.prices.create).toHaveBeenCalledTimes(1);
+    expect(stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    expect(
+      await Subscription.countDocuments({ customer: customer._id }),
+    ).toBe(1);
+  });
+
+  it("deduplicates an incremental add-item retry with the same operation ID", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    const extra = await createTestProduct();
+    const operationId = crypto.randomUUID();
+
+    stripe.paymentIntents.create.mockClear();
+
+    const payload = {
+      operationId,
+      variantId: extra.variant._id.toString(),
+      quantity: 1,
+    };
+
+    const first = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+    const second = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+
+    const refreshed = await Subscription.findById(sub._id).lean();
+    const added = refreshed.items.find(
+      (item) => String(item.variant) === String(extra.variant._id),
+    );
+    expect(added.quantity).toBe(1);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects reusing an operation ID for a different mutation payload", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    const extra = await createTestProduct();
+    const operationId = crypto.randomUUID();
+
+    const first = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId,
+        variantId: extra.variant._id.toString(),
+        quantity: 1,
+      });
+
+    const conflict = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId,
+        variantId: extra.variant._id.toString(),
+        quantity: 2,
+      });
+
+    expect(first.status).toBe(200);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.message).toMatch(/operation ID/i);
+  });
+
 });
