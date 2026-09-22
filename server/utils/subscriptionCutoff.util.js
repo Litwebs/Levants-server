@@ -231,11 +231,69 @@ function addCalendarDaysInTimeZone(
   );
 }
 
+
+function startOfDayInTimeZone(
+  value,
+  timeZone = SUBSCRIPTION_TIME_ZONE,
+) {
+  const parts = zonedParts(value, timeZone);
+  if (!parts) return null;
+  return zonedDateTimeToUtc(
+    {
+      year: parts.year,
+      month: parts.month,
+      day: parts.day,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    },
+    timeZone,
+  );
+}
+
+function endOfDayInTimeZone(
+  value,
+  timeZone = SUBSCRIPTION_TIME_ZONE,
+) {
+  const start = startOfDayInTimeZone(value, timeZone);
+  if (!start) return null;
+  const nextDay = addCalendarDaysInTimeZone(start, 1, timeZone);
+  return nextDay ? new Date(nextDay.getTime() - 1) : null;
+}
+
+function weekdayInTimeZone(
+  value,
+  timeZone = SUBSCRIPTION_TIME_ZONE,
+) {
+  const parts = zonedParts(value, timeZone);
+  if (!parts) return null;
+  return new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day),
+  ).getUTCDay();
+}
+
+function formatDateKeyInTimeZone(
+  value,
+  timeZone = SUBSCRIPTION_TIME_ZONE,
+) {
+  const parts = zonedParts(value, timeZone);
+  if (!parts) return null;
+  return [
+    String(parts.year).padStart(4, "0"),
+    String(parts.month).padStart(2, "0"),
+    String(parts.day).padStart(2, "0"),
+  ].join("-");
+}
+
 module.exports = {
   SUBSCRIPTION_TIME_ZONE,
   addCalendarDaysInTimeZone,
   computeSubscriptionCutoffDate,
+  endOfDayInTimeZone,
+  formatDateKeyInTimeZone,
   getNextWeekdayDateInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
   zonedDateTimeToUtc,
   zonedParts,
 };

@@ -13,6 +13,9 @@ const cron = require("node-cron");
 const Subscription = require("../models/subscription.model");
 const logger = require("../utils/logger.util");
 const {
+  SUBSCRIPTION_TIME_ZONE,
+} = require("../utils/subscriptionCutoff.util");
+const {
   AutoResumePausedSubscriptions,
   FinalizeScheduledCancellations,
   scheduleUpcomingDeliveries,
@@ -79,7 +82,7 @@ function startSubscriptionGenerationCron() {
     } catch (err) {
       logger.error("[SubscriptionCron] Invoice/price reconciliation failed", err);
     }
-  });
+  }, { timezone: SUBSCRIPTION_TIME_ZONE });
 
   // Run once daily at 06:00 to pre-schedule upcoming delivery slots and audit
   // every active recurring price. The full audit catches historical divergence
@@ -91,10 +94,10 @@ function startSubscriptionGenerationCron() {
     } catch (err) {
       logger.error("[SubscriptionCron] Slot scheduling cron failed", err);
     }
-  });
+  }, { timezone: SUBSCRIPTION_TIME_ZONE });
 
   logger.cron(
-    "Subscription invoice/price reconciliation (15 min) and slot scheduling + full price audit (daily 06:00)",
+    `Subscription invoice/price reconciliation (15 min) and slot scheduling + full price audit (daily 06:00 ${SUBSCRIPTION_TIME_ZONE})`,
   );
 }
 

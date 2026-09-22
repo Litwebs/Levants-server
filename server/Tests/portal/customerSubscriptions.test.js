@@ -1664,6 +1664,33 @@ describe("Portal Subscriptions", () => {
     expect(finalized.cancellationEffectiveAfter).toBeNull();
   });
 
+  it("finalizes scheduled cancellation at the end of the London business day, not host UTC day", async () => {
+    const sub = await createBasicSubscription();
+    const lockedDate = new Date("2026-07-05T08:00:00.000Z");
+    await Subscription.findByIdAndUpdate(sub._id, {
+      status: "active",
+      isCancellationScheduled: true,
+      cancellationEffectiveAfter: lockedDate,
+    });
+
+    expect(
+      await subscriptionService.FinalizeScheduledCancellations({
+        subscriptionId: sub._id,
+        // 23:30 BST on the protected delivery date.
+        referenceDate: new Date("2026-07-05T22:30:00.000Z"),
+      }),
+    ).toBe(0);
+
+    expect(
+      await subscriptionService.FinalizeScheduledCancellations({
+        subscriptionId: sub._id,
+        // Midnight BST at the start of the next business day.
+        referenceDate: new Date("2026-07-05T23:00:00.000Z"),
+      }),
+    ).toBe(1);
+  });
+
+
   it("cancel before cut-off handles refund success and failure branches", async () => {
     const sub = await createBasicSubscription();
     const nextDelivery = new Date();

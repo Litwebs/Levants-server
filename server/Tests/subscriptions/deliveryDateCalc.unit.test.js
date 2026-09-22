@@ -4,20 +4,25 @@ const {
   calculateNextDeliveryDate,
   addFrequencyDays,
 } = require("../../services/customerPortal/customerSubscriptions.service");
+const {
+  formatDateKeyInTimeZone,
+  weekdayInTimeZone,
+  zonedDateTimeToUtc,
+} = require("../../utils/subscriptionCutoff.util");
 
-// Helper: return the day-of-week (0=Sun … 6=Sat) for a Date
-const dow = (d) => new Date(d).getDay();
+const BUSINESS_TZ = "Europe/London";
+const dow = (value) => weekdayInTimeZone(value, BUSINESS_TZ);
 
-// Helper: create a Date at local midnight for a given ISO date string.
 const day = (iso) => {
   const [year, month, date] = iso.split("-").map(Number);
-  return new Date(year, month - 1, date, 0, 0, 0, 0);
+  return zonedDateTimeToUtc(
+    { year, month, day: date, hour: 0, minute: 0, second: 0 },
+    BUSINESS_TZ,
+  );
 };
 
-const localDateParts = (value) => {
-  const date = new Date(value);
-  return [date.getFullYear(), date.getMonth() + 1, date.getDate()];
-};
+const localDateParts = (value) =>
+  formatDateKeyInTimeZone(value, BUSINESS_TZ).split("-").map(Number);
 
 describe("calculateNextDeliveryDate — SUB-MULTI-14", () => {
   // Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
@@ -126,4 +131,15 @@ describe("addFrequencyDays — SUB-MULTI-15 recurring cadence", () => {
       expect(dow(current)).toBe(expected);
     }
   });
+  it("steps by business calendar days across the spring DST change", () => {
+    const start = day("2026-03-29");
+    const next = addFrequencyDays(start, "weekly", [0]);
+
+    expect(formatDateKeyInTimeZone(next, BUSINESS_TZ)).toBe("2026-04-05");
+    expect(dow(next)).toBe(0);
+    // The week contains the spring clock change, so it is 167 elapsed hours,
+    // not a hard-coded 168-hour duration.
+    expect((next.getTime() - start.getTime()) / 3_600_000).toBe(167);
+  });
+
 });

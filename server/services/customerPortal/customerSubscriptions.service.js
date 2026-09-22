@@ -17,7 +17,11 @@ const {
   SUBSCRIPTION_TIME_ZONE,
   addCalendarDaysInTimeZone,
   computeSubscriptionCutoffDate,
+  endOfDayInTimeZone,
+  formatDateKeyInTimeZone,
   getNextWeekdayDateInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
 } = require("../../utils/subscriptionCutoff.util");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
 const storeCreditService = require("../storeCredit.service");
@@ -311,53 +315,59 @@ function calculateNextDeliveryDate(
   options = {},
 ) {
   const allowSameDay = Boolean(options?.allowSameDay);
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
+  const timeZone = options?.timeZone || SUBSCRIPTION_TIME_ZONE;
+  const start = startOfDayInTimeZone(from, timeZone);
+  if (!start) {
+    throw new TypeError("A valid delivery reference date is required");
+  }
 
   const deliveryDays = resolveDeliveryDays({
     frequency,
     preferredDeliveryDay: preferredDay,
     preferredDeliveryDays: preferredDays,
   }).days;
-  if (!deliveryDays.length) {
-    return new Date(start);
-  }
+  if (!deliveryDays.length) return new Date(start);
 
-  const currentDay = start.getDay();
+  const currentDay = weekdayInTimeZone(start, timeZone);
   let daysUntilPreferred = 7;
   for (const day of deliveryDays) {
     let distance = (day - currentDay + 7) % 7;
-    // By default, same-day selection rolls to next week.
-    // For first-delivery selection we can allow same-day when cut-off is open.
     if (distance === 0 && !allowSameDay) distance = 7;
     if (distance < daysUntilPreferred) daysUntilPreferred = distance;
   }
 
-  const next = new Date(start);
-  next.setDate(start.getDate() + daysUntilPreferred);
-  return next;
+  return addCalendarDaysInTimeZone(start, daysUntilPreferred, timeZone);
 }
 
-function addFrequencyDays(date, frequency, preferredDays = []) {
+function addFrequencyDays(
+  date,
+  frequency,
+  preferredDays = [],
+  timeZone = SUBSCRIPTION_TIME_ZONE,
+) {
   if (frequency === "weekly") {
     return calculateNextDeliveryDate(
       preferredDays[0] ?? 2,
       frequency,
       date,
       preferredDays,
+      { timeZone },
     );
   }
 
   if (frequency === "monthly") {
     return addCalendarMonthPreservingWeekdayOccurrence(
       date,
-      preferredDays[0] ?? new Date(date).getDay(),
+      preferredDays[0] ?? weekdayInTimeZone(date, timeZone),
+      timeZone,
     );
   }
 
-  const d = new Date(date);
-  d.setDate(d.getDate() + (FREQUENCY_DAYS[frequency] || 7));
-  return d;
+  return addCalendarDaysInTimeZone(
+    date,
+    FREQUENCY_DAYS[frequency] || 7,
+    timeZone,
+  );
 }
 
 function calculateFirstSubscriptionDeliveryDate({
@@ -385,8 +395,11 @@ function calculateFirstSubscriptionDeliveryDate({
       return candidate;
     }
 
-    searchFrom = new Date(candidate);
-    searchFrom.setDate(searchFrom.getDate() + 1);
+    searchFrom = addCalendarDaysInTimeZone(
+      candidate,
+      1,
+      SUBSCRIPTION_TIME_ZONE,
+    );
   }
 
   return calculateNextDeliveryDate(
@@ -565,18 +578,16 @@ function buildDeliveryDayCutoffs(
 }
 
 function startOfDay(value) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date;
+  return startOfDayInTimeZone(value, SUBSCRIPTION_TIME_ZONE);
 }
 
 function deliveryDateKey(value) {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return formatDateKeyInTimeZone(value, SUBSCRIPTION_TIME_ZONE);
 }
 
 function formatDateLabel(value) {
   return new Date(value).toLocaleDateString("en-GB", {
+    timeZone: SUBSCRIPTION_TIME_ZONE,
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -597,11 +608,16 @@ function parsePauseResumeDate(resumeOn) {
   }
 
   const today = startOfDay(new Date());
-  const minResume = new Date(today);
-  minResume.setDate(minResume.getDate() + 1);
-
-  const maxResume = new Date(today);
-  maxResume.setDate(maxResume.getDate() + 28);
+  const minResume = addCalendarDaysInTimeZone(
+    today,
+    1,
+    SUBSCRIPTION_TIME_ZONE,
+  );
+  const maxResume = addCalendarDaysInTimeZone(
+    today,
+    28,
+    SUBSCRIPTION_TIME_ZONE,
+  );
 
   if (requested < minResume) {
     return {
@@ -662,8 +678,11 @@ async function getResumeNextDeliveryDate(
     if (!cutoffAt || referenceDate.getTime() < cutoffAt.getTime()) {
       return candidate;
     }
-    searchFrom = new Date(candidate);
-    searchFrom.setDate(searchFrom.getDate() + 1);
+    searchFrom = addCalendarDaysInTimeZone(
+      candidate,
+      1,
+      SUBSCRIPTION_TIME_ZONE,
+    );
   }
 
   throw new Error(
@@ -678,8 +697,11 @@ async function getResumeRequiredMinor(subscription, nextDeliveryDate) {
   // essential for multi-day subscriptions where each delivery can have a
   // different cut-off while billing remains consolidated.
   const deliveryStart = startOfDay(nextDeliveryDate);
-  const deliveryEnd = new Date(deliveryStart);
-  deliveryEnd.setDate(deliveryEnd.getDate() + 1);
+  const deliveryEnd = addCalendarDaysInTimeZone(
+    deliveryStart,
+    1,
+    SUBSCRIPTION_TIME_ZONE,
+  );
   const order = await Order.findOne({
     subscription: subscription._id,
     deliveryDate: { $gte: deliveryStart, $lt: deliveryEnd },
@@ -884,9 +906,13 @@ async function FinalizeScheduledCancellations({
 
   for (const candidate of candidates) {
     try {
-      const eligibleAt = new Date(candidate.cancellationEffectiveAfter);
-      eligibleAt.setHours(23, 59, 59, 999);
-      if (referenceDate.getTime() <= eligibleAt.getTime()) continue;
+      const eligibleAt = endOfDayInTimeZone(
+        candidate.cancellationEffectiveAfter,
+        SUBSCRIPTION_TIME_ZONE,
+      );
+      if (!eligibleAt || referenceDate.getTime() <= eligibleAt.getTime()) {
+        continue;
+      }
 
       // Cancel dependent slots first. If the subsequent conditional update
       // fails, the candidate remains eligible and the next run safely retries.
@@ -1385,7 +1411,7 @@ async function updateUpcomingSubscriptionOrderForDay(
   const order = orders.find(
     (candidate) =>
       candidate.deliveryDate &&
-      new Date(candidate.deliveryDate).getDay() === Number(weekday),
+      weekdayInTimeZone(candidate.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(weekday),
   );
 
   if (!order) return false;
@@ -1496,6 +1522,7 @@ async function applyItemChange(
     const message = effectiveFrom
       ? `Cut-off has passed for your next delivery. This change will apply from ${effectiveFrom.toLocaleDateString(
           "en-GB",
+          { timeZone: SUBSCRIPTION_TIME_ZONE },
         )}.`
       : "Saved. This change will apply from your next delivery.";
     await sendSubscriptionUpdateEmail({
@@ -2160,7 +2187,9 @@ async function CreateSubscription({
     customer: customer._id,
     type: "subscription_created",
     title: "Subscription created",
-    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB")}.`,
+    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB", {
+      timeZone: SUBSCRIPTION_TIME_ZONE,
+    })}.`,
     relatedSubscription: subscription._id,
   });
 
@@ -2168,7 +2197,9 @@ async function CreateSubscription({
     customer,
     subscription,
     title: "Subscription created",
-    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB")}.`,
+    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB", {
+      timeZone: SUBSCRIPTION_TIME_ZONE,
+    })}.`,
   });
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
@@ -2809,7 +2840,7 @@ async function UpdateSubscription({
     const removedDaySet = new Set(removedDeliveryDays.map(Number));
     const eligibleOrders = refundableOrders.filter((order) => {
       if (!order.deliveryDate) return false;
-      const day = new Date(order.deliveryDate).getDay();
+      const day = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
       if (!removedDaySet.has(day)) return false;
       const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
       return cutoffAt ? now.getTime() < cutoffAt.getTime() : true;
@@ -3008,7 +3039,7 @@ async function UpdateSubscription({
       openOrders
         .filter((order) => {
           if (!order.deliveryDate) return false;
-          const orderDay = new Date(order.deliveryDate).getDay();
+          const orderDay = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
           const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
           const isLocked = cutoffAt
             ? now.getTime() >= cutoffAt.getTime()
@@ -3019,7 +3050,7 @@ async function UpdateSubscription({
     );
     const ordersToReschedule = openOrders.filter((order) => {
       if (!order.deliveryDate) return false;
-      if (selectedDaySet.has(new Date(order.deliveryDate).getDay())) {
+      if (selectedDaySet.has(weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE))) {
         return false;
       }
       const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
@@ -3440,10 +3471,7 @@ async function CancelSubscription({
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
   const now = new Date(Date.now());
-  const dayKey = (value) => {
-    const date = new Date(value);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  };
+  const dayKey = deliveryDateKey;
 
   const scheduledDeliveries = await SubscriptionDelivery.find({
     subscription: subscription._id,

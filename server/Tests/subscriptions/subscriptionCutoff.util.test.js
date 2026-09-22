@@ -2,6 +2,10 @@
 
 const {
   computeSubscriptionCutoffDate,
+  endOfDayInTimeZone,
+  formatDateKeyInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
   zonedDateTimeToUtc,
 } = require("../../utils/subscriptionCutoff.util");
 
@@ -60,4 +64,16 @@ describe("subscription cutoff timezone utility", () => {
 
     expect(instant.toISOString()).toBe("2026-03-29T01:30:00.000Z");
   });
+  it("defines a London business day independently of a UTC host", () => {
+    const value = new Date("2026-07-05T12:00:00.000Z");
+    expect(
+      startOfDayInTimeZone(value, "Europe/London").toISOString(),
+    ).toBe("2026-07-04T23:00:00.000Z");
+    expect(
+      endOfDayInTimeZone(value, "Europe/London").toISOString(),
+    ).toBe("2026-07-05T22:59:59.999Z");
+    expect(formatDateKeyInTimeZone(value, "Europe/London")).toBe("2026-07-05");
+    expect(weekdayInTimeZone(value, "Europe/London")).toBe(0);
+  });
+
 });

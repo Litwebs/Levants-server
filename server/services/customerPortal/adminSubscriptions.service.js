@@ -18,6 +18,11 @@ const crypto = require("crypto");
 const {
   executeSubscriptionConcurrencyGuard,
 } = require("./subscriptionMutation.service");
+const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
+  formatDateKeyInTimeZone,
+} = require("../../utils/subscriptionCutoff.util");
 
 async function enrichSubscriptionWithVariantImages(subscription) {
   if (!subscription) return subscription;
@@ -406,8 +411,11 @@ async function AdminPauseSubscription({
 } = {}) {
   const subscription = await Subscription.findById(subscriptionId);
   if (!subscription) return Response(false, "Subscription not found", null);
-  const defaultResumeOn = new Date();
-  defaultResumeOn.setDate(defaultResumeOn.getDate() + 28);
+  const defaultResumeOn = addCalendarDaysInTimeZone(
+    new Date(),
+    28,
+    SUBSCRIPTION_TIME_ZONE,
+  );
   return executeSubscriptionConcurrencyGuard({
     customerId: String(subscription.customer),
     subscriptionId,
@@ -417,7 +425,10 @@ async function AdminPauseSubscription({
       PauseSubscription({
         customerId: String(subscription.customer),
         subscriptionId,
-        resumeOn: defaultResumeOn.toISOString().slice(0, 10),
+        resumeOn: formatDateKeyInTimeZone(
+          defaultResumeOn,
+          SUBSCRIPTION_TIME_ZONE,
+        ),
       }),
   });
 }
