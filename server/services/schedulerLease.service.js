@@ -96,10 +96,17 @@ async function withSchedulerLease(
   execute,
   {
     leaseMs = DEFAULT_LEASE_MS,
-    ownerId = INSTANCE_ID,
+    ownerId,
   } = {},
 ) {
-  const lease = await acquireSchedulerLease(key, { leaseMs, ownerId });
+  // A unique token per invocation prevents re-entry not only from another app
+  // instance, but also from the next cron tick in this same Node process.
+  const runOwnerId =
+    ownerId || `${INSTANCE_ID}:run:${crypto.randomUUID()}`;
+  const lease = await acquireSchedulerLease(key, {
+    leaseMs,
+    ownerId: runOwnerId,
+  });
   if (!lease) {
     return {
       acquired: false,
@@ -108,7 +115,10 @@ async function withSchedulerLease(
   }
 
   const renew = async () => {
-    const renewed = await renewSchedulerLease(key, { leaseMs, ownerId });
+    const renewed = await renewSchedulerLease(key, {
+      leaseMs,
+      ownerId: runOwnerId,
+    });
     if (!renewed) {
       const error = new Error(
         `Scheduler lease "${key}" was lost while the job was running`,
@@ -124,7 +134,7 @@ async function withSchedulerLease(
       result: await execute({ renew, lease }),
     };
   } finally {
-    await releaseSchedulerLease(key, { ownerId }).catch(() => {});
+    await releaseSchedulerLease(key, { ownerId: runOwnerId }).catch(() => {});
   }
 }
 
