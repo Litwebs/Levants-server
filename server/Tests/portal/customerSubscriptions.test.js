@@ -2603,7 +2603,7 @@ describe("Portal Subscriptions", () => {
     expect(invalidPageSize.body.message).toMatch(/pageSize/i);
   });
 
-  it("loads upcoming dates for the subscription list with one delivery query", async () => {
+  it("loads only the earliest upcoming date per subscription with one aggregate query", async () => {
     const first = await createBasicSubscription();
     const second = await createBasicSubscription();
 
@@ -2619,12 +2619,22 @@ describe("Portal Subscriptions", () => {
     secondUpcoming.setDate(secondUpcoming.getDate() + 2);
     secondUpcoming.setHours(9, 0, 0, 0);
 
+    const firstLater = new Date();
+    firstLater.setDate(firstLater.getDate() + 8);
+    firstLater.setHours(9, 0, 0, 0);
+
     await SubscriptionDelivery.create([
       {
         subscription: first._id,
         customer: customer._id,
         scheduledDate: firstUpcoming,
         status: "scheduled",
+      },
+      {
+        subscription: first._id,
+        customer: customer._id,
+        scheduledDate: firstLater,
+        status: "generated",
       },
       {
         subscription: second._id,
@@ -2634,17 +2644,23 @@ describe("Portal Subscriptions", () => {
       },
     ]);
 
-    const findSpy = jest.spyOn(SubscriptionDelivery, "find");
+    const aggregateSpy = jest.spyOn(SubscriptionDelivery, "aggregate");
 
     const listRes = await request(app)
       .get("/api/portal/subscriptions?page=1&pageSize=20")
       .set("Authorization", `Bearer ${accessToken}`);
 
-    const findCalls = findSpy.mock.calls.length;
-    findSpy.mockRestore();
+    const aggregateCalls = aggregateSpy.mock.calls.length;
+    const pipeline = aggregateSpy.mock.calls[0]?.[0] || [];
+    aggregateSpy.mockRestore();
 
     expect(listRes.status).toBe(200);
-    expect(findCalls).toBe(1);
+    expect(aggregateCalls).toBe(1);
+    expect(
+      pipeline.some(
+        (stage) => stage?.$group?.scheduledDate?.$min === "$scheduledDate",
+      ),
+    ).toBe(true);
 
     const firstListed = listRes.body.data.subscriptions.find(
       (subscription) => subscription._id === first._id.toString(),

@@ -54,6 +54,27 @@ async function ensureSubscriptionDeliveryUniqueIndex() {
   );
 }
 
+async function ensureSubscriptionDeliveryLookupIndex() {
+  const collection =
+    mongoose.connection?.db?.collection("subscriptiondeliveries");
+  if (!collection) return;
+
+  const indexes = await collectionIndexesOrEmpty(collection);
+  const matching = indexes.find(
+    (index) =>
+      index?.key?.subscription === 1 &&
+      index?.key?.status === 1 &&
+      index?.key?.scheduledDate === 1 &&
+      Object.keys(index.key || {}).length === 3,
+  );
+  if (matching) return;
+
+  await collection.createIndex(
+    { subscription: 1, status: 1, scheduledDate: 1 },
+    { name: "subscription_1_status_1_scheduledDate_1" },
+  );
+}
+
 async function ensureSubscriptionOrderInvoiceUniqueIndex() {
   const collection = mongoose.connection?.db?.collection("orders");
   if (!collection) return;
@@ -213,6 +234,7 @@ const connectDb = async () => {
 
     await ensureDiscountCodeIndex();
     await ensureSubscriptionDeliveryUniqueIndex();
+    await ensureSubscriptionDeliveryLookupIndex();
     await ensureSubscriptionOrderInvoiceUniqueIndex();
     // Production disables Mongoose autoIndex, so financial/idempotency indexes
     // must be enforced explicitly before the app starts accepting traffic.

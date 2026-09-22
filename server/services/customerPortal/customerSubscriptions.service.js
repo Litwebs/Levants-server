@@ -2234,18 +2234,25 @@ async function ListSubscriptions({
   const upcomingBySubscription = new Map();
 
   if (subscriptionIds.length > 0) {
-    const upcomingDeliveries = await SubscriptionDelivery.find({
-      subscription: { $in: subscriptionIds },
-      status: { $in: ["scheduled", "generated"] },
-      scheduledDate: { $gte: startOfDay(new Date()) },
-    })
-      .select("subscription scheduledDate")
-      .sort({ scheduledDate: 1 })
-      .lean();
+    const upcomingDeliveries = await SubscriptionDelivery.aggregate([
+      {
+        $match: {
+          subscription: { $in: subscriptionIds },
+          status: { $in: ["scheduled", "generated"] },
+          scheduledDate: { $gte: startOfDay(new Date()) },
+        },
+      },
+      {
+        $group: {
+          _id: "$subscription",
+          scheduledDate: { $min: "$scheduledDate" },
+        },
+      },
+    ]);
 
     for (const delivery of upcomingDeliveries) {
-      const key = String(delivery.subscription);
-      if (!upcomingBySubscription.has(key) && delivery.scheduledDate) {
+      const key = String(delivery._id);
+      if (delivery.scheduledDate) {
         upcomingBySubscription.set(key, new Date(delivery.scheduledDate));
       }
     }
