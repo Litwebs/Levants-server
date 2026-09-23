@@ -317,6 +317,59 @@ describe("Portal Subscriptions", () => {
     ).toBe("Leave inside the porch");
   });
 
+  it("does not duplicate legacy UTC-midnight slots that are the same London delivery day", async () => {
+    const sub = await createBasicSubscription();
+    await SubscriptionDelivery.deleteMany({ subscription: sub._id });
+
+    // Simulate slots created on a UTC-hosted server before business-timezone
+    // normalization. During BST these are 01:00 local, but still the intended
+    // Sunday delivery dates.
+    const legacySlots = [
+      new Date("2026-07-05T00:00:00.000Z"),
+      new Date("2026-07-12T00:00:00.000Z"),
+    ];
+    await SubscriptionDelivery.insertMany(
+      legacySlots.map((scheduledDate) => ({
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate,
+        status: "scheduled",
+      })),
+    );
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: legacySlots[0],
+      preferredDeliveryDay: 0,
+      preferredDeliveryDays: [0],
+      frequency: "weekly",
+    });
+
+    const refreshed = await Subscription.findById(sub._id);
+    await subscriptionService.scheduleUpcomingDeliveries(refreshed);
+
+    const slots = await SubscriptionDelivery.find({
+      subscription: sub._id,
+      status: "scheduled",
+    })
+      .sort({ scheduledDate: 1 })
+      .lean();
+
+    const dateKeys = slots.map((slot) =>
+      formatDateKeyInTimeZone(
+        slot.scheduledDate,
+        SUBSCRIPTION_TIME_ZONE,
+      ),
+    );
+
+    expect(slots).toHaveLength(3);
+    expect(new Set(dateKeys).size).toBe(3);
+    expect(dateKeys).toEqual([
+      "2026-07-05",
+      "2026-07-12",
+      "2026-07-19",
+    ]);
+  });
+
+
   it("sets next delivery to next-week occurrence when selected day is today", async () => {
     const todayWeekday = weekdayInTimeZone(
       new Date(),

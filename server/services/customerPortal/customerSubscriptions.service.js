@@ -441,15 +441,22 @@ async function scheduleUpcomingDeliveries(subscription, session) {
     .select("scheduledDate")
     .session(session || null)
     .lean();
-  const futureDates = new Set(
-    existingFutureSlots.map((slot) => new Date(slot.scheduledDate).getTime()),
+  // Legacy slots may have been stored at host-local midnight. During BST that
+  // can differ by one hour from canonical London midnight while still
+  // representing the same customer delivery day. De-duplicate by business
+  // calendar date, not raw timestamp, so deployment cannot create duplicate
+  // deliveries for existing subscriptions.
+  const futureDateKeys = new Set(
+    existingFutureSlots
+      .map((slot) => deliveryDateKey(slot.scheduledDate))
+      .filter(Boolean),
   );
 
   guard = 0;
-  while (futureDates.size < 3 && guard < 400) {
+  while (futureDateKeys.size < 3 && guard < 400) {
     const scheduledDate = new Date(nextDate);
-    const timestamp = scheduledDate.getTime();
-    if (!futureDates.has(timestamp)) {
+    const dateKey = deliveryDateKey(scheduledDate);
+    if (dateKey && !futureDateKeys.has(dateKey)) {
       await SubscriptionDelivery.updateOne(
         { subscription: subscription._id, scheduledDate },
         {
@@ -460,7 +467,7 @@ async function scheduleUpcomingDeliveries(subscription, session) {
         },
         { upsert: true, session: session || undefined },
       );
-      futureDates.add(timestamp);
+      futureDateKeys.add(dateKey);
     }
     nextDate = addFrequencyDays(nextDate, subscription.frequency, deliveryDays);
     guard += 1;
