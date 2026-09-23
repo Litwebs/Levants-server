@@ -137,20 +137,35 @@ async function claimSubscriptionMutationLock({
     };
   }
 
+  const versionCondition =
+    currentVersion === 0
+      ? {
+          $or: [
+            { customerVersion: 0 },
+            { customerVersion: { $exists: false } },
+          ],
+        }
+      : { customerVersion: currentVersion };
+
   const claimed = await Subscription.findOneAndUpdate(
     {
       _id: subscriptionId,
       customer: customerId,
-      customerVersion: currentVersion,
-      $or: [
-        { customerMutationLock: null },
-        { customerMutationLock: { $exists: false } },
-        { "customerMutationLock.lockedAt": { $lte: staleBefore } },
-        { "customerMutationLock.operationId": lockOperationId },
+      $and: [
+        versionCondition,
+        {
+          $or: [
+            { customerMutationLock: null },
+            { customerMutationLock: { $exists: false } },
+            { "customerMutationLock.lockedAt": { $lte: staleBefore } },
+            { "customerMutationLock.operationId": lockOperationId },
+          ],
+        },
       ],
     },
     {
       $set: {
+        ...(currentVersion === 0 ? { customerVersion: 0 } : {}),
         customerMutationLock: {
           operationId: lockOperationId,
           lockedAt: now,

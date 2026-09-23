@@ -2270,6 +2270,7 @@ async function ListSubscriptions({
 
     return {
       ...subscription,
+      customerVersion: Number(subscription.customerVersion || 0),
       preferredDeliveryDaysLabel,
       upcomingDeliveryDate: upcomingDeliveryDate
         ? upcomingDeliveryDate.toISOString()
@@ -2313,6 +2314,7 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
   return Response(true, null, {
     subscription: {
       ...enriched,
+      customerVersion: Number(enriched.customerVersion || 0),
       upcomingDeliveryDate: upcomingDeliveryDate
         ? upcomingDeliveryDate.toISOString()
         : null,

@@ -4591,6 +4591,63 @@ describe("Portal Subscriptions", () => {
   });
 
 
+  it("automatically upgrades a legacy subscription with no customerVersion", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(createRes.status).toBe(201);
+    const subscriptionId = createRes.body.data.subscription._id;
+
+    // Simulate a subscription created before customerVersion was introduced.
+    await Subscription.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(subscriptionId) },
+      { $unset: { customerVersion: "" } },
+    );
+
+    const detail = await request(app)
+      .get(`/api/portal/subscriptions/${subscriptionId}`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.subscription.customerVersion).toBe(0);
+
+    const list = await request(app)
+      .get("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(list.status).toBe(200);
+    const listed = list.body.data.subscriptions.find(
+      (subscription) => subscription._id === subscriptionId,
+    );
+    expect(listed.customerVersion).toBe(0);
+
+    const update = await request(app)
+      .patch(`/api/portal/subscriptions/${subscriptionId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: 0,
+        notes: "Legacy subscription upgraded safely",
+      });
+
+    expect(update.status).toBe(200);
+    expect(update.body.data.subscription.customerVersion).toBe(1);
+
+    const stored = await Subscription.collection.findOne({
+      _id: new mongoose.Types.ObjectId(subscriptionId),
+    });
+    expect(stored.customerVersion).toBe(1);
+    expect(stored.notes).toBe("Legacy subscription upgraded safely");
+  });
+
+
   it("rejects stale subscription edits instead of overwriting a newer version", async () => {
     const createRes = await request(app)
       .post("/api/portal/subscriptions")
