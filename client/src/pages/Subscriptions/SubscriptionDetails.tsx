@@ -431,18 +431,28 @@ export default function SubscriptionDetailsPage() {
         notes.trim() !== String(subscription.notes || "").trim();
 
       if (hasSettingsChanges) {
-        next = await updateSubscription(subscription._id, {
-          frequency,
-          preferredDeliveryDay: Number(preferredDeliveryDay),
-          notes: notes.trim() || null,
-        });
+        next = await updateSubscription(
+          subscription._id,
+          {
+            frequency,
+            preferredDeliveryDay: Number(preferredDeliveryDay),
+            notes: notes.trim() || null,
+          },
+          Number(subscription.customerVersion || 0),
+        );
       }
 
       if (statusDraft !== next.status) {
         if (statusDraft === "paused" && next.status === "active") {
-          next = await pauseSubscription(next._id);
+          next = await pauseSubscription(
+            next._id,
+            Number(next.customerVersion || 0),
+          );
         } else if (statusDraft === "active" && next.status === "paused") {
-          next = await resumeSubscription(next._id);
+          next = await resumeSubscription(
+            next._id,
+            Number(next.customerVersion || 0),
+          );
         }
       }
 
@@ -478,6 +488,7 @@ export default function SubscriptionDetailsPage() {
       const next = await cancelSubscription(
         subscription._id,
         cancelModalReason.trim() || undefined,
+        Number(subscription.customerVersion || 0),
       );
       applySubscriptionPatch(next);
       setCancelModalReason("");

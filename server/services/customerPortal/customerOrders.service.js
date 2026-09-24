@@ -4,7 +4,12 @@ const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
+const { geocodeAddress } = require("../../Integration/google.geocode");
+const logger = require("../../utils/logger.util");
 const { Response } = require("../../utils/response.util");
+const {
+  computeSubscriptionCutoffDate,
+} = require("../../utils/subscriptionCutoff.util");
 
 const ALLOWED_CANCEL_STATUSES = ["pending", "unpaid"];
 const DELIVERY_STATUS_FILTERS = new Set([
@@ -21,18 +26,6 @@ const RECEIPT_ELIGIBLE_STATUSES = new Set([
   "refunded",
 ]);
 const DELIVERY_CHANGE_ELIGIBLE_STATUSES = new Set(["paid", "partially_paid"]);
-
-function computeCutoffDate(deliveryDate, settings) {
-  const cutoffAt = new Date(deliveryDate);
-  cutoffAt.setDate(
-    cutoffAt.getDate() - (Number(settings?.cutoffDaysBefore) || 0),
-  );
-  const [hours, minutes] = String(settings?.cutoffTime || "22:00")
-    .split(":")
-    .map(Number);
-  cutoffAt.setHours(hours || 0, minutes || 0, 0, 0);
-  return cutoffAt;
-}
 
 /**
  * List orders for a customer.
@@ -99,7 +92,7 @@ async function GetOrder({ customerId, orderId } = {}) {
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const cutoffAt = order.deliveryDate
-    ? computeCutoffDate(order.deliveryDate, settings)
+    ? computeSubscriptionCutoffDate(order.deliveryDate, settings)
     : null;
   const deliveryChangeAllowed =
     DELIVERY_CHANGE_ELIGIBLE_STATUSES.has(order.status) &&
@@ -150,7 +143,7 @@ async function UpdateOrderDelivery({
   }
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
-  const currentCutoffAt = computeCutoffDate(order.deliveryDate, settings);
+  const currentCutoffAt = computeSubscriptionCutoffDate(order.deliveryDate, settings);
   if (Date.now() >= currentCutoffAt.getTime()) {
     return Response(false, "The cut-off for this order has passed", null);
   }
@@ -171,8 +164,16 @@ async function UpdateOrderDelivery({
     if (geo && typeof geo.lat === "number" && typeof geo.lng === "number") {
       order.location = geo;
     }
-  } catch {
-    // Non-fatal: keep the order's existing location coordinates
+  } catch (error) {
+    // Geocoding must not block a valid address change, but it must be visible
+    // operationally so stale coordinates can be investigated/reconciled.
+    logger.warn(
+      `[PortalOrders] Geocoding failed while updating delivery for order ${order.orderId}; preserving existing coordinates`,
+      {
+        orderId: String(order._id),
+        error: error?.message || String(error),
+      },
+    );
   }
 
   order.deliveryAddress = {

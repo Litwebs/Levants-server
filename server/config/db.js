@@ -54,6 +54,27 @@ async function ensureSubscriptionDeliveryUniqueIndex() {
   );
 }
 
+async function ensureSubscriptionDeliveryLookupIndex() {
+  const collection =
+    mongoose.connection?.db?.collection("subscriptiondeliveries");
+  if (!collection) return;
+
+  const indexes = await collectionIndexesOrEmpty(collection);
+  const matching = indexes.find(
+    (index) =>
+      index?.key?.subscription === 1 &&
+      index?.key?.status === 1 &&
+      index?.key?.scheduledDate === 1 &&
+      Object.keys(index.key || {}).length === 3,
+  );
+  if (matching) return;
+
+  await collection.createIndex(
+    { subscription: 1, status: 1, scheduledDate: 1 },
+    { name: "subscription_1_status_1_scheduledDate_1" },
+  );
+}
+
 async function ensureSubscriptionOrderInvoiceUniqueIndex() {
   const collection = mongoose.connection?.db?.collection("orders");
   if (!collection) return;
@@ -100,6 +121,104 @@ async function ensureSubscriptionOrderInvoiceUniqueIndex() {
   );
 }
 
+
+async function collectionIndexesOrEmpty(collection) {
+  try {
+    return await collection.indexes();
+  } catch (error) {
+    if (error?.code === 26 || error?.codeName === "NamespaceNotFound") {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function ensureSubscriptionMutationOperationIndex() {
+  const collection =
+    mongoose.connection?.db?.collection("subscriptionmutations");
+  if (!collection) return;
+
+  const duplicate = await collection
+    .aggregate([
+      { $match: { operationId: { $type: "string" } } },
+      {
+        $group: {
+          _id: { customer: "$customer", operationId: "$operationId" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+      { $limit: 1 },
+    ])
+    .next();
+  if (duplicate) {
+    throw new Error(
+      "Cannot enforce subscription mutation idempotency: duplicate customer/operation IDs exist",
+    );
+  }
+
+  const indexes = await collectionIndexesOrEmpty(collection);
+  const matching = indexes.find(
+    (index) =>
+      index?.key?.customer === 1 &&
+      index?.key?.operationId === 1 &&
+      Object.keys(index.key || {}).length === 2,
+  );
+  if (matching?.unique) return;
+  if (matching) await collection.dropIndex(matching.name);
+
+  await collection.createIndex(
+    { customer: 1, operationId: 1 },
+    { unique: true, name: "customer_1_operationId_1" },
+  );
+}
+
+async function ensureStoreCreditIdempotencyIndex() {
+  const collection =
+    mongoose.connection?.db?.collection("storecredittransactions");
+  if (!collection) return;
+
+  const duplicate = await collection
+    .aggregate([
+      { $match: { idempotencyKey: { $type: "string" } } },
+      {
+        $group: {
+          _id: { customer: "$customer", idempotencyKey: "$idempotencyKey" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+      { $limit: 1 },
+    ])
+    .next();
+  if (duplicate) {
+    throw new Error(
+      "Cannot enforce store-credit idempotency: duplicate customer/idempotency keys exist",
+    );
+  }
+
+  const indexes = await collectionIndexesOrEmpty(collection);
+  const matching = indexes.find(
+    (index) =>
+      index?.key?.customer === 1 &&
+      index?.key?.idempotencyKey === 1 &&
+      Object.keys(index.key || {}).length === 2,
+  );
+  const hasExpectedPartialFilter =
+    matching?.partialFilterExpression?.idempotencyKey?.$type === "string";
+  if (matching?.unique && hasExpectedPartialFilter) return;
+  if (matching) await collection.dropIndex(matching.name);
+
+  await collection.createIndex(
+    { customer: 1, idempotencyKey: 1 },
+    {
+      unique: true,
+      name: "customer_1_idempotencyKey_1",
+      partialFilterExpression: { idempotencyKey: { $type: "string" } },
+    },
+  );
+}
+
 mongoose.set("strictQuery", true);
 
 const connectDb = async () => {
@@ -115,7 +234,12 @@ const connectDb = async () => {
 
     await ensureDiscountCodeIndex();
     await ensureSubscriptionDeliveryUniqueIndex();
+    await ensureSubscriptionDeliveryLookupIndex();
     await ensureSubscriptionOrderInvoiceUniqueIndex();
+    // Production disables Mongoose autoIndex, so financial/idempotency indexes
+    // must be enforced explicitly before the app starts accepting traffic.
+    await ensureSubscriptionMutationOperationIndex();
+    await ensureStoreCreditIdempotencyIndex();
 
     if (env !== "test") {
       logger.db("MongoDB connected");

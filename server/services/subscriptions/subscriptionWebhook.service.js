@@ -17,6 +17,15 @@ const CustomerNotification = require("../../models/customerNotification.model");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
 const {
+  addCalendarMonthPreservingWeekdayOccurrence,
+} = require("../../utils/subscriptionCadence.util");
+const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
+} = require("../../utils/subscriptionCutoff.util");
+const {
   sendSubscriptionUpdateEmail,
 } = require("../customerPortal/subscriptionEmailNotifications.service");
 
@@ -113,25 +122,35 @@ const SUBSCRIPTION_DELIVERY_FEE = 1;
 const BILLING_WINDOW_DAYS = {
   weekly: 7,
   every_two_weeks: 14,
-  monthly: 30,
 };
 
 function startOfDay(value) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date;
+  return startOfDayInTimeZone(value, SUBSCRIPTION_TIME_ZONE);
 }
 
 function endOfDay(value) {
-  const date = startOfDay(value);
-  date.setDate(date.getDate() + 1);
-  return date;
+  return addCalendarDaysInTimeZone(
+    startOfDay(value),
+    1,
+    SUBSCRIPTION_TIME_ZONE,
+  );
 }
 
-function addBillingWindowDays(date, frequency) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + (BILLING_WINDOW_DAYS[frequency] || 7));
-  return next;
+function addBillingWindowDays(date, frequency, preferredDeliveryDay) {
+  if (frequency === "monthly") {
+    return addCalendarMonthPreservingWeekdayOccurrence(
+      date,
+      preferredDeliveryDay ??
+        weekdayInTimeZone(date, SUBSCRIPTION_TIME_ZONE),
+      SUBSCRIPTION_TIME_ZONE,
+    );
+  }
+
+  return addCalendarDaysInTimeZone(
+    date,
+    BILLING_WINDOW_DAYS[frequency] || 7,
+    SUBSCRIPTION_TIME_ZONE,
+  );
 }
 
 function isPaymentFailurePause(subscription) {
@@ -144,7 +163,10 @@ function isPaymentFailurePause(subscription) {
 }
 
 function resolveOrderItemsForDelivery(subscription, deliveryDate) {
-  const deliveryWeekday = new Date(deliveryDate).getDay();
+  const deliveryWeekday = weekdayInTimeZone(
+    deliveryDate,
+    SUBSCRIPTION_TIME_ZONE,
+  );
   const dayPlan = Array.isArray(subscription.deliveryDayPlans)
     ? subscription.deliveryDayPlans.find(
         (plan) => Number(plan?.day) === Number(deliveryWeekday),
@@ -215,6 +237,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
   const billingWindowEnd = addBillingWindowDays(
     billingWindowStart,
     subscription.frequency,
+    subscription.preferredDeliveryDay,
   );
 
   const deliverySlots = await SubscriptionDelivery.find({
@@ -527,7 +550,9 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       message:
         createdOrders.length > 1
           ? `Your subscription orders have been created for ${createdOrders.length} delivery days in this billing cycle.`
-          : `Your subscription order #${createdOrders[0].orderId} has been created for ${createdOrders[0].deliveryDate.toLocaleDateString("en-GB")}.`,
+          : `Your subscription order #${createdOrders[0].orderId} has been created for ${createdOrders[0].deliveryDate.toLocaleDateString("en-GB", {
+            timeZone: SUBSCRIPTION_TIME_ZONE,
+          })}.`,
       relatedOrder: createdOrders[0]?._id,
       relatedSubscription: subscription._id,
     });

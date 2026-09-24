@@ -10,6 +10,19 @@ const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
 const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
+const {
+  addCalendarMonthPreservingWeekdayOccurrence,
+} = require("../../utils/subscriptionCadence.util");
+const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
+  computeSubscriptionCutoffDate,
+  endOfDayInTimeZone,
+  formatDateKeyInTimeZone,
+  getNextWeekdayDateInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
+} = require("../../utils/subscriptionCutoff.util");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
 const storeCreditService = require("../storeCredit.service");
 const {
@@ -25,7 +38,6 @@ const STRIPE_INTERVALS = {
 const FREQUENCY_DAYS = {
   weekly: 7,
   every_two_weeks: 14,
-  monthly: 30,
 };
 
 const WEEKDAY_NAMES = [
@@ -303,46 +315,59 @@ function calculateNextDeliveryDate(
   options = {},
 ) {
   const allowSameDay = Boolean(options?.allowSameDay);
-  const start = new Date(from);
-  start.setHours(0, 0, 0, 0);
+  const timeZone = options?.timeZone || SUBSCRIPTION_TIME_ZONE;
+  const start = startOfDayInTimeZone(from, timeZone);
+  if (!start) {
+    throw new TypeError("A valid delivery reference date is required");
+  }
 
   const deliveryDays = resolveDeliveryDays({
     frequency,
     preferredDeliveryDay: preferredDay,
     preferredDeliveryDays: preferredDays,
   }).days;
-  if (!deliveryDays.length) {
-    return new Date(start);
-  }
+  if (!deliveryDays.length) return new Date(start);
 
-  const currentDay = start.getDay();
+  const currentDay = weekdayInTimeZone(start, timeZone);
   let daysUntilPreferred = 7;
   for (const day of deliveryDays) {
     let distance = (day - currentDay + 7) % 7;
-    // By default, same-day selection rolls to next week.
-    // For first-delivery selection we can allow same-day when cut-off is open.
     if (distance === 0 && !allowSameDay) distance = 7;
     if (distance < daysUntilPreferred) daysUntilPreferred = distance;
   }
 
-  const next = new Date(start);
-  next.setDate(start.getDate() + daysUntilPreferred);
-  return next;
+  return addCalendarDaysInTimeZone(start, daysUntilPreferred, timeZone);
 }
 
-function addFrequencyDays(date, frequency, preferredDays = []) {
+function addFrequencyDays(
+  date,
+  frequency,
+  preferredDays = [],
+  timeZone = SUBSCRIPTION_TIME_ZONE,
+) {
   if (frequency === "weekly") {
     return calculateNextDeliveryDate(
       preferredDays[0] ?? 2,
       frequency,
       date,
       preferredDays,
+      { timeZone },
     );
   }
 
-  const d = new Date(date);
-  d.setDate(d.getDate() + (FREQUENCY_DAYS[frequency] || 7));
-  return d;
+  if (frequency === "monthly") {
+    return addCalendarMonthPreservingWeekdayOccurrence(
+      date,
+      preferredDays[0] ?? weekdayInTimeZone(date, timeZone),
+      timeZone,
+    );
+  }
+
+  return addCalendarDaysInTimeZone(
+    date,
+    FREQUENCY_DAYS[frequency] || 7,
+    timeZone,
+  );
 }
 
 function calculateFirstSubscriptionDeliveryDate({
@@ -370,8 +395,11 @@ function calculateFirstSubscriptionDeliveryDate({
       return candidate;
     }
 
-    searchFrom = new Date(candidate);
-    searchFrom.setDate(searchFrom.getDate() + 1);
+    searchFrom = addCalendarDaysInTimeZone(
+      candidate,
+      1,
+      SUBSCRIPTION_TIME_ZONE,
+    );
   }
 
   return calculateNextDeliveryDate(
@@ -413,15 +441,22 @@ async function scheduleUpcomingDeliveries(subscription, session) {
     .select("scheduledDate")
     .session(session || null)
     .lean();
-  const futureDates = new Set(
-    existingFutureSlots.map((slot) => new Date(slot.scheduledDate).getTime()),
+  // Legacy slots may have been stored at host-local midnight. During BST that
+  // can differ by one hour from canonical London midnight while still
+  // representing the same customer delivery day. De-duplicate by business
+  // calendar date, not raw timestamp, so deployment cannot create duplicate
+  // deliveries for existing subscriptions.
+  const futureDateKeys = new Set(
+    existingFutureSlots
+      .map((slot) => deliveryDateKey(slot.scheduledDate))
+      .filter(Boolean),
   );
 
   guard = 0;
-  while (futureDates.size < 3 && guard < 400) {
+  while (futureDateKeys.size < 3 && guard < 400) {
     const scheduledDate = new Date(nextDate);
-    const timestamp = scheduledDate.getTime();
-    if (!futureDates.has(timestamp)) {
+    const dateKey = deliveryDateKey(scheduledDate);
+    if (dateKey && !futureDateKeys.has(dateKey)) {
       await SubscriptionDelivery.updateOne(
         { subscription: subscription._id, scheduledDate },
         {
@@ -432,7 +467,7 @@ async function scheduleUpcomingDeliveries(subscription, session) {
         },
         { upsert: true, session: session || undefined },
       );
-      futureDates.add(timestamp);
+      futureDateKeys.add(dateKey);
     }
     nextDate = addFrequencyDays(nextDate, subscription.frequency, deliveryDays);
     guard += 1;
@@ -500,25 +535,11 @@ async function syncStripeSubscriptionPrice(subscription, itemsOverride) {
 
 // ── Cut-off helpers ─────────────────────────────────────────────────────────
 
-function parseCutoffTime(timeStr) {
-  const [h, m] = String(timeStr || "22:00")
-    .split(":")
-    .map((n) => Number(n));
-  return { h: Number.isFinite(h) ? h : 22, m: Number.isFinite(m) ? m : 0 };
-}
-
 /**
- * The modification cut-off for a given delivery date:
- * deliveryDate − cutoffDaysBefore days, at cutoffTime.
+ * The modification cut-off for a given delivery date, resolved as an exact
+ * instant in the business delivery timezone.
  */
-function computeCutoffDate(nextDeliveryDate, settings) {
-  if (!nextDeliveryDate) return null;
-  const cutoff = new Date(nextDeliveryDate);
-  cutoff.setDate(cutoff.getDate() - (Number(settings?.cutoffDaysBefore) || 0));
-  const { h, m } = parseCutoffTime(settings?.cutoffTime);
-  cutoff.setHours(h, m, 0, 0);
-  return cutoff;
-}
+const computeCutoffDate = computeSubscriptionCutoffDate;
 
 async function getCutoffStatus(subscription) {
   const settings = await subscriptionSettingsService.getOrCreateSettings();
@@ -527,19 +548,53 @@ async function getCutoffStatus(subscription) {
   return { settings, cutoffAt, isPastCutoff };
 }
 
+function buildDeliveryDayCutoffs(
+  subscription,
+  settings,
+  referenceDate = new Date(),
+) {
+  const reference = new Date(referenceDate);
+  const referenceMs = reference.getTime();
+
+  return getEffectiveDeliveryDays(subscription).map((day) => {
+    const deliveryDate = getNextWeekdayDateInTimeZone(
+      day,
+      reference,
+      SUBSCRIPTION_TIME_ZONE,
+    );
+    const cutoffAt = computeCutoffDate(deliveryDate, settings);
+    const effectiveFrom =
+      subscription?.frequency === "weekly" && deliveryDate
+        ? addCalendarDaysInTimeZone(
+            deliveryDate,
+            7,
+            SUBSCRIPTION_TIME_ZONE,
+          )
+        : null;
+
+    return {
+      day,
+      deliveryDate,
+      cutoffAt,
+      effectiveFrom,
+      isPastCutoff: cutoffAt
+        ? referenceMs >= cutoffAt.getTime()
+        : false,
+    };
+  });
+}
+
 function startOfDay(value) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date;
+  return startOfDayInTimeZone(value, SUBSCRIPTION_TIME_ZONE);
 }
 
 function deliveryDateKey(value) {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return formatDateKeyInTimeZone(value, SUBSCRIPTION_TIME_ZONE);
 }
 
 function formatDateLabel(value) {
   return new Date(value).toLocaleDateString("en-GB", {
+    timeZone: SUBSCRIPTION_TIME_ZONE,
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -555,16 +610,21 @@ function parsePauseResumeDate(resumeOn) {
   }
 
   const requested = startOfDay(resumeOn);
-  if (Number.isNaN(requested.getTime())) {
+  if (!requested || Number.isNaN(requested.getTime())) {
     return { ok: false, message: "Please choose a valid resume date." };
   }
 
   const today = startOfDay(new Date());
-  const minResume = new Date(today);
-  minResume.setDate(minResume.getDate() + 1);
-
-  const maxResume = new Date(today);
-  maxResume.setDate(maxResume.getDate() + 28);
+  const minResume = addCalendarDaysInTimeZone(
+    today,
+    1,
+    SUBSCRIPTION_TIME_ZONE,
+  );
+  const maxResume = addCalendarDaysInTimeZone(
+    today,
+    28,
+    SUBSCRIPTION_TIME_ZONE,
+  );
 
   if (requested < minResume) {
     return {
@@ -625,8 +685,11 @@ async function getResumeNextDeliveryDate(
     if (!cutoffAt || referenceDate.getTime() < cutoffAt.getTime()) {
       return candidate;
     }
-    searchFrom = new Date(candidate);
-    searchFrom.setDate(searchFrom.getDate() + 1);
+    searchFrom = addCalendarDaysInTimeZone(
+      candidate,
+      1,
+      SUBSCRIPTION_TIME_ZONE,
+    );
   }
 
   throw new Error(
@@ -641,8 +704,11 @@ async function getResumeRequiredMinor(subscription, nextDeliveryDate) {
   // essential for multi-day subscriptions where each delivery can have a
   // different cut-off while billing remains consolidated.
   const deliveryStart = startOfDay(nextDeliveryDate);
-  const deliveryEnd = new Date(deliveryStart);
-  deliveryEnd.setDate(deliveryEnd.getDate() + 1);
+  const deliveryEnd = addCalendarDaysInTimeZone(
+    deliveryStart,
+    1,
+    SUBSCRIPTION_TIME_ZONE,
+  );
   const order = await Order.findOne({
     subscription: subscription._id,
     deliveryDate: { $gte: deliveryStart, $lt: deliveryEnd },
@@ -847,9 +913,13 @@ async function FinalizeScheduledCancellations({
 
   for (const candidate of candidates) {
     try {
-      const eligibleAt = new Date(candidate.cancellationEffectiveAfter);
-      eligibleAt.setHours(23, 59, 59, 999);
-      if (referenceDate.getTime() <= eligibleAt.getTime()) continue;
+      const eligibleAt = endOfDayInTimeZone(
+        candidate.cancellationEffectiveAfter,
+        SUBSCRIPTION_TIME_ZONE,
+      );
+      if (!eligibleAt || referenceDate.getTime() <= eligibleAt.getTime()) {
+        continue;
+      }
 
       // Cancel dependent slots first. If the subsequent conditional update
       // fails, the candidate remains eligible and the next run safely retries.
@@ -1160,7 +1230,11 @@ async function refundAcrossSubscriptionPayments(
  * refunded to the card (minor units). Any shortfall is the caller's
  * responsibility to handle (e.g. fall back to store credit).
  */
-async function refundSubscriptionToCard(subscription, amountMinor) {
+async function refundSubscriptionToCard(
+  subscription,
+  amountMinor,
+  operationId,
+) {
   if (!amountMinor || amountMinor <= 0) {
     return { refundedMinor: 0, stripeRefundId: null };
   }
@@ -1191,13 +1265,27 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
         },
       },
       {
-        idempotencyKey: `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
+        idempotencyKey: operationId
+          ? `subscription:${subscription._id}:mutation:${operationId}:refund:${lastPaidOrder._id}:${amountMinor}`
+          : `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
       },
     );
-    return { refundedMinor: amountMinor, stripeRefundId: refund.id };
+    return {
+      refundedMinor: amountMinor,
+      stripeRefundId: refund.id,
+      orderId: lastPaidOrder._id,
+      paymentIntentId: lastPaidOrder.stripePaymentIntentId,
+      currency: refund.currency || "gbp",
+    };
   } catch (err) {
     // Couldn't refund to card (no refundable balance, etc.) — caller falls back.
-    return { refundedMinor: 0, stripeRefundId: null, error: err };
+    return {
+      refundedMinor: 0,
+      stripeRefundId: null,
+      orderId: lastPaidOrder._id,
+      paymentIntentId: lastPaidOrder.stripePaymentIntentId,
+      error: err,
+    };
   }
 }
 
@@ -1211,15 +1299,24 @@ async function refundSubscriptionToCard(subscription, amountMinor) {
 async function updateUpcomingSubscriptionOrder(
   subscription,
   nextItems,
-  { chargedMinor = 0, refundedMinor = 0, paymentIntent = null } = {},
+  {
+    chargedMinor = 0,
+    refundedMinor = 0,
+    paymentIntent = null,
+    operationId = null,
+    session = null,
+    orderId = null,
+    refundRecord = null,
+  } = {},
 ) {
-  const order = await Order.findOne({
+  let orderQuery = Order.findOne({
     subscription: subscription._id,
-    status: { $in: ["paid", "partially_refunded"] },
+    status: { $in: ["paid", "partially_refunded", "refunded"] },
     deliveryStatus: "ordered",
-  })
-    .sort({ deliveryDate: -1, createdAt: -1 })
-    .exec();
+    ...(orderId ? { _id: orderId } : {}),
+  }).sort({ deliveryDate: -1, createdAt: -1 });
+  if (session) orderQuery = orderQuery.session(session);
+  const order = await orderQuery.exec();
 
   if (!order) return false;
 
@@ -1238,23 +1335,58 @@ async function updateUpcomingSubscriptionOrder(
   order.total = newTotal + (order.deliveryFee || 0);
 
   // Money on the order is in pounds; settlement deltas are in pence.
-  const deltaPounds = (chargedMinor - refundedMinor) / 100;
+  const allocationKey = operationId
+    ? `subscription:${subscription._id}:mutation:${operationId}:order:${order._id}`
+    : `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`;
+  const chargeAlreadyApplied =
+    chargedMinor > 0 &&
+    (order.paymentAllocations || []).some(
+      (allocation) => allocation.idempotencyKey === allocationKey,
+    );
+  const effectiveChargedMinor = chargeAlreadyApplied ? 0 : chargedMinor;
+  const deltaPounds = (effectiveChargedMinor - refundedMinor) / 100;
   order.amountPaid = Math.max(0, (order.amountPaid || 0) + deltaPounds);
 
-  if (chargedMinor > 0 && paymentIntent?.id) {
+  if (chargedMinor > 0 && paymentIntent?.id && !chargeAlreadyApplied) {
     order.paymentAllocations.push({
       paymentIntentId: paymentIntent.id,
       source: "modification",
       amountMinor: chargedMinor,
-      idempotencyKey: `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`,
+      idempotencyKey: allocationKey,
     });
+  }
+
+  if (refundRecord?.stripeRefundId) {
+    order.refunds = Array.isArray(order.refunds) ? order.refunds : [];
+    const exists = order.refunds.some(
+      (refund) => refund.stripeRefundId === refundRecord.stripeRefundId,
+    );
+    if (!exists) {
+      order.refunds.push({
+        stripeRefundId: refundRecord.stripeRefundId,
+        paymentIntentId:
+          refundRecord.paymentIntentId || order.stripePaymentIntentId,
+        currency: refundRecord.currency || order.currency || "GBP",
+        amountMinor: refundedMinor,
+        amount: refundedMinor / 100,
+        status: "succeeded",
+        refundedAt: new Date(),
+        createdAt: new Date(),
+        restock: false,
+      });
+    }
+    order.refund = {
+      ...(order.refund || {}),
+      stripeRefundId: refundRecord.stripeRefundId,
+      refundedAt: order.refund?.refundedAt || new Date(),
+    };
   }
 
   if (refundedMinor > 0) {
     order.status = "partially_refunded";
   }
 
-  await order.save();
+  await order.save(session ? { session } : undefined);
   return true;
 }
 
@@ -1268,7 +1400,12 @@ async function updateUpcomingSubscriptionOrderForDay(
   subscription,
   weekday,
   dayItems,
-  { chargedMinor = 0, refundedMinor = 0, paymentIntent = null } = {},
+  {
+    chargedMinor = 0,
+    refundedMinor = 0,
+    paymentIntent = null,
+    operationId = null,
+  } = {},
 ) {
   const orders = await Order.find({
     subscription: subscription._id,
@@ -1281,7 +1418,7 @@ async function updateUpcomingSubscriptionOrderForDay(
   const order = orders.find(
     (candidate) =>
       candidate.deliveryDate &&
-      new Date(candidate.deliveryDate).getDay() === Number(weekday),
+      weekdayInTimeZone(candidate.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(weekday),
   );
 
   if (!order) return false;
@@ -1300,15 +1437,24 @@ async function updateUpcomingSubscriptionOrderForDay(
   order.subtotal = newTotal;
   order.total = newTotal + (order.deliveryFee || 0);
 
-  const deltaPounds = (chargedMinor - refundedMinor) / 100;
+  const allocationKey = operationId
+    ? `subscription:${subscription._id}:mutation:${operationId}:order:${order._id}`
+    : `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`;
+  const chargeAlreadyApplied =
+    chargedMinor > 0 &&
+    (order.paymentAllocations || []).some(
+      (allocation) => allocation.idempotencyKey === allocationKey,
+    );
+  const effectiveChargedMinor = chargeAlreadyApplied ? 0 : chargedMinor;
+  const deltaPounds = (effectiveChargedMinor - refundedMinor) / 100;
   order.amountPaid = Math.max(0, (order.amountPaid || 0) + deltaPounds);
 
-  if (chargedMinor > 0 && paymentIntent?.id) {
+  if (chargedMinor > 0 && paymentIntent?.id && !chargeAlreadyApplied) {
     order.paymentAllocations.push({
       paymentIntentId: paymentIntent.id,
       source: "modification",
       amountMinor: chargedMinor,
-      idempotencyKey: `subscription:${subscription._id}:modify:${order._id}:${chargedMinor}`,
+      idempotencyKey: allocationKey,
     });
   }
 
@@ -1336,6 +1482,7 @@ async function applyItemChange(
   nextItems,
   actionLabel,
   refundMethod = "credit",
+  operationId,
 ) {
   const { isPastCutoff, settings } = await getCutoffStatus(subscription);
   const upcomingDeliveryDate = await getUpcomingDeliveryDate(subscription._id);
@@ -1382,6 +1529,7 @@ async function applyItemChange(
     const message = effectiveFrom
       ? `Cut-off has passed for your next delivery. This change will apply from ${effectiveFrom.toLocaleDateString(
           "en-GB",
+          { timeZone: SUBSCRIPTION_TIME_ZONE },
         )}.`
       : "Saved. This change will apply from your next delivery.";
     await sendSubscriptionUpdateEmail({
@@ -1407,6 +1555,9 @@ async function applyItemChange(
       customer,
       deltaMinor,
       `${actionLabel} – ${subscription.subscriptionNumber}`,
+      operationId
+        ? `subscription:${subscription._id}:mutation:${operationId}:charge`
+        : undefined,
     );
     if (!charge.ok) {
       return Response(false, charge.message, null);
@@ -1417,6 +1568,7 @@ async function applyItemChange(
     await updateUpcomingSubscriptionOrder(subscription, nextItems, {
       chargedMinor: deltaMinor,
       paymentIntent: charge.paymentIntent,
+      operationId,
     });
     const enriched = await enrichSubscriptionWithVariantImages(subscription);
     const message = `You've been charged ${formatMinor(deltaMinor)} for the added items on your upcoming delivery, and future invoices have been updated.`;
@@ -1439,9 +1591,6 @@ async function applyItemChange(
   if (deltaMinor < 0) {
     const owedMinor = Math.abs(deltaMinor);
 
-    // If the customer explicitly chose card refund, verify there is a paid order
-    // with a captured payment intent BEFORE we commit any changes. Failing early
-    // avoids the subscription being modified without any money being returned.
     if (refundMethod === "refund") {
       const hasPaidOrder = await Order.exists({
         subscription: subscription._id,
@@ -1457,42 +1606,106 @@ async function applyItemChange(
       }
     }
 
-    subscription.items = nextItems;
-    await subscription.save();
-    await syncStripeSubscriptionPrice(subscription);
-
-    let creditedMinor = 0;
     let refundedMinor = 0;
     let stripeRefundId = null;
+    let refundOrderId = null;
+    let refundPaymentIntentId = null;
+    let refundCurrency = "gbp";
 
     if (refundMethod === "refund") {
       const refundResult = await refundSubscriptionToCard(
         subscription,
         owedMinor,
+        operationId,
       );
       refundedMinor = refundResult.refundedMinor;
       stripeRefundId = refundResult.stripeRefundId;
+      refundOrderId = refundResult.orderId || null;
+      refundPaymentIntentId = refundResult.paymentIntentId || null;
+      refundCurrency = refundResult.currency || "gbp";
     }
 
-    // Whatever couldn't be refunded to the card (or all of it, when the
-    // customer chose store credit) is granted as store credit.
     const remainderMinor = owedMinor - refundedMinor;
-    if (remainderMinor > 0) {
-      const creditResult = await storeCreditService.addCredit({
-        customerId: customer._id,
-        amountMinor: remainderMinor,
-        type: "subscription_refund",
-        reason: `Refund for reducing ${subscription.subscriptionNumber}`,
-        subscriptionId: subscription._id,
+    const creditKey = operationId
+      ? `subscription:${subscription._id}:mutation:${operationId}:decrease-credit`
+      : `subscription:${subscription._id}:decrease-credit:${owedMinor}:${new Date(
+          subscription.updatedAt || 0,
+        ).getTime()}`;
+
+    let creditedMinor = 0;
+    let committedSubscription = null;
+    const session = await mongoose.startSession();
+
+    try {
+      await session.withTransaction(async () => {
+        const updatedSubscription = await Subscription.findOneAndUpdate(
+          {
+            _id: subscription._id,
+            customer: customer._id,
+            status: "active",
+          },
+          {
+            $set: { items: nextItems },
+            $inc: { customerVersion: 1 },
+          },
+          { new: true, runValidators: true, session },
+        );
+        if (!updatedSubscription) {
+          throw new Error(
+            "Subscription changed while settlement was being applied",
+          );
+        }
+
+        if (remainderMinor > 0) {
+          const creditResult = await storeCreditService.addCredit({
+            customerId: customer._id,
+            amountMinor: remainderMinor,
+            type: "subscription_refund",
+            reason: `Refund for reducing ${subscription.subscriptionNumber}`,
+            subscriptionId: subscription._id,
+            idempotencyKey: creditKey,
+            session,
+          });
+          if (!creditResult.ok) {
+            throw new Error(
+              creditResult.message || "Store credit could not be recorded",
+            );
+          }
+          creditedMinor = remainderMinor;
+        }
+
+        await updateUpcomingSubscriptionOrder(
+          updatedSubscription,
+          nextItems,
+          {
+            refundedMinor,
+            operationId,
+            session,
+            orderId: refundOrderId,
+            refundRecord: stripeRefundId
+              ? {
+                  stripeRefundId,
+                  paymentIntentId: refundPaymentIntentId,
+                  currency: refundCurrency,
+                }
+              : null,
+          },
+        );
+
+        committedSubscription = updatedSubscription;
       });
-      if (creditResult.ok) creditedMinor = remainderMinor;
+    } finally {
+      await session.endSession();
     }
 
-    await updateUpcomingSubscriptionOrder(subscription, nextItems, {
-      refundedMinor,
-    });
+    if (!committedSubscription) {
+      throw new Error("Subscription settlement did not commit");
+    }
 
-    const enriched = await enrichSubscriptionWithVariantImages(subscription);
+    await syncStripeSubscriptionPrice(committedSubscription);
+    const enriched = await enrichSubscriptionWithVariantImages(
+      committedSubscription,
+    );
 
     let message;
     if (refundedMinor > 0 && creditedMinor > 0) {
@@ -1505,7 +1718,7 @@ async function applyItemChange(
 
     await sendSubscriptionUpdateEmail({
       customer,
-      subscription,
+      subscription: committedSubscription,
       title: actionLabel,
       message,
     });
@@ -1619,6 +1832,8 @@ async function CreateSubscription({
   deliveryInstructions,
   notes,
   items,
+  operationId,
+  reservedSubscriptionId,
 } = {}) {
   const customer = await Customer.findById(customerId);
   if (!customer) return Response(false, "Customer not found", null);
@@ -1843,17 +2058,27 @@ async function CreateSubscription({
   // ── Create Stripe Product + Price + Subscription ──────────────────────────
   const { interval, interval_count } = STRIPE_INTERVALS[frequency];
 
-  const stripeProduct = await stripe.products.create({
-    name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
-    metadata: { customerId: String(customer._id) },
-  });
+  const stripeProduct = await stripe.products.create(
+    {
+      name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
+      metadata: { customerId: String(customer._id) },
+    },
+    operationId
+      ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:product` }
+      : undefined,
+  );
 
-  const stripePrice = await stripe.prices.create({
-    product: stripeProduct.id,
-    currency: "gbp",
-    unit_amount: totalMinor,
-    recurring: { interval, interval_count },
-  });
+  const stripePrice = await stripe.prices.create(
+    {
+      product: stripeProduct.id,
+      currency: "gbp",
+      unit_amount: totalMinor,
+      recurring: { interval, interval_count },
+    },
+    operationId
+      ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:price` }
+      : undefined,
+  );
 
   // Charge immediately at subscribe. The first invoice is paid now and
   // pre-pays the upcoming delivery, so a real payment exists to refund against
@@ -1864,6 +2089,7 @@ async function CreateSubscription({
   // handler can identify this subscription and return a retryable error instead
   // of acknowledging and permanently losing the fulfillment event.
   const subscription = new Subscription({
+    ...(reservedSubscriptionId ? { _id: reservedSubscriptionId } : {}),
     customer: customer._id,
     frequency,
     preferredDeliveryDay: resolvedDays.primaryDay,
@@ -1893,18 +2119,23 @@ async function CreateSubscription({
 
   let stripeSub;
   try {
-    stripeSub = await stripe.subscriptions.create({
-      customer: customer.stripeCustomerId,
-      items: [{ price: stripePrice.id }],
-      default_payment_method: defaultPmId,
-      payment_behavior: "error_if_incomplete",
-      expand: ["latest_invoice.payment_intent"],
-      metadata: {
-        customerId: String(customer._id),
-        subscriptionId: String(subscription._id),
-        subscriptionNumber: subscription.subscriptionNumber,
+    stripeSub = await stripe.subscriptions.create(
+      {
+        customer: customer.stripeCustomerId,
+        items: [{ price: stripePrice.id }],
+        default_payment_method: defaultPmId,
+        payment_behavior: "error_if_incomplete",
+        expand: ["latest_invoice.payment_intent"],
+        metadata: {
+          customerId: String(customer._id),
+          subscriptionId: String(subscription._id),
+          subscriptionNumber: subscription.subscriptionNumber,
+        },
       },
-    });
+      operationId
+        ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:subscription` }
+        : undefined,
+    );
   } catch (err) {
     // Tidy up the Stripe price we created for this failed attempt.
     try {
@@ -1963,7 +2194,9 @@ async function CreateSubscription({
     customer: customer._id,
     type: "subscription_created",
     title: "Subscription created",
-    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB")}.`,
+    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB", {
+      timeZone: SUBSCRIPTION_TIME_ZONE,
+    })}.`,
     relatedSubscription: subscription._id,
   });
 
@@ -1971,7 +2204,9 @@ async function CreateSubscription({
     customer,
     subscription,
     title: "Subscription created",
-    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB")}.`,
+    message: `Your ${frequency.replace("_", " ")} subscription has been set up. First delivery: ${nextDeliveryDate.toLocaleDateString("en-GB", {
+      timeZone: SUBSCRIPTION_TIME_ZONE,
+    })}.`,
   });
 
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
@@ -2002,26 +2237,53 @@ async function ListSubscriptions({
     .limit(pageSize)
     .lean();
 
-  const subscriptionsWithScheduleLabels = await Promise.all(
-    subscriptions.map(async (subscription) => {
-      const effectiveDays = getEffectiveDeliveryDays(subscription);
-      const preferredDeliveryDaysLabel = effectiveDays
-        .map((day) => WEEKDAY_NAMES[day])
-        .filter(Boolean)
-        .join(", ");
-      const upcomingDeliveryDate = await getUpcomingDeliveryDate(
-        subscription._id,
-      );
+  const subscriptionIds = subscriptions.map((subscription) => subscription._id);
+  const upcomingBySubscription = new Map();
 
-      return {
-        ...subscription,
-        preferredDeliveryDaysLabel,
-        upcomingDeliveryDate: upcomingDeliveryDate
-          ? upcomingDeliveryDate.toISOString()
-          : null,
-      };
-    }),
-  );
+  if (subscriptionIds.length > 0) {
+    const upcomingDeliveries = await SubscriptionDelivery.aggregate([
+      {
+        $match: {
+          subscription: { $in: subscriptionIds },
+          status: { $in: ["scheduled", "generated"] },
+          scheduledDate: { $gte: startOfDay(new Date()) },
+        },
+      },
+      {
+        $group: {
+          _id: "$subscription",
+          scheduledDate: { $min: "$scheduledDate" },
+        },
+      },
+    ]);
+
+    for (const delivery of upcomingDeliveries) {
+      const key = String(delivery._id);
+      if (delivery.scheduledDate) {
+        upcomingBySubscription.set(key, new Date(delivery.scheduledDate));
+      }
+    }
+  }
+
+  const subscriptionsWithScheduleLabels = subscriptions.map((subscription) => {
+    const effectiveDays = getEffectiveDeliveryDays(subscription);
+    const preferredDeliveryDaysLabel = effectiveDays
+      .map((day) => WEEKDAY_NAMES[day])
+      .filter(Boolean)
+      .join(", ");
+    const upcomingDeliveryDate = upcomingBySubscription.get(
+      String(subscription._id),
+    );
+
+    return {
+      ...subscription,
+      customerVersion: Number(subscription.customerVersion || 0),
+      preferredDeliveryDaysLabel,
+      upcomingDeliveryDate: upcomingDeliveryDate
+        ? upcomingDeliveryDate.toISOString()
+        : null,
+    };
+  });
 
   return Response(true, null, {
     subscriptions: subscriptionsWithScheduleLabels,
@@ -2048,11 +2310,18 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
     upcomingDeliveryDate || enriched.nextDeliveryDate,
     settings,
   );
-  const isPastCutoff = cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
+  const now = new Date();
+  const isPastCutoff = cutoffAt ? now.getTime() >= cutoffAt.getTime() : false;
+  const deliveryDayCutoffs = buildDeliveryDayCutoffs(
+    enriched,
+    settings,
+    now,
+  );
 
   return Response(true, null, {
     subscription: {
       ...enriched,
+      customerVersion: Number(enriched.customerVersion || 0),
       upcomingDeliveryDate: upcomingDeliveryDate
         ? upcomingDeliveryDate.toISOString()
         : null,
@@ -2063,6 +2332,8 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
       cutoffDaysBefore: settings.cutoffDaysBefore,
       cutoffTime: settings.cutoffTime,
       deliveryDays: settings.deliveryDays,
+      timeZone: SUBSCRIPTION_TIME_ZONE,
+      deliveryDayCutoffs,
     },
   });
 }
@@ -2081,6 +2352,7 @@ async function UpdateSubscription({
   deliveryAddressId,
   notes,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -2479,6 +2751,9 @@ async function UpdateSubscription({
       customer,
       dayPlanChargeMinor,
       `Subscription change – ${subscription.subscriptionNumber}`,
+      operationId
+        ? `subscription:${subscription._id}:mutation:${operationId}:charge`
+        : undefined,
     );
     if (!charge.ok) {
       return Response(false, charge.message, null);
@@ -2514,6 +2789,7 @@ async function UpdateSubscription({
       const refundResult = await refundSubscriptionToCard(
         subscription,
         dayPlanRefundOwedMinor,
+        operationId,
       );
       dayPlanRefundedMinor = refundResult.refundedMinor;
       dayPlanStripeRefundId = refundResult.stripeRefundId;
@@ -2527,10 +2803,16 @@ async function UpdateSubscription({
         type: "subscription_refund",
         reason: `Refund for reducing ${subscription.subscriptionNumber}`,
         subscriptionId: subscription._id,
+        idempotencyKey: operationId
+          ? `subscription:${subscription._id}:mutation:${operationId}:day-plan-credit`
+          : `subscription:${subscription._id}:day-plan-credit:${remainderMinor}:${new Date(
+              subscription.updatedAt || 0,
+            ).getTime()}`,
       });
-      if (creditResult.ok) {
-        dayPlanCreditedMinor = remainderMinor;
+      if (!creditResult.ok) {
+        return Response(false, creditResult.message, null);
       }
+      dayPlanCreditedMinor = remainderMinor;
     }
 
     if (dayPlanRefundedMinor > 0 && dayPlanCreditedMinor > 0) {
@@ -2574,7 +2856,7 @@ async function UpdateSubscription({
     const removedDaySet = new Set(removedDeliveryDays.map(Number));
     const eligibleOrders = refundableOrders.filter((order) => {
       if (!order.deliveryDate) return false;
-      const day = new Date(order.deliveryDate).getDay();
+      const day = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
       if (!removedDaySet.has(day)) return false;
       const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
       return cutoffAt ? now.getTime() < cutoffAt.getTime() : true;
@@ -2622,6 +2904,7 @@ async function UpdateSubscription({
           reason: `Refund for reducing delivery days on ${subscription.subscriptionNumber}`,
           subscriptionId: subscription._id,
           orderId: order._id,
+          idempotencyKey: `subscription:${subscription._id}:remove-day-credit:${order._id}:${amountMinor}`,
         });
 
         if (!creditResult.ok) {
@@ -2772,7 +3055,7 @@ async function UpdateSubscription({
       openOrders
         .filter((order) => {
           if (!order.deliveryDate) return false;
-          const orderDay = new Date(order.deliveryDate).getDay();
+          const orderDay = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
           const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
           const isLocked = cutoffAt
             ? now.getTime() >= cutoffAt.getTime()
@@ -2783,7 +3066,7 @@ async function UpdateSubscription({
     );
     const ordersToReschedule = openOrders.filter((order) => {
       if (!order.deliveryDate) return false;
-      if (selectedDaySet.has(new Date(order.deliveryDate).getDay())) {
+      if (selectedDaySet.has(weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE))) {
         return false;
       }
       const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
@@ -2876,6 +3159,7 @@ async function UpdateSubscription({
           chargedMinor: Math.max(dayDeltaMinor, 0),
           refundedMinor: Math.max(-dayDeltaMinor, 0),
           paymentIntent: dayPlanPaymentIntent,
+          operationId,
         },
       );
     }
@@ -3087,6 +3371,7 @@ async function PauseSubscription({
         reason: `Refund for pausing ${subscription.subscriptionNumber}`,
         subscriptionId: subscription._id,
         orderId: order._id,
+        idempotencyKey: `subscription:${subscription._id}:pause-credit:${order._id}:${amountMinor}`,
       });
       if (!credit.ok) {
         await restoreStripeBilling();
@@ -3202,10 +3487,7 @@ async function CancelSubscription({
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
   const now = new Date(Date.now());
-  const dayKey = (value) => {
-    const date = new Date(value);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  };
+  const dayKey = deliveryDateKey;
 
   const scheduledDeliveries = await SubscriptionDelivery.find({
     subscription: subscription._id,
@@ -3323,6 +3605,7 @@ async function CancelSubscription({
             `Refund for cancelling ${subscription.subscriptionNumber}`,
           subscriptionId: subscription._id,
           orderId: refundableOrder._id,
+          idempotencyKey: `subscription:${subscription._id}:cancel-credit:${refundableOrder._id}:${refundAmountMinor}`,
         });
 
         if (!creditResult.ok) {
@@ -3410,6 +3693,7 @@ async function CancelSubscription({
             `Refund for cancelling ${subscription.subscriptionNumber}`,
           subscriptionId: subscription._id,
           orderId: refundableOrder._id,
+          idempotencyKey: `subscription:${subscription._id}:cancel-credit:${refundableOrder._id}:${refundAmountMinor}`,
         });
 
         if (!creditResult.ok) {
@@ -3769,6 +4053,7 @@ async function AddSubscriptionItem({
   variantId,
   quantity,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -3830,6 +4115,100 @@ async function AddSubscriptionItem({
     nextItems,
     "Subscription items updated",
     refundMethod,
+    operationId,
+  );
+}
+
+/**
+ * Replace the complete item set for a single-day subscription edit in one
+ * service mutation. The caller sends the desired final state, so removals and
+ * quantity changes are settled once through the existing applyItemChange rules
+ * instead of being charged/refunded independently per HTTP request.
+ */
+async function ReplaceSubscriptionItems({
+  customerId,
+  subscriptionId,
+  items,
+  refundMethod = "credit",
+  operationId,
+} = {}) {
+  const subscription = await Subscription.findOne({
+    _id: subscriptionId,
+    customer: customerId,
+  });
+  if (!subscription) return Response(false, "Subscription not found", null);
+  if (subscription.status !== "active") {
+    return Response(
+      false,
+      "Paused or cancelled subscriptions cannot be changed.",
+      null,
+    );
+  }
+
+  const baseline = subscription.pendingChanges?.items?.length
+    ? itemsToPlain(subscription.pendingChanges.items)
+    : itemsToPlain(subscription.items);
+  const baselineById = new Map(
+    baseline
+      .filter((item) => item?._id)
+      .map((item) => [String(item._id), item]),
+  );
+
+  const requested = new Map();
+  for (const item of items || []) {
+    const itemId = String(item?.itemId || "");
+    if (!itemId || requested.has(itemId)) {
+      return Response(
+        false,
+        "Each subscription item can only be included once.",
+        null,
+      );
+    }
+    requested.set(itemId, Number(item.quantity));
+  }
+
+  if (requested.size === 0) {
+    return Response(
+      false,
+      "Cannot remove the last item. Please cancel the subscription instead.",
+      null,
+    );
+  }
+
+  const hasUnknownItem = [...requested.keys()].some(
+    (itemId) => !baselineById.has(itemId),
+  );
+  if (hasUnknownItem) {
+    return Response(
+      false,
+      "One or more subscription items changed. Please refresh and try again.",
+      null,
+    );
+  }
+
+  const nextItems = baseline
+    .filter((item) => requested.has(String(item._id)))
+    .map((item) => ({
+      ...item,
+      quantity: requested.get(String(item._id)),
+    }));
+
+  if (nextItems.length === 0) {
+    return Response(
+      false,
+      "Cannot remove the last item. Please cancel the subscription instead.",
+      null,
+    );
+  }
+
+  const customer = await Customer.findById(customerId);
+  return applyItemChange(
+    subscription,
+    customer,
+    nextItems,
+    "Subscription items updated",
+    refundMethod,
+    operationId,
   );
 }
 
@@ -3842,6 +4221,7 @@ async function UpdateSubscriptionItem({
   itemId,
   quantity,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -3876,6 +4256,7 @@ async function UpdateSubscriptionItem({
     nextItems,
     "Subscription items updated",
     refundMethod,
+    operationId,
   );
 }
 
@@ -3887,6 +4268,7 @@ async function RemoveSubscriptionItem({
   subscriptionId,
   itemId,
   refundMethod = "credit",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -3935,6 +4317,7 @@ async function RemoveSubscriptionItem({
     nextItems,
     "Subscription items updated",
     refundMethod,
+    operationId,
   );
 }
 
@@ -3966,14 +4349,23 @@ async function GetSubscriptionDeliveries({
     .limit(pageSize)
     .lean();
 
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const nowMs = Date.now();
   const normalizedDeliveries = deliveries.map((delivery) => {
     const orderStatus = String(delivery?.order?.status || "").toLowerCase();
-    if (orderStatus !== "refunded") {
-      return delivery;
-    }
+    const normalized =
+      orderStatus === "refunded"
+        ? {
+            ...delivery,
+            status: "cancelled",
+          }
+        : delivery;
+    const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
+
     return {
-      ...delivery,
-      status: "cancelled",
+      ...normalized,
+      cutoffAt,
+      isPastCutoff: cutoffAt ? nowMs >= cutoffAt.getTime() : false,
     };
   });
 
@@ -3994,6 +4386,7 @@ async function GetSubscriptionSettingsForCustomer() {
       deliveryDays: settings.deliveryDays,
       cutoffDaysBefore: settings.cutoffDaysBefore,
       cutoffTime: settings.cutoffTime,
+      timeZone: SUBSCRIPTION_TIME_ZONE,
     },
   });
 }
@@ -4020,6 +4413,7 @@ module.exports = {
   CancelSubscription,
   AddSubscriptionItem,
   AddNextDeliveryAddOn,
+  ReplaceSubscriptionItems,
   UpdateSubscriptionItem,
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,

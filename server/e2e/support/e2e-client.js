@@ -76,6 +76,14 @@ async function setPaymentOutcome(request, subscriptionId, outcome) {
   return responseJson(response, "Stripe payment-method switch");
 }
 
+async function removeCapturedPaymentBacking(request, subscriptionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/payment-backing/remove`,
+    { headers: controlHeaders },
+  );
+  return responseJson(response, "Captured payment backing removal");
+}
+
 async function preparePaymentRetry(request, subscriptionId) {
   const response = await request.post(
     `${CONTROL_ORIGIN}/state/${subscriptionId}/payment-retry/prepare`,
@@ -135,14 +143,47 @@ async function finalizeCancellation(request, subscriptionId, referenceDate) {
   return responseJson(response, "Scheduled cancellation finalization");
 }
 
+async function failNextStripePriceSyncs(request, subscriptionId, count = 1) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/stripe-price-sync/fail-next`,
+    {
+      headers: controlHeaders,
+      data: { count },
+      timeout: 30_000,
+    },
+  );
+  return responseJson(response, "Stripe price sync fault injection");
+}
+
+async function reconcileStripePrice(request, subscriptionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/stripe-price-sync/reconcile`,
+    { headers: controlHeaders, timeout: 30_000 },
+  );
+  return responseJson(response, "Stripe price reconciliation");
+}
+
 async function login(request, credentials) {
-  const response = await request.post(`${API_ORIGIN}/api/portal/auth/login`, {
-    data: credentials,
-    // The full real-Stripe matrix intentionally runs serially for isolation.
-    // On a busy runner, Mongo/Node can briefly pause late in the 14-minute
-    // suite; login is an API setup operation, not a 20-second UI action.
-    timeout: 60_000,
-  });
+  let response;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      response = await request.post(`${API_ORIGIN}/api/portal/auth/login`, {
+        data: credentials,
+        // The full real-Stripe matrix intentionally runs serially for isolation.
+        // On a busy runner, Mongo/Node can briefly pause late in the 14-minute
+        // suite; login is an API setup operation, not a 20-second UI action.
+        timeout: 60_000,
+      });
+      break;
+    } catch (error) {
+      const message = String(error?.message || error);
+      const retryableTransportFailure =
+        /socket hang up|ECONNRESET|EPIPE|connection reset/i.test(message);
+      if (attempt >= 2 || !retryableTransportFailure) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
   const body = await response.json().catch(() => null);
   if (!response.ok() || !body?.data?.accessToken) {
     throw new Error(
@@ -164,12 +205,15 @@ module.exports = {
   clearEmails,
   crossCutoff,
   deliverSignedInvoiceEvent,
+  failNextStripePriceSyncs,
   finalizeCancellation,
   getState,
   getEmails,
   login,
   portalHeaders,
   preparePaymentRetry,
+  reconcileStripePrice,
+  removeCapturedPaymentBacking,
   reset,
   setPaymentOutcome,
 };

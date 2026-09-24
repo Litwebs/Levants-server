@@ -503,20 +503,46 @@ async function createFixture(options = {}) {
   const cadence = options.cadence || "weekly-single-day";
   const timing = options.timing || "before-cutoff";
   const config = cadenceConfig(cadence, timing);
-  if (options.portalCreationDays === true) {
-    // The customer creation form deliberately offers the business delivery
-    // days only. Keep UI fixtures deterministic instead of deriving an
-    // unsupported weekday from today's date.
+  const requestedDeliveryDays = Array.isArray(options.deliveryDays)
+    ? Array.from(
+        new Set(
+          options.deliveryDays
+            .map((day) => Number(day))
+            .filter(
+              (day) => Number.isInteger(day) && day >= 0 && day <= 6,
+            ),
+        ),
+      )
+    : [];
+
+  if (requestedDeliveryDays.length > 0) {
+    config.deliveryDays = requestedDeliveryDays;
+  } else if (options.portalCreationDays === true) {
+    // Keep the legacy UI creation fixture deterministic while allowing
+    // individual tests to supply different configured business delivery days.
     config.deliveryDays = [0, 3];
   }
+
+  const requestedCutoffDaysBefore = Number(options.cutoffDaysBefore);
+  const cutoffDaysBefore =
+    Number.isInteger(requestedCutoffDaysBefore) &&
+    requestedCutoffDaysBefore >= 0 &&
+    requestedCutoffDaysBefore <= 7
+      ? requestedCutoffDaysBefore
+      : 2;
+  const cutoffTime =
+    typeof options.cutoffTime === "string" &&
+    /^([01]\\d|2[0-3]):[0-5]\\d$/.test(options.cutoffTime)
+      ? options.cutoffTime
+      : "22:00";
 
   await SubscriptionSettings.findOneAndUpdate(
     { singletonKey: "subscription-settings" },
     {
       singletonKey: "subscription-settings",
       deliveryDays: config.deliveryDays,
-      cutoffDaysBefore: 2,
-      cutoffTime: "22:00",
+      cutoffDaysBefore,
+      cutoffTime,
     },
     { upsert: true, new: true },
   );

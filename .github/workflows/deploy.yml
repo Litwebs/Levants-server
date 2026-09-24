@@ -1,9 +1,15 @@
-name: Verify and deploy to VPS
+name: CI and deploy
 
 on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
   push:
     branches:
       - main
@@ -11,9 +17,16 @@ on:
 permissions:
   contents: read
 
+# A new PR commit supersedes an older verification run. This prevents CI from
+# burning time on obsolete feature-branch commits.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   backend-tests:
     name: Backend tests
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -37,6 +50,7 @@ jobs:
 
   client-quality:
     name: Client lint and build
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,16 +72,13 @@ jobs:
         working-directory: client
         run: npm run check:release
 
-      - name: Store the verified client build
-        uses: actions/upload-artifact@v4
-        with:
-          name: verified-client-build
-          path: client/build
-          if-no-files-found: error
-          retention-days: 3
-
+  # The expensive real-Stripe/Playwright suite is deliberately a release gate,
+  # not a per-commit development check. Keep a PR in Draft while iterating.
+  # Mark it Ready for review only when the exact PR head is intended to ship.
+  # Any later commit to a ready PR triggers this suite again automatically.
   subscription-e2e:
     name: Subscription E2E (Stripe test mode)
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -79,18 +90,18 @@ jobs:
       TZ: Europe/London
       E2E_CLIENT_DIR: ${{ github.workspace }}/portal-client
     steps:
-      - name: Checkout code
+      - name: Checkout exact server PR merge
         uses: actions/checkout@v4
 
-      - name: Resolve customer portal ref
+      - name: Resolve and pin customer portal SHA
         id: portal-ref
         shell: bash
         env:
           SERVER_HEAD_REF: ${{ github.head_ref }}
         run: |
+          set -euo pipefail
+
           portal_ref="main"
-          # Cross-repository feature branches share a name; the server branch
-          # adds a "-server" suffix (for example, feature/foo-server).
           candidate_ref="${SERVER_HEAD_REF%-server}"
 
           if [[ -n "$SERVER_HEAD_REF" && "$candidate_ref" != "$SERVER_HEAD_REF" ]] && \
@@ -99,16 +110,42 @@ jobs:
             portal_ref="$candidate_ref"
           fi
 
-          echo "ref=$portal_ref" >> "$GITHUB_OUTPUT"
-          echo "Customer portal E2E ref: $portal_ref"
+          portal_sha="$(git ls-remote https://github.com/Litwebs/Levants-client.git \
+            "refs/heads/$portal_ref" | awk '{print $1}')"
 
-      - name: Checkout customer portal
+          if [[ -z "$portal_sha" ]]; then
+            echo "Could not resolve Levants-client ref: $portal_ref" >&2
+            exit 1
+          fi
+
+          echo "ref=$portal_ref" >> "$GITHUB_OUTPUT"
+          echo "sha=$portal_sha" >> "$GITHUB_OUTPUT"
+          echo "Customer portal ref: $portal_ref"
+          echo "Customer portal SHA: $portal_sha"
+
+      - name: Checkout exact customer portal commit
         uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
           token: ${{ secrets.PORTAL_CLIENT_READ_TOKEN }}
-          ref: ${{ steps.portal-ref.outputs.ref }}
+          ref: ${{ steps.portal-ref.outputs.sha }}
           path: portal-client
+
+      - name: Record exact release-gate SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          server_sha="$(git rev-parse HEAD)"
+          portal_sha="$(git -C portal-client rev-parse HEAD)"
+
+          test "$portal_sha" = "${{ steps.portal-ref.outputs.sha }}"
+
+          {
+            echo "### Production release gate"
+            echo "- Server merge SHA: $server_sha"
+            echo "- Customer portal ref: ${{ steps.portal-ref.outputs.ref }}"
+            echo "- Customer portal SHA: $portal_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require Stripe test-mode secrets
         shell: bash
@@ -159,13 +196,71 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  deploy:
-    name: Deploy verified commit
-    if: github.event_name == 'push'
+  production-release-gate:
+    name: Production release gate
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     needs:
       - backend-tests
       - client-quality
       - subscription-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every release check to pass
+        shell: bash
+        env:
+          BACKEND_RESULT: ${{ needs.backend-tests.result }}
+          CLIENT_RESULT: ${{ needs.client-quality.result }}
+          E2E_RESULT: ${{ needs.subscription-e2e.result }}
+        run: |
+          set -euo pipefail
+          [[ "$BACKEND_RESULT" == "success" ]]
+          [[ "$CLIENT_RESULT" == "success" ]]
+          [[ "$E2E_RESULT" == "success" ]]
+
+          echo "All production release checks passed for the current PR head."
+
+  # Main no longer repeats the release test suite. It only creates the admin
+  # client build needed by the existing VPS deployment and deploys the merged
+  # commit. The production release gate must be required by branch protection.
+  build-deploy-client:
+    name: Build deployment client
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout merged commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build deployment client
+        working-directory: client
+        run: npm run build
+
+      - name: Store deployment client build
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-client-build
+          path: client/build
+          if-no-files-found: error
+          retention-days: 3
+
+  deploy:
+    name: Deploy merged commit
+    if: github.event_name == 'push'
+    needs:
+      - build-deploy-client
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -175,10 +270,10 @@ jobs:
       REPO_DIR: ${{ github.event.repository.name }}
 
     steps:
-      - name: Download the verified client build
+      - name: Download deployment client build
         uses: actions/download-artifact@v4
         with:
-          name: verified-client-build
+          name: deployment-client-build
           path: client/build
 
       - name: Setup SSH key
@@ -205,7 +300,7 @@ jobs:
           ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \
             "cd /root/LWS-Scripts && export SKIP_CLIENT_BUILD=1 DEPLOY_SHA=${{ github.sha }} && ./05-auto-deploy.sh \"$REPO_URL\""
 
-      - name: Verify the exact tested commit was deployed
+      - name: Verify the exact merged commit was deployed
         run: |
           REMOTE_SHA=$(ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} "git -C /root/LWS-Scripts/${REPO_DIR} rev-parse HEAD")
           test "$REMOTE_SHA" = "${{ github.sha }}"
@@ -215,7 +310,7 @@ jobs:
           ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \
             "rm -rf /root/LWS-Scripts/${REPO_DIR}/client/build && mkdir -p /root/LWS-Scripts/${REPO_DIR}/client/build"
 
-      - name: Upload verified client build
+      - name: Upload deployment client build
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}

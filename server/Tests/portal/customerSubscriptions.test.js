@@ -15,6 +15,17 @@ const StoreCreditTransaction = require("../../models/storeCreditTransaction.mode
 const stripe = require("../../utils/stripe.util");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
+const storeCreditService = require("../../services/storeCredit.service");
+const refundService = require("../../services/orders/orders.refund.service");
+const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
+  computeSubscriptionCutoffDate,
+  formatDateKeyInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
+  zonedParts,
+} = require("../../utils/subscriptionCutoff.util");
 const crypto = require("crypto");
 
 // Mock geocode so tests don't make real HTTP calls
@@ -306,8 +317,64 @@ describe("Portal Subscriptions", () => {
     ).toBe("Leave inside the porch");
   });
 
+  it("does not duplicate legacy UTC-midnight slots that are the same London delivery day", async () => {
+    const sub = await createBasicSubscription();
+    await SubscriptionDelivery.deleteMany({ subscription: sub._id });
+
+    // Simulate slots created on a UTC-hosted server before business-timezone
+    // normalization. During BST these are 01:00 local, but still the intended
+    // Sunday delivery dates.
+    const legacySlots = [
+      new Date("2026-07-05T00:00:00.000Z"),
+      new Date("2026-07-12T00:00:00.000Z"),
+    ];
+    await SubscriptionDelivery.insertMany(
+      legacySlots.map((scheduledDate) => ({
+        subscription: sub._id,
+        customer: customer._id,
+        scheduledDate,
+        status: "scheduled",
+      })),
+    );
+    await Subscription.findByIdAndUpdate(sub._id, {
+      nextDeliveryDate: legacySlots[0],
+      preferredDeliveryDay: 0,
+      preferredDeliveryDays: [0],
+      frequency: "weekly",
+    });
+
+    const refreshed = await Subscription.findById(sub._id);
+    await subscriptionService.scheduleUpcomingDeliveries(refreshed);
+
+    const slots = await SubscriptionDelivery.find({
+      subscription: sub._id,
+      status: "scheduled",
+    })
+      .sort({ scheduledDate: 1 })
+      .lean();
+
+    const dateKeys = slots.map((slot) =>
+      formatDateKeyInTimeZone(
+        slot.scheduledDate,
+        SUBSCRIPTION_TIME_ZONE,
+      ),
+    );
+
+    expect(slots).toHaveLength(3);
+    expect(new Set(dateKeys).size).toBe(3);
+    expect(dateKeys).toEqual([
+      "2026-07-05",
+      "2026-07-12",
+      "2026-07-19",
+    ]);
+  });
+
+
   it("sets next delivery to next-week occurrence when selected day is today", async () => {
-    const todayWeekday = new Date().getDay();
+    const todayWeekday = weekdayInTimeZone(
+      new Date(),
+      SUBSCRIPTION_TIME_ZONE,
+    );
 
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -331,12 +398,17 @@ describe("Portal Subscriptions", () => {
     expect(res.status).toBe(201);
 
     const nextDelivery = new Date(res.body.data.subscription.nextDeliveryDate);
-    const now = new Date();
-    const diffDays = Math.round(
-      (nextDelivery.setHours(0, 0, 0, 0) - now.setHours(0, 0, 0, 0)) /
-        (24 * 60 * 60 * 1000),
+    const expected = addCalendarDaysInTimeZone(
+      new Date(),
+      7,
+      SUBSCRIPTION_TIME_ZONE,
     );
-    expect(diffDays).toBe(7);
+    expect(
+      formatDateKeyInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+    ).toBe(formatDateKeyInTimeZone(expected, SUBSCRIPTION_TIME_ZONE));
+    expect(
+      weekdayInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+    ).toBe(todayWeekday);
   });
 
   it("uses the immediate upcoming Sunday when subscribing on Friday before cutoff", async () => {
@@ -370,17 +442,12 @@ describe("Portal Subscriptions", () => {
       const nextDelivery = new Date(
         res.body.data.subscription.nextDeliveryDate,
       );
-      const expectedDelivery = new Date(fixedNow);
-      expectedDelivery.setDate(expectedDelivery.getDate() + 2);
-
-      const diffDays = Math.round(
-        (nextDelivery.setHours(0, 0, 0, 0) -
-          expectedDelivery.setHours(0, 0, 0, 0)) /
-          (24 * 60 * 60 * 1000),
-      );
-
-      expect(nextDelivery.getDay()).toBe(0);
-      expect(diffDays).toBe(0);
+      expect(
+        weekdayInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+      ).toBe(0);
+      expect(
+        formatDateKeyInTimeZone(nextDelivery, SUBSCRIPTION_TIME_ZONE),
+      ).toBe("2026-05-10");
     } finally {
       nowSpy.mockRestore();
     }
@@ -565,16 +632,22 @@ describe("Portal Subscriptions", () => {
 
     const weekdays = deliveries
       .slice(0, 3)
-      .map((d) => new Date(d.scheduledDate).getDay());
+      .map((d) =>
+        weekdayInTimeZone(d.scheduledDate, SUBSCRIPTION_TIME_ZONE),
+      );
     expect(weekdays.every((day) => [0, 3].includes(day))).toBe(true);
     expect(new Set(weekdays).size).toBeGreaterThan(1);
   });
 
   it.each([0, 1])("extends three upcoming slots from a stale date (%i days after Sunday)", async (daysAfterSunday) => {
     const sub = await createBasicSubscription();
-    // Exercise both a delivery day and the following day, independently of
-    // the weekday/time when CI runs. Keep database/network timers real.
-    const now = new Date(2026, 8, 6 + daysAfterSunday, 14, 38);
+    // Exercise both a delivery day and the following day using fixed absolute
+    // instants. Assertions are made against the London business calendar.
+    const now = new Date(
+      daysAfterSunday === 0
+        ? "2026-09-06T14:38:00.000Z"
+        : "2026-09-07T14:38:00.000Z",
+    );
     jest.useFakeTimers({
       now,
       doNotFake: [
@@ -584,9 +657,8 @@ describe("Portal Subscriptions", () => {
       ],
     });
     try {
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-      const staleDate = new Date(2026, 7, 2);
+      const today = startOfDayInTimeZone(now, SUBSCRIPTION_TIME_ZONE);
+      const staleDate = new Date("2026-08-02T08:00:00.000Z");
       await Subscription.findByIdAndUpdate(sub._id, {
         nextDeliveryDate: staleDate,
       });
@@ -597,19 +669,32 @@ describe("Portal Subscriptions", () => {
 
       const futureSlots = await SubscriptionDelivery.find({
         subscription: sub._id,
-        // Slots are delivery dates: today's midnight slot is still upcoming.
         scheduledDate: { $gte: today },
       }).sort({ scheduledDate: 1 }).lean();
+
       expect(futureSlots).toHaveLength(3);
       expect(
         futureSlots.every(
-          (slot) => new Date(slot.scheduledDate).getDay() === 0,
+          (slot) =>
+            weekdayInTimeZone(
+              slot.scheduledDate,
+              SUBSCRIPTION_TIME_ZONE,
+            ) === 0,
         ),
       ).toBe(true);
-      expect(futureSlots.map((slot) => new Date(slot.scheduledDate).getTime()))
-        .toEqual([0, 7, 14].map((offset) =>
-          new Date(2026, 8, (daysAfterSunday === 0 ? 6 : 13) + offset).getTime(),
-        ));
+
+      const expectedKeys =
+        daysAfterSunday === 0
+          ? ["2026-09-06", "2026-09-13", "2026-09-20"]
+          : ["2026-09-13", "2026-09-20", "2026-09-27"];
+      expect(
+        futureSlots.map((slot) =>
+          formatDateKeyInTimeZone(
+            slot.scheduledDate,
+            SUBSCRIPTION_TIME_ZONE,
+          ),
+        ),
+      ).toEqual(expectedKeys);
     } finally {
       jest.useRealTimers();
     }
@@ -728,16 +813,12 @@ describe("Portal Subscriptions", () => {
         settings,
       });
 
-    expect([
-      nextSunday.getFullYear(),
-      nextSunday.getMonth(),
-      nextSunday.getDate(),
-    ]).toEqual([2026, 7, 16]);
-    expect([
-      nextWednesday.getFullYear(),
-      nextWednesday.getMonth(),
-      nextWednesday.getDate(),
-    ]).toEqual([2026, 7, 19]);
+    expect(
+      formatDateKeyInTimeZone(nextSunday, SUBSCRIPTION_TIME_ZONE),
+    ).toBe("2026-08-16");
+    expect(
+      formatDateKeyInTimeZone(nextWednesday, SUBSCRIPTION_TIME_ZONE),
+    ).toBe("2026-08-19");
   });
 
   it("cannot access another customer's subscription", async () => {
@@ -1658,6 +1739,33 @@ describe("Portal Subscriptions", () => {
     expect(finalized.cancellationEffectiveAfter).toBeNull();
   });
 
+  it("finalizes scheduled cancellation at the end of the London business day, not host UTC day", async () => {
+    const sub = await createBasicSubscription();
+    const lockedDate = new Date("2026-07-05T08:00:00.000Z");
+    await Subscription.findByIdAndUpdate(sub._id, {
+      status: "active",
+      isCancellationScheduled: true,
+      cancellationEffectiveAfter: lockedDate,
+    });
+
+    expect(
+      await subscriptionService.FinalizeScheduledCancellations({
+        subscriptionId: sub._id,
+        // 23:30 BST on the protected delivery date.
+        referenceDate: new Date("2026-07-05T22:30:00.000Z"),
+      }),
+    ).toBe(0);
+
+    expect(
+      await subscriptionService.FinalizeScheduledCancellations({
+        subscriptionId: sub._id,
+        // Midnight BST at the start of the next business day.
+        referenceDate: new Date("2026-07-05T23:00:00.000Z"),
+      }),
+    ).toBe(1);
+  });
+
+
   it("cancel before cut-off handles refund success and failure branches", async () => {
     const sub = await createBasicSubscription();
     const nextDelivery = new Date();
@@ -2530,6 +2638,98 @@ describe("Portal Subscriptions", () => {
     expect(listedActive.preferredDeliveryDaysLabel).toBe("Sunday, Wednesday");
   });
 
+  it("validates subscription list pagination query parameters", async () => {
+    await createBasicSubscription();
+
+    const invalidPage = await request(app)
+      .get("/api/portal/subscriptions?page=0&pageSize=20")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(invalidPage.status).toBe(400);
+    expect(invalidPage.body.message).toMatch(/page/i);
+
+    const invalidPageSize = await request(app)
+      .get("/api/portal/subscriptions?page=1&pageSize=101")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(invalidPageSize.status).toBe(400);
+    expect(invalidPageSize.body.message).toMatch(/pageSize/i);
+  });
+
+  it("loads only the earliest upcoming date per subscription with one aggregate query", async () => {
+    const first = await createBasicSubscription();
+    const second = await createBasicSubscription();
+
+    await SubscriptionDelivery.deleteMany({
+      subscription: { $in: [first._id, second._id] },
+    });
+
+    const firstUpcoming = new Date();
+    firstUpcoming.setDate(firstUpcoming.getDate() + 1);
+    firstUpcoming.setHours(9, 0, 0, 0);
+
+    const secondUpcoming = new Date();
+    secondUpcoming.setDate(secondUpcoming.getDate() + 2);
+    secondUpcoming.setHours(9, 0, 0, 0);
+
+    const firstLater = new Date();
+    firstLater.setDate(firstLater.getDate() + 8);
+    firstLater.setHours(9, 0, 0, 0);
+
+    await SubscriptionDelivery.create([
+      {
+        subscription: first._id,
+        customer: customer._id,
+        scheduledDate: firstUpcoming,
+        status: "scheduled",
+      },
+      {
+        subscription: first._id,
+        customer: customer._id,
+        scheduledDate: firstLater,
+        status: "generated",
+      },
+      {
+        subscription: second._id,
+        customer: customer._id,
+        scheduledDate: secondUpcoming,
+        status: "generated",
+      },
+    ]);
+
+    const aggregateSpy = jest.spyOn(SubscriptionDelivery, "aggregate");
+
+    const listRes = await request(app)
+      .get("/api/portal/subscriptions?page=1&pageSize=20")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    const aggregateCalls = aggregateSpy.mock.calls.length;
+    const pipeline = aggregateSpy.mock.calls[0]?.[0] || [];
+    aggregateSpy.mockRestore();
+
+    expect(listRes.status).toBe(200);
+    expect(aggregateCalls).toBe(1);
+    expect(
+      pipeline.some(
+        (stage) => stage?.$group?.scheduledDate?.$min === "$scheduledDate",
+      ),
+    ).toBe(true);
+
+    const firstListed = listRes.body.data.subscriptions.find(
+      (subscription) => subscription._id === first._id.toString(),
+    );
+    const secondListed = listRes.body.data.subscriptions.find(
+      (subscription) => subscription._id === second._id.toString(),
+    );
+
+    expect(new Date(firstListed.upcomingDeliveryDate).toISOString()).toBe(
+      firstUpcoming.toISOString(),
+    );
+    expect(new Date(secondListed.upcomingDeliveryDate).toISOString()).toBe(
+      secondUpcoming.toISOString(),
+    );
+  });
+
   it("includes the soonest scheduled delivery for display without changing nextDeliveryDate", async () => {
     const sub = await createBasicSubscription();
 
@@ -2614,16 +2814,16 @@ describe("Portal Subscriptions", () => {
     ).toBe(upcomingDelivery.toISOString());
 
     const cutoffAt = new Date(res.body.data.cutoff.cutoffAt);
-    const expectedCutoff = new Date(upcomingDelivery);
-    expectedCutoff.setDate(
-      expectedCutoff.getDate() - res.body.data.cutoff.cutoffDaysBefore,
+    const expectedCutoff = computeSubscriptionCutoffDate(
+      upcomingDelivery,
+      {
+        cutoffDaysBefore: res.body.data.cutoff.cutoffDaysBefore,
+        cutoffTime: res.body.data.cutoff.cutoffTime,
+      },
+      "Europe/London",
     );
 
-    const [hh, mm] = String(res.body.data.cutoff.cutoffTime || "00:00")
-      .split(":")
-      .map(Number);
-    expectedCutoff.setHours(hh || 0, mm || 0, 0, 0);
-
+    expect(res.body.data.cutoff.timeZone).toBe("Europe/London");
     expect(cutoffAt.toISOString()).toBe(expectedCutoff.toISOString());
   });
 
@@ -3449,7 +3649,10 @@ describe("Portal Subscriptions", () => {
     expect(after.preferredDeliveryDay).toBe(3);
     expect(after.preferredDeliveryDays).toEqual([3]);
 
-    const afterWeekday = new Date(after.nextDeliveryDate).getDay();
+    const afterWeekday = weekdayInTimeZone(
+      after.nextDeliveryDate,
+      SUBSCRIPTION_TIME_ZONE,
+    );
     expect(afterWeekday).toBe(3);
     expect(new Date(after.nextDeliveryDate).getTime()).not.toBe(
       new Date(before.nextDeliveryDate).getTime(),
@@ -3604,7 +3807,13 @@ describe("Portal Subscriptions", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ quantity: 1, refundMethod: "refund" });
 
-    expect(updateRes.status).toBe(200);
+    if (updateRes.status !== 200) {
+      throw new Error(
+        `Card decrease failed with ${updateRes.status}: ${JSON.stringify(
+          updateRes.body,
+        )}`,
+      );
+    }
     expect(updateRes.body.message).toMatch(/refunded/i);
     expect(updateRes.body.data.refundedMinor).toBe(500);
     expect(stripe.refunds.create).toHaveBeenCalled();
@@ -3706,8 +3915,9 @@ describe("Portal Subscriptions", () => {
     const cutoffAt = new Date(now.getTime() + 2 * 60 * 1000);
     cutoffAt.setSeconds(0, 0);
 
-    const hh = String(cutoffAt.getHours()).padStart(2, "0");
-    const mm = String(cutoffAt.getMinutes()).padStart(2, "0");
+    const londonClock = zonedParts(cutoffAt, "Europe/London");
+    const hh = String(londonClock.hour).padStart(2, "0");
+    const mm = String(londonClock.minute).padStart(2, "0");
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
@@ -3747,8 +3957,9 @@ describe("Portal Subscriptions", () => {
     const cutoffAt = new Date(now.getTime() + 3 * 60 * 1000);
     cutoffAt.setSeconds(0, 0);
 
-    const hh = String(cutoffAt.getHours()).padStart(2, "0");
-    const mm = String(cutoffAt.getMinutes()).padStart(2, "0");
+    const londonClock = zonedParts(cutoffAt, "Europe/London");
+    const hh = String(londonClock.hour).padStart(2, "0");
+    const mm = String(londonClock.minute).padStart(2, "0");
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
@@ -3790,8 +4001,9 @@ describe("Portal Subscriptions", () => {
     const cutoffAt = new Date(now.getTime() + 2 * 60 * 1000);
     cutoffAt.setSeconds(0, 0);
 
-    const hh = String(cutoffAt.getHours()).padStart(2, "0");
-    const mm = String(cutoffAt.getMinutes()).padStart(2, "0");
+    const londonClock = zonedParts(cutoffAt, "Europe/London");
+    const hh = String(londonClock.hour).padStart(2, "0");
+    const mm = String(londonClock.minute).padStart(2, "0");
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
       {
@@ -4068,6 +4280,486 @@ describe("Portal Subscriptions", () => {
     }).lean();
     expect(creditTx).toBeTruthy();
   });
+
+  it("replaces single-day product edits in one mutation and settles only the net decrease", async () => {
+    const { variant: secondVariant } = await createTestProduct();
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [
+          { variantId, quantity: 2 },
+          { variantId: secondVariant._id.toString(), quantity: 1 },
+        ],
+      });
+
+    expect(createRes.status).toBe(201);
+    const subscription = createRes.body.data.subscription;
+    await prepareUpcomingDeliveries(subscription._id);
+
+    const primaryItem = subscription.items.find(
+      (item) => String(item.variant) === String(variantId),
+    );
+    expect(primaryItem).toBeTruthy();
+
+    stripe.paymentIntents.create.mockClear();
+
+    const replaceRes = await request(app)
+      .put(`/api/portal/subscriptions/${subscription._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        items: [{ itemId: primaryItem._id, quantity: 1 }],
+        refundMethod: "credit",
+      });
+
+    expect(replaceRes.status).toBe(200);
+    expect(replaceRes.body.data.subscription.items).toHaveLength(1);
+    expect(replaceRes.body.data.subscription.items[0].quantity).toBe(1);
+    expect(replaceRes.body.data.creditedMinor).toBe(500);
+    expect(replaceRes.body.data.refundedMinor).toBe(0);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+
+    const saved = await Subscription.findById(subscription._id).lean();
+    expect(saved.items).toHaveLength(1);
+    expect(String(saved.items[0].variant)).toBe(String(variantId));
+    expect(saved.items[0].quantity).toBe(1);
+  });
+
+  it("replays a completed subscription creation operation without creating or charging twice", async () => {
+    const operationId = crypto.randomUUID();
+    stripe.products.create.mockClear();
+    stripe.prices.create.mockClear();
+    stripe.subscriptions.create.mockClear();
+
+    const payload = {
+      operationId,
+      frequency: "weekly",
+      preferredDeliveryDay: 0,
+      deliveryAddressId: addressId,
+      items: [{ variantId, quantity: 1 }],
+    };
+
+    const first = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+    const second = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(second.body.data.subscription._id).toBe(
+      first.body.data.subscription._id,
+    );
+    expect(stripe.products.create).toHaveBeenCalledTimes(1);
+    expect(stripe.prices.create).toHaveBeenCalledTimes(1);
+    expect(stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    expect(
+      await Subscription.countDocuments({ customer: customer._id }),
+    ).toBe(1);
+  });
+
+  it("deduplicates an incremental add-item retry with the same operation ID", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    const extra = await createTestProduct();
+    const operationId = crypto.randomUUID();
+
+    stripe.paymentIntents.create.mockClear();
+
+    const payload = {
+      operationId,
+      variantId: extra.variant._id.toString(),
+      quantity: 1,
+    };
+
+    const first = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+    const second = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send(payload);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+
+    const refreshed = await Subscription.findById(sub._id).lean();
+    const added = refreshed.items.find(
+      (item) => String(item.variant) === String(extra.variant._id),
+    );
+    expect(added.quantity).toBe(1);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects reusing an operation ID for a different mutation payload", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    const extra = await createTestProduct();
+    const operationId = crypto.randomUUID();
+
+    const first = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId,
+        variantId: extra.variant._id.toString(),
+        quantity: 1,
+      });
+
+    const conflict = await request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId,
+        variantId: extra.variant._id.toString(),
+        quantity: 2,
+      });
+
+    expect(first.status).toBe(200);
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.message).toMatch(/operation ID/i);
+  });
+
+
+  it("keeps wallet balance and ledger atomic when the ledger write fails", async () => {
+    await StoreCreditTransaction.init();
+    const failure = jest
+      .spyOn(StoreCreditTransaction, "create")
+      .mockRejectedValueOnce(new Error("Injected ledger failure"));
+
+    await expect(
+      storeCreditService.addCredit({
+        customerId: customer._id,
+        amountMinor: 500,
+        type: "subscription_refund",
+        reason: "Atomic wallet regression",
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    ).rejects.toThrow(/ledger failure/i);
+
+    failure.mockRestore();
+    const refreshed = await Customer.findById(customer._id).lean();
+    expect(refreshed.creditBalance).toBe(0);
+    expect(
+      await StoreCreditTransaction.countDocuments({ customer: customer._id }),
+    ).toBe(0);
+  });
+
+  it("replays the same wallet credit key without crediting twice", async () => {
+    await StoreCreditTransaction.init();
+    const idempotencyKey = `wallet:${crypto.randomUUID()}`;
+    const payload = {
+      customerId: customer._id,
+      amountMinor: 375,
+      type: "subscription_refund",
+      reason: "Wallet retry regression",
+      idempotencyKey,
+    };
+
+    const first = await storeCreditService.addCredit(payload);
+    const replay = await storeCreditService.addCredit(payload);
+
+    expect(first.ok).toBe(true);
+    expect(replay.ok).toBe(true);
+    expect(replay.replayed).toBe(true);
+
+    const refreshed = await Customer.findById(customer._id).lean();
+    expect(refreshed.creditBalance).toBe(375);
+    expect(
+      await StoreCreditTransaction.countDocuments({
+        customer: customer._id,
+        idempotencyKey,
+      }),
+    ).toBe(1);
+  });
+
+  it("rolls back a decrease if its order snapshot cannot commit, then retries once", async () => {
+    await StoreCreditTransaction.init();
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 3 }],
+      });
+    expect(createRes.status).toBe(201);
+
+    const sub = createRes.body.data.subscription;
+    const itemId = sub.items[0]._id;
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const subtotal = sub.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+    const order = await Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        subtotal: item.unitPrice * item.quantity,
+      })),
+      deliveryAddress: sub.deliveryAddress,
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: deliveries[0].scheduledDate,
+      deliveryFee: 0,
+      subtotal,
+      total: subtotal,
+      amountPaid: subtotal,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 86400000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: `pi_paid_${crypto.randomUUID().slice(0, 8)}`,
+      paidAt: new Date(),
+    });
+    await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, {
+      status: "generated",
+      order: order._id,
+      generatedAt: new Date(),
+    });
+
+    const operationId = crypto.randomUUID();
+    const failure = jest
+      .spyOn(Order.prototype, "save")
+      .mockRejectedValueOnce(new Error("Injected order save failure"));
+
+    const first = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}/items/${itemId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId, quantity: 1, refundMethod: "credit" });
+
+    expect(first.status).toBe(500);
+    failure.mockRestore();
+
+    const failedSub = await Subscription.findById(sub._id).lean();
+    const failedCustomer = await Customer.findById(customer._id).lean();
+    const failedOrder = await Order.findById(order._id).lean();
+    expect(failedSub.items[0].quantity).toBe(3);
+    expect(failedCustomer.creditBalance).toBe(0);
+    expect(failedOrder.amountPaid).toBe(subtotal);
+    expect(
+      await StoreCreditTransaction.countDocuments({
+        customer: customer._id,
+        type: "subscription_refund",
+      }),
+    ).toBe(0);
+
+    const retry = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}/items/${itemId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId, quantity: 1, refundMethod: "credit" });
+
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.creditedMinor).toBe(500);
+
+    const finalSub = await Subscription.findById(sub._id).lean();
+    const finalCustomer = await Customer.findById(customer._id).lean();
+    const finalOrder = await Order.findById(order._id).lean();
+    expect(finalSub.items[0].quantity).toBe(1);
+    expect(finalCustomer.creditBalance).toBe(500);
+    // Store credit refunds value to the customer's wallet but does not reverse
+    // the original card capture, so amountPaid remains the captured amount.
+    expect(finalOrder.amountPaid).toBe(subtotal);
+    expect(finalOrder.total).toBe(subtotal - 5);
+    expect(finalOrder.items[0].quantity).toBe(1);
+    expect(
+      await StoreCreditTransaction.countDocuments({
+        customer: customer._id,
+        type: "subscription_refund",
+      }),
+    ).toBe(1);
+  });
+
+  it("keeps a subscription edit refund partial after the live order total decreases", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 2 }],
+      });
+    expect(createRes.status).toBe(201);
+
+    const sub = createRes.body.data.subscription;
+    const order = await Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        price: item.unitPrice,
+        quantity: 1,
+        subtotal: item.unitPrice,
+      })),
+      deliveryAddress: sub.deliveryAddress,
+      customerInstructions: "",
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: new Date(sub.nextDeliveryDate),
+      deliveryFee: 0,
+      subtotal: 2.5,
+      total: 2.5,
+      amountPaid: 2.5,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 86400000),
+      orderType: "subscription_generated",
+      subscription: sub._id,
+      stripePaymentIntentId: "pi_subscription_edit_partial",
+      paidAt: new Date(),
+      paymentAllocations: [{
+        paymentIntentId: "pi_subscription_edit_partial",
+        source: "subscription_invoice",
+        amountMinor: 500,
+      }],
+    });
+
+    await refundService.applyStripeRefundSucceeded({
+      paymentIntentId: "pi_subscription_edit_partial",
+      stripeRefundId: "re_subscription_edit_partial",
+      amountMinor: 250,
+      currency: "gbp",
+      orderId: order._id,
+    });
+
+    const updated = await Order.findById(order._id).lean();
+    expect(updated.status).toBe("partially_refunded");
+  });
+
+
+  it("automatically upgrades a legacy subscription with no customerVersion", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(createRes.status).toBe(201);
+    const subscriptionId = createRes.body.data.subscription._id;
+
+    // Simulate a subscription created before customerVersion was introduced.
+    await Subscription.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(subscriptionId) },
+      { $unset: { customerVersion: "" } },
+    );
+
+    const detail = await request(app)
+      .get(`/api/portal/subscriptions/${subscriptionId}`)
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.subscription.customerVersion).toBe(0);
+
+    const list = await request(app)
+      .get("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`);
+
+    expect(list.status).toBe(200);
+    const listed = list.body.data.subscriptions.find(
+      (subscription) => subscription._id === subscriptionId,
+    );
+    expect(listed.customerVersion).toBe(0);
+
+    const update = await request(app)
+      .patch(`/api/portal/subscriptions/${subscriptionId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: 0,
+        notes: "Legacy subscription upgraded safely",
+      });
+
+    expect(update.status).toBe(200);
+    expect(update.body.data.subscription.customerVersion).toBe(1);
+
+    const stored = await Subscription.collection.findOne({
+      _id: new mongoose.Types.ObjectId(subscriptionId),
+    });
+    expect(stored.customerVersion).toBe(1);
+    expect(stored.notes).toBe("Legacy subscription upgraded safely");
+  });
+
+
+  it("rejects stale subscription edits instead of overwriting a newer version", async () => {
+    const createRes = await request(app)
+      .post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        frequency: "weekly",
+        preferredDeliveryDay: 0,
+        deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }],
+      });
+
+    expect(createRes.status).toBe(201);
+    const sub = createRes.body.data.subscription;
+    const initialVersion = Number(sub.customerVersion || 0);
+
+    const first = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: initialVersion,
+        notes: "Saved from the first tab",
+      });
+
+    expect(first.status).toBe(200);
+    const nextVersion = first.body.data.subscription.customerVersion;
+    expect(nextVersion).toBe(initialVersion + 1);
+
+    const stale = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: initialVersion,
+        notes: "Stale overwrite",
+      });
+
+    expect(stale.status).toBe(409);
+    expect(stale.body.message).toMatch(/changed while you were editing/i);
+
+    const afterStale = await Subscription.findById(sub._id).lean();
+    expect(afterStale.notes).toBe("Saved from the first tab");
+    expect(afterStale.customerVersion).toBe(nextVersion);
+
+    const fresh = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        operationId: crypto.randomUUID(),
+        expectedVersion: nextVersion,
+        notes: "Saved after refresh",
+      });
+
+    expect(fresh.status).toBe(200);
+    expect(fresh.body.data.subscription.customerVersion).toBe(nextVersion + 1);
+    expect(fresh.body.data.subscription.notes).toBe("Saved after refresh");
+  });
+
+
 });
 
 describe("Portal Support Requests", () => {
@@ -4112,4 +4804,5 @@ describe("Portal Support Requests", () => {
     expect(Array.isArray(res.body.data.requests)).toBe(true);
     expect(res.body.data.requests.length).toBeGreaterThan(0);
   });
+
 });

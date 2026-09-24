@@ -304,11 +304,68 @@ const subscriptionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    // Reliability marker only: the recurring Stripe price failed to synchronize
+    // and should be retried by reconciliation. Keep this separate from
+    // pendingPriceSync, which has invoice-bound deferral semantics.
+    stripePriceSyncPending: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    // Monotonic customer/admin edit revision used for stale-edit protection.
+    customerVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // A short-lived server-side lock serializes overlapping customer/admin
+    // commands before any external payment side effects are attempted.
+    customerMutationLock: {
+      type: new mongoose.Schema(
+        {
+          operationId: { type: String, required: true },
+          lockedAt: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+      select: false,
+    },
   },
   {
     timestamps: true,
   },
 );
+
+const CUSTOMER_VERSIONED_PATHS = [
+  "status",
+  "frequency",
+  "preferredDeliveryDay",
+  "preferredDeliveryDays",
+  "nextDeliveryDate",
+  "deliveryAddress",
+  "items",
+  "deliveryDayPlans",
+  "notes",
+  "pausedAt",
+  "pausedUntil",
+  "pauseReason",
+  "cancelledAt",
+  "cancelReason",
+  "isCancellationScheduled",
+  "cancellationEffectiveAfter",
+  "pendingChanges",
+];
+
+subscriptionSchema.pre("save", function () {
+  if (this.isNew) return;
+  if (CUSTOMER_VERSIONED_PATHS.some((path) => this.isModified(path))) {
+    this.customerVersion = Number(this.customerVersion || 0) + 1;
+  }
+});
 
 // Auto-generate subscriptionNumber before save
 subscriptionSchema.pre("validate", async function () {
