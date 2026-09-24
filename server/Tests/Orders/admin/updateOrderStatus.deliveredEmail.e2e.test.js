@@ -99,6 +99,27 @@ describe("PUT /api/admin/orders/:orderId/status (Delivered email)", () => {
     expect(updated.deliveryStatus).toBe("delivered");
     expect(updated.metadata.deliveryProofUrl).toBe(proofUrl);
     expect(updated.metadata.deliveredEmailSentAt).toBeTruthy();
+    expect(updated.statusAudit).toHaveLength(1);
+    expect(updated.statusAudit[0]).toMatchObject({
+      from: "in_transit",
+      to: "delivered",
+      source: "admin",
+    });
+    expect(updated.statusAudit[0].actorName).toBeTruthy();
+    expect(updated.statusAudit[0].effects).toEqual(
+      expect.arrayContaining([
+        "Recorded delivery completion time",
+        "Attached delivery proof",
+        "Sent the delivery confirmation email",
+      ]),
+    );
+    expect(updated.emailLog).toHaveLength(1);
+    expect(updated.emailLog[0]).toMatchObject({
+      template: "deliveryProof",
+      providerId: "email_test",
+      to: customer.email,
+      trigger: "status_delivered",
+    });
 
     // Calling again should NOT re-send.
     const res2 = await request(app)
@@ -111,6 +132,8 @@ describe("PUT /api/admin/orders/:orderId/status (Delivered email)", () => {
 
     expect(res2.status).toBe(200);
     expect(sendEmail).toHaveBeenCalledTimes(1);
+    const afterSecondUpdate = await Order.findById(order._id);
+    expect(afterSecondUpdate.statusAudit).toHaveLength(1);
   });
 
   test("does not send email for non-delivered statuses", async () => {

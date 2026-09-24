@@ -12,6 +12,34 @@ const {
   persistDispatchEmailResults,
 } = require("../../utils/deliveryEmail.util");
 
+async function updateOrdersToDispatched(orderIds, changedAt = new Date()) {
+  const orders = await Order.find({
+    _id: { $in: orderIds },
+    deliveryStatus: { $nin: ["delivered", "returned", "dispatched"] },
+  }).select("_id deliveryStatus").lean();
+  if (!orders.length) return { matchedCount: 0, modifiedCount: 0 };
+  return Order.bulkWrite(orders.map((order) => ({
+    updateOne: {
+      filter: { _id: order._id, deliveryStatus: order.deliveryStatus },
+      update: {
+        $set: { deliveryStatus: "dispatched", updatedAt: changedAt },
+        $push: {
+          statusAudit: {
+            from: order.deliveryStatus,
+            to: "dispatched",
+            changedAt,
+            actor: null,
+            actorName: "Delivery dispatch system",
+            actorRole: null,
+            source: "delivery_dispatch",
+            effects: ["Queued the dispatch notification email"],
+          },
+        },
+      },
+    },
+  })));
+}
+
 async function dispatchBatch({ batchId } = {}) {
   if (!batchId) {
     return {
@@ -44,17 +72,7 @@ async function dispatchBatch({ batchId } = {}) {
   let ordersUpdatedCount = 0;
 
   if (orderIds.length > 0) {
-    const updateRes = await Order.updateMany(
-      {
-        _id: { $in: orderIds },
-        deliveryStatus: { $nin: ["delivered", "returned"] },
-      },
-      {
-        $set: {
-          deliveryStatus: "dispatched",
-        },
-      },
-    );
+    const updateRes = await updateOrdersToDispatched(orderIds, now);
 
     ordersUpdatedCount =
       typeof updateRes?.modifiedCount === "number"
@@ -310,13 +328,7 @@ async function dispatchRoute({ batchId, routeId } = {}) {
   let ordersUpdatedCount = 0;
 
   if (routeOrderIds.length > 0) {
-    const updateRes = await Order.updateMany(
-      {
-        _id: { $in: routeOrderIds },
-        deliveryStatus: { $nin: ["delivered", "returned"] },
-      },
-      { $set: { deliveryStatus: "dispatched" } },
-    );
+    const updateRes = await updateOrdersToDispatched(routeOrderIds);
 
     ordersUpdatedCount =
       typeof updateRes?.modifiedCount === "number"

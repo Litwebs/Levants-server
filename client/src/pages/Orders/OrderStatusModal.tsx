@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle, Clock, Upload, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { Camera, Upload } from "lucide-react";
 import { Button, Modal, ModalFooter } from "../../components/common";
 import styles from "./Orders.module.css";
 import { getStatusBadge } from "./order.utils";
@@ -16,12 +17,30 @@ const STATUSES = [
 
 const DRIVER_STATUSES = ["ordered", "delivered", "returned"] as const;
 
+function StatusContainer({ inline, open, onClose, busy, children }: {
+  inline: boolean; open: boolean; onClose: () => void; busy: boolean; children: ReactNode;
+}) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (inline && open) heading.current?.focus({ preventScroll: true });
+  }, [inline, open]);
+  if (inline) return (
+    <div id="order-status-editor" className={styles.inlineStatusQuick}>
+      {children}
+    </div>
+  );
+  return <Modal isOpen={open} onClose={onClose} title="Update Order Status" size="sm" showCloseButton={!busy}>{children}</Modal>;
+}
+
 const OrderStatusModal = ({
+  inline = false,
+  footerContainerId,
   selectedOrder,
   isStatusModalOpen,
   setIsStatusModalOpen,
   updateOrderStatus,
 }: any) => {
+  const Footer = inline ? "div" : ModalFooter;
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
 
@@ -50,8 +69,15 @@ const OrderStatusModal = ({
 
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofError, setProofError] = useState("");
   const [deliveryNote, setDeliveryNote] = useState<string>("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [footerContainer, setFooterContainer] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!inline || !footerContainerId) return;
+    setFooterContainer(document.getElementById(footerContainerId));
+  }, [inline, footerContainerId]);
 
   const customerInstructions =
     typeof selectedOrder?.customerInstructions === "string"
@@ -59,15 +85,16 @@ const OrderStatusModal = ({
       : "";
 
   useEffect(() => {
-    if (!isStatusModalOpen) return;
     setSelectedStatus(null);
     setProofFile(null);
+    setProofError("");
     setDeliveryNote("");
-  }, [isStatusModalOpen, selectedOrder?.id]);
+  }, [selectedOrder?.id]);
 
   useEffect(() => {
     if (selectedStatus !== "delivered") {
       setProofFile(null);
+      setProofError("");
       setDeliveryNote("");
     }
   }, [selectedStatus]);
@@ -83,6 +110,10 @@ const OrderStatusModal = ({
 
   const handleClose = () => {
     if (isUpdating) return;
+    setSelectedStatus(null);
+    setProofFile(null);
+    setProofError("");
+    setDeliveryNote("");
     setIsStatusModalOpen(false);
   };
 
@@ -91,10 +122,6 @@ const OrderStatusModal = ({
     selectedStatus !== selectedOrder.deliveryStatus &&
     !isUpdating &&
     !isDeliveredLockedForDriver;
-
-  const markLabel = selectedStatus
-    ? `Mark as ${selectedStatus.replace(/_/g, " ")}`
-    : "Mark";
 
   const handleMark = async () => {
     if (!selectedStatus || isUpdating) return;
@@ -110,6 +137,12 @@ const OrderStatusModal = ({
         deliveryProofFile,
         deliveryNote,
       );
+      if (mountedRef.current) {
+        setSelectedStatus(null);
+        setProofFile(null);
+        setProofError("");
+        setDeliveryNote("");
+      }
     } finally {
       if (mountedRef.current) {
         setIsUpdating(false);
@@ -117,22 +150,100 @@ const OrderStatusModal = ({
     }
   };
 
-  return (
-    <Modal
-      isOpen={isStatusModalOpen}
-      onClose={handleClose}
-      title="Update Order Status"
-      size="sm"
-      showCloseButton={!isUpdating}
-    >
-      <div className={styles.statusModal} aria-busy={isUpdating}>
-        <p className={styles.statusModalText}>
-          Update status for order <strong>{selectedOrder.orderNumber}</strong>
-        </p>
+  const selectProofFile = (file: File | null) => {
+    setProofError("");
+    if (!file) {
+      setProofFile(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setProofFile(null);
+      setProofError("Choose an image file.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setProofFile(null);
+      setProofError("The image must be smaller than 8 MB.");
+      return;
+    }
+    setProofFile(file);
+  };
 
-        <p className={styles.statusModalCurrent}>
+  const statusDetails = (
+    <>
+      {customerInstructions && selectedStatus === "delivered" && (
+        <div className={styles.proofSection}>
+          <div className={styles.proofLabel}>Customer instructions</div>
+          <p className={styles.statusCustomerInstructions}>{customerInstructions}</p>
+        </div>
+      )}
+
+      {(!inline || selectedStatus === "delivered") && <div className={styles.proofSection}>
+        <div className={styles.proofLabel}>Delivery proof (photo)</div>
+
+        <div className={styles.proofActions}>
+          <button
+            type="button"
+            className={styles.proofActionBtn}
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={isUpdating || selectedStatus !== "delivered"}
+          >
+            <Camera size={18} />
+            <span>Take photo</span>
+          </button>
+          <button
+            type="button"
+            className={styles.proofActionBtn}
+            onClick={() => uploadInputRef.current?.click()}
+            disabled={isUpdating || selectedStatus !== "delivered"}
+          >
+            <Upload size={18} />
+            <span>Upload photo</span>
+          </button>
+        </div>
+
+        <input ref={cameraInputRef} className={styles.hiddenInput} type="file" accept="image/*" capture="environment" disabled={selectedStatus !== "delivered"} onChange={(e) => selectProofFile(e.target.files?.[0] ?? null)} />
+        <input ref={uploadInputRef} className={styles.hiddenInput} type="file" accept="image/*" disabled={selectedStatus !== "delivered"} onChange={(e) => selectProofFile(e.target.files?.[0] ?? null)} />
+
+        <div className={styles.proofHint}>
+          {selectedStatus !== "delivered"
+            ? "Select Delivered to add a photo"
+            : proofFile
+              ? `Selected: ${proofFile.name}`
+              : "Optional when marking as delivered"}
+        </div>
+        {proofError ? <div className={styles.proofError} role="alert">{proofError}</div> : null}
+      </div>}
+
+      {selectedStatus === "delivered" && (
+        <div className={styles.proofSection}>
+          <div className={styles.proofLabel}>Delivery note <span>(optional)</span></div>
+          <textarea
+            className={styles.notesTextarea}
+            aria-label="Delivery note"
+            value={deliveryNote}
+            onChange={(e) => setDeliveryNote(e.target.value)}
+            rows={2}
+            maxLength={500}
+            placeholder="Add a note for the customer"
+            disabled={isUpdating}
+          />
+          <div className={styles.proofHint}>Included in the delivery confirmation email.</div>
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <StatusContainer inline={inline} open={isStatusModalOpen} onClose={handleClose} busy={isUpdating}>
+      <div className={styles.statusModal} aria-busy={isUpdating}>
+        {!inline && <p className={styles.statusModalText}>
+          Update status for order <strong>{selectedOrder.orderNumber}</strong>
+        </p>}
+
+        {!inline && <p className={styles.statusModalCurrent}>
           Current status: {getStatusBadge(selectedOrder.deliveryStatus)}
-        </p>
+        </p>}
 
         {isDeliveredLockedForDriver && (
           <p className={styles.statusModalCurrent}>
@@ -140,126 +251,45 @@ const OrderStatusModal = ({
           </p>
         )}
 
-        <div className={styles.statusOptionsLabel}>Choose new status</div>
-        <div className={styles.statusOptions}>
+        <label className={inline ? styles.visuallyHidden : styles.statusOptionsLabel} htmlFor="order-delivery-status">
+          New status
+        </label>
+        <select
+          id="order-delivery-status"
+          className={styles.statusSelect}
+          value={selectedStatus || ""}
+          onChange={(event) => {
+            const value = event.target.value || null;
+            setSelectedStatus(value);
+            setIsStatusModalOpen(Boolean(value));
+          }}
+          disabled={isUpdating || isDeliveredLockedForDriver}
+        >
+          <option value="">{inline ? "Update status" : "Select a status"}</option>
           {statuses.map((status) => (
-            <button
+            <option
               key={status}
-              type="button"
-              className={`${styles.statusOption} ${
-                selectedOrder.deliveryStatus === status ? styles.current : ""
-              } ${selectedStatus === status ? styles.selected : ""}`}
-              onClick={() => {
-                if (isUpdating || isDeliveredLockedForDriver) return;
-                setSelectedStatus(status);
-              }}
-              disabled={
-                isUpdating ||
-                isDeliveredLockedForDriver ||
-                selectedOrder.deliveryStatus === status
-              }
+              value={status}
+              disabled={selectedOrder.deliveryStatus === status}
             >
-              {status === "ordered" ? (
-                <Clock size={18} />
-              ) : status === "returned" ? (
-                <X size={18} />
-              ) : (
-                <CheckCircle size={18} />
-              )}
-              <span>{status.replace(/_/g, " ")}</span>
-            </button>
+              {status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())}
+              {selectedOrder.deliveryStatus === status ? " (current)" : ""}
+            </option>
           ))}
-        </div>
+        </select>
 
-        {customerInstructions && (
-          <div className={styles.proofSection}>
-            <div className={styles.proofLabel}>Customer instructions</div>
-            <textarea
-              className={styles.notesTextarea}
-              value={customerInstructions}
-              readOnly
-              rows={3}
-            />
-          </div>
-        )}
-
-        <div className={styles.proofSection}>
-          <div className={styles.proofLabel}>Delivery proof (photo)</div>
-
-          <div className={styles.proofActions}>
-            <button
-              type="button"
-              className={styles.proofActionBtn}
-              onClick={() => cameraInputRef.current?.click()}
-              disabled={isUpdating || selectedStatus !== "delivered"}
-            >
-              <Camera size={18} />
-              <span>Take photo</span>
-            </button>
-            <button
-              type="button"
-              className={styles.proofActionBtn}
-              onClick={() => uploadInputRef.current?.click()}
-              disabled={isUpdating || selectedStatus !== "delivered"}
-            >
-              <Upload size={18} />
-              <span>Upload photo</span>
-            </button>
-          </div>
-
-          <input
-            ref={cameraInputRef}
-            className={styles.hiddenInput}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            disabled={selectedStatus !== "delivered"}
-            onChange={(e) => {
-              const file = e.target.files?.[0] ?? null;
-              setProofFile(file);
-            }}
-          />
-          <input
-            ref={uploadInputRef}
-            className={styles.hiddenInput}
-            type="file"
-            accept="image/*"
-            disabled={selectedStatus !== "delivered"}
-            onChange={(e) => {
-              const file = e.target.files?.[0] ?? null;
-              setProofFile(file);
-            }}
-          />
-
-          <div className={styles.proofHint}>
-            {selectedStatus !== "delivered"
-              ? "Select Delivered to add a photo"
-              : proofFile
-                ? `Selected: ${proofFile.name}`
-                : "Optional (included when marking as delivered)"}
-          </div>
-        </div>
-
-        {selectedStatus === "delivered" && (
-          <div className={styles.proofSection}>
-            <div className={styles.proofLabel}>Delivery note (optional)</div>
-            <textarea
-              className={styles.notesTextarea}
-              value={deliveryNote}
-              onChange={(e) => setDeliveryNote(e.target.value)}
-              rows={3}
-              maxLength={500}
-              placeholder="Add a note for the customer (e.g. left with neighbor, behind bin, etc.)"
-              disabled={isUpdating}
-            />
-            <div className={styles.proofHint}>
-              This will be included in the delivery proof email.
-            </div>
-          </div>
-        )}
+        {!inline && statusDetails}
       </div>
 
-      <ModalFooter>
+      {(!inline || selectedStatus) && (inline && footerContainer ? createPortal(<div className={styles.inlineStatusPanel}>
+        {statusDetails}
+        <Footer className={styles.inlineStatusFooter}>
+          <Button variant="outline" disabled={isUpdating} onClick={handleClose}>Cancel</Button>
+          <Button className={styles.statusSaveAction} variant="primary" isLoading={isUpdating} disabled={!canMark} onClick={handleMark}>
+            {isUpdating ? "Saving..." : "Save"}
+          </Button>
+        </Footer>
+      </div>, footerContainer) : !inline ? <Footer>
         <Button
           fullWidth
           variant="primary"
@@ -267,14 +297,10 @@ const OrderStatusModal = ({
           disabled={!canMark}
           onClick={handleMark}
         >
-          {isUpdating
-            ? "Updating order..."
-            : selectedStatus
-              ? markLabel
-              : "Select a status to continue"}
+          {isUpdating ? "Saving..." : "Save"}
         </Button>
-      </ModalFooter>
-    </Modal>
+      </Footer> : null)}
+    </StatusContainer>
   );
 };
 

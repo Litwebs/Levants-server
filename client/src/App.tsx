@@ -10,6 +10,7 @@ import { ToastProvider } from "./components/common/Toast";
 import { LoadingScreen } from "./components/common";
 import Dashboard from "./pages/Dashboard/Dashboard";
 import Orders from "./pages/Orders/Orders";
+import OrderDetailPage from "./pages/Orders/OrderDetailPage";
 import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";
 import ProductVariantsPage from "./pages/Products/ProductVariantsPage";
@@ -171,6 +172,18 @@ const App = () => (
                                   fallbackPath="/delivery-runs"
                                 >
                                   <Orders />
+                                </RequireNotRole>
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/orders/:orderId"
+                            element={
+                              <RequirePermission permission="orders.read">
+                                <RequireNotRole role="driver" fallbackPath="/delivery-runs">
+                                  <OrdersProvider>
+                                    <OrderDetailPage />
+                                  </OrdersProvider>
                                 </RequireNotRole>
                               </RequirePermission>
                             }

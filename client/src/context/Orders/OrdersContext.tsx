@@ -22,6 +22,7 @@ import type {
   OrdersListMeta,
   OrdersState,
   OrdersStockRequirements,
+  OrderEmailAudit,
   RefundOrderResult,
 } from "./constants";
 
@@ -69,11 +70,13 @@ type OrdersContextType = {
   }) => Promise<ListOrdersResult>;
 
   getOrderById: (orderId: string) => Promise<AdminOrder>;
+  getOrderEmailAudit: (orderId: string) => Promise<OrderEmailAudit[]>;
 
   updateOrderStatus: (
     orderId: string,
     status: "ordered" | "dispatched" | "in_transit" | "delivered" | "returned",
     deliveryProofFile?: File,
+    deliveryNote?: string,
   ) => Promise<AdminOrder>;
 
   updateOrderPaymentStatus: (
@@ -211,6 +214,12 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  const getOrderEmailAudit = useCallback(async (orderId: string) => {
+    const res = await api.get(`/admin/orders/${orderId}/emails`);
+    const data = unwrapData<{ emails: OrderEmailAudit[] }>(res.data);
+    return Array.isArray(data?.emails) ? data.emails : [];
+  }, []);
+
   const updateOrderStatus = useCallback(
     async (
       orderId: string,
@@ -236,19 +245,13 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         const cleanedNote =
           typeof deliveryNote === "string" ? deliveryNote.trim() : "";
         const res = deliveryProofFile
-          ? await api.put(
-              url,
-              (() => {
-                const fd = new FormData();
-                fd.append("deliveryStatus", deliveryStatus);
-                fd.append("deliveryProof", deliveryProofFile);
-                if (cleanedNote) fd.append("deliveryNote", cleanedNote);
-                return fd;
-              })(),
-              {
-                headers: { "Content-Type": "multipart/form-data" },
-              },
-            )
+          ? await api.put(url, (() => {
+              const fd = new FormData();
+              fd.append("deliveryStatus", deliveryStatus);
+              fd.append("deliveryProof", deliveryProofFile);
+              if (cleanedNote) fd.append("deliveryNote", cleanedNote);
+              return fd;
+            })())
           : await api.put(url, {
               deliveryStatus,
               ...(cleanedNote ? { deliveryNote: cleanedNote } : {}),
@@ -548,6 +551,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       error: state.error,
       listOrders,
       getOrderById,
+      getOrderEmailAudit,
       updateOrderStatus,
       updateOrderPaymentStatus,
       updateOrderItems,
@@ -563,6 +567,7 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       state,
       listOrders,
       getOrderById,
+      getOrderEmailAudit,
       updateOrderStatus,
       updateOrderPaymentStatus,
       updateOrderItems,

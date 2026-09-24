@@ -5,11 +5,12 @@ import OrdersHeader from "./OrdersHeader";
 import OrdersFilters from "./OrdersFilters";
 import OrdersBulkActions from "./OrdersBulkActions";
 import OrdersTable from "./OrdersTable";
-import OrderDetailModal from "./OrderDetailModal";
+import { useNavigate } from "react-router-dom";
 import OrderStatusModal from "./OrderStatusModal";
 
 const Orders = () => {
   const ordersState = useOrders();
+  const navigate = useNavigate();
 
   return (
     <div
@@ -18,8 +19,7 @@ const Orders = () => {
       <OrdersHeader {...ordersState} />
       <OrdersFilters {...ordersState} />
       <OrdersBulkActions {...ordersState} />
-      <OrdersTable {...ordersState} />
-      <OrderDetailModal {...ordersState} />
+      <OrdersTable {...ordersState} openOrderDetails={(id: string) => navigate(`/orders/${id}`)} />
       <OrderStatusModal {...ordersState} />
     </div>
   );

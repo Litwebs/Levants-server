@@ -14,6 +14,7 @@ import {
 import styles from "./Orders.module.css";
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { usePermissions } from "@/hooks/usePermissions";
 
 const OrdersTable = ({
@@ -154,9 +155,9 @@ const OrdersTable = ({
 
                 <td className={styles.orderInfoCol} data-label="Order">
                   <div className={styles.orderCell}>
-                    <span className={styles.orderNumber}>
+                    <Link to={`/orders/${order.id}`} className={styles.orderNumber} onClick={(event) => event.stopPropagation()}>
                       {order.orderNumber}
-                    </span>
+                    </Link>
                     <span className={styles.orderDate}>
                       {formatOrderCreatedAt(order.createdAt)}
                     </span>

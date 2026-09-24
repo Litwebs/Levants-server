@@ -71,6 +71,7 @@ async function UpdateOrderStatus({
   deliveryNote,
   deliveryProofFile,
   actorUserId,
+  actorName,
   actorRoleName,
   actorPermissions,
 }) {
@@ -213,6 +214,7 @@ async function UpdateOrderStatus({
   // and only if we haven't already sent it.
   const alreadySent = Boolean(order.metadata?.deliveredEmailSentAt);
 
+  let deliveredEmailSent = false;
   if (isDeliveredTransition && !alreadySent) {
     try {
       const customerId = order.customer;
@@ -255,6 +257,17 @@ async function UpdateOrderStatus({
           if (!order.metadata || typeof order.metadata !== "object")
             order.metadata = {};
           order.metadata.deliveredEmailSentAt = new Date();
+          const providerId = emailRes?.response?.data?.id || emailRes?.response?.id || null;
+          order.metadata.deliveredEmailProviderId = providerId;
+          order.emailLog.push({
+            template: "deliveryProof",
+            providerId,
+            subject,
+            to,
+            sentAt: new Date(),
+            trigger: "status_delivered",
+          });
+          deliveredEmailSent = true;
           order.markModified("metadata");
           await order.save();
         }
@@ -264,10 +277,37 @@ async function UpdateOrderStatus({
     }
   }
 
+  if (prevDeliveryStatus !== deliveryStatus) {
+    const effects = [];
+    if (isDeliveredTransition) effects.push("Recorded delivery completion time");
+    if (deliveryProofFile || deliveryProofUrl) effects.push("Attached delivery proof");
+    if (deliveryNote) effects.push("Saved a customer delivery note");
+    if (deliveredEmailSent) effects.push("Sent the delivery confirmation email");
+    order.statusAudit.push({
+      from: prevDeliveryStatus || null,
+      to: deliveryStatus,
+      changedAt: new Date(),
+      actor: mongoose.Types.ObjectId.isValid(String(actorUserId || ""))
+        ? actorUserId
+        : null,
+      actorName: actorName || "System",
+      actorRole: actorRoleName || null,
+      source: isDriverActor ? "driver" : "admin",
+      effects,
+    });
+    await order.save();
+  }
+
   return { success: true, data: order };
 }
 
-async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
+async function BulkUpdateDeliveryStatus({
+  orderIds,
+  deliveryStatus,
+  actorUserId,
+  actorName,
+  actorRoleName,
+}) {
   const ids = orderIds
     .filter((id) => mongoose.Types.ObjectId.isValid(id))
     .map((id) => new mongoose.Types.ObjectId(id));
@@ -300,15 +340,42 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
     );
   }
 
-  const result = await Order.updateMany(
-    { _id: { $in: ids } },
-    {
-      $set: {
-        deliveryStatus,
-        updatedAt: new Date(),
+  const auditCandidates = await Order.find({ _id: { $in: ids } })
+    .select("_id deliveryStatus")
+    .lean();
+  const now = new Date();
+  const operations = auditCandidates.map((candidate) => ({
+    updateOne: {
+      filter: { _id: candidate._id },
+      update: {
+        $set: { deliveryStatus, updatedAt: now },
+        ...(candidate.deliveryStatus !== deliveryStatus
+          ? {
+              $push: {
+                statusAudit: {
+                  from: candidate.deliveryStatus || null,
+                  to: deliveryStatus,
+                  changedAt: now,
+                  actor: mongoose.Types.ObjectId.isValid(String(actorUserId || ""))
+                    ? actorUserId
+                    : null,
+                  actorName: actorName || "System",
+                  actorRole: actorRoleName || null,
+                  source: "admin_bulk",
+                  effects:
+                    deliveryStatus === "delivered"
+                      ? ["Recorded delivery completion time", "Triggered delivery email processing"]
+                      : [],
+                },
+              },
+            }
+          : {}),
       },
     },
-  );
+  }));
+  const result = operations.length
+    ? await Order.bulkWrite(operations)
+    : { matchedCount: 0, modifiedCount: 0 };
 
   if (shouldEmailDelivered && Array.isArray(candidates) && candidates.length) {
     try {
@@ -365,9 +432,26 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
         );
 
         if (emailRes?.success) {
+          const providerId =
+            emailRes?.response?.data?.id || emailRes?.response?.id || null;
           await Order.updateOne(
             { _id: order._id },
-            { $set: { "metadata.deliveredEmailSentAt": new Date() } },
+            {
+              $set: {
+                "metadata.deliveredEmailSentAt": new Date(),
+                "metadata.deliveredEmailProviderId": providerId,
+              },
+              $push: {
+                emailLog: {
+                  template: "deliveryProof",
+                  providerId,
+                  subject,
+                  to,
+                  sentAt: new Date(),
+                  trigger: "bulk_status_delivered",
+                },
+              },
+            },
           );
         }
       }

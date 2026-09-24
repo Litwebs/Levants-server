@@ -1,14 +1,15 @@
 import { Button, Modal, ModalFooter, Table } from "../../components/common";
-import { getStatusBadge, getPaymentBadge } from "./order.utils";
 import styles from "./Orders.module.css";
 import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, ImageIcon, Package, Wallet } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useVariantSearch } from "../Discounts/useVariantSearch";
 
-const OrderDetailModal = ({
+const OrderDetailContent = ({
+  heading,
+  statusEditor,
+  isStatusEditorOpen,
   selectedOrder,
-  isDetailModalOpen,
-  setIsDetailModalOpen,
   setIsStatusModalOpen,
   updateOrderPaymentStatus,
   updateOrderItems,
@@ -26,6 +27,7 @@ const OrderDetailModal = ({
   const [refundAmount, setRefundAmount] = useState<string>("");
   const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
   const [isPaymentConfirmOpen, setIsPaymentConfirmOpen] = useState(false);
+  const [isProofModalOpen, setIsProofModalOpen] = useState(false);
   const [nextPaidValue, setNextPaidValue] = useState<boolean | null>(null);
   const [paymentMode, setPaymentMode] = useState<"full" | "custom">("full");
   const [customPayAmount, setCustomPayAmount] = useState<string>("");
@@ -93,7 +95,7 @@ const OrderDetailModal = ({
   }, [selectedOrder?.items]);
 
   useEffect(() => {
-    if (!isDetailModalOpen) {
+    if (!selectedOrder) {
       setIsEditingItems(false);
       setIsSavingItems(false);
       setIncludeDeliveryFeeInTotal(true);
@@ -102,7 +104,7 @@ const OrderDetailModal = ({
       return;
     }
 
-    // If modal is open but the order changes, reset edit state.
+    // Reset drafts when a different order is loaded.
     setIsEditingItems(false);
     setIsSavingItems(false);
     setIncludeDeliveryFeeInTotal(
@@ -112,7 +114,6 @@ const OrderDetailModal = ({
     variantSearch.setQuery("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    isDetailModalOpen,
     selectedOrder?.id,
     selectedOrder?.includeDeliveryFeeInTotal,
   ]);
@@ -165,6 +166,14 @@ const OrderDetailModal = ({
       ? selectedOrder.deliveryProofUrl
       : undefined;
 
+  const sortedHistory = useMemo(
+    () => [...(selectedOrder?.history || [])].sort(
+      (a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    ),
+    [selectedOrder?.history],
+  );
+
   const deliveryNote =
     typeof selectedOrder?.deliveryNote === "string"
       ? selectedOrder.deliveryNote.trim()
@@ -174,6 +183,11 @@ const OrderDetailModal = ({
     typeof selectedOrder?.customerInstructions === "string"
       ? selectedOrder.customerInstructions.trim()
       : "";
+
+  const customerNote = customerInstructions ||
+    (typeof selectedOrder?.customerNotes === "string"
+      ? selectedOrder.customerNotes.trim()
+      : "");
 
   const deliveredAtIso =
     typeof selectedOrder?.deliveredAt === "string"
@@ -186,39 +200,68 @@ const OrderDetailModal = ({
     ? new Date(deliveredAtIso).toLocaleString("en-GB")
     : "—";
 
+  const financialActions = (
+    <div className={styles.financialActions} aria-label="Payment actions">
+      {canUpdatePaymentPermission ? (
+        <Button
+          variant="outline"
+          disabled={!canTogglePaymentStatus || isUpdatingPayment}
+          title={!canTogglePaymentStatus ? "Payment status can only be changed for imported orders without online payments." : undefined}
+          isLoading={isUpdatingPayment}
+          onClick={async () => {
+            if (!canTogglePaymentStatus) return;
+            const markingPaid = !isPaid;
+            setNextPaidValue(markingPaid);
+            if (markingPaid) {
+              setPaymentMode("full");
+              setCustomPayAmount("");
+            }
+            setIsPaymentConfirmOpen(true);
+          }}
+        >
+          {isPaid ? "Mark Unpaid" : "Mark Paid"}
+        </Button>
+      ) : null}
+      {canRefundPermission ? (
+        <Button
+          variant="ghost"
+          className={styles.refundTextAction}
+          disabled={!canRefund}
+          title={!canRefund ? "Refunds are available for eligible online payments." : undefined}
+          onClick={() => {
+            if (!canRefund) return;
+            setRefundAmount("");
+            setIsRefundConfirmOpen(true);
+          }}
+        >
+          Refund
+        </Button>
+      ) : null}
+    </div>
+  );
+
   return (
     <>
-      <Modal
-        isOpen={isDetailModalOpen}
-        onClose={() => setIsDetailModalOpen(false)}
-        title={`Order ${selectedOrder?.orderNumber || ""}`}
-        size="lg"
-      >
+      <div className={styles.orderHero}>
+        {heading}
+        {selectedOrder && <dl className={styles.orderSummary}>
+          <div><dt><Wallet size={17} aria-hidden="true" /> Order total</dt><dd>£{selectedOrder.total.toFixed(2)}</dd></div>
+          <div><dt><CalendarDays size={17} aria-hidden="true" /> Delivery date</dt><dd>{new Date(selectedOrder.deliverySlot.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</dd></div>
+          <div><dt><Package size={17} aria-hidden="true" /> Items to deliver</dt><dd>{selectedOrder.items.reduce((sum: number, item: any) => sum + item.quantity, 0)} <span>units · {selectedOrder.items.length} {selectedOrder.items.length === 1 ? "product" : "products"}</span></dd></div>
+        </dl>}
+      </div>
         {selectedOrder ? (
-          <div className={styles.orderDetail}>
-            <div className={styles.detailHeader}>
-              <div className={styles.detailStatus}>
-                {getStatusBadge(
-                  selectedOrder.deliveryStatus?.replace(/_/g, " "),
-                )}
-                {getPaymentBadge(selectedOrder.paymentStatus)}
-              </div>
-              <span className={styles.detailDate}>
-                Created:{" "}
-                {new Date(selectedOrder.createdAt).toLocaleString("en-GB")}
-              </span>
-            </div>
-
+          <div className={`${styles.orderDetail} ${styles.pageOrderDetail}`}>
             <div className={styles.detailGrid}>
               <div className={styles.detailSection}>
-                <h4 className={styles.detailTitle}>Customer</h4>
+                <h2 className={styles.detailTitle}>Customer</h2>
                 <p>{selectedOrder.customer.name}</p>
                 <p>{selectedOrder.customer.email}</p>
                 <p>{selectedOrder.customer.phone}</p>
               </div>
 
               <div className={styles.detailSection}>
-                <h4 className={styles.detailTitle}>Delivery Address</h4>
+                <h2 className={styles.detailTitle}>Delivery Address</h2>
                 <p>{selectedOrder.deliveryAddress.line1}</p>
                 {selectedOrder.deliveryAddress.line2 && (
                   <p>{selectedOrder.deliveryAddress.line2}</p>
@@ -230,7 +273,7 @@ const OrderDetailModal = ({
               </div>
 
               <div className={styles.detailSection}>
-                <h4 className={styles.detailTitle}>Delivery Slot</h4>
+                <h2 className={styles.detailTitle}>Delivery Slot</h2>
                 <p>
                   {new Date(selectedOrder.deliverySlot.date).toLocaleDateString(
                     "en-GB",
@@ -246,9 +289,9 @@ const OrderDetailModal = ({
               </div>
             </div>
 
-            <div className={styles.itemsSection}>
+            <section id="order-items" className={styles.itemsSection}>
               <div className={styles.itemsHeaderRow}>
-                <h4 className={styles.detailTitle}>Order Items</h4>
+                <h2 className={styles.detailTitle}>Order items <span className={styles.itemHeadingCount}>{selectedOrder.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</span></h2>
               </div>
               <Table withWrapper={false} tableClassName={styles.itemsTable}>
                 <thead>
@@ -271,6 +314,7 @@ const OrderDetailModal = ({
                           {isEditingItems ? (
                             <input
                               className={styles.itemQtyInput}
+                              aria-label={`Quantity for ${item.name}`}
                               type="number"
                               inputMode="numeric"
                               min={1}
@@ -521,9 +565,7 @@ const OrderDetailModal = ({
                   </div>
                 </div>
               ) : null}
-            </div>
-
-            <div className={styles.totalsSection}>
+            <div className={styles.totalsSection} aria-label="Order totals">
               <div className={styles.totalRow}>
                 <span>Subtotal</span>
                 <span>
@@ -624,28 +666,23 @@ const OrderDetailModal = ({
                   </>
                 )}
             </div>
+            {financialActions}
+            </section>
 
-            {(selectedOrder.customerNotes ||
-              selectedOrder.internalNotes ||
-              customerInstructions ||
-              deliveryNote) && (
-              <div className={styles.notesSection}>
-                {customerInstructions && (
-                  <div className={styles.noteBox}>
-                    <h5>Customer Instructions</h5>
-                    <p>{customerInstructions}</p>
-                  </div>
-                )}
+              <section className={styles.notesSection} aria-labelledby="order-notes-heading">
+                <div className={styles.notesHeader}>
+                  <h2 id="order-notes-heading">Notes</h2>
+                </div>
+                <div className={styles.noteBox}>
+                  <h5>Customer note</h5>
+                  <p className={!customerNote ? styles.noteEmpty : undefined}>
+                    {customerNote || "No customer note provided"}
+                  </p>
+                </div>
                 {deliveryNote && (
                   <div className={styles.noteBox}>
                     <h5>Delivery Note</h5>
                     <p>{deliveryNote}</p>
-                  </div>
-                )}
-                {selectedOrder.customerNotes && (
-                  <div className={styles.noteBox}>
-                    <h5>Customer Notes</h5>
-                    <p>{selectedOrder.customerNotes}</p>
                   </div>
                 )}
                 {selectedOrder.internalNotes && (
@@ -654,11 +691,8 @@ const OrderDetailModal = ({
                     <p>{selectedOrder.internalNotes}</p>
                   </div>
                 )}
-              </div>
-            )}
 
             {canUpdatePermission && (
-              <div className={styles.notesSection}>
                 <div className={`${styles.noteBox} ${styles.internalNote}`}>
                   <div
                     style={{
@@ -685,28 +719,26 @@ const OrderDetailModal = ({
                   {isEditingDriverNote ? (
                     <>
                       <textarea
+                        className={styles.driverNoteTextarea}
+                        aria-label="Driver note"
                         rows={3}
                         maxLength={500}
                         value={driverNoteDraft}
                         onChange={(e) => setDriverNoteDraft(e.target.value)}
                         placeholder="Note for the driver (visible on delivery run)…"
-                        style={{
-                          width: "100%",
-                          resize: "vertical",
-                          padding: "var(--space-2)",
-                          borderRadius: "var(--radius-md)",
-                          border: "1px solid var(--color-border)",
-                          fontSize: "var(--text-sm)",
-                        }}
                         disabled={isSavingDriverNote}
                       />
                       <div
-                        style={{
-                          display: "flex",
-                          gap: "var(--space-2)",
-                          marginTop: "var(--space-2)",
-                        }}
+                        className={styles.driverNoteActions}
                       >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={isSavingDriverNote}
+                          onClick={() => setIsEditingDriverNote(false)}
+                        >
+                          Cancel
+                        </Button>
                         <Button
                           variant="primary"
                           size="sm"
@@ -716,25 +748,17 @@ const OrderDetailModal = ({
                             if (!selectedOrder?.id) return;
                             setIsSavingDriverNote(true);
                             try {
-                              await updateDriverNote?.(
+                              const updated = await updateDriverNote?.(
                                 selectedOrder.id,
                                 driverNoteDraft.trim() || null,
                               );
-                              setIsEditingDriverNote(false);
+                              if (updated) setIsEditingDriverNote(false);
                             } finally {
                               setIsSavingDriverNote(false);
                             }
                           }}
                         >
                           Save
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={isSavingDriverNote}
-                          onClick={() => setIsEditingDriverNote(false)}
-                        >
-                          Cancel
                         </Button>
                       </div>
                     </>
@@ -743,115 +767,122 @@ const OrderDetailModal = ({
                       style={{
                         color: selectedOrder.driverNote
                           ? undefined
-                          : "var(--color-text-muted)",
-                        fontStyle: selectedOrder.driverNote
-                          ? undefined
-                          : "italic",
+                          : "var(--color-gray-500)",
+
                       }}
                     >
                       {selectedOrder.driverNote || "No driver note set"}
                     </p>
                   )}
                 </div>
-              </div>
             )}
+              </section>
 
-            <div className={styles.historySection}>
-              <h4 className={styles.detailTitle}>Order Timeline</h4>
-              <div className={styles.timeline}>
-                {selectedOrder.history.map((entry: any, index: number) => (
-                  <div key={index} className={styles.timelineItem}>
-                    <div className={styles.timelineDot} />
-                    <div className={styles.timelineContent}>
-                      <span className={styles.timelineStatus}>
-                        {entry.status.replace(/_/g, " ")}
-                      </span>
-                      <span className={styles.timelineMeta}>
-                        {new Date(entry.timestamp).toLocaleString("en-GB")} •{" "}
-                        {entry.user}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {proofUrl ? (
-                <div className={styles.detailSection}>
-                  <h4 className={styles.detailTitle}>Delivered</h4>
-                  <p className={styles.detailText}>At: {deliveredAtLabel}</p>
-                  <a
-                    href={proofUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={styles.deliveryProofLink}
-                  >
-                    <img
-                      src={proofUrl}
-                      alt="Delivery proof"
-                      className={styles.deliveryProofImage}
-                      loading="lazy"
-                    />
-                    <span className={styles.deliveryProofLinkText}>
-                      Open full size
-                    </span>
-                  </a>
+            <div id="order-activity" className={styles.historySection}>
+              <div className={styles.auditSectionHeader}>
+                <div>
+                  <h2>Order status audit</h2>
+                  <p>Every recorded delivery-status change, who made it, and what it triggered.</p>
                 </div>
-              ) : null}
+                <div className={styles.auditHeaderActions}>
+                  {statusEditor}
+                  {proofUrl ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsProofModalOpen(true)}
+                    >
+                      <ImageIcon size={15} aria-hidden="true" />
+                      View delivery proof
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <div className={styles.timeline}>
+                <article className={`${styles.timelineItem} ${styles.timeline_ordered}`}>
+                  <div className={`${styles.timelineDot} ${sortedHistory.length === 0 ? styles.timelineDotCurrent : ""}`} />
+                  <div className={styles.timelineContent}>
+                    <div className={styles.timelineStatusRow}>
+                      <span className={styles.timelineStatus}><strong>Ordered</strong></span>
+                      <time dateTime={selectedOrder.createdAt}>{new Date(selectedOrder.createdAt).toLocaleString("en-GB")}</time>
+                    </div>
+                    <span className={styles.timelineActor}>Order created with initial status</span>
+                  </div>
+                </article>
+                {sortedHistory.map((entry, index: number) => {
+                  const statusKey = String(entry.status || "")
+                    .toLowerCase()
+                    .replace(/\s+/g, "_");
+                  const isCurrent = index === sortedHistory.length - 1;
+                  return (
+                  <article key={entry.id || index} className={`${styles.timelineItem} ${styles[`timeline_${statusKey}`] || styles.timeline_default}`}>
+                    <div className={`${styles.timelineDot} ${isCurrent ? styles.timelineDotCurrent : ""}`} />
+                    <div className={styles.timelineContent}>
+                      <div className={styles.timelineStatusRow}>
+                        <span className={styles.timelineStatus}>
+                          <strong>{entry.status.replace(/_/g, " ")}</strong>
+                        </span>
+                        <time dateTime={entry.timestamp}>{new Date(entry.timestamp).toLocaleString("en-GB")}</time>
+                      </div>
+                      <span className={styles.timelineActor}>
+                        Changed by <strong>{entry.user}</strong>
+                        {entry.role ? <> · {entry.role}</> : null}
+                        {entry.source && entry.source.toLowerCase() !== entry.role?.toLowerCase()
+                          ? <> · {entry.source.replace(/_/g, " ")}</>
+                          : null}
+                      </span>
+                      {entry.effects?.length ? (
+                        <div className={styles.timelineAutomation}>
+                          <span>Triggered</span>
+                          <ul className={styles.timelineEffects}>
+                            {entry.effects.map((effect: string) => <li key={effect}>{effect}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                )})}
+              </div>
+              <div id="order-status-footer" className={styles.orderStatusFooterSlot} />
             </div>
           </div>
         ) : (
           <div style={{ padding: "var(--space-4)" }}>Loading order…</div>
         )}
 
-        <ModalFooter>
-          <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>
-            Close
-          </Button>
-          {canUpdatePaymentPermission ? (
-            <Button
-              variant="outline"
-              disabled={!canTogglePaymentStatus || isUpdatingPayment}
-              isLoading={isUpdatingPayment}
-              onClick={async () => {
-                if (!canTogglePaymentStatus) return;
-                const markingPaid = !isPaid;
-                setNextPaidValue(markingPaid);
-                if (markingPaid) {
-                  setPaymentMode("full");
-                  setCustomPayAmount("");
-                }
-                setIsPaymentConfirmOpen(true);
-              }}
-            >
-              {isPaid ? "Mark Unpaid" : "Mark Paid"}
+
+      {proofUrl ? (
+        <Modal
+          isOpen={isProofModalOpen}
+          onClose={() => setIsProofModalOpen(false)}
+          title="Delivery proof"
+          size="xl"
+        >
+          <div className={styles.deliveryProofModal}>
+            <div className={styles.deliveryProofModalMeta}>
+              <div>
+                <strong>Delivered order</strong>
+                <span>{selectedOrder?.orderNumber}</span>
+              </div>
+              <div>
+                <strong>Delivery recorded</strong>
+                <span>{deliveredAtLabel}</span>
+              </div>
+            </div>
+            <div className={styles.deliveryProofModalCanvas}>
+              <img src={proofUrl} alt={`Delivery proof for ${selectedOrder?.orderNumber || "order"}`} />
+            </div>
+          </div>
+          <ModalFooter>
+            <Button variant="outline" onClick={() => setIsProofModalOpen(false)}>
+              Close
             </Button>
-          ) : null}
-          {canRefundPermission ? (
-            <Button
-              variant="danger"
-              disabled={!canRefund}
-              onClick={() => {
-                if (!canRefund) return;
-                setRefundAmount("");
-                setIsRefundConfirmOpen(true);
-              }}
-            >
-              Refund
+            <Button onClick={() => window.open(proofUrl, "_blank", "noopener,noreferrer")}>
+              Open original
             </Button>
-          ) : null}
-          {canUpdatePermission &&
-            typeof setIsStatusModalOpen === "function" && (
-              <Button
-                onClick={() => {
-                  setIsDetailModalOpen(false);
-                  setIsStatusModalOpen(true);
-                }}
-              >
-                Update Status
-              </Button>
-            )}
-        </ModalFooter>
-      </Modal>
+          </ModalFooter>
+        </Modal>
+      ) : null}
 
       {canRefundPermission ? (
         <Modal
@@ -929,9 +960,8 @@ const OrderDetailModal = ({
                       ? parsed
                       : undefined;
 
-                  await refundOrder?.(selectedOrder.id, amountToRefund);
-                  setIsRefundConfirmOpen(false);
-                  setIsDetailModalOpen(false);
+                  const updated = await refundOrder?.(selectedOrder.id, amountToRefund);
+                  if (updated) setIsRefundConfirmOpen(false);
                 } finally {
                   setIsRefunding(false);
                 }
@@ -1090,12 +1120,12 @@ const OrderDetailModal = ({
 
                 setIsUpdatingPayment(true);
                 try {
-                  await updateOrderPaymentStatus?.(
+                  const updated = await updateOrderPaymentStatus?.(
                     selectedOrder.id,
                     nextPaidValue,
                     amountPaid,
                   );
-                  setIsPaymentConfirmOpen(false);
+                  if (updated) setIsPaymentConfirmOpen(false);
                 } finally {
                   setIsUpdatingPayment(false);
                 }
@@ -1110,4 +1140,4 @@ const OrderDetailModal = ({
   );
 };
 
-export default OrderDetailModal;
+export default OrderDetailContent;

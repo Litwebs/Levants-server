@@ -54,7 +54,16 @@ export type Order = {
   customerNotes?: string;
   internalNotes?: string;
   driverNote?: string | null;
-  history: { status: string; timestamp: string; user: string }[];
+  history: {
+    id?: string;
+    from?: string | null;
+    status: string;
+    timestamp: string;
+    user: string;
+    role?: string | null;
+    source?: string;
+    effects: string[];
+  }[];
   deliveryProofUrl?: string;
   deliveredAt?: string | null;
   deliveryNote?: string;
@@ -107,7 +116,7 @@ const getOrderDeliveryAddress = (order: AdminOrder, customer: any) => {
   };
 };
 
-const mapAdminOrderToUi = (order: AdminOrder): Order => {
+export const mapAdminOrderToUi = (order: AdminOrder): Order => {
   const customer =
     order.customer && typeof order.customer === "object" ? order.customer : null;
 
@@ -236,7 +245,18 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     customerInstructions,
     driverNote: typeof (order as any)?.driverNote === "string" ? (order as any).driverNote || null : null,
 
-    history: [],
+    history: Array.isArray(order.statusAudit)
+      ? order.statusAudit.map((entry) => ({
+          id: entry._id,
+          from: entry.from || null,
+          status: entry.to,
+          timestamp: entry.changedAt,
+          user: entry.actorName || "System",
+          role: entry.actorRole || null,
+          source: entry.source,
+          effects: Array.isArray(entry.effects) ? entry.effects : [],
+        }))
+      : [],
 
   deliveryProofUrl,
   deliveredAt,

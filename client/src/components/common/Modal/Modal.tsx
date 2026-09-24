@@ -1,4 +1,5 @@
 import React, { useEffect, forwardRef, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import styles from "./Modal.module.css";
 
@@ -42,7 +43,7 @@ export const Modal = forwardRef<HTMLDivElement, ModalProps>(
       (child: any) => child?.type?.displayName !== "ModalFooter",
     );
 
-    return (
+    return createPortal(
       <div className={styles.overlay} onClick={onClose}>
         <div
           ref={ref}
@@ -70,7 +71,8 @@ export const Modal = forwardRef<HTMLDivElement, ModalProps>(
           {/* ✅ Fixed footer */}
           {footer}
         </div>
-      </div>
+      </div>,
+      document.body,
     );
   },
 );

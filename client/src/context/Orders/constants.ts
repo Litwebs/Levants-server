@@ -115,9 +115,44 @@ export type AdminOrder = {
 
   customerInstructions?: string;
   driverNote?: string | null;
+  statusAudit?: Array<{
+    _id?: string;
+    from?: string | null;
+    to: string;
+    changedAt: string;
+    actorName?: string;
+    actorRole?: string | null;
+    source?: string;
+    effects?: string[];
+  }>;
 
   createdAt: string;
   updatedAt: string;
+};
+
+export type OrderEmailAudit = {
+  template: string;
+  providerId?: string | null;
+  subject: string;
+  to: string;
+  sentAt: string;
+  trigger?: string | null;
+  providerStatus: string;
+  providerError?: string;
+  provider?: {
+    id: string;
+    from: string;
+    to: string[];
+    cc?: string[] | null;
+    bcc?: string[] | null;
+    replyTo?: string[] | null;
+    subject: string;
+    createdAt: string;
+    lastEvent: string;
+    html?: string | null;
+    text?: string | null;
+    tags?: Array<{ name: string; value: string }>;
+  } | null;
 };
 
 export type RefundOrderResult = {

@@ -159,6 +159,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   );
   const navCounts = useNavCounts();
   const location = useLocation();
+  const [routeTransition, setRouteTransition] = useState({
+    pathname: location.pathname,
+    returningToOrders: false,
+  });
+  if (routeTransition.pathname !== location.pathname) {
+    setRouteTransition({
+      pathname: location.pathname,
+      returningToOrders: location.pathname === "/orders" && /^\/orders\/[^/]+$/.test(routeTransition.pathname),
+    });
+  }
   const navigate = useNavigate();
   const { user, logout, updateSelf } = useAuth();
   const { hasAnyPermission } = usePermissions();
@@ -316,7 +326,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         <nav className={styles.nav}>
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            const isActive = location.pathname === item.path ||
+              (item.path === "/orders" && location.pathname.startsWith("/orders/"));
             const badge = (item as any).badgeKey
               ? navCounts[(item as any).badgeKey as keyof NavCounts]
               : 0;
@@ -435,7 +446,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         <main
           className={`${styles.content} ${isDeliveryRunDetailsRoute ? styles.contentEdgeToEdgeMobile : ""}`}
         >
-          {children}
+          <div className={routeTransition.returningToOrders ? styles.ordersReturn : undefined}>
+            {children}
+          </div>
         </main>
       </div>
     </div>
