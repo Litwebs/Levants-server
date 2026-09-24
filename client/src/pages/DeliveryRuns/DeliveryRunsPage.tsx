@@ -332,7 +332,7 @@ export const DeliveryRunsPage: React.FC = () => {
             Upload a Google Sheets export (XLSX) to create additional one-time
             paid orders for this route. Columns: name, address, postcode,
             contact, order (e.g. "1x test-csv,2x test-csv-2"), delivery fee,
-            total.
+            total, Delivery Instructions.
           </p>
         </div>
 
