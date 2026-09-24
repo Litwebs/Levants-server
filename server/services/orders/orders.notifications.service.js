@@ -157,6 +157,10 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
   const existing = await Order.findById(orderId).lean();
   if (!existing) return { success: false, message: "Order not found" };
 
+  if (existing?.metadata?.manualImport) {
+    return { success: true, data: { skipped: true, reason: "manual_import" } };
+  }
+
   if (existing.status !== "paid") {
     console.warn("[orders] confirmation email skipped (status not paid)", {
       orderId: existing._id?.toString?.() || String(orderId),
