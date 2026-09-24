@@ -180,6 +180,51 @@ describe("ORDER EXPIRATION CRON (E2E)", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
   });
 
+  test("recent paid manual import does not receive an order confirmation", async () => {
+    const customer = await Customer.create({
+      firstName: "Imported",
+      lastName: "Customer",
+      email: "imported-confirmation@test.com",
+      phone: "07000000001",
+      isGuest: true,
+      status: "active",
+    });
+
+    const importedOrder = await Order.create({
+      customer: customer._id,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: "Cron Variant",
+          sku: variant.sku,
+          price: 10,
+          quantity: 1,
+          subtotal: 10,
+        },
+      ],
+      subtotal: 10,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 1,
+      total: 11,
+      status: "paid",
+      paidAt: new Date(),
+      reservationExpiresAt: new Date(Date.now() + 30 * 60 * 1000),
+      metadata: {
+        manualImport: true,
+        importSource: "spreadsheet",
+      },
+    });
+
+    await runOrderExpirationJob();
+
+    const refreshed = await Order.findById(importedOrder._id).lean();
+    expect(refreshed.orderType).toBe("one_time");
+    expect(refreshed.metadata?.orderConfirmationSentAt).toBeUndefined();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
   test("expired orders are cancelled and stock is released", async () => {
     const expiredOrder = await Order.create({
       customer: new mongoose.Types.ObjectId(),
