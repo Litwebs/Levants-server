@@ -67,6 +67,12 @@ export type Order = {
   deliveryProofUrl?: string;
   deliveredAt?: string | null;
   deliveryNote?: string;
+  emailNotifications: {
+    orderConfirmationSentAt: string | null;
+    dispatchedEmailSentAt: string | null;
+    inTransitEmailSentAt: string | null;
+    deliveredEmailSentAt: string | null;
+  };
   createdAt: string;
   updatedAt: string;
   
@@ -87,6 +93,16 @@ const getDefaultAddress = (customer: any) => {
 };
 
 const isNonEmptyString = (v: unknown) => typeof v === "string" && v.trim().length > 0;
+
+const getMetadataDate = (
+  metadata: Record<string, unknown> | null,
+  key: string,
+) => {
+  const value = metadata?.[key];
+  if (typeof value === "string" && value.trim()) return value;
+  if (value instanceof Date) return value.toISOString();
+  return null;
+};
 
 const getOrderDeliveryAddress = (order: AdminOrder, customer: any) => {
   const fromOrder = (order as any)?.deliveryAddress;
@@ -261,6 +277,12 @@ export const mapAdminOrderToUi = (order: AdminOrder): Order => {
   deliveryProofUrl,
   deliveredAt,
   deliveryNote,
+  emailNotifications: {
+    orderConfirmationSentAt: getMetadataDate(metadata, "orderConfirmationSentAt"),
+    dispatchedEmailSentAt: getMetadataDate(metadata, "dispatchedEmailSentAt"),
+    inTransitEmailSentAt: getMetadataDate(metadata, "inTransitEmailSentAt"),
+    deliveredEmailSentAt: getMetadataDate(metadata, "deliveredEmailSentAt"),
+  },
 
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,

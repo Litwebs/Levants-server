@@ -8,6 +8,7 @@ const titleFor = (template: string) => ({
   newOrderAlert: "New order alert",
   orderConfirmation: "Order confirmation",
   orderDispatched: "Dispatch notification",
+  orderInTransit: "In-transit notification",
   deliveryProof: "Delivery confirmation",
   refundConfirmation: "Refund confirmation",
 }[template] || template.replace(/([a-z])([A-Z])/g, "$1 $2"));

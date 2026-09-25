@@ -15,9 +15,13 @@ import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
 import { useEffect, useRef, useState } from "react";
 import type { OrdersStockRequirements } from "../../context/Orders";
+import type { Order } from "./useOrders";
+
+const DELIVERY_STATUSES = ["ordered", "dispatched", "in_transit", "delivered", "returned"] as const;
 
 interface Props {
   selectedOrders: string[];
+  filteredOrders: Order[];
   bulkDeleteOrders: (
     orderIds: string[],
   ) => Promise<{ matched: number; deleted: number } | null>;
@@ -36,6 +40,7 @@ type StockSource = "delivery_date" | "selected_orders" | "file";
 
 const OrdersBulkActions = ({
   selectedOrders,
+  filteredOrders,
   bulkDeleteOrders,
   bulkUpdateStatus,
   bulkAssignDeliveryDate,
@@ -73,6 +78,12 @@ const OrdersBulkActions = ({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
+  const selectedStatusIndexes = filteredOrders
+    .filter((order) => selectedOrders.includes(order.id))
+    .map((order) => DELIVERY_STATUSES.indexOf(order.deliveryStatus as typeof DELIVERY_STATUSES[number]));
+  const furthestSelectedStatus = selectedStatusIndexes.length
+    ? Math.max(...selectedStatusIndexes)
+    : -1;
 
   useEffect(() => {
     if (selectedOrders.length === 0 && stockSource === "selected_orders") {
@@ -189,11 +200,12 @@ const OrdersBulkActions = ({
                   <select id="bulk-delivery-status" className={styles.filterInput}
                     value={deliveryStatus} onChange={(e) => setDeliveryStatus(e.target.value)}>
                     <option value="">Choose a status…</option>
-                    <option value="ordered">Ordered</option>
-                    <option value="dispatched">Dispatched</option>
-                    <option value="in_transit">In transit</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="returned">Returned</option>
+                    {DELIVERY_STATUSES.map((status, index) => (
+                      <option key={status} value={status} disabled={index <= furthestSelectedStatus}>
+                        {status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())}
+                        {index <= furthestSelectedStatus ? " (unavailable)" : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <Button variant="outline" size="sm" disabled={!deliveryStatus}

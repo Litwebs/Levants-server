@@ -1,9 +1,83 @@
 import { Button, Modal, ModalFooter, Table } from "../../components/common";
 import styles from "./Orders.module.css";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ImageIcon, Package, Wallet } from "lucide-react";
+import { CalendarDays, ImageIcon, MailCheck, MailX, Package, Wallet } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useVariantSearch } from "../Discounts/useVariantSearch";
+
+type EmailStage = {
+  label: string;
+  sentAt: string | null;
+  explanation?: string;
+};
+
+type TimelineOrder = {
+  emailNotifications?: Partial<{
+    orderConfirmationSentAt: string | null;
+    dispatchedEmailSentAt: string | null;
+    inTransitEmailSentAt: string | null;
+    deliveredEmailSentAt: string | null;
+  }>;
+};
+
+const getEmailStage = (order: TimelineOrder, status: string): EmailStage => {
+  const normalizedStatus = String(status || "").toLowerCase().replace(/\s+/g, "_");
+  const notifications = order?.emailNotifications || {};
+
+  if (normalizedStatus === "ordered") {
+    return {
+      label: "Order confirmation email",
+      sentAt: notifications.orderConfirmationSentAt || null,
+    };
+  }
+  if (normalizedStatus === "dispatched") {
+    return {
+      label: "Dispatch notification email",
+      sentAt: notifications.dispatchedEmailSentAt || null,
+      explanation: "Sent once when the order is dispatched",
+    };
+  }
+  if (normalizedStatus === "delivered") {
+    return {
+      label: "Delivery confirmation email",
+      sentAt: notifications.deliveredEmailSentAt || null,
+    };
+  }
+  if (normalizedStatus === "in_transit") {
+    return {
+      label: "In-transit notification email",
+      sentAt: notifications.inTransitEmailSentAt || null,
+    };
+  }
+
+  return {
+    label: "Customer status email",
+    sentAt: null,
+    explanation: "No email is sent for this status",
+  };
+};
+
+const TimelineEmailStatus = ({ order, status }: { order: TimelineOrder; status: string }) => {
+  const email = getEmailStage(order, status);
+  const wasSent = Boolean(email.sentAt);
+
+  return (
+    <div className={`${styles.timelineEmail} ${wasSent ? styles.timelineEmailSent : styles.timelineEmailNotSent}`}>
+      {wasSent ? <MailCheck size={14} aria-hidden="true" /> : <MailX size={14} aria-hidden="true" />}
+      <span>
+        <strong>{email.label}: {wasSent ? "Sent" : "Not sent"}</strong>
+        {wasSent && email.sentAt ? (
+          <time dateTime={email.sentAt}>{new Date(email.sentAt).toLocaleString("en-GB")}</time>
+        ) : email.explanation ? (
+          <small>{email.explanation}</small>
+        ) : null}
+      </span>
+    </div>
+  );
+};
+
+const visibleTimelineEffects = (effects: string[] = []) =>
+  effects.filter((effect) => !/^sent the .*email$/i.test(effect.trim()));
 
 const OrderDetailContent = ({
   heading,
@@ -807,6 +881,7 @@ const OrderDetailContent = ({
                       <time dateTime={selectedOrder.createdAt}>{new Date(selectedOrder.createdAt).toLocaleString("en-GB")}</time>
                     </div>
                     <span className={styles.timelineActor}>Order created with initial status</span>
+                    <TimelineEmailStatus order={selectedOrder} status="ordered" />
                   </div>
                 </article>
                 {sortedHistory.map((entry, index: number) => {
@@ -814,6 +889,7 @@ const OrderDetailContent = ({
                     .toLowerCase()
                     .replace(/\s+/g, "_");
                   const isCurrent = index === sortedHistory.length - 1;
+                  const visibleEffects = visibleTimelineEffects(entry.effects);
                   return (
                   <article key={entry.id || index} className={`${styles.timelineItem} ${styles[`timeline_${statusKey}`] || styles.timeline_default}`}>
                     <div className={`${styles.timelineDot} ${isCurrent ? styles.timelineDotCurrent : ""}`} />
@@ -831,11 +907,12 @@ const OrderDetailContent = ({
                           ? <> · {entry.source.replace(/_/g, " ")}</>
                           : null}
                       </span>
-                      {entry.effects?.length ? (
+                      <TimelineEmailStatus order={selectedOrder} status={entry.status} />
+                      {visibleEffects.length ? (
                         <div className={styles.timelineAutomation}>
                           <span>Triggered</span>
                           <ul className={styles.timelineEffects}>
-                            {entry.effects.map((effect: string) => <li key={effect}>{effect}</li>)}
+                            {visibleEffects.map((effect: string) => <li key={effect}>{effect}</li>)}
                           </ul>
                         </div>
                       ) : null}

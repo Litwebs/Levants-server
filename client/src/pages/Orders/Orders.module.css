@@ -1336,6 +1336,13 @@
 .timelineStatus > span:first-child { color: var(--color-gray-500); font-weight: 400; }
 .timelineActor { color: var(--color-gray-500); font-size: 11px; text-transform: capitalize; }
 .timelineActor strong { color: var(--color-gray-700); font-weight: 500; }
+.timelineEmail { display: flex; align-items: flex-start; gap: 7px; width: fit-content; margin-top: 8px; padding: 6px 9px; border-radius: 7px; font-size: 10px; line-height: 1.35; }
+.timelineEmail > svg { flex: 0 0 auto; margin-top: 1px; }
+.timelineEmail > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 7px; }
+.timelineEmail strong { font-weight: 600; }
+.timelineEmail time, .timelineEmail small { color: inherit; font-size: inherit; opacity: .85; }
+.timelineEmailSent { background: var(--color-success-bg); color: var(--color-success); }
+.timelineEmailNotSent { background: var(--color-gray-100); color: var(--color-gray-600); }
 .timelineAutomation { display: flex; align-items: flex-start; gap: 10px; margin-top: 7px; }
 .timelineAutomation > span { flex-shrink: 0; padding-top: 2px; color: var(--color-gray-400); font-size: 9px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
 .timelineEffects { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0; margin: 0; list-style: none; }

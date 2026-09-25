@@ -17,6 +17,8 @@ const STATUSES = [
 
 const DRIVER_STATUSES = ["ordered", "delivered", "returned"] as const;
 
+const statusIndex = (status: string) => STATUSES.indexOf(status as typeof STATUSES[number]);
+
 function StatusContainer({ inline, open, onClose, busy, children }: {
   inline: boolean; open: boolean; onClose: () => void; busy: boolean; children: ReactNode;
 }) {
@@ -107,6 +109,7 @@ const OrderStatusModal = ({
   ).toLowerCase();
   const isDeliveredLockedForDriver =
     isDriver && normalizedCurrent === "delivered";
+  const currentStatusIndex = statusIndex(normalizedCurrent);
 
   const handleClose = () => {
     if (isUpdating) return;
@@ -119,12 +122,12 @@ const OrderStatusModal = ({
 
   const canMark =
     !!selectedStatus &&
-    selectedStatus !== selectedOrder.deliveryStatus &&
+    statusIndex(selectedStatus) > currentStatusIndex &&
     !isUpdating &&
     !isDeliveredLockedForDriver;
 
   const handleMark = async () => {
-    if (!selectedStatus || isUpdating) return;
+    if (!selectedStatus || isUpdating || statusIndex(selectedStatus) <= currentStatusIndex) return;
 
     const deliveryProofFile =
       selectedStatus === "delivered" ? (proofFile ?? undefined) : undefined;
@@ -266,16 +269,20 @@ const OrderStatusModal = ({
           disabled={isUpdating || isDeliveredLockedForDriver}
         >
           <option value="">{inline ? "Update status" : "Select a status"}</option>
-          {statuses.map((status) => (
-            <option
-              key={status}
-              value={status}
-              disabled={selectedOrder.deliveryStatus === status}
-            >
-              {status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())}
-              {selectedOrder.deliveryStatus === status ? " (current)" : ""}
-            </option>
-          ))}
+          {statuses.map((status) => {
+            const isCurrent = normalizedCurrent === status;
+            const isEarlier = statusIndex(status) < currentStatusIndex;
+            return (
+              <option
+                key={status}
+                value={status}
+                disabled={isCurrent || isEarlier}
+              >
+                {status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())}
+                {isCurrent ? " (current)" : isEarlier ? " (completed)" : ""}
+              </option>
+            );
+          })}
         </select>
 
         {!inline && statusDetails}

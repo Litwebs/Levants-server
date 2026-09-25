@@ -10,6 +10,7 @@ const LEGACY_EMAILS = [
   ["newOrderAlert", "newOrderAlertSentAt", "newOrderAlertProviderId", "New order alert"],
   ["orderConfirmation", "orderConfirmationSentAt", "orderConfirmationProviderId", "Order confirmation"],
   ["orderDispatched", "dispatchedEmailSentAt", "dispatchedEmailProviderId", "Order dispatched"],
+  ["orderInTransit", "inTransitEmailSentAt", "inTransitEmailProviderId", "Order in transit"],
   ["deliveryProof", "deliveredEmailSentAt", "deliveredEmailProviderId", "Delivery confirmation"],
   ["refundConfirmation", "refundConfirmationSentAt", "refundConfirmationProviderId", "Refund confirmation"],
 ];

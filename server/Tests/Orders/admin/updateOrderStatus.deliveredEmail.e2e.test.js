@@ -14,7 +14,7 @@ const {
   createVariant,
 } = require("../helpers/orderFactory");
 
-describe("PUT /api/admin/orders/:orderId/status (Delivered email)", () => {
+describe("PUT /api/admin/orders/:orderId/status (customer emails)", () => {
   const getValidDeliveryAddress = () => ({
     line1: "10 Downing Street",
     line2: "",
@@ -136,7 +136,7 @@ describe("PUT /api/admin/orders/:orderId/status (Delivered email)", () => {
     expect(afterSecondUpdate.statusAudit).toHaveLength(1);
   });
 
-  test("does not send email for non-delivered statuses", async () => {
+  test("sends one in-transit email and records it", async () => {
     const adminCookie = await loginAsAdmin(app);
     const sendEmail = require("../../../Integration/Email.service");
 
@@ -176,6 +176,133 @@ describe("PUT /api/admin/orders/:orderId/status (Delivered email)", () => {
       });
 
     expect(res.status).toBe(200);
-    expect(sendEmail).toHaveBeenCalledTimes(0);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0]).toBe(customer.email);
+    expect(sendEmail.mock.calls[0][2]).toBe("orderInTransit");
+
+    const updated = await Order.findById(order._id);
+    expect(updated.metadata.inTransitEmailSentAt).toBeTruthy();
+    expect(updated.emailLog[0]).toMatchObject({
+      template: "orderInTransit",
+      to: customer.email,
+      trigger: "status_in_transit",
+    });
+
+    const repeated = await request(app)
+      .put(`/api/admin/orders/${order._id}/status`)
+      .set("Cookie", adminCookie)
+      .send({ deliveryStatus: "in_transit" });
+    expect(repeated.status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  test("sends one dispatch email for a manual single-order dispatch", async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const sendEmail = require("../../../Integration/Email.service");
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+    const order = await Order.create({
+      customer: customer._id,
+      items: [{
+        product: product._id,
+        variant: variant._id,
+        name: variant.name,
+        sku: variant.sku,
+        price: variant.price,
+        quantity: 1,
+        subtotal: variant.price,
+      }],
+      subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 0,
+      total: variant.price,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(),
+      paidAt: new Date(),
+    });
+
+    const dispatch = () => request(app)
+      .put(`/api/admin/orders/${order._id}/status`)
+      .set("Cookie", adminCookie)
+      .send({ deliveryStatus: "dispatched" });
+
+    expect((await dispatch()).status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(sendEmail.mock.calls[0][0]).toBe(customer.email);
+    expect(sendEmail.mock.calls[0][2]).toBe("orderDispatched");
+
+    const updated = await Order.findById(order._id);
+    expect(updated.metadata.dispatchedEmailSentAt).toBeTruthy();
+    expect(updated.emailLog).toHaveLength(1);
+    expect(updated.emailLog[0]).toMatchObject({
+      template: "orderDispatched",
+      to: customer.email,
+      trigger: "status_dispatched",
+    });
+    expect(updated.statusAudit[0].effects).toContain(
+      "Sent the dispatch notification email",
+    );
+
+    // Repeating the current status must not resend or add another audit step.
+    expect((await dispatch()).status).toBe(200);
+    const advanceResponse = await request(app)
+      .put(`/api/admin/orders/${order._id}/status`)
+      .set("Cookie", adminCookie)
+      .send({ deliveryStatus: "in_transit" });
+    expect(advanceResponse.status).toBe(200);
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+    expect(sendEmail.mock.calls[1][2]).toBe("orderInTransit");
+
+    // Once advanced, returning to dispatched is rejected by the server.
+    expect((await dispatch()).status).toBe(409);
+    expect(sendEmail).toHaveBeenCalledTimes(2);
+    const finalOrder = await Order.findById(order._id);
+    expect(finalOrder.deliveryStatus).toBe("in_transit");
+    expect(finalOrder.metadata.inTransitEmailSentAt).toBeTruthy();
+    expect(finalOrder.statusAudit).toHaveLength(2);
+  });
+
+  test("does not resend dispatch email when the order was already notified", async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const sendEmail = require("../../../Integration/Email.service");
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+    const sentAt = new Date();
+    const order = await Order.create({
+      customer: customer._id,
+      items: [{
+        product: product._id,
+        variant: variant._id,
+        name: variant.name,
+        sku: variant.sku,
+        price: variant.price,
+        quantity: 1,
+        subtotal: variant.price,
+      }],
+      subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 0,
+      total: variant.price,
+      status: "paid",
+      deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(),
+      paidAt: new Date(),
+      metadata: { dispatchedEmailSentAt: sentAt },
+    });
+
+    const response = await request(app)
+      .put(`/api/admin/orders/${order._id}/status`)
+      .set("Cookie", adminCookie)
+      .send({ deliveryStatus: "dispatched" });
+
+    expect(response.status).toBe(200);
+    expect(sendEmail).not.toHaveBeenCalled();
+    const updated = await Order.findById(order._id);
+    expect(updated.metadata.dispatchedEmailSentAt.getTime()).toBe(sentAt.getTime());
   });
 });

@@ -15,7 +15,9 @@ const {
 async function updateOrdersToDispatched(orderIds, changedAt = new Date()) {
   const orders = await Order.find({
     _id: { $in: orderIds },
-    deliveryStatus: { $nin: ["delivered", "returned", "dispatched"] },
+    // Delivery-run dispatch may advance ordered orders only. In-transit,
+    // delivered and returned orders must never move backwards to dispatched.
+    deliveryStatus: "ordered",
   }).select("_id deliveryStatus").lean();
   if (!orders.length) return { matchedCount: 0, modifiedCount: 0 };
   return Order.bulkWrite(orders.map((order) => ({
