@@ -837,29 +837,109 @@ export default function CreateSubscriptionInviteModal() {
               </div>
               <section className={styles.reviewProducts}>
                 <div className={styles.sectionHeading}>
-                  <h3>Orders by delivery day</h3>
+                  <div>
+                    <h3>Orders by delivery day</h3>
+                    <span>
+                      Each delivery is shown separately so you can verify the
+                      exact products before sending the setup link.
+                    </span>
+                  </div>
                   <strong>£{estimatedTotal.toFixed(2)} per cycle</strong>
                 </div>
-                {selectedDeliveryDays.map((day) => (
-                  <div key={day} className={styles.reviewDayPlan}>
-                    <strong>
-                      {DAY_LABELS[day]} · £
-                      {Number(dayTotals[day] || 0).toFixed(2)}
-                    </strong>
-                    {variants
-                      .filter(
-                        (variant) =>
-                          (dayQuantities[day]?.[variant._id] || 0) > 0,
-                      )
-                      .map((variant) => (
-                        <span key={variant._id}>
-                          {variant.productName} · {variant.name} —{" "}
-                          {dayQuantities[day][variant._id]} × £
-                          {Number(variant.price).toFixed(2)}
-                        </span>
-                      ))}
-                  </div>
-                ))}
+                <div className={styles.reviewDayGrid}>
+                  {selectedDeliveryDays.map((day) => {
+                    const dayItems = variants.filter(
+                      (variant) =>
+                        (dayQuantities[day]?.[variant._id] || 0) > 0,
+                    );
+                    const totalQuantity = dayItems.reduce(
+                      (total, variant) =>
+                        total +
+                        Number(dayQuantities[day]?.[variant._id] || 0),
+                      0,
+                    );
+
+                    return (
+                      <article
+                        key={day}
+                        className={styles.reviewDayCard}
+                        data-testid={`review-day-${day}`}
+                      >
+                        <header className={styles.reviewDayHeader}>
+                          <div>
+                            <span className={styles.reviewDayEyebrow}>
+                              Delivery day
+                            </span>
+                            <h4>{DAY_LABELS[day]} delivery</h4>
+                            <span>
+                              {dayItems.length}{" "}
+                              {dayItems.length === 1 ? "product" : "products"} ·{" "}
+                              {totalQuantity}{" "}
+                              {totalQuantity === 1 ? "item" : "items"}
+                            </span>
+                          </div>
+                          <strong>
+                            £{Number(dayTotals[day] || 0).toFixed(2)}
+                          </strong>
+                        </header>
+
+                        <div className={styles.reviewDayItems}>
+                          {dayItems.map((variant) => {
+                            const quantity =
+                              dayQuantities[day]?.[variant._id] || 0;
+                            const unitPrice = Number(variant.price);
+                            const lineTotal = unitPrice * quantity;
+
+                            return (
+                              <div
+                                key={variant._id}
+                                className={styles.reviewProductRow}
+                              >
+                                <div className={styles.reviewProductImage}>
+                                  {variant.imageUrl ? (
+                                    <img
+                                      src={variant.imageUrl}
+                                      alt=""
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <Package size={20} aria-hidden="true" />
+                                  )}
+                                </div>
+
+                                <div className={styles.reviewProductDetails}>
+                                  <strong>{variant.productName}</strong>
+                                  <span>{variant.name}</span>
+                                  <div className={styles.reviewProductMeta}>
+                                    {variant.category && (
+                                      <span>{variant.category}</span>
+                                    )}
+                                    {variant.sku && <span>SKU {variant.sku}</span>}
+                                  </div>
+                                </div>
+
+                                <div className={styles.reviewProductNumbers}>
+                                  <div>
+                                    <span>Unit price</span>
+                                    <strong>£{unitPrice.toFixed(2)}</strong>
+                                  </div>
+                                  <div>
+                                    <span>Qty</span>
+                                    <strong>{quantity}</strong>
+                                  </div>
+                                  <div>
+                                    <span>Line total</span>
+                                    <strong>£{lineTotal.toFixed(2)}</strong>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               </section>
               <div className={styles.customerNextStep}>
                 <Link2 size={18} />
