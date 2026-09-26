@@ -254,19 +254,37 @@ test("admin keeps independent per-day baskets, reviews exact totals, preserves s
     .locator("xpath=ancestor::section[1]");
 
   await expect(review).toContainText("£13.00 per cycle");
-  await expect(review).toContainText("Tuesday · £11.00");
-  await expect(review).toContainText("Whole Milk · Milk 1L — 2 × £3.00");
-  await expect(review).toContainText("Farm Eggs · Eggs 6 — 1 × £5.00");
-  await expect(review).toContainText("Friday · £2.00");
-  await expect(review).toContainText("Apple Juice · Juice 1L — 1 × £2.00");
+
+  const tuesdayPlan = review.getByTestId("review-day-2");
+  const fridayPlan = review.getByTestId("review-day-5");
+
+  // Each delivery day must be visually self-contained and show enough detail
+  // for an admin to verify product, variant, SKU, quantity and price.
+  await expect(tuesdayPlan).toContainText("Tuesday delivery");
+  await expect(tuesdayPlan).toContainText("2 products · 3 items");
+  await expect(tuesdayPlan).toContainText("£11.00");
+  await expect(tuesdayPlan).toContainText("Whole Milk");
+  await expect(tuesdayPlan).toContainText("Milk 1L");
+  await expect(tuesdayPlan).toContainText("SKU MILK-1L");
+  await expect(tuesdayPlan).toContainText("Unit price");
+  await expect(tuesdayPlan).toContainText("£3.00");
+  await expect(tuesdayPlan).toContainText("Qty");
+  await expect(tuesdayPlan).toContainText("2");
+  await expect(tuesdayPlan).toContainText("Line total");
+  await expect(tuesdayPlan).toContainText("£6.00");
+  await expect(tuesdayPlan).toContainText("Farm Eggs");
+  await expect(tuesdayPlan).toContainText("Eggs 6");
+  await expect(tuesdayPlan).toContainText("SKU EGGS-6");
+  await expect(tuesdayPlan).toContainText("£5.00");
+
+  await expect(fridayPlan).toContainText("Friday delivery");
+  await expect(fridayPlan).toContainText("1 product · 1 item");
+  await expect(fridayPlan).toContainText("Apple Juice");
+  await expect(fridayPlan).toContainText("Juice 1L");
+  await expect(fridayPlan).toContainText("SKU JUICE-1L");
+  await expect(fridayPlan).toContainText("£2.00");
 
   // Products must not leak across day baskets.
-  const tuesdayPlan = review
-    .getByText("Tuesday · £11.00", { exact: true })
-    .locator("xpath=parent::div[1]");
-  const fridayPlan = review
-    .getByText("Friday · £2.00", { exact: true })
-    .locator("xpath=parent::div[1]");
   await expect(tuesdayPlan).not.toContainText("Apple Juice");
   await expect(fridayPlan).not.toContainText("Whole Milk");
   await expect(fridayPlan).not.toContainText("Farm Eggs");
