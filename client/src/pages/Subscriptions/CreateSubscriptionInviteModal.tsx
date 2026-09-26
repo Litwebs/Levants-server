@@ -335,33 +335,39 @@ export default function CreateSubscriptionInviteModal() {
   const selectFrequency = (frequency: string) => {
     setForm((current) => ({ ...current, frequency }));
     if (frequency !== "weekly") {
-      setSelectedDeliveryDays((current) => {
-        const day = current[0] ?? deliveryDays[0];
-        setActiveProductDay(day);
-        setDayQuantities((plans) => ({ [day]: plans[day] || {} }));
-        return [day];
-      });
+      const day = selectedDeliveryDays[0] ?? deliveryDays[0];
+      setSelectedDeliveryDays([day]);
+      setActiveProductDay(day);
+      setDayQuantities((plans) => ({ [day]: plans[day] || {} }));
     }
   };
 
   const toggleDeliveryDay = (day: number) => {
-    setSelectedDeliveryDays((current) => {
-      if (form.frequency !== "weekly") return [day];
-      if (current.includes(day)) {
-        if (current.length === 1) return current;
-        const next = current.filter((selected) => selected !== day);
-        setDayQuantities((plans) =>
-          Object.fromEntries(
-            Object.entries(plans).filter(([key]) => Number(key) !== day),
-          ),
-        );
-        if (activeProductDay === day) setActiveProductDay(next[0]);
-        return next;
-      }
-      setDayQuantities((plans) => ({ ...plans, [day]: plans[day] || {} }));
+    if (form.frequency !== "weekly") {
+      setSelectedDeliveryDays([day]);
       setActiveProductDay(day);
-      return [...current, day].sort((a, b) => a - b);
-    });
+      setDayQuantities((plans) => ({ [day]: plans[day] || {} }));
+      return;
+    }
+
+    if (selectedDeliveryDays.includes(day)) {
+      if (selectedDeliveryDays.length === 1) return;
+      const next = selectedDeliveryDays.filter((selected) => selected !== day);
+      setSelectedDeliveryDays(next);
+      setDayQuantities((plans) =>
+        Object.fromEntries(
+          Object.entries(plans).filter(([key]) => Number(key) !== day),
+        ),
+      );
+      if (activeProductDay === day) setActiveProductDay(next[0]);
+      return;
+    }
+
+    setSelectedDeliveryDays(
+      [...selectedDeliveryDays, day].sort((a, b) => a - b),
+    );
+    setDayQuantities((plans) => ({ ...plans, [day]: plans[day] || {} }));
+    setActiveProductDay(day);
   };
 
   const canContinue =
