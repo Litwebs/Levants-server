@@ -86,7 +86,8 @@ app.use(
           "'self'",
           "data:",
           "https://res.cloudinary.com",
-          "https://*.basemaps.cartocdn.com",
+          // Leaflet's default OSM URL uses a/b/c tile subdomains.
+          "https://*.tile.openstreetmap.org",
         ],
         fontSrc: ["'self'", "https:", "data:"],
         connectSrc: [
