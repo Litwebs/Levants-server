@@ -545,8 +545,8 @@
   position: relative;
   min-width: 0;
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
-  min-height: 188px;
+  grid-template-columns: 156px minmax(0, 1fr);
+  min-height: 210px;
   overflow: hidden;
   background: var(--color-white);
   border: 1px solid var(--color-gray-200);
@@ -573,8 +573,8 @@
 .productImage {
   position: relative;
   height: 100%;
-  min-height: 188px;
-  max-height: 218px;
+  min-height: 210px;
+  max-height: 250px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1789,6 +1789,11 @@
 
   .productCard {
     grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .productImage {
+    min-height: 180px;
+    max-height: 210px;
   }
 
   .productSummaryBar {
