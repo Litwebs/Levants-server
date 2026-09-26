@@ -565,6 +565,19 @@
   border-bottom: 0;
 }
 
+.reviewDayPlan {
+  align-items: stretch !important;
+  flex-direction: column;
+}
+
+.reviewDayPlan > strong {
+  color: var(--color-gray-900);
+}
+
+.reviewDayPlan > span {
+  color: var(--color-gray-600);
+}
+
 .customerNextStep {
   display: flex;
   align-items: flex-start;
