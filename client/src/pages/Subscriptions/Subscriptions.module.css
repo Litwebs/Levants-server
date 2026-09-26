@@ -1038,17 +1038,15 @@
 }
 
 .reviewProductNumbers {
-  min-width: 230px;
-  display: grid;
-  grid-template-columns: minmax(92px, 1fr) minmax(120px, 1fr);
-  gap: var(--space-2);
+  min-width: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-5);
 }
 
 .reviewProductNumbers > div {
-  padding: var(--space-2) var(--space-3);
   text-align: right;
-  background: var(--color-gray-50);
-  border-radius: var(--radius-md);
 }
 
 .reviewProductNumbers > div > span,
@@ -1057,7 +1055,7 @@
 }
 
 .reviewProductNumbers > div > span {
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   font-size: 10px;
   color: var(--color-gray-500);
   text-transform: uppercase;
@@ -1065,8 +1063,12 @@
 }
 
 .reviewProductNumbers > div > strong {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--color-gray-900);
+}
+
+.reviewUnitPrice {
+  min-width: 62px;
 }
 
 .reviewQuantity {
@@ -1077,6 +1079,29 @@
 
 .reviewQuantity .quantityControl {
   background: var(--color-white);
+  border-color: var(--color-gray-300);
+  border-radius: 999px;
+  box-shadow: var(--shadow-xs);
+}
+
+.reviewQuantity .quantityControl button {
+  width: 34px;
+  height: 34px;
+}
+
+.reviewQuantity .quantityControl button:last-child {
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+  border-left: 1px solid var(--color-gray-200);
+}
+
+.reviewQuantity .quantityControl button:first-child {
+  border-right: 1px solid var(--color-gray-200);
+}
+
+.reviewQuantity .quantityControl > span {
+  min-width: 34px;
+  font-size: var(--text-sm);
 }
 
 @media (max-width: 900px) {
@@ -1123,7 +1148,9 @@
   }
 
   .reviewProductNumbers {
-    grid-template-columns: 1fr;
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-3);
   }
 
   .reviewProductNumbers > div {

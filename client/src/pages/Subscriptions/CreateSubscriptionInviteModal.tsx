@@ -1107,8 +1107,8 @@ export default function CreateSubscriptionInviteModal() {
                                 </div>
 
                                 <div className={styles.reviewProductNumbers}>
-                                  <div>
-                                    <span>Unit price</span>
+                                  <div className={styles.reviewUnitPrice}>
+                                    <span>Each</span>
                                     <strong>£{unitPrice.toFixed(2)}</strong>
                                   </div>
                                   <div className={styles.reviewQuantity}>
