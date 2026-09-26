@@ -776,34 +776,6 @@
   overflow: visible;
 }
 
-.reviewOverview {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  background: var(--color-gray-200);
-  border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-lg);
-}
-
-.reviewOverview > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-white);
-}
-
-.reviewOverview span {
-  font-size: var(--text-xs);
-  color: var(--color-gray-500);
-}
-
-.reviewOverview strong {
-  font-size: var(--text-lg);
-  color: var(--color-gray-900);
-}
-
 .reviewGrid section {
   min-width: 0;
   padding: var(--space-4);
@@ -1108,10 +1080,6 @@
 
   .productSelect {
     min-width: 0;
-  }
-
-  .reviewOverview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .reviewProductRow {

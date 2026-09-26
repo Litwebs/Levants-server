@@ -956,34 +956,6 @@ export default function CreateSubscriptionInviteModal() {
                 </p>
               </div>
               <div className={styles.reviewScroll}>
-                <div className={styles.reviewOverview}>
-                  <div>
-                    <span>Total per cycle</span>
-                    <strong>£{estimatedTotal.toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span>Delivery days</span>
-                    <strong>{selectedDeliveryDays.length}</strong>
-                  </div>
-                  <div>
-                    <span>Unique products</span>
-                    <strong>{selectedCount}</strong>
-                  </div>
-                  <div>
-                    <span>Total items</span>
-                    <strong>
-                      {Object.values(dayQuantities).reduce(
-                        (total, plan) =>
-                          total +
-                          Object.values(plan).reduce(
-                            (sum, quantity) => sum + Number(quantity),
-                            0,
-                          ),
-                        0,
-                      )}
-                    </strong>
-                  </div>
-                </div>
                 <div className={styles.reviewGrid}>
                 <section>
                   <h3>Customer details</h3>
