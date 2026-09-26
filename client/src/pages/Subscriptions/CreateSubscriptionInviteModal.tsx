@@ -1072,6 +1072,7 @@ export default function CreateSubscriptionInviteModal() {
                             const quantity =
                               dayQuantities[day]?.[variant._id] || 0;
                             const unitPrice = Number(variant.price);
+                            const lineTotal = unitPrice * quantity;
                             const available = Math.max(
                               0,
                               Number(variant.stockQuantity || 0) -
@@ -1108,7 +1109,7 @@ export default function CreateSubscriptionInviteModal() {
 
                                 <div className={styles.reviewProductNumbers}>
                                   <div className={styles.reviewUnitPrice}>
-                                    <span>Each</span>
+                                    <span>Unit price</span>
                                     <strong>£{unitPrice.toFixed(2)}</strong>
                                   </div>
                                   <div className={styles.reviewQuantity}>
@@ -1135,6 +1136,10 @@ export default function CreateSubscriptionInviteModal() {
                                         <Plus size={14} />
                                       </button>
                                     </div>
+                                  </div>
+                                  <div className={styles.reviewLineTotal}>
+                                    <span>Line total</span>
+                                    <strong>£{lineTotal.toFixed(2)}</strong>
                                   </div>
                                 </div>
                               </div>
