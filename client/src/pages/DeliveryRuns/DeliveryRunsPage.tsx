@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Loader2, Plus, Calendar } from "lucide-react";
+import { Loader2, Plus, Calendar, Download } from "lucide-react";
 import { useDeliveryRuns } from "./useDeliveryRuns";
 import { DeliveryRunsTable } from "./components";
 import { Button, Modal, ModalFooter, Select } from "@/components/common";
@@ -13,6 +13,58 @@ import { useAuth } from "@/context/Auth/AuthContext";
 import styles from "./DeliveryRunsPage.module.css";
 
 type QuickFilter = "next" | "week" | "all";
+
+const IMPORT_TEMPLATE_ROWS = [
+  [
+    "name",
+    "address",
+    "postcode",
+    "contact",
+    "order",
+    "delivery fee",
+    "total",
+    "Delivery Instructions",
+  ],
+  [
+    "Amina Rahman",
+    "24 Market Street, Leeds",
+    "LS1 6DT",
+    "07123 456789",
+    "1x PRODUCT-SKU-1, 2x PRODUCT-SKU-2",
+    "3.50",
+    "28.50",
+    "Leave with reception",
+  ],
+  [
+    "Daniel Jones",
+    "8 Park View, Bradford",
+    "BD1 3AA",
+    "07987 654321",
+    "1x PRODUCT-SKU-3",
+    "0.00",
+    "12.00",
+    "Call on arrival",
+  ],
+];
+
+const escapeCsvCell = (value: string) =>
+  /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+
+const downloadImportTemplate = () => {
+  const csv = IMPORT_TEMPLATE_ROWS.map((row) =>
+    row.map(escapeCsvCell).join(","),
+  ).join("\r\n");
+  const url = URL.createObjectURL(
+    new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "Import-template.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
 
 export const DeliveryRunsPage: React.FC = () => {
   const { user } = useAuth();
@@ -329,11 +381,18 @@ export const DeliveryRunsPage: React.FC = () => {
             }}
           />
           <p className={styles.formHelp}>
-            Upload a Google Sheets export (XLSX) to create additional one-time
-            paid orders for this route. Columns: name, address, postcode,
-            contact, order (e.g. "1x test-csv,2x test-csv-2"), delivery fee,
-            total, Delivery Instructions.
+            Upload an XLSX or CSV file to create additional one-time paid orders
+            for this route. Use product SKUs in the order column, separated by
+            commas (for example, "1x SKU-1, 2x SKU-2").
           </p>
+          <button
+            type="button"
+            className={styles.templateDownload}
+            onClick={downloadImportTemplate}
+          >
+            <Download size={15} aria-hidden="true" />
+            Download example CSV
+          </button>
         </div>
 
         <div className={styles.formField}>

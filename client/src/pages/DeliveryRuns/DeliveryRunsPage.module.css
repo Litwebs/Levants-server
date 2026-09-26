@@ -128,6 +128,31 @@
   margin-top: var(--space-1);
 }
 
+.templateDownload {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  cursor: pointer;
+}
+
+.templateDownload:hover {
+  text-decoration: underline;
+}
+
+.templateDownload:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
