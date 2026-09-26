@@ -30,12 +30,28 @@ import {
 import { getPaymentBadge, getStatusBadge } from "@/pages/Orders/order.utils";
 import styles from "./MapView.module.css";
 
+const OSM_TILES_URL =
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_TILES_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+const getConfiguredTileUrl = (name: string) => {
+  const value = import.meta.env[name];
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+};
+
+// OpenStreetMap is the dependency-free default. Deployments can opt into a
+// different provider without changing application code. If a configured
+// provider fails at runtime, the map automatically falls back to OSM.
 const LIGHT_TILES_URL =
-  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+  getConfiguredTileUrl("VITE_MAP_LIGHT_TILE_URL") ?? OSM_TILES_URL;
 const DARK_TILES_URL =
-  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  getConfiguredTileUrl("VITE_MAP_DARK_TILE_URL") ?? LIGHT_TILES_URL;
 const TILES_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  getConfiguredTileUrl("VITE_MAP_TILES_ATTRIBUTION") ??
+  OSM_TILES_ATTRIBUTION;
 
 // Fix for default marker icons in react-leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -458,6 +474,7 @@ export const MapView: React.FC<MapViewProps> = ({
   const [customPayAmount, setCustomPayAmount] = useState<string>("");
   const [systemPrefersDark, setSystemPrefersDark] = useState(false);
   const [mapSizeNonce, setMapSizeNonce] = useState(0);
+  const [tileFallbackActive, setTileFallbackActive] = useState(false);
 
   useEffect(() => {
     if (!isResizableStopsLayout) return;
@@ -495,6 +512,30 @@ export const MapView: React.FC<MapViewProps> = ({
       : themePreference;
 
   const isDark = resolvedTheme === "dark";
+  const requestedTilesUrl = isDark ? DARK_TILES_URL : LIGHT_TILES_URL;
+  const activeTilesUrl = tileFallbackActive
+    ? OSM_TILES_URL
+    : requestedTilesUrl;
+  const activeTilesAttribution = tileFallbackActive
+    ? OSM_TILES_ATTRIBUTION
+    : TILES_ATTRIBUTION;
+
+  useEffect(() => {
+    // Re-attempt the configured provider when the requested theme/provider
+    // changes. The tileerror handler below will safely fall back again if
+    // that provider is still unavailable.
+    setTileFallbackActive(false);
+  }, [requestedTilesUrl]);
+
+  const handleTileError = () => {
+    if (requestedTilesUrl === OSM_TILES_URL || tileFallbackActive) return;
+
+    console.warn(
+      "MapView: configured map tile provider failed; falling back to OpenStreetMap",
+    );
+    setTileFallbackActive(true);
+  };
+
   const [activeStop, setActiveStop] = useState<string | null>(
     activeStopId || null,
   );
@@ -850,9 +891,12 @@ export const MapView: React.FC<MapViewProps> = ({
           scrollWheelZoom={true}
         >
           <TileLayer
-            key={isDark ? "tiles-dark" : "tiles-light"}
-            attribution={TILES_ATTRIBUTION}
-            url={isDark ? DARK_TILES_URL : LIGHT_TILES_URL}
+            key={`${isDark ? "tiles-dark" : "tiles-light"}-${
+              tileFallbackActive ? "fallback" : "primary"
+            }`}
+            attribution={activeTilesAttribution}
+            url={activeTilesUrl}
+            eventHandlers={{ tileerror: handleTileError }}
           />
 
           <InvalidateMapSize nonce={mapSizeNonce} />
