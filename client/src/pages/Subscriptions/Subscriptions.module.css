@@ -1071,6 +1071,10 @@
   min-width: 62px;
 }
 
+.reviewLineTotal {
+  min-width: 72px;
+}
+
 .reviewQuantity {
   display: flex;
   align-items: flex-end;
