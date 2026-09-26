@@ -700,7 +700,10 @@ export default function CreateSubscriptionInviteModal() {
               <div className={styles.productSummaryBar}>
                 <span>
                   {Object.values(activeQuantities).filter((quantity) => quantity > 0).length}{" "}
-                  products selected for {DAY_LABELS[activeProductDay]}
+                  {Object.values(activeQuantities).filter((quantity) => quantity > 0).length === 1
+                    ? "product"
+                    : "products"}{" "}
+                  selected for {DAY_LABELS[activeProductDay]}
                   {selectedDeliveryDays.length > 1 &&
                     ` · ${selectedCount} unique across all days`}
                 </span>
@@ -815,6 +818,12 @@ export default function CreateSubscriptionInviteModal() {
                           ) : (
                             <Package size={26} />
                           )}
+                          {quantity > 0 && (
+                            <span className={styles.productSelectedBadge}>
+                              <Check size={12} aria-hidden="true" />
+                              Added
+                            </span>
+                          )}
                         </div>
                         <div className={styles.productInfo}>
                           <div className={styles.productTitleRow}>
@@ -823,9 +832,10 @@ export default function CreateSubscriptionInviteModal() {
                               <h3>{variant.productName}</h3>
                               <small>{variant.name}</small>
                             </div>
-                            <strong>
-                              £{Number(variant.price).toFixed(2)}
-                            </strong>
+                            <div className={styles.productPrice}>
+                              <strong>£{Number(variant.price).toFixed(2)}</strong>
+                              <span>each</span>
+                            </div>
                           </div>
                           <p className={styles.productDescription}>
                             {variant.description ||
