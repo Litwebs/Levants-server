@@ -7,6 +7,9 @@ const mapViewUrl = new URL(
 );
 const source = readFileSync(mapViewUrl, "utf8");
 
+const serverAppUrl = new URL("../../server/app.js", import.meta.url);
+const serverSource = readFileSync(serverAppUrl, "utf8");
+
 assert.equal(
   source.includes("basemaps.cartocdn.com"),
   false,
@@ -43,4 +46,16 @@ assert.equal(
   "MapView must activate the fallback when the configured provider fails",
 );
 
-console.log("Map tile configuration regression checks passed.");
+assert.equal(
+  serverSource.includes('"https://*.tile.openstreetmap.org"'),
+  true,
+  "Server CSP must allow the OpenStreetMap tile subdomains used by Leaflet",
+);
+
+assert.equal(
+  serverSource.includes('"https://*.basemaps.cartocdn.com"'),
+  false,
+  "Server CSP must not retain the obsolete CARTO tile source",
+);
+
+console.log("Map tile configuration and CSP regression checks passed.");
