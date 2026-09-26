@@ -654,7 +654,18 @@ test("renders prepared multi-day subscriptions with the correct per-day product 
     },
     {
       key: "levants_subscription_draft",
-      draft: fixture.preparedDraft,
+      // Regression: a draft left in this browser from another subscription
+      // must never replace the admin-prepared order loaded from the server.
+      draft: {
+        flowVersion: 2,
+        step: 4,
+        selectedVariantIds: [],
+        quantities: {},
+        dayQuantities: {},
+        frequency: "monthly",
+        deliveryDays: ["Monday"],
+        selectedAddress: "",
+      },
     },
   );
   await page.goto("/portal/subscriptions/new?prepared=1");
