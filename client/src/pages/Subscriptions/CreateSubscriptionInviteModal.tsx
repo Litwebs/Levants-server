@@ -193,9 +193,6 @@ export default function CreateSubscriptionInviteModal() {
     [dayQuantities],
   );
   const selectedCount = selectedVariantIds.size;
-  const selectedVariants = variants.filter((variant) =>
-    selectedVariantIds.has(variant._id),
-  );
   const productPageCount = Math.max(
     1,
     Math.ceil(variants.length / PRODUCTS_PER_PAGE),
