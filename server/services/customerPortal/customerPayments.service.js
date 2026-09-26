@@ -295,7 +295,11 @@ async function CreateSetupIntent({ customerId } = {}) {
 
   const intent = await stripe.setupIntents.create({
     customer: customer.stripeCustomerId,
-    automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+    // Keep subscription setup on card rails only. Stripe Link can otherwise be
+    // offered by automatic payment methods inside the Payment Element and fail
+    // before our API receives a payment method, leaving the customer with the
+    // provider's generic "processing error" message.
+    payment_method_types: ["card"],
     usage: "off_session",
     metadata: {
       customerId: String(customer._id),
