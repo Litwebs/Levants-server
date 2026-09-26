@@ -749,7 +749,14 @@ function sanitizeAddress(address) {
       ? address.toObject({ virtuals: false, getters: false })
       : { ...address };
 
-  for (const key of ["line1", "line2", "city", "postcode", "country"]) {
+  for (const key of [
+    "line1",
+    "line2",
+    "city",
+    "postcode",
+    "country",
+    "deliveryInstructions",
+  ]) {
     if (out[key] !== undefined && out[key] !== null) {
       out[key] = normalizeText(stripHtml(out[key]));
     }
@@ -757,6 +764,12 @@ function sanitizeAddress(address) {
 
   if (typeof out.line2 === "string" && out.line2.trim() === "") {
     out.line2 = null;
+  }
+  if (
+    typeof out.deliveryInstructions === "string" &&
+    out.deliveryInstructions.trim() === ""
+  ) {
+    out.deliveryInstructions = null;
   }
 
   if (typeof out.postcode === "string") {
@@ -838,6 +851,16 @@ function upsertDefaultAddress(customer, address) {
   if (matchIndex === -1) {
     customer.addresses.push({ ...address, isDefault: true });
     changed = true;
+  } else if (
+    Object.prototype.hasOwnProperty.call(address, "deliveryInstructions")
+  ) {
+    const currentInstructions =
+      customer.addresses[matchIndex].deliveryInstructions || null;
+    const nextInstructions = address.deliveryInstructions || null;
+    if (currentInstructions !== nextInstructions) {
+      customer.addresses[matchIndex].deliveryInstructions = nextInstructions;
+      changed = true;
+    }
   }
 
   const defaultIndex =

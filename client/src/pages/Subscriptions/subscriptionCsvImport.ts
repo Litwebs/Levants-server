@@ -17,6 +17,7 @@ export type ImportPayloadRow = {
     city: string;
     postcode: string;
     country: string;
+    deliveryInstructions?: string;
     isDefault: true;
   };
   subscription: {
@@ -319,7 +320,7 @@ export const parseSubscriptionCsv = (
     const city = getValue(row, headers, ["city", "town"]);
     const postcode = getValue(row, headers, ["postcode", "postal code"]);
     const country = getValue(row, headers, ["country"]) || "United Kingdom";
-    const notes = getValue(row, headers, [
+    const deliveryInstructions = getValue(row, headers, [
       "delivery instructions",
       "delivery notes",
       "notes",
@@ -409,6 +410,7 @@ export const parseSubscriptionCsv = (
           city,
           postcode,
           country,
+          ...(deliveryInstructions ? { deliveryInstructions } : {}),
           isDefault: true,
         },
         subscription: {
@@ -419,7 +421,6 @@ export const parseSubscriptionCsv = (
           ...(parsedItems.isDaySpecific && parsedItems.dayPlans.length
             ? { deliveryDayPlans: parsedItems.dayPlans }
             : {}),
-          ...(notes ? { notes } : {}),
         },
       };
     }

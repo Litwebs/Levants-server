@@ -52,6 +52,7 @@ describe("Admin bulk subscription setup import (E2E)", () => {
       city: "Bradford",
       postcode: "BD4 9HG",
       country: "United Kingdom",
+      deliveryInstructions: "Leave by the side gate",
       isDefault: true,
     },
     subscription: {
@@ -94,6 +95,10 @@ describe("Admin bulk subscription setup import (E2E)", () => {
     expect(
       customer.pendingSubscriptionDraft.quantities[String(variant._id)],
     ).toBe(2);
+    expect(
+      customer.addresses.find((address) => address.isDefault)
+        ?.deliveryInstructions,
+    ).toBe("Leave by the side gate");
 
     const detailResponse = await request(app)
       .get(`/api/admin/subscriptions/pending:${customer._id}`)
@@ -110,6 +115,10 @@ describe("Admin bulk subscription setup import (E2E)", () => {
         email: "rebecca@example.com",
       },
     });
+    expect(
+      detailResponse.body.data.subscription.deliveryAddress
+        .deliveryInstructions,
+    ).toBe("Leave by the side gate");
     expect(detailResponse.body.data.subscription.items[0]).toMatchObject({
       variant: String(variant._id),
       sku: variant.sku,
@@ -137,6 +146,45 @@ describe("Admin bulk subscription setup import (E2E)", () => {
         ],
       },
     ]);
+  });
+
+  test("updates delivery instructions when an imported customer already has the same address", async () => {
+    const cookie = await login("admin");
+    const variant = await createEligibleVariant();
+
+    const existing = await Customer.create({
+      firstName: "Rebecca",
+      lastName: "Davey",
+      email: "rebecca@example.com",
+      phone: "07400123456",
+      isGuest: false,
+      addresses: [
+        {
+          line1: "21 Andover Green",
+          city: "Bradford",
+          postcode: "BD4 9HG",
+          country: "United Kingdom",
+          isDefault: true,
+        },
+      ],
+    });
+
+    const response = await request(app)
+      .post("/api/admin/subscriptions/bulk-setup-links")
+      .set("Cookie", cookie)
+      .send({ rows: [buildRow(variant._id)] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.summary).toMatchObject({
+      created: 1,
+      failed: 0,
+    });
+
+    const refreshed = await Customer.findById(existing._id);
+    expect(
+      refreshed.addresses.find((address) => address.isDefault)
+        ?.deliveryInstructions,
+    ).toBe("Leave by the side gate");
   });
 
   test("deletes a pending setup and invalidates its invite without deleting the customer", async () => {
