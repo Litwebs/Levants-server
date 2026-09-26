@@ -1038,9 +1038,9 @@
 }
 
 .reviewProductNumbers {
-  min-width: 280px;
+  min-width: 230px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  grid-template-columns: minmax(92px, 1fr) minmax(120px, 1fr);
   gap: var(--space-2);
 }
 
@@ -1051,12 +1051,12 @@
   border-radius: var(--radius-md);
 }
 
-.reviewProductNumbers span,
-.reviewProductNumbers strong {
+.reviewProductNumbers > div > span,
+.reviewProductNumbers > div > strong {
   display: block;
 }
 
-.reviewProductNumbers span {
+.reviewProductNumbers > div > span {
   margin-bottom: 2px;
   font-size: 10px;
   color: var(--color-gray-500);
@@ -1064,9 +1064,19 @@
   letter-spacing: 0.04em;
 }
 
-.reviewProductNumbers strong {
+.reviewProductNumbers > div > strong {
   font-size: var(--text-sm);
   color: var(--color-gray-900);
+}
+
+.reviewQuantity {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+}
+
+.reviewQuantity .quantityControl {
+  background: var(--color-white);
 }
 
 @media (max-width: 900px) {
@@ -1123,7 +1133,7 @@
     text-align: left;
   }
 
-  .reviewProductNumbers span {
+  .reviewProductNumbers > div > span {
     margin-bottom: 0;
   }
 }

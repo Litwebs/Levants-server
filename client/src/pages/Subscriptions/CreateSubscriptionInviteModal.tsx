@@ -291,15 +291,23 @@ export default function CreateSubscriptionInviteModal() {
     0,
   );
 
-  const updateQuantity = (variantId: string, delta: number) => {
+  const updateDayQuantity = (
+    day: number,
+    variantId: string,
+    delta: number,
+  ) => {
     setDayQuantities((current) => {
-      const currentDay = current[activeProductDay] || {};
+      const currentDay = current[day] || {};
       const nextQuantity = Math.max(0, (currentDay[variantId] || 0) + delta);
       const nextDay = { ...currentDay };
       if (nextQuantity) nextDay[variantId] = nextQuantity;
       else delete nextDay[variantId];
-      return { ...current, [activeProductDay]: nextDay };
+      return { ...current, [day]: nextDay };
     });
+  };
+
+  const updateQuantity = (variantId: string, delta: number) => {
+    updateDayQuantity(activeProductDay, variantId, delta);
   };
 
   const createLink = async () => {
@@ -1064,7 +1072,11 @@ export default function CreateSubscriptionInviteModal() {
                             const quantity =
                               dayQuantities[day]?.[variant._id] || 0;
                             const unitPrice = Number(variant.price);
-                            const lineTotal = unitPrice * quantity;
+                            const available = Math.max(
+                              0,
+                              Number(variant.stockQuantity || 0) -
+                                Number(variant.reservedQuantity || 0),
+                            );
 
                             return (
                               <div
@@ -1099,13 +1111,30 @@ export default function CreateSubscriptionInviteModal() {
                                     <span>Unit price</span>
                                     <strong>£{unitPrice.toFixed(2)}</strong>
                                   </div>
-                                  <div>
-                                    <span>Qty</span>
-                                    <strong>{quantity}</strong>
-                                  </div>
-                                  <div>
-                                    <span>Line total</span>
-                                    <strong>£{lineTotal.toFixed(2)}</strong>
+                                  <div className={styles.reviewQuantity}>
+                                    <span>Quantity</span>
+                                    <div className={styles.quantityControl}>
+                                      <button
+                                        type="button"
+                                        aria-label={`Remove one ${variant.name} from ${DAY_LABELS[day]}`}
+                                        onClick={() =>
+                                          updateDayQuantity(day, variant._id, -1)
+                                        }
+                                      >
+                                        <Minus size={14} />
+                                      </button>
+                                      <span aria-live="polite">{quantity}</span>
+                                      <button
+                                        type="button"
+                                        aria-label={`Add one ${variant.name} to ${DAY_LABELS[day]}`}
+                                        disabled={quantity >= available}
+                                        onClick={() =>
+                                          updateDayQuantity(day, variant._id, 1)
+                                        }
+                                      >
+                                        <Plus size={14} />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
