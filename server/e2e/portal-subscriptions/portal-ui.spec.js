@@ -636,6 +636,35 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
   ).toBe(true);
 });
 
+test("subscription product picker requests the storefront category order", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    createSubscription: false,
+    portalCreationDays: true,
+  });
+
+  await signIn(page, fixture.credentials, "/portal/subscriptions");
+
+  const productRequestPromise = page.waitForRequest((candidate) => {
+    const url = new URL(candidate.url());
+    return (
+      url.origin === API_ORIGIN &&
+      url.pathname === "/api/products" &&
+      candidate.method() === "GET"
+    );
+  });
+
+  await page.goto("/portal/subscriptions/new");
+  const productRequest = await productRequestPromise;
+  const productUrl = new URL(productRequest.url());
+
+  expect(productUrl.searchParams.get("sort")).toBe("category_order");
+});
+
 test("renders prepared multi-day subscriptions with the correct per-day product split", async ({
   page,
   request,
@@ -654,7 +683,18 @@ test("renders prepared multi-day subscriptions with the correct per-day product 
     },
     {
       key: "levants_subscription_draft",
-      draft: fixture.preparedDraft,
+      // Regression: a draft left in this browser from another subscription
+      // must never replace the admin-prepared order loaded from the server.
+      draft: {
+        flowVersion: 2,
+        step: 4,
+        selectedVariantIds: [],
+        quantities: {},
+        dayQuantities: {},
+        frequency: "monthly",
+        deliveryDays: ["Monday"],
+        selectedAddress: "",
+      },
     },
   );
   await page.goto("/portal/subscriptions/new?prepared=1");

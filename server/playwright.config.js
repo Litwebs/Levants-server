@@ -10,6 +10,7 @@ const {
 const portalClientRoot = process.env.E2E_CLIENT_DIR
   ? path.resolve(process.env.E2E_CLIENT_DIR)
   : path.resolve(__dirname, "../../Levants-client");
+const adminClientRoot = path.resolve(__dirname, "../client");
 
 module.exports = defineConfig({
   testDir: "./e2e/portal-subscriptions",
@@ -53,6 +54,16 @@ module.exports = defineConfig({
       env: {
         ...process.env,
         VITE_API_BASE_URL: `${API_ORIGIN}/api`,
+      },
+    },
+    {
+      command: "npm run dev -- --host 127.0.0.1 --port 4174",
+      cwd: adminClientRoot,
+      url: "http://127.0.0.1:4174",
+      timeout: 120_000,
+      reuseExistingServer: false,
+      env: {
+        ...process.env,
       },
     },
   ],

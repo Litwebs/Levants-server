@@ -65,6 +65,34 @@ const initialForm = {
 const STEPS = ["Customer", "Schedule", "Products", "Review"];
 const PRODUCTS_PER_PAGE = 8;
 
+const CATEGORY_PRIORITY = [
+  ["milk unhomogenised", "unhomogenised milk", "unhomogenized milk", "whole milk", "milk"],
+  ["milk semi skimmed", "semi skimmed milk", "semi-skimmed milk"],
+  ["eggs", "egg"],
+  ["cream"],
+  ["butter"],
+  ["milkshakes", "milkshake"],
+  ["honey"],
+  ["ghee"],
+  ["cheese"],
+  ["bakery", "bakary", "bread"],
+  ["juices", "juice"],
+] as const;
+
+const categoryPriority = (value?: string) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const index = CATEGORY_PRIORITY.findIndex((aliases) =>
+    aliases.some((alias) => alias === normalized),
+  );
+  return index === -1 ? CATEGORY_PRIORITY.length : index;
+};
+
 const getImageUrl = (image?: string | { url?: string } | null) =>
   typeof image === "string" ? image : image?.url || "";
 
@@ -78,7 +106,10 @@ export default function CreateSubscriptionInviteModal() {
   const [selectedDeliveryDays, setSelectedDeliveryDays] = useState<number[]>([
     2,
   ]);
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [dayQuantities, setDayQuantities] = useState<
+    Record<number, Record<string, number>>
+  >({});
+  const [activeProductDay, setActiveProductDay] = useState<number>(2);
   const [productPage, setProductPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingOptions, setLoadingOptions] = useState(false);
@@ -98,6 +129,8 @@ export default function CreateSubscriptionInviteModal() {
         if (Array.isArray(days) && days.length) {
           setDeliveryDays(days);
           setSelectedDeliveryDays([days[0]]);
+          setActiveProductDay(days[0]);
+          setDayQuantities({ [days[0]]: {} });
           setForm((current) => ({
             ...current,
             preferredDeliveryDay: days[0],
@@ -116,6 +149,14 @@ export default function CreateSubscriptionInviteModal() {
   const variants = useMemo(
     () =>
       products
+        .map((product, originalIndex) => ({ product, originalIndex }))
+        .sort(
+          (a, b) =>
+            categoryPriority(a.product.category) -
+              categoryPriority(b.product.category) ||
+            a.originalIndex - b.originalIndex,
+        )
+        .map(({ product }) => product)
         .filter(
           (product) =>
             product.status === "active" &&
@@ -139,12 +180,19 @@ export default function CreateSubscriptionInviteModal() {
     [products],
   );
 
-  const selectedCount = Object.values(quantities).filter(
-    (quantity) => quantity > 0,
-  ).length;
-  const selectedVariants = variants.filter(
-    (variant) => (quantities[variant._id] || 0) > 0,
+  const activeQuantities = dayQuantities[activeProductDay] || {};
+  const selectedVariantIds = useMemo(
+    () =>
+      new Set(
+        Object.values(dayQuantities).flatMap((plan) =>
+          Object.entries(plan)
+            .filter(([, quantity]) => quantity > 0)
+            .map(([variantId]) => variantId),
+        ),
+      ),
+    [dayQuantities],
   );
+  const selectedCount = selectedVariantIds.size;
   const productPageCount = Math.max(
     1,
     Math.ceil(variants.length / PRODUCTS_PER_PAGE),
@@ -153,21 +201,35 @@ export default function CreateSubscriptionInviteModal() {
     (productPage - 1) * PRODUCTS_PER_PAGE,
     productPage * PRODUCTS_PER_PAGE,
   );
-  const estimatedTotal = selectedVariants.reduce(
-    (total, variant) =>
-      total + Number(variant.price) * Number(quantities[variant._id] || 0),
+  const dayTotals = useMemo(
+    () =>
+      Object.fromEntries(
+        selectedDeliveryDays.map((day) => [
+          day,
+          variants.reduce(
+            (total, variant) =>
+              total +
+              Number(variant.price) *
+                Number(dayQuantities[day]?.[variant._id] || 0),
+            0,
+          ),
+        ]),
+      ) as Record<number, number>,
+    [dayQuantities, selectedDeliveryDays, variants],
+  );
+  const estimatedTotal = selectedDeliveryDays.reduce(
+    (total, day) => total + Number(dayTotals[day] || 0),
     0,
   );
 
   const updateQuantity = (variantId: string, delta: number) => {
-    setQuantities((current) => {
-      const next = Math.max(0, (current[variantId] || 0) + delta);
-      if (!next) {
-        const copy = { ...current };
-        delete copy[variantId];
-        return copy;
-      }
-      return { ...current, [variantId]: next };
+    setDayQuantities((current) => {
+      const currentDay = current[activeProductDay] || {};
+      const nextQuantity = Math.max(0, (currentDay[variantId] || 0) + delta);
+      const nextDay = { ...currentDay };
+      if (nextQuantity) nextDay[variantId] = nextQuantity;
+      else delete nextDay[variantId];
+      return { ...current, [activeProductDay]: nextDay };
     });
   };
 
@@ -186,10 +248,16 @@ export default function CreateSubscriptionInviteModal() {
       });
       return;
     }
-    if (!selectedCount) {
+    const missingProductDay = selectedDeliveryDays.find(
+      (day) =>
+        !Object.values(dayQuantities[day] || {}).some(
+          (quantity) => quantity > 0,
+        ),
+    );
+    if (missingProductDay !== undefined) {
       showToast({
         type: "error",
-        title: "Add at least one subscription product",
+        title: `Add at least one product for ${DAY_LABELS[missingProductDay]}`,
       });
       return;
     }
@@ -213,10 +281,27 @@ export default function CreateSubscriptionInviteModal() {
           frequency: form.frequency,
           preferredDeliveryDay: selectedDeliveryDays[0],
           preferredDeliveryDays: selectedDeliveryDays,
-          items: Object.entries(quantities).map(([variantId, quantity]) => ({
+          items: Array.from(selectedVariantIds).map((variantId) => ({
             variantId,
-            quantity,
+            quantity: Math.max(
+              ...selectedDeliveryDays.map(
+                (day) => dayQuantities[day]?.[variantId] || 0,
+              ),
+            ),
           })),
+          ...(form.frequency === "weekly" && selectedDeliveryDays.length > 1
+            ? {
+                deliveryDayPlans: selectedDeliveryDays.map((day) => ({
+                  day,
+                  items: Object.entries(dayQuantities[day] || {})
+                    .filter(([, quantity]) => quantity > 0)
+                    .map(([variantId, quantity]) => ({
+                      variantId,
+                      quantity,
+                    })),
+                })),
+              }
+            : {}),
           notes: form.notes.trim() || undefined,
         },
       });
@@ -250,20 +335,39 @@ export default function CreateSubscriptionInviteModal() {
   const selectFrequency = (frequency: string) => {
     setForm((current) => ({ ...current, frequency }));
     if (frequency !== "weekly") {
-      setSelectedDeliveryDays((current) => [current[0] ?? deliveryDays[0]]);
+      const day = selectedDeliveryDays[0] ?? deliveryDays[0];
+      setSelectedDeliveryDays([day]);
+      setActiveProductDay(day);
+      setDayQuantities((plans) => ({ [day]: plans[day] || {} }));
     }
   };
 
   const toggleDeliveryDay = (day: number) => {
-    setSelectedDeliveryDays((current) => {
-      if (form.frequency !== "weekly") return [day];
-      if (current.includes(day)) {
-        return current.length > 1
-          ? current.filter((selected) => selected !== day)
-          : current;
-      }
-      return [...current, day].sort((a, b) => a - b);
-    });
+    if (form.frequency !== "weekly") {
+      setSelectedDeliveryDays([day]);
+      setActiveProductDay(day);
+      setDayQuantities((plans) => ({ [day]: plans[day] || {} }));
+      return;
+    }
+
+    if (selectedDeliveryDays.includes(day)) {
+      if (selectedDeliveryDays.length === 1) return;
+      const next = selectedDeliveryDays.filter((selected) => selected !== day);
+      setSelectedDeliveryDays(next);
+      setDayQuantities((plans) =>
+        Object.fromEntries(
+          Object.entries(plans).filter(([key]) => Number(key) !== day),
+        ),
+      );
+      if (activeProductDay === day) setActiveProductDay(next[0]);
+      return;
+    }
+
+    setSelectedDeliveryDays(
+      [...selectedDeliveryDays, day].sort((a, b) => a - b),
+    );
+    setDayQuantities((plans) => ({ ...plans, [day]: plans[day] || {} }));
+    setActiveProductDay(day);
   };
 
   const canContinue =
@@ -277,7 +381,11 @@ export default function CreateSubscriptionInviteModal() {
             form.postcode.trim(),
         )
       : step === 2
-        ? selectedCount > 0
+        ? selectedDeliveryDays.every((day) =>
+            Object.values(dayQuantities[day] || {}).some(
+              (quantity) => quantity > 0,
+            ),
+          )
         : true;
 
   return (
@@ -492,22 +600,50 @@ export default function CreateSubscriptionInviteModal() {
           {step === 2 && (
             <div className={styles.stepContent}>
               <div className={styles.stepIntro}>
-                <h2>Select products</h2>
+                <h2>Choose products for each delivery day</h2>
                 <p>
-                  Product descriptions, variants, pricing and available stock
-                  are shown below. Set a quantity to add an item.
+                  Each selected delivery day has its own basket. Choose a day,
+                  then set the products and quantities for that delivery.
                 </p>
               </div>
+              {selectedDeliveryDays.length > 1 && (
+                <div className={styles.deliveryDayGrid}>
+                  {selectedDeliveryDays.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      className={
+                        activeProductDay === day
+                          ? styles.deliveryDaySelected
+                          : ""
+                      }
+                      onClick={() => {
+                        setActiveProductDay(day);
+                        setProductPage(1);
+                      }}
+                    >
+                      <span>{DAY_LABELS[day]}</span>
+                      <strong>£{Number(dayTotals[day] || 0).toFixed(2)}</strong>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className={styles.productSummaryBar}>
-                <span>{selectedCount} variants selected</span>
-                <strong>Estimated total £{estimatedTotal.toFixed(2)}</strong>
+                <span>
+                  {selectedCount} variants selected · Editing{" "}
+                  {DAY_LABELS[activeProductDay]}
+                </span>
+                <strong>
+                  {DAY_LABELS[activeProductDay]} £
+                  {Number(dayTotals[activeProductDay] || 0).toFixed(2)}
+                </strong>
               </div>
               <div className={styles.productGrid}>
                 {loadingOptions ? (
                   <p>Loading products…</p>
                 ) : variants.length ? (
                   visibleVariants.map((variant) => {
-                    const quantity = quantities[variant._id] || 0;
+                    const quantity = activeQuantities[variant._id] || 0;
                     const available = Math.max(
                       0,
                       Number(variant.stockQuantity || 0) -
@@ -701,18 +837,27 @@ export default function CreateSubscriptionInviteModal() {
               </div>
               <section className={styles.reviewProducts}>
                 <div className={styles.sectionHeading}>
-                  <h3>Products</h3>
-                  <strong>£{estimatedTotal.toFixed(2)} per delivery</strong>
+                  <h3>Orders by delivery day</h3>
+                  <strong>£{estimatedTotal.toFixed(2)} per cycle</strong>
                 </div>
-                {selectedVariants.map((variant) => (
-                  <div key={variant._id}>
-                    <span>
-                      {variant.productName} · {variant.name}
-                    </span>
+                {selectedDeliveryDays.map((day) => (
+                  <div key={day} className={styles.reviewDayPlan}>
                     <strong>
-                      {quantities[variant._id]} × £
-                      {Number(variant.price).toFixed(2)}
+                      {DAY_LABELS[day]} · £
+                      {Number(dayTotals[day] || 0).toFixed(2)}
                     </strong>
+                    {variants
+                      .filter(
+                        (variant) =>
+                          (dayQuantities[day]?.[variant._id] || 0) > 0,
+                      )
+                      .map((variant) => (
+                        <span key={variant._id}>
+                          {variant.productName} · {variant.name} —{" "}
+                          {dayQuantities[day][variant._id]} × £
+                          {Number(variant.price).toFixed(2)}
+                        </span>
+                      ))}
                   </div>
                 ))}
               </section>

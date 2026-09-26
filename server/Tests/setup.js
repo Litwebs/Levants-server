@@ -1,4 +1,6 @@
 process.env.STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "sk_test_123";
+process.env.STRIPE_PUBLISHABLE_KEY =
+  process.env.STRIPE_PUBLISHABLE_KEY || "pk_test_123";
 // Unit/integration tests capture or mock outbound email. Supplying an explicit
 // non-live key keeps the Resend SDK from rejecting module initialization in a
 // clean CI environment without granting tests access to production email.

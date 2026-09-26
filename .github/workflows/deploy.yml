@@ -123,14 +123,19 @@ jobs:
           cache: npm
           cache-dependency-path: |
             server/package-lock.json
+            client/package-lock.json
             portal-client/package-lock.json
 
       - name: Install backend dependencies
         working-directory: server
         run: npm ci
 
-      - name: Install client dependencies
+      - name: Install customer portal dependencies
         working-directory: portal-client
+        run: npm ci
+
+      - name: Install admin client dependencies
+        working-directory: client
         run: npm ci
 
       - name: Install Chromium
