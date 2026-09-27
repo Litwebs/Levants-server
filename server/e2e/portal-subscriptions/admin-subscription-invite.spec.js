@@ -268,7 +268,7 @@ test("admin keeps independent per-day baskets, reviews exact totals, preserves s
   await expect(tuesdayPlan).toContainText("SKU MILK-1L");
   await expect(tuesdayPlan).toContainText("Unit price");
   await expect(tuesdayPlan).toContainText("£3.00");
-  await expect(tuesdayPlan).toContainText("Qty");
+  await expect(tuesdayPlan).toContainText("Quantity");
   await expect(tuesdayPlan).toContainText("2");
   await expect(tuesdayPlan).toContainText("Line total");
   await expect(tuesdayPlan).toContainText("£6.00");
