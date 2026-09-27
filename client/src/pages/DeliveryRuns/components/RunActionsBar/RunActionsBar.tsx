@@ -7,7 +7,14 @@ import type {
   ManualOrderAssignment,
   OrderSummary,
 } from "@/context/DeliveryRuns";
-import { Button, Modal, ModalFooter, Input, Table } from "@/components/common";
+import {
+  Button,
+  Modal,
+  ModalFooter,
+  Input,
+  Select as CommonSelect,
+  Table,
+} from "@/components/common";
 import { Checkbox } from "@/components/ui/checkbox";
 import { listDrivers } from "@/context/DeliveryRuns";
 import styles from "./RunActionsBar.module.css";
@@ -347,60 +354,50 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
         title={getConfirmTitle()}
         size="xl"
       >
-        <p className={styles.modalMessage}>{getConfirmMessage()}</p>
-
         {(confirmAction === "optimize" || confirmAction === "reoptimize") && (
           <div className={styles.optimizeModal}>
             <div className={styles.modalIntroCard}>
-              <div>
-                <div className={styles.modalEyebrow}>Driver routing setup</div>
-                <div className={styles.modalHeadline}>
-                  Assign postcode areas from this run to each selected driver.
+              <div className={styles.introCopy}>
+                <span className={styles.introIcon} aria-hidden="true">
+                  <Route size={20} />
+                </span>
+                <div>
+                  <div className={styles.modalEyebrow}>Routing setup</div>
+                  <div className={styles.modalHeadline}>
+                    Configure drivers for this run
+                  </div>
+                  <p className={styles.modalMessage}>{getConfirmMessage()}</p>
                 </div>
               </div>
               <div className={styles.modalStats}>
                 <div className={styles.modalStat}>
                   <strong>{availableRoutingAreas.length}</strong>
-                  <span>postcode areas</span>
+                  <span>
+                    {availableRoutingAreas.length === 1 ? "area" : "areas"}
+                  </span>
                 </div>
                 <div className={styles.modalStat}>
                   <strong>{selectedDrivers.length}</strong>
-                  <span>drivers selected</span>
+                  <span>
+                    {selectedDrivers.length === 1 ? "driver" : "drivers"}
+                  </span>
                 </div>
                 <div className={styles.modalStat}>
                   <strong>{Object.keys(manualAssignments).length}</strong>
-                  <span>manual stop assignments</span>
+                  <span>manual</span>
                 </div>
               </div>
             </div>
 
-            <div className={styles.availableAreasPanel}>
-              <div className={styles.panelHeader}>
-                <div>
-                  <div className={styles.panelTitle}>
-                    Areas found on this run
-                  </div>
-                  <div className={styles.panelHint}>
-                    These options are calculated from the current orders in the
-                    batch.
-                  </div>
+            <div className={styles.sectionHeading}>
+              <span className={styles.stepNumber}>1</span>
+              <div>
+                <div className={styles.panelTitle}>Configure drivers</div>
+                <div className={styles.panelHint}>
+                  Select each driver, their start time, and the areas they will
+                  cover.
                 </div>
               </div>
-
-              {availableRoutingAreas.length > 0 ? (
-                <div className={styles.areaCatalog}>
-                  {availableRoutingAreas.map((entry) => (
-                    <div key={entry.area} className={styles.catalogChip}>
-                      <span>{entry.area}</span>
-                      <small>{entry.orderCount} orders</small>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className={styles.emptyState}>
-                  No postcode areas could be calculated from the current run.
-                </div>
-              )}
             </div>
 
             {driversLoading ? (
@@ -607,13 +604,14 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
 
                 <div className={styles.ordersPanel}>
                   <div className={styles.panelHeader}>
-                    <div>
+                    <span className={styles.stepNumber}>2</span>
+                    <div className={styles.ordersPanelHeading}>
                       <div className={styles.panelTitle}>
-                        All orders in this run
+                        Override individual orders
                       </div>
                       <div className={styles.panelHint}>
-                        Review every order and optionally pre-assign a stop to a
-                        driver before optimization.
+                        Optional. Assign a specific driver only where the area
+                        rules should not apply.
                       </div>
                     </div>
                   </div>
@@ -640,32 +638,38 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
                               manualAssignments[order.orderDbId] || "";
                             return (
                               <tr key={order.orderDbId}>
-                                <td>
+                                <td data-label="Order">
                                   <div className={styles.orderPrimary}>
                                     {order.orderId}
                                   </div>
                                 </td>
-                                <td>{order.customerName || "-"}</td>
-                                <td>
-                                  <div className={styles.orderPrimary}>
-                                    {order.postcode || "-"}
-                                  </div>
-                                  {order.addressLine1 && (
-                                    <div className={styles.orderSecondary}>
-                                      {order.addressLine1}
-                                    </div>
-                                  )}
+                                <td data-label="Customer">
+                                  {order.customerName || "-"}
                                 </td>
-                                <td>{order.routingArea || "-"}</td>
-                                <td>{order.totalItems}</td>
-                                <td>
-                                  <select
+                                <td data-label="Postcode">
+                                  <div className={styles.orderValue}>
+                                    <div className={styles.orderPrimary}>
+                                      {order.postcode || "-"}
+                                    </div>
+                                    {order.addressLine1 && (
+                                      <div className={styles.orderSecondary}>
+                                        {order.addressLine1}
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td data-label="Area">
+                                  {order.routingArea || "-"}
+                                </td>
+                                <td data-label="Items">{order.totalItems}</td>
+                                <td data-label="Driver">
+                                  <CommonSelect
                                     className={styles.assignmentSelect}
+                                    fullWidth
                                     value={selectedDriverId}
-                                    onChange={(event) => {
-                                      const nextDriverId = String(
-                                        event.target.value || "",
-                                      );
+                                    aria-label={`Driver for ${order.orderId}`}
+                                    onChange={(value) => {
+                                      const nextDriverId = String(value || "");
 
                                       setManualAssignments((prev) => {
                                         if (!nextDriverId) {
@@ -693,17 +697,18 @@ export const RunActionsBar: React.FC<RunActionsBarProps> = ({
                                         );
                                       }
                                     }}
-                                  >
-                                    <option value="">Automatic</option>
-                                    {drivers.map((driver) => (
-                                      <option key={driver.id} value={driver.id}>
-                                        {driver.name}
-                                        {driver.selected
-                                          ? ""
-                                          : " (selects on assign)"}
-                                      </option>
-                                    ))}
-                                  </select>
+                                    options={[
+                                      { value: "", label: "Automatic" },
+                                      ...drivers.map((driver) => ({
+                                        value: driver.id,
+                                        label: `${driver.name}${
+                                          driver.selected
+                                            ? ""
+                                            : " (selects on assign)"
+                                        }`,
+                                      })),
+                                    ]}
+                                  />
                                 </td>
                               </tr>
                             );
