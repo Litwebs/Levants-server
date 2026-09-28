@@ -15,6 +15,7 @@ const {
   crossCutoff,
   finalizeCancellation,
   getState,
+  generateScheduledDelivery,
   login,
   portalHeaders,
   reset,
@@ -1126,4 +1127,174 @@ test("generated-order reduction preserves payment audit and add-on separation se
   );
   expect(Number(afterOrder.metadata?.oneTimeDeliveryReductionCreditMinor)).toBe(500);
   expect(creditAmount(after) - creditAmount(before)).toBe(500);
+});
+
+
+test("scheduled reduction survives real order generation and only affects that delivery", async ({ request }) => {
+  await reset(request);
+  const fixture = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "before-cutoff",
+    action: ACTIONS.DECREASE_QUANTITY,
+    funds: FUNDS.FUNDED,
+    createPaidOrders: false,
+  });
+  const token = await login(request, fixture.credentials);
+  const before = await getState(request, fixture.subscriptionId);
+  expect(before.orders).toHaveLength(0);
+  expect(deliveryForDate(before, fixture.firstOpenDeliveryDate)?.status).toBe("scheduled");
+
+  const response = await request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/reduce`,
+    {
+      headers: portalHeaders(token),
+      data: {
+        operationId: "8d7d2d62-7eb4-4b0f-8ef0-aaaaaaaaaaaa",
+        items: [
+          { variantId: fixture.variants.MILK.id, quantity: 1 },
+          { variantId: fixture.variants.BUTTER.id, quantity: 1 },
+        ],
+      },
+    },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
+
+  const reduced = await getState(request, fixture.subscriptionId);
+  expect(reduced.orders).toHaveLength(0);
+  expect(quantity(reduced.subscription.items, fixture.variants.MILK.id)).toBe(2);
+  expect(quantity(deliveryForDate(reduced, fixture.firstOpenDeliveryDate).itemOverride, fixture.variants.MILK.id)).toBe(1);
+  expect(creditAmount(reduced) - creditAmount(before)).toBe(500);
+
+  await generateScheduledDelivery(request, fixture.subscriptionId);
+  const generated = await getState(request, fixture.subscriptionId);
+  const generatedOrder = orderForDate(generated, fixture.firstOpenDeliveryDate);
+  expect(generatedOrder).toBeTruthy();
+  expect(quantity(generatedOrder.items, fixture.variants.MILK.id)).toBe(1);
+  expect(quantity(generatedOrder.items, fixture.variants.BUTTER.id)).toBe(1);
+  expect(Number(generatedOrder.subtotal)).toBe(8);
+  expect(Number(generatedOrder.total)).toBe(9);
+  expect(deliveryForDate(generated, fixture.firstOpenDeliveryDate).status).toBe("generated");
+
+  const followingDelivery = deliveryForDate(generated, fixture.deliveryDates[1]);
+  expect(followingDelivery).toBeTruthy();
+  expect(followingDelivery.itemOverride?.length || 0).toBe(0);
+  expect(quantity(generated.subscription.items, fixture.variants.MILK.id)).toBe(2);
+  expect(quantity(generated.subscription.items, fixture.variants.BUTTER.id)).toBe(1);
+});
+
+test("real paid add-on survives a recurring-item reduction unchanged", async ({ request }) => {
+  await reset(request);
+  const fixture = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "before-cutoff",
+    action: ACTIONS.DECREASE_QUANTITY,
+    funds: FUNDS.FUNDED,
+  });
+  const token = await login(request, fixture.credentials);
+  const base = `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery`;
+
+  const addOn = await request.post(`${base}/add-ons`, {
+    headers: portalHeaders(token),
+    data: {
+      operationId: "8d7d2d62-7eb4-4b0f-8ef0-bbbbbbbbbbbb",
+      items: [{ variantId: fixture.variants.EGGS.id, quantity: 2 }],
+    },
+    timeout: 60_000,
+  });
+  expect(addOn.ok(), await addOn.text()).toBe(true);
+  const withAddOn = await getState(request, fixture.subscriptionId);
+  const orderBefore = orderForDate(withAddOn, fixture.firstOpenDeliveryDate);
+  const addOnItemsBefore = orderBefore.items
+    .filter((item) => item.isSubscriptionAddOn)
+    .map((item) => ({
+      variant: id(item.variant),
+      quantity: Number(item.quantity),
+      subtotal: Number(item.subtotal),
+    }));
+  expect(addOnItemsBefore).toEqual([
+    { variant: fixture.variants.EGGS.id, quantity: 2, subtotal: 4 },
+  ]);
+
+  const reduction = await request.post(`${base}/reduce`, {
+    headers: portalHeaders(token),
+    data: {
+      operationId: "8d7d2d62-7eb4-4b0f-8ef0-cccccccccccc",
+      items: [
+        { variantId: fixture.variants.MILK.id, quantity: 1 },
+        { variantId: fixture.variants.BUTTER.id, quantity: 1 },
+      ],
+    },
+  });
+  expect(reduction.ok(), await reduction.text()).toBe(true);
+
+  const after = await getState(request, fixture.subscriptionId);
+  const orderAfter = orderForDate(after, fixture.firstOpenDeliveryDate);
+  expect(
+    orderAfter.items
+      .filter((item) => item.isSubscriptionAddOn)
+      .map((item) => ({
+        variant: id(item.variant),
+        quantity: Number(item.quantity),
+        subtotal: Number(item.subtotal),
+      })),
+  ).toEqual(addOnItemsBefore);
+  expect(quantity(orderAfter.items.filter((item) => !item.isSubscriptionAddOn), fixture.variants.MILK.id)).toBe(1);
+  expect(Number(orderAfter.total)).toBe(Number(orderBefore.total) - 5);
+  expect(creditAmount(after) - creditAmount(withAddOn)).toBe(500);
+});
+
+test("customer cannot reduce another customer's delivery and nothing mutates", async ({ request }) => {
+  await reset(request);
+  const owner = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "before-cutoff",
+    action: ACTIONS.DECREASE_QUANTITY,
+    funds: FUNDS.FUNDED,
+  });
+  const attacker = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "before-cutoff",
+    action: ACTIONS.DECREASE_QUANTITY,
+    funds: FUNDS.FUNDED,
+  });
+  const attackerToken = await login(request, attacker.credentials);
+  const before = await getState(request, owner.subscriptionId);
+
+  const response = await request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${owner.subscriptionId}/next-delivery/reduce`,
+    {
+      headers: portalHeaders(attackerToken),
+      data: {
+        operationId: "8d7d2d62-7eb4-4b0f-8ef0-dddddddddddd",
+        items: [
+          { variantId: owner.variants.MILK.id, quantity: 1 },
+          { variantId: owner.variants.BUTTER.id, quantity: 1 },
+        ],
+      },
+    },
+  );
+  expect(response.status()).toBe(400);
+
+  const after = await getState(request, owner.subscriptionId);
+  expect(after.customer.creditBalance).toBe(before.customer.creditBalance);
+  expect(after.credits).toEqual(before.credits);
+  expect(orderSnapshots(after.orders)).toEqual(orderSnapshots(before.orders));
+  expect(after.subscription.items).toEqual(before.subscription.items);
+  expect(
+    after.deliveries.map((delivery) => ({
+      id: id(delivery._id),
+      status: delivery.status,
+      order: id(delivery.order),
+      itemOverride: delivery.itemOverride || [],
+      reductions: delivery.reductions || [],
+    })),
+  ).toEqual(
+    before.deliveries.map((delivery) => ({
+      id: id(delivery._id),
+      status: delivery.status,
+      order: id(delivery.order),
+      itemOverride: delivery.itemOverride || [],
+      reductions: delivery.reductions || [],
+    })),
+  );
 });
