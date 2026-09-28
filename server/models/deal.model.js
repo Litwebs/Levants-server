@@ -39,11 +39,10 @@ const dealSchema = new mongoose.Schema(
       maxlength: 3000,
       default: "",
     },
-    imageUrl: {
-      type: String,
-      trim: true,
-      maxlength: 2048,
-      default: "",
+    image: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "File",
+      default: null,
     },
     items: {
       type: [dealItemSchema],
