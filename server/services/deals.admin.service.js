@@ -1,5 +1,7 @@
 const Deal = require("../models/deal.model");
 const Variant = require("../models/variant.model");
+const base64ToTempFile = require("../utils/base64ToTempFile.util");
+const { uploadAndCreateFile } = require("./files.service");
 
 function slugify(value) {
   return String(value || "")
@@ -9,6 +11,27 @@ function slugify(value) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 160);
+}
+
+async function resolveImage(imageValue, userId) {
+  if (imageValue === null || imageValue === "") return null;
+  if (!imageValue) return undefined;
+
+  if (typeof imageValue === "string" && imageValue.startsWith("data:")) {
+    const tmp = await base64ToTempFile(imageValue);
+    const uploaded = await uploadAndCreateFile({
+      ...tmp,
+      uploadedBy: userId,
+      folder: "litwebs/deals",
+    });
+
+    if (!uploaded.success) {
+      throw new Error(uploaded.message || "Failed to upload deal image");
+    }
+    return uploaded.data._id;
+  }
+
+  return imageValue;
 }
 
 function normalizeItems(items = []) {
@@ -194,11 +217,22 @@ async function createDeal({ body, userId }) {
     };
   }
 
+  let imageId;
+  try {
+    imageId = await resolveImage(body.image, userId);
+  } catch (err) {
+    return {
+      success: false,
+      statusCode: 500,
+      message: err.message || "Failed to upload deal image",
+    };
+  }
+
   const deal = await Deal.create({
     name: body.name,
     slug,
     description: body.description || "",
-    imageUrl: body.imageUrl || "",
+    image: imageId ?? null,
     items: resolution.data.items,
     packagePrice,
     currency: body.currency || "GBP",
@@ -210,10 +244,12 @@ async function createDeal({ body, userId }) {
     createdBy: userId || null,
   });
 
+  const populatedDeal = await Deal.findById(deal._id).populate("image").lean();
+
   return {
     success: true,
     data: {
-      deal: mapDeal(deal.toObject(), resolution.data),
+      deal: mapDeal(populatedDeal, resolution.data),
     },
   };
 }
@@ -226,6 +262,7 @@ async function listDeals({ page = 1, pageSize = 20 } = {}) {
   const [total, deals] = await Promise.all([
     Deal.countDocuments(),
     Deal.find()
+      .populate("image")
       .sort({ isFeatured: -1, sortOrder: 1, createdAt: -1 })
       .skip(skip)
       .limit(safePageSize)
@@ -263,7 +300,7 @@ async function listDeals({ page = 1, pageSize = 20 } = {}) {
 }
 
 async function getDeal({ dealId }) {
-  const deal = await Deal.findById(dealId).lean();
+  const deal = await Deal.findById(dealId).populate("image").lean();
   if (!deal) {
     return { success: false, statusCode: 404, message: "Deal not found" };
   }
@@ -348,7 +385,20 @@ async function updateDeal({ dealId, body }) {
   current.slug = nextSlug;
   current.description =
     body.description !== undefined ? body.description : current.description;
-  current.imageUrl = body.imageUrl !== undefined ? body.imageUrl : current.imageUrl;
+
+  if (Object.prototype.hasOwnProperty.call(body, "image")) {
+    try {
+      const imageId = await resolveImage(body.image, current.createdBy);
+      current.image = imageId ?? null;
+    } catch (err) {
+      return {
+        success: false,
+        statusCode: 500,
+        message: err.message || "Failed to upload deal image",
+      };
+    }
+  }
+
   current.items = resolution.data.items;
   current.packagePrice = nextPrice;
   current.currency = body.currency ?? current.currency;
@@ -361,10 +411,12 @@ async function updateDeal({ dealId, body }) {
 
   await current.save();
 
+  const populated = await Deal.findById(current._id).populate("image").lean();
+
   return {
     success: true,
     data: {
-      deal: mapDeal(current.toObject(), resolution.data),
+      deal: mapDeal(populated, resolution.data),
     },
   };
 }
