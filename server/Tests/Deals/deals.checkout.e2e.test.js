@@ -214,4 +214,278 @@ describe("deals and product packages", () => {
     expect(res.body.message).toMatch(/can't be combined/i);
     expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
   });
+
+  test("deal validation rejects duplicate deal claims", async () => {
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    const result = await validateDealsForOrder({
+      dealClaims: [
+        { dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 },
+        { dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 },
+      ],
+      resolvedItems: [
+        {
+          product: product._id,
+          variant: variant._id,
+          price: 5,
+          quantity: 4,
+          subtotal: 20,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/duplicate deal selection/i);
+  });
+
+  test("deal validation rejects zero, fractional and malformed package quantities", async () => {
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+    const resolvedItems = [
+      {
+        product: product._id,
+        variant: variant._id,
+        price: 5,
+        quantity: 2,
+        subtotal: 10,
+      },
+    ];
+
+    for (const quantity of [0, -1, 1.5, "abc"]) {
+      const result = await validateDealsForOrder({
+        dealClaims: [
+          {
+            dealId: String(deal._id),
+            quantity,
+            expectedPackagePrice: 8,
+          },
+        ],
+        resolvedItems,
+      });
+      expect(result.success).toBe(false);
+      expect(result.message).toMatch(/invalid deal selection/i);
+    }
+  });
+
+  test("checkout supports multiple copies of the same package", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 4 }],
+        deals: [{ dealId: String(deal._id), quantity: 2, expectedPackagePrice: 8 }],
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(200);
+    const order = await Order.findById(res.body.data.orderId).lean();
+    expect(order.subtotal).toBe(20);
+    expect(order.discountAmount).toBe(4);
+    expect(order.total).toBe(17);
+    expect(order.metadata.deals[0]).toMatchObject({
+      dealId: String(deal._id),
+      quantity: 2,
+      packagePrice: 8,
+      originalValue: 10,
+      saving: 2,
+    });
+    expect(stripe.coupons.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount_off: 400, name: "Deal package saving" }),
+    );
+  });
+
+  test("checkout discounts only package components when the same variant also has a normal cart quantity", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 3 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(200);
+    const order = await Order.findById(res.body.data.orderId).lean();
+    expect(order.subtotal).toBe(15);
+    expect(order.discountAmount).toBe(2);
+    expect(order.total).toBe(14);
+  });
+
+  test("checkout rejects a package that becomes inactive after it was added to the cart", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    deal.isActive = false;
+    await deal.save();
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 2 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/no longer available/i);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  test("checkout rejects a package that expires after it was added to the cart", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({
+      variant,
+      quantity: 2,
+      packagePrice: 8,
+      endsAt: new Date(Date.now() + 60_000),
+    });
+
+    deal.endsAt = new Date(Date.now() - 60_000);
+    await deal.save();
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 2 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/no longer available/i);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  test("checkout rejects a package when its parent product is archived after carting", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    product.status = "archived";
+    await product.save();
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 2 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/product in this deal is no longer available/i);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+
+    const freshVariant = await require("../../models/variant.model")
+      .findById(variant._id)
+      .lean();
+    expect(freshVariant.reservedQuantity).toBe(0);
+  });
+
+  test("checkout rejects a package when stock is consumed or reserved after carting", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 10, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    variant.reservedQuantity = 9;
+    await variant.save();
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 2 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/not enough stock/i);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  test("checkout combines package saving and partial store credit into one Stripe adjustment", async () => {
+    const customer = await createCustomer();
+    customer.creditBalance = 500;
+    await customer.save();
+
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 2 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+        creditToApplyMinor: 200,
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(200);
+    const order = await Order.findById(res.body.data.orderId).lean();
+    expect(order.discountAmount).toBe(2);
+    expect(order.creditApplied).toBe(200);
+    expect(stripe.coupons.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount_off: 400,
+        currency: "gbp",
+        duration: "once",
+        name: "Deal saving + store credit",
+      }),
+    );
+  });
+
+  test("checkout can settle a package fully with store credit without creating Stripe Checkout", async () => {
+    const customer = await createCustomer();
+    customer.creditBalance = 900;
+    await customer.save();
+
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 2 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+        creditToApplyMinor: 900,
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.paidWithCredit).toBe(true);
+    expect(res.body.data.checkoutUrl).toBeNull();
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+
+    const order = await Order.findById(res.body.data.orderId).lean();
+    expect(order.discountAmount).toBe(2);
+    expect(order.creditApplied).toBe(900);
+  });
+
 });
