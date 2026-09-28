@@ -983,3 +983,43 @@ test("one-time delivery reduction is rejected after cut-off without order or cre
   expect(creditAmount(after)).toBe(creditAmount(before));
   expect(after.deliveries.every((delivery) => !delivery.itemOverride?.length)).toBe(true);
 });
+
+
+test("concurrent one-time reductions cannot double-credit the same delivery state", async ({ request }) => {
+  await reset(request);
+  const fixture = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "before-cutoff",
+    action: ACTIONS.DECREASE_QUANTITY,
+    funds: FUNDS.FUNDED,
+  });
+  const token = await login(request, fixture.credentials);
+  const before = await getState(request, fixture.subscriptionId);
+  const url = `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/reduce`;
+  const items = [
+    { variantId: fixture.variants.MILK.id, quantity: 1 },
+    { variantId: fixture.variants.BUTTER.id, quantity: 1 },
+  ];
+
+  const responses = await Promise.all([
+    request.post(url, {
+      headers: portalHeaders(token),
+      data: {
+        operationId: "8d7d2d62-7eb4-4b0f-8ef0-444444444444",
+        items,
+      },
+    }),
+    request.post(url, {
+      headers: portalHeaders(token),
+      data: {
+        operationId: "8d7d2d62-7eb4-4b0f-8ef0-555555555555",
+        items,
+      },
+    }),
+  ]);
+  expect(responses.map((response) => response.status()).sort()).toEqual([200, 400]);
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(creditAmount(after) - creditAmount(before)).toBe(500);
+  expect(deliveryForDate(after, fixture.lockedDeliveryDate).reductions).toHaveLength(1);
+});
