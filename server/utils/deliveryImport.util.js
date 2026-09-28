@@ -243,7 +243,16 @@ const buildManualRow = (obj) => {
     ]),
   );
   const notes = str(
-    pick(["notes", "note", "instructions", "customerinstructions", "customer instructions", "comments", "comment"]),
+    pick([
+      "delivery instructions",
+      "notes",
+      "note",
+      "instructions",
+      "customerinstructions",
+      "customer instructions",
+      "comments",
+      "comment",
+    ]),
   );
 
   return {

@@ -1,6 +1,7 @@
 "use strict";
 
 const request = require("supertest");
+const mongoose = require("mongoose");
 const app = require("../testApp");
 const { createPortalCustomer, loginPortalCustomer } = require("./helpers");
 const Product = require("../../models/product.model");
@@ -120,6 +121,8 @@ describe("Portal Subscriptions", () => {
   let customer;
   let addressId;
   let variantId;
+
+  afterEach(() => jest.useRealTimers());
 
   beforeEach(async () => {
     stripe.customers.retrieve.mockResolvedValue({
@@ -318,6 +321,8 @@ describe("Portal Subscriptions", () => {
   });
 
   it("does not duplicate legacy UTC-midnight slots that are the same London delivery day", async () => {
+    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate", "setTimeout", "setInterval", "clearTimeout", "clearInterval", "performance", "hrtime", "queueMicrotask"] });
+    jest.setSystemTime(new Date("2026-07-01T12:00:00Z"));
     const sub = await createBasicSubscription();
     await SubscriptionDelivery.deleteMany({ subscription: sub._id });
 
@@ -3809,9 +3814,7 @@ describe("Portal Subscriptions", () => {
 
     if (updateRes.status !== 200) {
       throw new Error(
-        `Card decrease failed with ${updateRes.status}: ${JSON.stringify(
-          updateRes.body,
-        )}`,
+        `Card decrease failed with ${updateRes.status}: ${JSON.stringify(updateRes.body)}; errors: ${(console.error.mock?.calls || []).map(args => args.map(arg => arg?.stack || String(arg)).join(" ")).join("\n")}`,
       );
     }
     expect(updateRes.body.message).toMatch(/refunded/i);
@@ -4326,6 +4329,134 @@ describe("Portal Subscriptions", () => {
     expect(saved.items).toHaveLength(1);
     expect(String(saved.items[0].variant)).toBe(String(variantId));
     expect(saved.items[0].quantity).toBe(1);
+  });
+
+  async function createPaidOrderFor(sub) {
+    const total = sub.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    return Order.create({
+      customer: customer._id,
+      items: sub.items.map((item) => ({
+        product: item.product, variant: item.variant, name: item.name, sku: item.sku,
+        price: item.unitPrice, quantity: item.quantity, subtotal: item.unitPrice * item.quantity,
+      })),
+      deliveryAddress: sub.deliveryAddress,
+      location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: sub.nextDeliveryDate,
+      subtotal: total, total, amountPaid: total,
+      status: "paid", deliveryStatus: "ordered",
+      reservationExpiresAt: new Date(Date.now() + 86400000),
+      orderType: "subscription_generated", subscription: sub._id,
+      stripePaymentIntentId: `pi_${crypto.randomUUID()}`, paidAt: new Date(),
+    });
+  }
+
+  it.each([false, true])("updates equal-price fulfillment atomically (inject failure: %s)", async (fail) => {
+    const { variant: second } = await createTestProduct();
+    const created = await request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 2 }, { variantId: String(second._id), quantity: 1 }] });
+    expect(created.status).toBe(201);
+    const sub = created.body.data.subscription;
+    await prepareUpcomingDeliveries(sub._id);
+    const order = await createPaidOrderFor(sub);
+    const payload = { operationId: crypto.randomUUID(), items: sub.items.map((item) => ({
+      itemId: item._id, quantity: item.quantity === 2 ? 1 : 2,
+    })) };
+    const send = () => request(app).put(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    stripe.paymentIntents.create.mockClear();
+    stripe.refunds.create.mockClear();
+    if (fail) {
+      const save = jest.spyOn(Order.prototype, "save").mockRejectedValueOnce(new Error("order write failed"));
+      expect((await send()).status).toBe(500);
+      save.mockRestore();
+      expect((await Subscription.findById(sub._id)).items.map(i => i.quantity)).toEqual([2, 1]);
+      expect((await Order.findById(order._id)).items.map(i => i.quantity)).toEqual([2, 1]);
+    }
+    expect((await send()).status).toBe(200);
+    expect((await Order.findById(order._id)).items.map(i => i.quantity)).toEqual([1, 2]);
+    expect((await Subscription.findById(sub._id)).items.map(i => i.quantity)).toEqual([1, 2]);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(stripe.refunds.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects aggregate replacement of multi-day plans without side effects", async () => {
+    const sub = await createBasicSubscription();
+    await Subscription.findByIdAndUpdate(sub._id, {
+      preferredDeliveryDays: [0, 3], deliveryDayPlans: [
+        { day: 0, items: sub.items }, { day: 3, items: sub.items },
+      ],
+    });
+    const before = await Subscription.findById(sub._id).lean();
+    stripe.prices.create.mockClear();
+    const res = await request(app).put(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ items: [{ itemId: sub.items[0]._id, quantity: 1 }] });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/each delivery day/);
+    const after = await Subscription.findById(sub._id).lean();
+    expect(after.items).toEqual(before.items);
+    expect(after.deliveryDayPlans).toEqual(before.deliveryDayPlans);
+    expect(stripe.prices.create).not.toHaveBeenCalled();
+  });
+
+  it.each(["local-save", "remote-response"])("recovers creation after %s failure with frozen Stripe parameters", async (failurePoint) => {
+    const payload = { operationId: crypto.randomUUID(), frequency: "weekly",
+      preferredDeliveryDay: 0, deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }] };
+    const send = () => request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    stripe.products.create.mockClear();
+    stripe.prices.create.mockClear();
+    stripe.subscriptions.create.mockClear();
+    let save;
+    if (failurePoint === "local-save") {
+      save = jest.spyOn(Subscription.prototype, "save").mockRejectedValueOnce(new Error("database unavailable"));
+    } else {
+      stripe.subscriptions.create.mockRejectedValueOnce(new Error("connection reset after payment"));
+    }
+    const failed = await send();
+    expect(failed.status).toBe(failurePoint === "local-save" ? 500 : 400);
+    save?.mockRestore();
+    const originalRequest = stripe.subscriptions.create.mock.calls[0];
+    await ProductVariant.findByIdAndUpdate(variantId, { price: 9.99 });
+    await Customer.findByIdAndUpdate(customer._id, { firstName: "Changed" });
+    stripe.customers.retrieve.mockResolvedValueOnce({ invoice_settings: { default_payment_method: "pm_changed" } });
+    const retry = await send();
+    expect(retry.status).toBe(201);
+    expect(retry.body.data.subscription.subscriptionNumber).toBe(originalRequest[0].metadata.subscriptionNumber);
+    expect(retry.body.data.subscription.items[0].unitPrice).toBe(2.5);
+    expect(stripe.products.create).toHaveBeenCalledTimes(1);
+    expect(stripe.prices.create).toHaveBeenCalledTimes(1);
+    if (failurePoint === "remote-response") {
+      expect(stripe.subscriptions.create.mock.calls[1]).toEqual(originalRequest);
+    } else {
+      expect(stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    }
+    expect(await Subscription.countDocuments({ customer: customer._id })).toBe(1);
+  });
+
+  it.each([false, true])("refunds remaining captured balance after a decrease (allocations: %s)", async (withAllocations) => {
+    const sub = await createBasicSubscription();
+    const order = await createPaidOrderFor(sub);
+    order.total = 3.5;
+    order.subtotal = 3.5;
+    order.amountPaid = 3.5;
+    order.status = "partially_refunded";
+    order.refunds = [{ stripeRefundId: "re_first", amountMinor: 500, status: "succeeded" }];
+    if (withAllocations) order.paymentAllocations = [{
+      paymentIntentId: order.stripePaymentIntentId, source: "subscription_invoice", amountMinor: 850,
+    }];
+    await order.save();
+    stripe.refunds.create.mockResolvedValueOnce({ id: "re_second", status: "succeeded" });
+    const partial = await refundService.RefundOrder({ orderId: order._id, amount: 1 });
+    expect(partial.success).toBe(true);
+    expect(stripe.refunds.create.mock.calls.at(-1)[0].amount).toBe(100);
+    stripe.refunds.create.mockResolvedValueOnce({ id: "re_final", status: "succeeded" });
+    const final = await refundService.RefundOrder({ orderId: order._id });
+    expect(final.success).toBe(true);
+    expect(stripe.refunds.create.mock.calls.at(-1)[0].amount).toBe(250);
+    expect((await Order.findById(order._id)).status).toBe("refunded");
   });
 
   it("replays a completed subscription creation operation without creating or charging twice", async () => {

@@ -2,6 +2,7 @@
 
 const mongoose = require("mongoose");
 const Subscription = require("../../models/subscription.model");
+const SubscriptionMutation = require("../../models/subscriptionMutation.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const ProductVariant = require("../../models/variant.model");
 const Customer = require("../../models/customer.model");
@@ -1334,6 +1335,17 @@ async function updateUpcomingSubscriptionOrder(
   order.subtotal = newTotal;
   order.total = newTotal + (order.deliveryFee || 0);
 
+  if (!(order.paymentAllocations || []).length && order.stripePaymentIntentId) {
+    const priorRefundMinor = (order.refunds || [])
+      .filter((refund) => refund.status === "succeeded")
+      .reduce((sum, refund) => sum + Number(refund.amountMinor ?? Math.round((refund.amount || 0) * 100)), 0);
+    order.paymentAllocations.push({
+      paymentIntentId: order.stripePaymentIntentId,
+      source: "subscription_invoice",
+      amountMinor: Math.round((order.amountPaid || 0) * 100) + priorRefundMinor,
+    });
+  }
+
   // Money on the order is in pounds; settlement deltas are in pence.
   const allocationKey = operationId
     ? `subscription:${subscription._id}:mutation:${operationId}:order:${order._id}`
@@ -1732,9 +1744,17 @@ async function applyItemChange(
     });
   }
 
-  // No change → apply now and reflect on the upcoming invoice.
-  subscription.items = nextItems;
-  await subscription.save();
+  // Equal value can still mean different products. Commit both snapshots together.
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      subscription.items = nextItems;
+      await subscription.save({ session });
+      await updateUpcomingSubscriptionOrder(subscription, nextItems, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
   await syncStripeSubscriptionPrice(subscription);
   const enriched = await enrichSubscriptionWithVariantImages(subscription);
   await sendSubscriptionUpdateEmail({
@@ -1837,6 +1857,13 @@ async function CreateSubscription({
 } = {}) {
   const customer = await Customer.findById(customerId);
   if (!customer) return Response(false, "Customer not found", null);
+
+  const mutation = operationId && reservedSubscriptionId
+    ? await SubscriptionMutation.findOne({ customer: customerId, operationId })
+    : null;
+  if (mutation?.creationSnapshot) {
+    return completeSubscriptionCreation(customer, mutation.creationSnapshot, mutation);
+  }
 
   // Subscriptions are only available for registered customers (not guest checkouts)
   if (customer.isGuest) {
@@ -2055,39 +2082,8 @@ async function CreateSubscription({
     preferredDeliveryDays: resolvedDays.days,
   });
 
-  // ── Create Stripe Product + Price + Subscription ──────────────────────────
+  // Freeze local state and every Stripe parameter before the first remote write.
   const { interval, interval_count } = STRIPE_INTERVALS[frequency];
-
-  const stripeProduct = await stripe.products.create(
-    {
-      name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
-      metadata: { customerId: String(customer._id) },
-    },
-    operationId
-      ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:product` }
-      : undefined,
-  );
-
-  const stripePrice = await stripe.prices.create(
-    {
-      product: stripeProduct.id,
-      currency: "gbp",
-      unit_amount: totalMinor,
-      recurring: { interval, interval_count },
-    },
-    operationId
-      ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:price` }
-      : undefined,
-  );
-
-  // Charge immediately at subscribe. The first invoice is paid now and
-  // pre-pays the upcoming delivery, so a real payment exists to refund against
-  // if the customer reduces the order before the cut-off. `error_if_incomplete`
-  // ensures we don't create a subscription unless that first payment succeeds.
-  // Reserve the local identity before contacting Stripe and include it in the
-  // remote metadata. If an invoice webhook wins the race with the DB save, the
-  // handler can identify this subscription and return a retryable error instead
-  // of acknowledging and permanently losing the fulfillment event.
   const subscription = new Subscription({
     ...(reservedSubscriptionId ? { _id: reservedSubscriptionId } : {}),
     customer: customer._id,
@@ -2112,60 +2108,83 @@ async function CreateSubscription({
     deliveryDayPlans: resolvedDayPlans,
     notes: notes || null,
     status: "active",
-    stripeProductId: stripeProduct.id,
-    stripePriceId: stripePrice.id,
   });
   await subscription.validate();
 
-  let stripeSub;
-  try {
-    stripeSub = await stripe.subscriptions.create(
-      {
-        customer: customer.stripeCustomerId,
-        items: [{ price: stripePrice.id }],
-        default_payment_method: defaultPmId,
-        payment_behavior: "error_if_incomplete",
-        expand: ["latest_invoice.payment_intent"],
-        metadata: {
-          customerId: String(customer._id),
-          subscriptionId: String(subscription._id),
-          subscriptionNumber: subscription.subscriptionNumber,
-        },
-      },
-      operationId
-        ? { idempotencyKey: `portal-subscription:${customer._id}:${operationId}:subscription` }
-        : undefined,
-    );
-  } catch (err) {
-    // Tidy up the Stripe price we created for this failed attempt.
-    try {
-      await stripe.prices.update(stripePrice.id, { active: false });
-    } catch {
-      // Non-fatal
-    }
-    try {
-      await stripe.products.update(stripeProduct.id, { active: false });
-    } catch {
-      // Non-fatal
-    }
-    return Response(
-      false,
-      err?.message || "We couldn't take payment for your subscription",
-      null,
-    );
-  }
-
-  subscription.stripeSubscriptionId = stripeSub.id;
-  await subscription.save();
-
-  // Back-fill metadata with our local subscription ID
-  await stripe.subscriptions.update(stripeSub.id, {
-    metadata: {
-      customerId: String(customer._id),
-      subscriptionId: String(subscription._id),
-      subscriptionNumber: subscription.subscriptionNumber,
+  const snapshot = {
+    subscription: subscription.toObject(),
+    product: {
+      name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
+      metadata: { customerId: String(customer._id) },
     },
-  });
+    price: { currency: "gbp", unit_amount: totalMinor, recurring: { interval, interval_count } },
+    stripeSubscription: {
+      customer: customer.stripeCustomerId,
+      default_payment_method: defaultPmId,
+      payment_behavior: "error_if_incomplete",
+      expand: ["latest_invoice.payment_intent"],
+      metadata: {
+        customerId: String(customer._id),
+        subscriptionId: String(subscription._id),
+        subscriptionNumber: subscription.subscriptionNumber,
+      },
+    },
+    operationId,
+  };
+  if (mutation) {
+    mutation.creationSnapshot = snapshot;
+    await mutation.save();
+  }
+  return completeSubscriptionCreation(customer, snapshot, mutation);
+}
+
+async function completeSubscriptionCreation(customer, snapshot, mutation) {
+  const persistRemote = async (field, value) => {
+    snapshot[field] = value;
+    if (mutation) {
+      await SubscriptionMutation.updateOne(
+        { _id: mutation._id },
+        { $set: { [`creationSnapshot.${field}`]: value } },
+      );
+    }
+    return value;
+  };
+  const options = (step) => snapshot.operationId
+    ? { idempotencyKey: `portal-subscription:${customer._id}:${snapshot.operationId}:${step}` }
+    : undefined;
+  const stripeProduct = snapshot.remoteProduct || await persistRemote(
+    "remoteProduct", await stripe.products.create(snapshot.product, options("product")),
+  );
+  const stripePrice = snapshot.remotePrice || await persistRemote(
+    "remotePrice", await stripe.prices.create(
+      { ...snapshot.price, product: stripeProduct.id }, options("price"),
+    ),
+  );
+  // Do not archive resources on an ambiguous network failure: Stripe may have
+  // accepted payment. A retry must use the same request and idempotency key.
+  let stripeSub = snapshot.remoteSubscription;
+  if (!stripeSub) {
+    try {
+      stripeSub = await stripe.subscriptions.create(
+        { ...snapshot.stripeSubscription, items: [{ price: stripePrice.id }] },
+        options("subscription"),
+      );
+    } catch (error) {
+      return Response(false, error?.message || "We couldn't create your subscription", null);
+    }
+    await persistRemote("remoteSubscription", stripeSub);
+  }
+  let subscription = await Subscription.findById(snapshot.subscription._id);
+  if (!subscription) {
+    subscription = new Subscription({
+      ...snapshot.subscription,
+      stripeProductId: stripeProduct.id,
+      stripePriceId: stripePrice.id,
+      stripeSubscriptionId: stripeSub.id,
+    });
+    await subscription.save();
+  }
+  const { frequency, nextDeliveryDate } = subscription;
 
   await scheduleUpcomingDeliveries(subscription);
 
@@ -4143,6 +4162,15 @@ async function ReplaceSubscriptionItems({
       "Paused or cancelled subscriptions cannot be changed.",
       null,
     );
+  }
+
+  if (
+    getEffectiveDeliveryDays(subscription).length > 1 ||
+    (subscription.deliveryDayPlans || []).length > 1 ||
+    (subscription.pendingChanges?.deliveryDayPlans || []).length > 1 ||
+    (subscription.pendingChanges?.preferredDeliveryDays || []).length > 1
+  ) {
+    return Response(false, "Please edit products for each delivery day separately.", null);
   }
 
   const baseline = subscription.pendingChanges?.items?.length

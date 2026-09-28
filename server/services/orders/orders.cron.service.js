@@ -20,6 +20,7 @@ async function RetryRecentOrderConfirmations({ now = new Date() } = {}) {
     orderType: "one_time",
     status: "paid",
     paidAt: { $gte: since },
+    "metadata.manualImport": { $ne: true },
     "metadata.orderConfirmationSentAt": { $exists: false },
   })
     .select("_id")

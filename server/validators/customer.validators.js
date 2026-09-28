@@ -6,6 +6,11 @@ const addressSchema = Joi.object({
   city: Joi.string().trim().required(),
   postcode: Joi.string().trim().required(),
   country: Joi.string().trim().required(),
+  deliveryInstructions: Joi.string()
+    .trim()
+    .max(500)
+    .allow(null, "")
+    .optional(),
   isDefault: Joi.boolean().optional(),
 }).unknown(false);
 

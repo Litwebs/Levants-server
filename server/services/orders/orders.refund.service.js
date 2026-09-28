@@ -175,8 +175,8 @@ async function RefundOrder({
     }
 
     const currency = order.currency || "GBP";
-    const totalMinor = getOrderTotalMinor(order);
     const alreadyRefundedMinor = sumSucceededRefundedMinor(order);
+    const totalMinor = getCapturedPaymentMinor(order, alreadyRefundedMinor);
     const remainingMinor = Math.max(0, totalMinor - alreadyRefundedMinor);
 
     if (remainingMinor <= 0) {
@@ -219,6 +219,16 @@ async function RefundOrder({
         message:
           "Restock can only be used when refunding the full remaining order amount",
       };
+    }
+
+    // Freeze the legacy capture basis so subsequent partial admin refunds do
+    // not reinterpret the growing refund history as additional captured money.
+    if (!(order.paymentAllocations || []).length && order.orderType === "subscription_generated") {
+      order.paymentAllocations.push({
+        paymentIntentId,
+        source: "subscription_invoice",
+        amountMinor: totalMinor,
+      });
     }
 
     const refund = await stripe.refunds.create(

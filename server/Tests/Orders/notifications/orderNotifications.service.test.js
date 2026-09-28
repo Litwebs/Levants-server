@@ -70,6 +70,43 @@ describe("sendOrderConfirmationEmailToCustomer", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
+  test("skips order confirmation for manually imported orders", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+    const order = await createOrder({
+      status: "paid",
+      customer,
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: variant.price,
+          quantity: 1,
+          subtotal: variant.price,
+        },
+      ],
+      overrides: {
+        paidAt: new Date(),
+        metadata: { manualImport: true, importSource: "spreadsheet" },
+      },
+    });
+
+    const res = await notifService.sendOrderConfirmationEmailToCustomer({
+      orderId: order._id,
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.data.skipped).toBe(true);
+    expect(res.data.reason).toBe("manual_import");
+    expect(sendEmail).not.toHaveBeenCalled();
+
+    const updated = await Order.findById(order._id).lean();
+    expect(updated.metadata?.orderConfirmationSentAt).toBeUndefined();
+  });
+
   test("skips when confirmation already sent (idempotency)", async () => {
     const customer = await createCustomer();
     const product = await createProduct();
