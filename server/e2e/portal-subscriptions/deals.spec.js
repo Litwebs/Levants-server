@@ -301,7 +301,11 @@ async function createDealViaAdmin(page, fixture, {
   await expect(row).toContainText("£13.00");
   await expect(row).toContainText("£10.00");
   await expect(row).toContainText("£3.00 (23%)");
-  await expect(row).toContainText("Featured");
+  const scheduled =
+    Boolean(startsAt) && new Date(startsAt).getTime() > Date.now();
+  await expect(row).toContainText(
+    scheduled ? "Scheduled" : featured ? "Featured" : "Active",
+  );
 
   return name;
 }
@@ -552,14 +556,40 @@ test("browser checkout creates a real Stripe test-mode session with exact packag
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(/^https:\/\/checkout\.stripe\.com\//);
 
+  const gbCurrency = page.getByRole("button", { name: /GB £11\.00/ });
+  if (await gbCurrency.isVisible().catch(() => false)) {
+    await gbCurrency.click();
+  }
+
   await page.locator('input[name="cardNumber"]').fill("4242424242424242");
   await page.locator('input[name="cardExpiry"]').fill("1234");
   await page.locator('input[name="cardCvc"]').fill("123");
-  const billingName = page.locator('input[name="billingName"]');
-  if (await billingName.count()) await billingName.fill("Deals E2E Customer");
-  await page.locator('button[type="submit"]').click();
 
-  await expect(page).toHaveURL(/\/checkout\/success\?session_id=/, { timeout: 60_000 });
+  const billingName = page.locator('input[name="billingName"]');
+  if (await billingName.count()) {
+    await billingName.fill("Deals E2E Customer");
+  }
+
+  const country = page.getByRole("combobox", { name: "Country or region" });
+  await country.selectOption({ label: "United Kingdom" });
+
+  const postcode = page.getByRole("textbox", {
+    name: /postcode|postal code|zip/i,
+  });
+  await postcode.fill("BD5 0AL");
+
+  const saveInfo = page.getByRole("checkbox", {
+    name: /save my information for faster checkout/i,
+  });
+  if (await saveInfo.isChecked().catch(() => false)) {
+    await saveInfo.uncheck();
+  }
+
+  await page.getByRole("button", { name: /^Pay/ }).click();
+
+  await expect(page).toHaveURL(/\/checkout\/success\?session_id=/, {
+    timeout: 60_000,
+  });
   await expect.poll(async () => {
     const paid = await getDealsState(request, fixture.customer.customerId);
     return paid.orders[0]?.status;
