@@ -475,10 +475,10 @@ test("browser checkout creates a real Stripe test-mode session with exact packag
 
   const checkoutResponse = await responsePromise;
   expect(checkoutResponse.status()).toBe(200);
-  const body = await checkoutResponse.json();
-  expect(body.success).toBe(true);
-  expect(body.data.checkoutUrl).toMatch(/^https:\/\/checkout\.stripe\.com\//);
 
+  // The app navigates cross-origin to Stripe immediately after this response.
+  // Chromium may release the response body before Playwright can read it, so
+  // verify the browser redirect plus the persisted real Stripe session below.
   const state = await getDealsState(request, fixture.customer.customerId);
   expect(state.orders).toHaveLength(1);
   const order = state.orders[0];
