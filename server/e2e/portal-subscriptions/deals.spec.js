@@ -3,20 +3,172 @@
 const { test, expect } = require("@playwright/test");
 const {
   ADMIN_ORIGIN,
+  API_ORIGIN,
+  CONTROL_ORIGIN,
+  CONTROL_TOKEN,
   createDealsFixture,
   getDealsState,
   mutateDealsFixture,
   reset,
 } = require("../support/e2e-client");
 
-async function adminSignIn(page, credentials) {
-  await page.goto(`${ADMIN_ORIGIN}/login`);
-  await page.getByLabel("Email").fill(credentials.email);
-  await page.getByLabel("Password").fill(credentials.password);
-  await Promise.all([
-    page.waitForURL((url) => url.origin === ADMIN_ORIGIN && url.pathname === "/"),
-    page.getByRole("button", { name: "Sign in", exact: true }).click(),
-  ]);
+const adminUser = {
+  id: "admin-deals-e2e",
+  name: "Deals E2E Admin",
+  email: "admin-deals-e2e@example.com",
+  role: {
+    _id: "role-admin-deals-e2e",
+    name: "admin",
+    permissions: ["*"],
+  },
+  status: "active",
+  twoFactorEnabled: false,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+function adminCorsHeaders() {
+  return {
+    "access-control-allow-origin": ADMIN_ORIGIN,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-headers": "content-type",
+    "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+    "content-type": "application/json",
+  };
+}
+
+async function proxyControl(apiRequest, method, path, data) {
+  const options = {
+    headers: { "x-e2e-control-token": CONTROL_TOKEN },
+    timeout: 60_000,
+  };
+  if (data !== undefined) options.data = data;
+
+  const response = await apiRequest[method](`${CONTROL_ORIGIN}${path}`, options);
+  const body = await response.text();
+  return { status: response.status(), body };
+}
+
+async function mockAdminApi(page, apiRequest) {
+  const adminApi = `${API_ORIGIN}/api`;
+
+  await page.route(`${adminApi}/**`, async (route) => {
+    const browserRequest = route.request();
+    const url = new URL(browserRequest.url());
+    const pathname = url.pathname;
+    const method = browserRequest.method();
+
+    if (method === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: adminCorsHeaders(), body: "" });
+      return;
+    }
+
+    if (pathname === "/api/auth/authenticated" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        headers: adminCorsHeaders(),
+        body: JSON.stringify({
+          success: true,
+          data: { authenticated: true, user: adminUser },
+        }),
+      });
+      return;
+    }
+
+    if (pathname === "/api/auth/me" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        headers: adminCorsHeaders(),
+        body: JSON.stringify({ success: true, data: { user: adminUser } }),
+      });
+      return;
+    }
+
+    if (pathname === "/api/admin/variants/search" && method === "GET") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "get",
+        `/deals/admin-variants?${url.searchParams.toString()}`,
+      );
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: proxied.body,
+      });
+      return;
+    }
+
+    if (pathname === "/api/admin/deals" && method === "GET") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "get",
+        `/deals/admin?${url.searchParams.toString()}`,
+      );
+      const parsed = JSON.parse(proxied.body);
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: JSON.stringify({
+          success: parsed.success,
+          data: { deals: parsed.data?.deals || [] },
+          meta: parsed.data?.meta,
+          message: parsed.message,
+        }),
+      });
+      return;
+    }
+
+    if (pathname === "/api/admin/deals" && method === "POST") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "post",
+        "/deals/admin",
+        browserRequest.postDataJSON(),
+      );
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: proxied.body,
+      });
+      return;
+    }
+
+    const dealMatch = pathname.match(/^\/api\/admin\/deals\/([^/]+)$/);
+    if (dealMatch && method === "PATCH") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "patch",
+        `/deals/admin/${encodeURIComponent(dealMatch[1])}`,
+        browserRequest.postDataJSON(),
+      );
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: proxied.body,
+      });
+      return;
+    }
+
+    if (dealMatch && method === "DELETE") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "delete",
+        `/deals/admin/${encodeURIComponent(dealMatch[1])}`,
+      );
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: proxied.body,
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      headers: adminCorsHeaders(),
+      body: JSON.stringify({ success: true, data: {} }),
+    });
+  });
 }
 
 async function customerSignIn(page, credentials, redirect = "/deals") {
@@ -173,7 +325,7 @@ test("admin-created featured package completes through the real storefront with 
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
 
-  await adminSignIn(adminPage, fixture.admin.credentials);
+  await mockAdminApi(adminPage, request);
   const dealName = await createDealViaAdmin(adminPage, fixture);
 
   const afterCreate = await getDealsState(request, fixture.customer.customerId);
@@ -274,7 +426,7 @@ test("browser checkout creates a real Stripe test-mode session with exact packag
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
 
-  await adminSignIn(adminPage, fixture.admin.credentials);
+  await mockAdminApi(adminPage, request);
   const dealName = await createDealViaAdmin(adminPage, fixture);
 
   await customerSignIn(page, fixture.customer.credentials);
@@ -342,7 +494,7 @@ test("stale package price is rejected after an admin edit with no order or inven
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
 
-  await adminSignIn(adminPage, fixture.admin.credentials);
+  await mockAdminApi(adminPage, request);
   const dealName = await createDealViaAdmin(adminPage, fixture);
 
   await customerSignIn(page, fixture.customer.credentials);
@@ -388,7 +540,7 @@ test("package deactivated after carting is rejected and disappears from the live
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
 
-  await adminSignIn(adminPage, fixture.admin.credentials);
+  await mockAdminApi(adminPage, request);
   const dealName = await createDealViaAdmin(adminPage, fixture);
 
   await customerSignIn(page, fixture.customer.credentials);
@@ -433,7 +585,7 @@ test("stock reserved by another buyer after carting blocks checkout without over
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
 
-  await adminSignIn(adminPage, fixture.admin.credentials);
+  await mockAdminApi(adminPage, request);
   const dealName = await createDealViaAdmin(adminPage, fixture);
 
   await customerSignIn(page, fixture.customer.credentials);
@@ -480,7 +632,7 @@ test("archiving a component product after carting invalidates the package at che
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
 
-  await adminSignIn(adminPage, fixture.admin.credentials);
+  await mockAdminApi(adminPage, request);
   const dealName = await createDealViaAdmin(adminPage, fixture);
 
   await customerSignIn(page, fixture.customer.credentials);
