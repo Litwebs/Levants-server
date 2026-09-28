@@ -68,6 +68,14 @@ async function getState(request, subscriptionId) {
   return responseJson(response, "E2E state read");
 }
 
+async function generateScheduledDelivery(request, subscriptionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/state/${subscriptionId}/generate-scheduled-delivery`,
+    { headers: controlHeaders, timeout: 30_000 },
+  );
+  return responseJson(response, "Scheduled delivery generation");
+}
+
 async function setPaymentOutcome(request, subscriptionId, outcome) {
   const response = await request.post(
     `${CONTROL_ORIGIN}/state/${subscriptionId}/payment-outcome`,
@@ -167,6 +175,7 @@ module.exports = {
   finalizeCancellation,
   getState,
   getEmails,
+  generateScheduledDelivery,
   login,
   portalHeaders,
   preparePaymentRetry,
