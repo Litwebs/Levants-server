@@ -39,7 +39,7 @@ const emptyDraft = () => ({
   name: "",
   slug: "",
   description: "",
-  imageUrl: "",
+  image: "",
   packagePrice: "",
   isActive: true,
   isFeatured: false,
@@ -71,6 +71,7 @@ export const DealsPage = () => {
   const [editing, setEditing] = useState<Deal | null>(null);
   const [draft, setDraft] = useState(emptyDraft());
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
+  const [imageChanged, setImageChanged] = useState(false);
 
   const {
     query,
@@ -117,6 +118,8 @@ export const DealsPage = () => {
     setEditing(null);
     setDraft(emptyDraft());
     setSelectedItems([]);
+    setImageChanged(false);
+    setImageChanged(false);
     setQuery("");
     setModalOpen(true);
   };
@@ -127,7 +130,7 @@ export const DealsPage = () => {
       name: deal.name || "",
       slug: deal.slug || "",
       description: deal.description || "",
-      imageUrl: deal.imageUrl || "",
+      image: deal.imageUrl || "",
       packagePrice: String(deal.packagePrice ?? ""),
       isActive: Boolean(deal.isActive),
       isFeatured: Boolean(deal.isFeatured),
@@ -217,7 +220,7 @@ export const DealsPage = () => {
       name,
       ...(draft.slug.trim() ? { slug: draft.slug.trim().toLowerCase() } : {}),
       description: draft.description.trim(),
-      imageUrl: draft.imageUrl.trim(),
+      ...(imageChanged ? { image: draft.image || null } : {}),
       items: selectedItems.map((item) => ({
         variantId: item.variantId,
         quantity: item.quantity,
@@ -418,21 +421,49 @@ export const DealsPage = () => {
             </div>
 
             <div className={styles.full}>
-              <Input
-                label="Deal image URL"
-                value={draft.imageUrl}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, imageUrl: e.target.value }))
-                }
-                placeholder="https://..."
-                hint="Optional. If blank, the storefront uses the first product image."
+              <label className={styles.label}>Deal image</label>
+              <input
+                className={styles.nativeInput}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    setDraft((prev) => ({
+                      ...prev,
+                      image: String(reader.result || ""),
+                    }));
+                    setImageChanged(true);
+                  };
+                  reader.readAsDataURL(file);
+                }}
               />
-              {draft.imageUrl && (
-                <img
-                  className={styles.imagePreview}
-                  src={draft.imageUrl}
-                  alt="Deal preview"
-                />
+              <div className={styles.help}>
+                Optional. If no image is uploaded, the storefront uses the
+                first product image in the package.
+              </div>
+              {draft.image && (
+                <>
+                  <img
+                    className={styles.imagePreview}
+                    src={draft.image}
+                    alt="Deal preview"
+                  />
+                  <div className={styles.actions}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setDraft((prev) => ({ ...prev, image: "" }));
+                        setImageChanged(true);
+                      }}
+                    >
+                      Remove image
+                    </Button>
+                  </div>
+                </>
               )}
             </div>
 
