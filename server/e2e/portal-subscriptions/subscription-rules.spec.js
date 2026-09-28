@@ -45,10 +45,10 @@ test("scheduled cancellation keeps the locked delivery, then finalizes once and 
   const scheduled = await getState(request, fixture.subscriptionId);
   expect(scheduled.subscription.status).toBe("active");
   expect(scheduled.subscription.isCancellationScheduled).toBe(true);
-  const locked = deliveryForDate(scheduled, fixture.firstOpenDeliveryDate);
+  const locked = deliveryForDate(scheduled, fixture.lockedDeliveryDate);
   expect(["generated", "scheduled"]).toContain(locked?.status);
 
-  const duringLockedDay = new Date(fixture.firstOpenDeliveryDate);
+  const duringLockedDay = new Date(fixture.lockedDeliveryDate);
   duringLockedDay.setHours(18, 0, 0, 0);
   const early = await finalizeCancellation(
     request,
@@ -57,7 +57,7 @@ test("scheduled cancellation keeps the locked delivery, then finalizes once and 
   );
   expect(early.finalized).toBe(0);
 
-  const nextDay = new Date(fixture.firstOpenDeliveryDate);
+  const nextDay = new Date(fixture.lockedDeliveryDate);
   nextDay.setDate(nextDay.getDate() + 1);
   nextDay.setHours(6, 0, 0, 0);
   const first = await finalizeCancellation(
@@ -77,7 +77,7 @@ test("scheduled cancellation keeps the locked delivery, then finalizes once and 
   expect(finalized.subscription.status).toBe("cancelled");
   expect(finalized.subscription.isCancellationScheduled).toBe(false);
   expect(finalized.subscription.cancellationEffectiveAfter).toBeNull();
-  expect(orderForDate(finalized, fixture.firstOpenDeliveryDate)?.status).toBe(
+  expect(orderForDate(finalized, fixture.lockedDeliveryDate)?.status).toBe(
     "paid",
   );
 });
@@ -464,8 +464,8 @@ function assertItemScope(rule, fixture, before, after) {
       expect
         .soft(quantity(after.subscription.pendingChanges?.items, target.id))
         .toBe(expected);
-      const lockedOrder = orderForDate(after, fixture.firstOpenDeliveryDate);
-      const priorLockedOrder = orderForDate(before, fixture.firstOpenDeliveryDate);
+      const lockedOrder = orderForDate(after, fixture.lockedDeliveryDate);
+      const priorLockedOrder = orderForDate(before, fixture.lockedDeliveryDate);
       expect.soft(orderSnapshot(lockedOrder)).toEqual(
         orderSnapshot(priorLockedOrder),
       );
@@ -536,8 +536,8 @@ function assertItemScope(rule, fixture, before, after) {
     .soft(planQuantity(after.subscription, secondDay, target.id, true))
     .toBe(secondExpected);
 
-  const lockedBefore = orderForDate(before, fixture.firstOpenDeliveryDate);
-  const lockedAfter = orderForDate(after, fixture.firstOpenDeliveryDate);
+  const lockedBefore = orderForDate(before, fixture.lockedDeliveryDate);
+  const lockedAfter = orderForDate(after, fixture.lockedDeliveryDate);
   expect.soft(orderSnapshot(lockedAfter)).toEqual(orderSnapshot(lockedBefore));
   const openOrder = orderForDate(after, fixture.firstOpenDeliveryDate);
   assertChangedOrder(
@@ -683,11 +683,11 @@ function assertCancellation(rule, fixture, after) {
   }
 
   expect.soft(after.subscription.isCancellationScheduled).toBe(true);
-  const locked = deliveryForDate(after, fixture.firstOpenDeliveryDate);
+  const locked = deliveryForDate(after, fixture.lockedDeliveryDate);
   expect.soft(["generated", "scheduled"]).toContain(locked?.status);
   const later = after.deliveries.filter(
     (delivery) =>
-      new Date(delivery.scheduledDate) > new Date(fixture.firstOpenDeliveryDate),
+      new Date(delivery.scheduledDate) > new Date(fixture.lockedDeliveryDate),
   );
   expect.soft(later.every((delivery) => delivery.status === "cancelled")).toBe(
     true,
@@ -711,13 +711,13 @@ function assertPause(rule, fixture, after) {
   expect.soft(creditAmount(after)).toBe(0);
 
   if (!isBefore) {
-    const locked = deliveryForDate(after, fixture.firstOpenDeliveryDate);
+    const locked = deliveryForDate(after, fixture.lockedDeliveryDate);
     expect.soft(["generated", "scheduled"]).toContain(locked?.status);
   }
 
   const shouldBeSkipped = after.deliveries.filter((delivery) => {
     const date = new Date(delivery.scheduledDate);
-    if (!isBefore && date <= new Date(fixture.firstOpenDeliveryDate)) return false;
+    if (!isBefore && date <= new Date(fixture.lockedDeliveryDate)) return false;
     return date < new Date(fixture.resumeOn);
   });
   expect
