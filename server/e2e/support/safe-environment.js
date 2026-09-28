@@ -5,6 +5,7 @@ const path = require("path");
 const dotenv = require("dotenv");
 const {
   API_PORT,
+  ADMIN_ORIGIN,
   CLIENT_ORIGIN,
   CONTROL_TOKEN,
 } = require("./constants");
@@ -69,7 +70,7 @@ function configureSafeEnvironment() {
     "whsec_e2e_listener_not_started";
   process.env.NODE_ENV = "development";
   process.env.PORT = String(API_PORT);
-  process.env.FRONTEND_URL_DEV = CLIENT_ORIGIN;
+  process.env.FRONTEND_URL_DEV = ADMIN_ORIGIN;
   process.env.CLIENT_FRONT_URL_DEV = CLIENT_ORIGIN;
   process.env.RATE_LIMIT_LOGIN_MAX = "1000";
   process.env.RATE_LIMIT_AUTH_MAX = "5000";
