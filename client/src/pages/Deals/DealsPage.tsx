@@ -525,6 +525,7 @@ export const DealsPage = () => {
             <div className={styles.full + " " + styles.checks}>
               <label className={styles.check}>
                 <Checkbox
+                  aria-label="Active on storefront"
                   checked={draft.isActive}
                   onCheckedChange={(checked) =>
                     setDraft((prev) => ({
@@ -537,6 +538,7 @@ export const DealsPage = () => {
               </label>
               <label className={styles.check}>
                 <Checkbox
+                  aria-label="Featured deal"
                   checked={draft.isFeatured}
                   onCheckedChange={(checked) =>
                     setDraft((prev) => ({
