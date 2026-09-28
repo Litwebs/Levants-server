@@ -3662,6 +3662,7 @@ async function ReduceNextDelivery({
     await session.withTransaction(async () => {
       const freshDelivery = await SubscriptionDelivery.findOne({
         _id: delivery._id,
+        updatedAt: delivery.updatedAt,
         "reductions.operationId": { $ne: operationId },
       }).session(session);
       if (!freshDelivery) return;
