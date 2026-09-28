@@ -1,5 +1,6 @@
 const MANIFEST_ITEM_ORDER = [
   "2-litre-milk",
+  "2-litre-homogenised-milk",
   "2-litre-semi-skimmed-milk",
   "2-litre-double-cream",
   "plastic-pint-milk",
