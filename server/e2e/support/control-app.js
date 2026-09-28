@@ -69,6 +69,12 @@ function createControlApp() {
     asyncRoute((req) => fixtures.getState(req.params.subscriptionId)),
   );
   app.post(
+    "/state/:subscriptionId/generate-scheduled-delivery",
+    asyncRoute((req) =>
+      fixtures.generateScheduledDelivery(req.params.subscriptionId),
+    ),
+  );
+  app.post(
     "/state/:subscriptionId/payment-outcome",
     asyncRoute((req) =>
       fixtures.setPaymentOutcome(
