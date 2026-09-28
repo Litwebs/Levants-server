@@ -23,6 +23,7 @@ export type Deal = {
   name: string;
   slug: string;
   description?: string;
+  image?: { _id?: string; url?: string } | null;
   imageUrl?: string;
   items: DealItem[];
   packagePrice: number;
@@ -44,7 +45,7 @@ export type DealDraft = {
   name: string;
   slug?: string;
   description?: string;
-  imageUrl?: string;
+  image?: string | null;
   items: Array<{ variantId: string; quantity: number }>;
   packagePrice: number;
   currency?: string;
