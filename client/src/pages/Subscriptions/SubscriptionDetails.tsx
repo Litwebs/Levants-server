@@ -924,7 +924,7 @@ export default function SubscriptionDetailsPage() {
                             <tr className={sharedTableStyles.emptyStateRow}>
                               <td
                                 className={sharedTableStyles.emptyTableCell}
-                                colSpan={6}
+                                colSpan={5}
                               >
                                 No items for this day
                               </td>
@@ -1180,7 +1180,7 @@ export default function SubscriptionDetailsPage() {
             <tbody>
               {!deliveriesLoading && deliveries.length === 0 ? (
                 <tr className={sharedTableStyles.emptyStateRow}>
-                  <td className={sharedTableStyles.emptyTableCell} colSpan={5}>
+                  <td className={sharedTableStyles.emptyTableCell} colSpan={6}>
                     No delivery history found
                   </td>
                 </tr>
