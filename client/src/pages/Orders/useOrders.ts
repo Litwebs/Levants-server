@@ -27,6 +27,16 @@ export type OrderItem = {
   unitPrice: number;
 };
 
+export type OrderDealSnapshot = {
+  dealId?: string;
+  name: string;
+  slug?: string;
+  quantity: number;
+  packagePrice: number;
+  originalValue?: number;
+  saving?: number;
+};
+
 export type Order = {
   id: string;
   orderNumber: string;
@@ -54,6 +64,7 @@ export type Order = {
   customerNotes?: string;
   internalNotes?: string;
   driverNote?: string | null;
+  deals?: OrderDealSnapshot[];
   history: { status: string; timestamp: string; user: string }[];
   deliveryProofUrl?: string;
   deliveredAt?: string | null;
@@ -182,6 +193,28 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     isManualImport &&
     (metadataImportedBaseTotal !== null || !inferredIncludeDeliveryFeeInTotal);
 
+  const deals = Array.isArray((metadata as any)?.deals)
+    ? (metadata as any).deals
+        .filter((deal: any) => deal && typeof deal === "object")
+        .map((deal: any) => ({
+          dealId:
+            typeof deal.dealId === "string" ? deal.dealId : undefined,
+          name:
+            typeof deal.name === "string" && deal.name.trim()
+              ? deal.name.trim()
+              : "Product package",
+          slug: typeof deal.slug === "string" ? deal.slug : undefined,
+          quantity: Math.max(1, Number(deal.quantity || 1)),
+          packagePrice: Math.max(0, Number(deal.packagePrice || 0)),
+          originalValue:
+            typeof deal.originalValue === "number"
+              ? deal.originalValue
+              : undefined,
+          saving:
+            typeof deal.saving === "number" ? deal.saving : undefined,
+        }))
+    : [];
+
   return {
     id: order._id,
     orderNumber: order.orderId,
@@ -235,6 +268,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
 
     customerInstructions,
     driverNote: typeof (order as any)?.driverNote === "string" ? (order as any).driverNote || null : null,
+    deals,
 
     history: [],
 
