@@ -246,6 +246,44 @@ const OrderDetailModal = ({
               </div>
             </div>
 
+            {Array.isArray(selectedOrder.deals) &&
+              selectedOrder.deals.length > 0 && (
+                <div className={styles.detailSection}>
+                  <h4 className={styles.detailTitle}>Package Deals</h4>
+                  <div className={styles.packageList}>
+                    {selectedOrder.deals.map((deal: any, index: number) => (
+                      <div
+                        key={deal.dealId || deal.slug || index}
+                        className={styles.packageItem}
+                      >
+                        <div>
+                          <strong>{deal.name}</strong>
+                          <div className={styles.packageMeta}>
+                            Quantity {deal.quantity}
+                          </div>
+                        </div>
+                        <div className={styles.packagePrice}>
+                          £
+                          {(
+                            Number(deal.packagePrice || 0) *
+                            Number(deal.quantity || 1)
+                          ).toFixed(2)}
+                          {Number(deal.saving || 0) > 0 ? (
+                            <div className={styles.packageSaving}>
+                              Saved £
+                              {(
+                                Number(deal.saving || 0) *
+                                Number(deal.quantity || 1)
+                              ).toFixed(2)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             <div className={styles.itemsSection}>
               <div className={styles.itemsHeaderRow}>
                 <h4 className={styles.detailTitle}>Order Items</h4>
