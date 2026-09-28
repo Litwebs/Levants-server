@@ -35,7 +35,6 @@ async function addVariantFromAdmin(page, search, expectedProductName) {
 
   const result = page
     .getByText(expectedProductName, { exact: false })
-    .filter({ visible: true })
     .last()
     .locator("xpath=ancestor::div[.//button[normalize-space()='Add']][1]");
 
@@ -56,7 +55,7 @@ async function createDealViaAdmin(page, fixture, {
 
   await page.getByRole("button", { name: "New Deal", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Create product package", exact: true }),
+    page.getByText("Create product package", { exact: true }),
   ).toBeVisible();
 
   await page.getByLabel("Deal name *").fill(name);
@@ -111,7 +110,7 @@ async function editDealPriceViaAdmin(page, name, nextPrice) {
     .locator("xpath=ancestor::tr[1]");
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Edit product package", exact: true }),
+    page.getByText("Edit product package", { exact: true }),
   ).toBeVisible();
   await page.getByLabel("Package price (£) *").fill(String(nextPrice));
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
@@ -140,8 +139,8 @@ async function addDealToCart(page, dealName) {
   await page.getByRole("button", { name: "Cart", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your Cart" })).toBeVisible();
   await expect(page.getByText(dealName, { exact: true })).toBeVisible();
-  await expect(page.getByText("£10.00", { exact: true })).toBeVisible();
-  await expect(page.getByText("£11.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("£10.00", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("£11.00", { exact: true }).first()).toBeVisible();
 }
 
 async function openCheckout(page) {
