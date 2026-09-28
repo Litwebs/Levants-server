@@ -49,6 +49,18 @@ function createControlApp() {
     "/fixtures",
     asyncRoute((req) => fixtures.createFixture(req.body || {})),
   );
+  app.post(
+    "/deals/fixtures",
+    asyncRoute((req) => fixtures.createDealsFixture(req.body || {})),
+  );
+  app.get(
+    "/deals/state/:customerId",
+    asyncRoute((req) => fixtures.getDealsState(req.params.customerId)),
+  );
+  app.post(
+    "/deals/mutate",
+    asyncRoute((req) => fixtures.mutateDealsFixture(req.body || {})),
+  );
   app.get(
     "/emails",
     asyncRoute(async () => ({ emails: global.__E2E_EMAIL_OUTBOX__ || [] })),
