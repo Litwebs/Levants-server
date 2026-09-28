@@ -63,4 +63,24 @@ describe("admin Deals permissions", () => {
     expect(create.status).toBe(403);
     expect(create.body.success).toBe(false);
   });
+  test("archive requires promotions.delete", async () => {
+    const role = await Role.create({
+      name: `deals_editor_${Date.now()}`,
+      permissions: ["promotions.read", "promotions.update"],
+      isSystem: false,
+    });
+    const user = await createUser({ role: role.name, status: "active", password: "secret123" });
+    user.role = role._id;
+    await user.save();
+    const cookie = await loginAs(app, user);
+    const fakeId = new (require("mongoose").Types.ObjectId)();
+
+    const res = await request(app)
+      .post(`/api/admin/deals/${fakeId}/archive`)
+      .set("Cookie", cookie);
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+  });
+
 });

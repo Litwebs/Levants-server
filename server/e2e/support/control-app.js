@@ -77,6 +77,10 @@ function createControlApp() {
     "/deals/admin/:dealId",
     asyncRoute((req) => fixtures.e2eAdminDeactivateDeal(req.params.dealId)),
   );
+  app.post(
+    "/deals/admin/:dealId/archive",
+    asyncRoute((req) => fixtures.e2eAdminArchiveDeal(req.params.dealId)),
+  );
   app.get(
     "/deals/admin-variants",
     asyncRoute((req) =>
@@ -101,6 +105,12 @@ function createControlApp() {
   app.post(
     "/deals/mutate",
     asyncRoute((req) => fixtures.mutateDealsFixture(req.body || {})),
+  );
+  app.post(
+    "/deals/checkout/:sessionId/redeliver",
+    asyncRoute((req) =>
+      fixtures.redeliverDealCheckoutCompleted(req.params.sessionId),
+    ),
   );
   app.get(
     "/emails",

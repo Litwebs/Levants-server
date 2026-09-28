@@ -2,9 +2,11 @@ const request = require("supertest");
 const app = require("../testApp");
 const Deal = require("../../models/deal.model");
 const {
+  archiveDeal,
   createDeal,
   updateDeal,
 } = require("../../services/deals.admin.service");
+const { validateDealsForOrder } = require("../../services/deals.public.service");
 const {
   createProduct,
   createVariant,
@@ -225,6 +227,61 @@ describe("deals admin and public lifecycle", () => {
     expect(standard.data.deals).toHaveLength(1);
     expect(standard.data.deals[0].slug).toBe("standard-admin");
     expect(standard.meta.total).toBe(1);
+  });
+
+  test("archive is terminal, idempotent, hidden publicly and rejected at checkout", async () => {
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await createDealFixture({
+      variant,
+      name: "Archive Me",
+      slug: "archive-me",
+      isFeatured: true,
+    });
+
+    const archived = await archiveDeal({ dealId: String(deal._id) });
+    expect(archived.success).toBe(true);
+    expect(archived.data.deal.isActive).toBe(false);
+    expect(archived.data.deal.isFeatured).toBe(false);
+    expect(archived.data.deal.archivedAt).toBeTruthy();
+
+    const firstArchivedAt = String(archived.data.deal.archivedAt);
+    const repeated = await archiveDeal({ dealId: String(deal._id) });
+    expect(repeated.success).toBe(true);
+    expect(String(repeated.data.deal.archivedAt)).toBe(firstArchivedAt);
+
+    const update = await updateDeal({
+      dealId: String(deal._id),
+      body: { isActive: true },
+    });
+    expect(update.success).toBe(false);
+    expect(update.statusCode).toBe(409);
+
+    const publicList = await request(app).get("/api/deals");
+    expect(publicList.status).toBe(200);
+    expect(publicList.body.data.deals).toHaveLength(0);
+
+    const publicDetail = await request(app).get("/api/deals/archive-me");
+    expect(publicDetail.status).toBe(404);
+
+    const checkout = await validateDealsForOrder({
+      dealClaims: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
+      resolvedItems: [{
+        product: product._id,
+        variant: variant._id,
+        price: 5,
+        quantity: 2,
+        subtotal: 10,
+      }],
+    });
+    expect(checkout.success).toBe(false);
+    expect(checkout.message).toMatch(/no longer available/i);
+
+    const adminList = await require("../../services/deals.admin.service").listDeals({
+      page: 1,
+      pageSize: 20,
+    });
+    expect(adminList.data.deals.some((item) => item.slug === "archive-me")).toBe(true);
   });
 
   test("public list exposes only active, in-window, in-stock packages", async () => {

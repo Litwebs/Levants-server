@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/components/common/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
+  archiveDeal,
   createDeal,
   deactivateDeal,
   listDeals,
@@ -86,6 +87,8 @@ export const DealsPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<Deal | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Deal | null>(null);
   const [draft, setDraft] = useState(emptyDraft());
@@ -290,6 +293,40 @@ export const DealsPage = () => {
     }
   };
 
+  const archive = async () => {
+    if (!archiveTarget) return;
+    setArchivingId(archiveTarget._id);
+    try {
+      await archiveDeal(archiveTarget._id);
+      showToast({ type: "success", title: "Deal archived" });
+      setArchiveTarget(null);
+      await load();
+    } catch (err: unknown) {
+      showToast({
+        type: "error",
+        title: getErrorMessage(err, "Failed to archive deal"),
+      });
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
+  const statusFor = (deal: Deal) => {
+    if (deal.archivedAt) return { label: "Archived", variant: "default" as const };
+    if (!deal.isActive) return { label: "Inactive", variant: "default" as const };
+    const now = Date.now();
+    if (deal.startsAt && new Date(deal.startsAt).getTime() > now) {
+      return { label: "Scheduled", variant: "default" as const };
+    }
+    if (deal.endsAt && new Date(deal.endsAt).getTime() < now) {
+      return { label: "Expired", variant: "default" as const };
+    }
+    return {
+      label: deal.isFeatured ? "Featured" : "Active",
+      variant: "success" as const,
+    };
+  };
+
   return (
     <div className={styles.page}>
       <div className={styles.header}>
@@ -355,17 +392,13 @@ export const DealsPage = () => {
                       {Number(deal.maxPackages || 0) === 1 ? "" : "s"}
                     </TableCell>
                     <TableCell>
-                      {deal.isActive ? (
-                        <Badge variant="success">
-                          {deal.isFeatured ? "Featured" : "Active"}
-                        </Badge>
-                      ) : (
-                        <Badge variant="default">Inactive</Badge>
-                      )}
+                      <Badge variant={statusFor(deal).variant}>
+                        {statusFor(deal).label}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <div className={styles.actions}>
-                        {canUpdate && (
+                        {canUpdate && !deal.archivedAt && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -374,7 +407,7 @@ export const DealsPage = () => {
                             Edit
                           </Button>
                         )}
-                        {canDelete && deal.isActive && (
+                        {canDelete && deal.isActive && !deal.archivedAt && (
                           <Button
                             variant="danger"
                             size="sm"
@@ -382,6 +415,16 @@ export const DealsPage = () => {
                             onClick={() => void deactivate(deal)}
                           >
                             Deactivate
+                          </Button>
+                        )}
+                        {canDelete && !deal.archivedAt && (
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            disabled={archivingId === deal._id}
+                            onClick={() => setArchiveTarget(deal)}
+                          >
+                            Archive
                           </Button>
                         )}
                       </div>
@@ -670,6 +713,31 @@ export const DealsPage = () => {
           </Button>
           <Button variant="primary" disabled={saving} onClick={() => void save()}>
             {saving ? "Saving…" : editing ? "Save changes" : "Create deal"}
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(archiveTarget)}
+        onClose={() => setArchiveTarget(null)}
+        title="Archive product package"
+        size="sm"
+      >
+        <p>
+          Archive <strong>{archiveTarget?.name}</strong>? It will be removed
+          from the storefront and can no longer be edited or reactivated.
+          Existing orders keep their package snapshot.
+        </p>
+        <ModalFooter>
+          <Button variant="outline" onClick={() => setArchiveTarget(null)}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            disabled={Boolean(archivingId)}
+            onClick={() => void archive()}
+          >
+            {archivingId ? "Archiving…" : "Archive deal"}
           </Button>
         </ModalFooter>
       </Modal>

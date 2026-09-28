@@ -43,3 +43,10 @@ export async function deactivateDeal(id: string) {
   if (!data?.deal) throw new Error("Failed to deactivate deal");
   return data.deal;
 }
+
+export async function archiveDeal(id: string) {
+  const res = await api.post("/admin/deals/" + id + "/archive");
+  const data = unwrap<{ deal: Deal }>(res.data);
+  if (!data?.deal) throw new Error("Failed to archive deal");
+  return data.deal;
+}

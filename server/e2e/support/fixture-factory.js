@@ -995,6 +995,16 @@ async function e2eAdminDeactivateDeal(dealId) {
   return result.data;
 }
 
+async function e2eAdminArchiveDeal(dealId) {
+  const result = await dealsAdminService.archiveDeal({ dealId });
+  if (!result.success) {
+    const error = new Error(result.message || "Failed to archive deal");
+    error.statusCode = result.statusCode || 400;
+    throw error;
+  }
+  return result.data;
+}
+
 async function e2eAdminSearchVariants({ q, limit } = {}) {
   const result = await variantsAdminService.SearchVariants({ q, limit });
   if (!result.success) {
@@ -1188,6 +1198,37 @@ async function mutateDealsFixture(input = {}) {
   return { updated: true };
 }
 
+async function redeliverDealCheckoutCompleted(sessionId) {
+  const session = await stripe.checkout.sessions.retrieve(String(sessionId));
+  if (session.payment_status !== "paid") {
+    throw new Error("Checkout Session is not paid");
+  }
+  const payload = JSON.stringify({
+    id: `evt_e2e_deal_${crypto.randomUUID().replace(/-/g, "")}`,
+    object: "event",
+    type: "checkout.session.completed",
+    data: { object: session },
+  });
+  const signature = stripe.webhooks.generateTestHeaderString({
+    payload,
+    secret: process.env.STRIPE_WEBHOOK_SECRET,
+  });
+  const response = await fetch(`${API_ORIGIN}/api/webhooks/stripe`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "stripe-signature": signature,
+    },
+    body: payload,
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Signed checkout.session.completed redelivery failed (${response.status}): ${await response.text()}`,
+    );
+  }
+  return { delivered: true, sessionId: session.id };
+}
+
 async function getDealsState(customerId) {
   const [customer, deals, orders, variants] = await Promise.all([
     Customer.findById(customerId).lean(),
@@ -1298,6 +1339,7 @@ module.exports = {
   autoResume,
   createDealsFixture,
   createFixture,
+  e2eAdminArchiveDeal,
   e2eAdminCreateDeal,
   e2eAdminGetOrder,
   e2eAdminListOrders,
@@ -1312,6 +1354,7 @@ module.exports = {
   getState,
   mutateDealsFixture,
   preparePaymentRetry,
+  redeliverDealCheckoutCompleted,
   reset,
   setPaymentOutcome,
 };

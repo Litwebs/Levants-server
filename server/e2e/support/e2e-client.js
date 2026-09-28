@@ -66,6 +66,14 @@ async function mutateDealsFixture(request, input) {
   return responseJson(response, "Deals E2E mutation");
 }
 
+async function redeliverDealCheckoutCompleted(request, sessionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/deals/checkout/${encodeURIComponent(sessionId)}/redeliver`,
+    { headers: controlHeaders, timeout: 60_000 },
+  );
+  return responseJson(response, "Deal checkout webhook redelivery");
+}
+
 async function getEmails(request) {
   const response = await request.get(`${CONTROL_ORIGIN}/emails`, {
     headers: controlHeaders,
@@ -204,6 +212,7 @@ module.exports = {
   mutateDealsFixture,
   portalHeaders,
   preparePaymentRetry,
+  redeliverDealCheckoutCompleted,
   reset,
   setPaymentOutcome,
 };

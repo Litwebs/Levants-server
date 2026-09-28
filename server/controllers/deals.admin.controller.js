@@ -69,10 +69,24 @@ const DeactivateDeal = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const ArchiveDeal = async (req, res) => {
+  const result = await service.archiveDeal({ dealId: req.params.dealId });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Failed to archive deal",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 module.exports = {
   CreateDeal,
   ListDeals,
   GetDeal,
   UpdateDeal,
   DeactivateDeal,
+  ArchiveDeal,
 };

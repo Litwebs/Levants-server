@@ -9,6 +9,7 @@ const {
   createDealsFixture,
   getDealsState,
   mutateDealsFixture,
+  redeliverDealCheckoutCompleted,
   reset,
 } = require("../support/e2e-client");
 
@@ -162,6 +163,23 @@ async function mockAdminApi(page, apiRequest) {
       return;
     }
 
+    const archiveMatch = pathname.match(
+      /^\/api\/admin\/deals\/([^/]+)\/archive$/,
+    );
+    if (archiveMatch && method === "POST") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "post",
+        `/deals/admin/${encodeURIComponent(archiveMatch[1])}/archive`,
+      );
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: proxied.body,
+      });
+      return;
+    }
+
     const dealMatch = pathname.match(/^\/api\/admin\/deals\/([^/]+)$/);
     if (dealMatch && method === "PATCH") {
       const proxied = await proxyControl(
@@ -228,6 +246,8 @@ async function createDealViaAdmin(page, fixture, {
   name = "E2E Family Dairy Bundle",
   packagePrice = "10",
   featured = true,
+  startsAt = "",
+  endsAt = "",
 } = {}) {
   await page.goto(`${ADMIN_ORIGIN}/deals`);
   await expect(
@@ -241,6 +261,8 @@ async function createDealViaAdmin(page, fixture, {
 
   await page.getByLabel("Deal name *").fill(name);
   await page.getByLabel("Package price (£) *").fill(packagePrice);
+  if (startsAt) await page.getByLabel("Starts at").fill(startsAt);
+  if (endsAt) await page.getByLabel("Ends at").fill(endsAt);
 
   await addVariantFromAdmin(
     page,
@@ -306,6 +328,24 @@ async function deactivateDealViaAdmin(page, name) {
   await row.getByRole("button", { name: "Deactivate", exact: true }).click();
   await expect(page.getByText("Deal deactivated", { exact: true })).toBeVisible();
   await expect(row).toContainText("Inactive");
+}
+
+async function archiveDealViaAdmin(page, name) {
+  await page.goto(`${ADMIN_ORIGIN}/deals`);
+  const row = page
+    .getByText(name, { exact: true })
+    .locator("xpath=ancestor::tr[1]");
+  await row.getByRole("button", { name: "Archive", exact: true }).click();
+  await expect(page.getByText("Archive product package", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Archive deal", exact: true }).click();
+  await expect(page.getByText("Deal archived", { exact: true })).toBeVisible();
+  await expect(row).toContainText("Archived");
+  await expect(row.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+}
+
+function toLocalDateTimeInput(date) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
 async function addDealToCart(page, dealName) {
@@ -512,6 +552,87 @@ test("browser checkout creates a real Stripe test-mode session with exact packag
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(/^https:\/\/checkout\.stripe\.com\//);
 
+  await page.locator('input[name="cardNumber"]').fill("4242424242424242");
+  await page.locator('input[name="cardExpiry"]').fill("1234");
+  await page.locator('input[name="cardCvc"]').fill("123");
+  const billingName = page.locator('input[name="billingName"]');
+  if (await billingName.count()) await billingName.fill("Deals E2E Customer");
+  await page.locator('button[type="submit"]').click();
+
+  await expect(page).toHaveURL(/\/checkout\/success\?session_id=/, { timeout: 60_000 });
+  await expect.poll(async () => {
+    const paid = await getDealsState(request, fixture.customer.customerId);
+    return paid.orders[0]?.status;
+  }, { timeout: 60_000 }).toBe("paid");
+
+  const paidState = await getDealsState(request, fixture.customer.customerId);
+  expect(paidState.stripeCheckout.paymentStatus).toBe("paid");
+  expect(Number(variantBySku(paidState, fixture.variants.MILK.sku).stockQuantity)).toBe(6);
+  expect(Number(variantBySku(paidState, fixture.variants.MILK.sku).reservedQuantity)).toBe(0);
+  expect(Number(variantBySku(paidState, fixture.variants.BUTTER.sku).stockQuantity)).toBe(5);
+  expect(Number(variantBySku(paidState, fixture.variants.BUTTER.sku).reservedQuantity)).toBe(0);
+
+  await redeliverDealCheckoutCompleted(request, paidState.stripeCheckout.id);
+  const afterDuplicate = await getDealsState(request, fixture.customer.customerId);
+  expect(afterDuplicate.orders[0].status).toBe("paid");
+  expect(Number(variantBySku(afterDuplicate, fixture.variants.MILK.sku).stockQuantity)).toBe(6);
+  expect(Number(variantBySku(afterDuplicate, fixture.variants.BUTTER.sku).stockQuantity)).toBe(5);
+
+  await adminContext.close();
+});
+
+test("scheduled deal stays hidden until active, then archive removes it permanently from storefront and checkout", async ({
+  page,
+  request,
+  browser,
+}) => {
+  const fixture = await createDealsFixture(request, { creditBalance: 5000 });
+  const adminContext = await browser.newContext();
+  const adminPage = await adminContext.newPage();
+  await mockAdminApi(adminPage, request);
+
+  const dealName = await createDealViaAdmin(adminPage, fixture, {
+    name: "Scheduled Archive Bundle",
+    startsAt: toLocalDateTimeInput(new Date(Date.now() + 60 * 60 * 1000)),
+    endsAt: toLocalDateTimeInput(new Date(Date.now() + 2 * 60 * 60 * 1000)),
+  });
+  const row = adminPage.getByText(dealName, { exact: true }).locator("xpath=ancestor::tr[1]");
+  await expect(row).toContainText("Scheduled");
+
+  await customerSignIn(page, fixture.customer.credentials);
+  await expect(page.getByRole("heading", { name: dealName, exact: true })).toHaveCount(0);
+
+  await adminPage.goto(`${ADMIN_ORIGIN}/deals`);
+  const editRow = adminPage.getByText(dealName, { exact: true }).locator("xpath=ancestor::tr[1]");
+  await editRow.getByRole("button", { name: "Edit", exact: true }).click();
+  await adminPage.getByLabel("Starts at").fill(
+    toLocalDateTimeInput(new Date(Date.now() - 60 * 60 * 1000)),
+  );
+  await adminPage.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(adminPage.getByText("Deal updated", { exact: true })).toBeVisible();
+
+  await page.goto("/deals");
+  await addDealToCart(page, dealName);
+  await archiveDealViaAdmin(adminPage, dealName);
+
+  await openCheckout(page);
+  const responsePromise = page.waitForResponse(
+    (response) => response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/portal/orders/checkout",
+  );
+  await page.getByRole("button", { name: /Place Order/ }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(400);
+  expect((await response.json()).message).toMatch(/no longer available/i);
+
+  const state = await getDealsState(request, fixture.customer.customerId);
+  expect(state.orders).toHaveLength(0);
+  expect(state.deals[0].archivedAt).toBeTruthy();
+  expect(state.deals[0].isActive).toBe(false);
+  expect(state.deals[0].isFeatured).toBe(false);
+
+  await page.goto("/deals");
+  await expect(page.getByRole("heading", { name: dealName, exact: true })).toHaveCount(0);
   await adminContext.close();
 });
 

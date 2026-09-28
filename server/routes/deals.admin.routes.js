@@ -51,6 +51,13 @@ router.patch(
   asyncHandler(controller.UpdateDeal),
 );
 
+router.post(
+  "/:dealId/archive",
+  requirePermission("promotions.delete"),
+  validateParams(dealIdParamSchema),
+  asyncHandler(controller.ArchiveDeal),
+);
+
 router.delete(
   "/:dealId",
   requirePermission("promotions.delete"),

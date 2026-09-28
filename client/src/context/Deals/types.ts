@@ -32,6 +32,7 @@ export type Deal = {
   isFeatured: boolean;
   startsAt?: string | null;
   endsAt?: string | null;
+  archivedAt?: string | null;
   sortOrder?: number;
   originalValue?: number;
   savings?: number;

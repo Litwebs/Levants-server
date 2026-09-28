@@ -339,6 +339,13 @@ async function updateDeal({ dealId, body }) {
   if (!current) {
     return { success: false, statusCode: 404, message: "Deal not found" };
   }
+  if (current.archivedAt) {
+    return {
+      success: false,
+      statusCode: 409,
+      message: "Archived deals cannot be modified",
+    };
+  }
 
   const nextName = body.name ?? current.name;
   const nextSlug = slugify(body.slug ?? current.slug ?? nextName);
@@ -444,17 +451,37 @@ async function updateDeal({ dealId, body }) {
 }
 
 async function deactivateDeal({ dealId }) {
-  const deal = await Deal.findByIdAndUpdate(
-    dealId,
-    { $set: { isActive: false } },
-    { new: true },
-  ).lean();
+  const deal = await Deal.findById(dealId);
+  if (!deal) {
+    return { success: false, statusCode: 404, message: "Deal not found" };
+  }
+  if (deal.archivedAt) {
+    return {
+      success: false,
+      statusCode: 409,
+      message: "Archived deals cannot be modified",
+    };
+  }
 
+  deal.isActive = false;
+  await deal.save();
+  return { success: true, data: { deal: deal.toObject() } };
+}
+
+async function archiveDeal({ dealId }) {
+  const deal = await Deal.findById(dealId);
   if (!deal) {
     return { success: false, statusCode: 404, message: "Deal not found" };
   }
 
-  return { success: true, data: { deal } };
+  if (!deal.archivedAt) {
+    deal.archivedAt = new Date();
+    deal.isActive = false;
+    deal.isFeatured = false;
+    await deal.save();
+  }
+
+  return { success: true, data: { deal: deal.toObject() } };
 }
 
 module.exports = {
@@ -463,4 +490,5 @@ module.exports = {
   getDeal,
   updateDeal,
   deactivateDeal,
+  archiveDeal,
 };

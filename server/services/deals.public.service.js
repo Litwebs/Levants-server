@@ -3,6 +3,7 @@ const Deal = require("../models/deal.model");
 function activeWindowFilter(now = new Date()) {
   return {
     isActive: true,
+    archivedAt: null,
     $and: [
       { $or: [{ startsAt: null }, { startsAt: { $exists: false } }, { startsAt: { $lte: now } }] },
       { $or: [{ endsAt: null }, { endsAt: { $exists: false } }, { endsAt: { $gte: now } }] },

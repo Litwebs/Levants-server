@@ -84,6 +84,11 @@ const dealSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    archivedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     sortOrder: {
       type: Number,
       default: 0,
