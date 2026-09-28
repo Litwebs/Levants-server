@@ -187,6 +187,8 @@ function portalHeaders(accessToken) {
 module.exports = {
   ADMIN_ORIGIN,
   API_ORIGIN,
+  CONTROL_ORIGIN,
+  CONTROL_TOKEN,
   approveReview,
   autoResume,
   createDealsFixture,
