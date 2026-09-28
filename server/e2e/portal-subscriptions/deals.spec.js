@@ -229,12 +229,12 @@ async function createDealViaAdmin(page, fixture, {
   await qtyInputs.nth(0).fill("2");
 
   if (featured) {
-    const featuredLabel = page
-      .getByText("Featured deal", { exact: true })
-      .locator("xpath=ancestor::label[1]");
-    const checkbox = featuredLabel.getByRole("checkbox");
+    const checkbox = page.getByRole("checkbox", {
+      name: "Featured deal",
+      exact: true,
+    });
     if ((await checkbox.getAttribute("data-state")) !== "checked") {
-      await featuredLabel.click();
+      await checkbox.click();
     }
   }
 
