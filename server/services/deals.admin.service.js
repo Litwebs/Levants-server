@@ -262,7 +262,11 @@ async function listDeals({ page = 1, pageSize = 20, featured } = {}) {
   const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 20));
   const skip = (safePage - 1) * safePageSize;
   const filter =
-    featured === true || featured === "true" ? { isFeatured: true } : {};
+    featured === true || featured === "true"
+      ? { isFeatured: true }
+      : featured === false || featured === "false"
+        ? { isFeatured: false }
+        : {};
 
   const [total, deals] = await Promise.all([
     Deal.countDocuments(filter),
