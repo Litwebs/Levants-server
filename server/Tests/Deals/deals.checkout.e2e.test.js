@@ -495,4 +495,50 @@ describe("deals and product packages", () => {
     expect(order.creditApplied).toBe(900);
   });
 
+
+  test("concurrent customers cannot oversell the last available package", async () => {
+    const [customerA, customerB] = await Promise.all([
+      createCustomer(),
+      createCustomer(),
+    ]);
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 2, price: 5 });
+    const deal = await createDealFixture({
+      variant,
+      quantity: 2,
+      packagePrice: 8,
+    });
+
+    const payloadFor = (customer) => ({
+      customerId: String(customer._id),
+      items: [{ variantId: String(variant._id), quantity: 2 }],
+      deals: [
+        {
+          dealId: String(deal._id),
+          quantity: 1,
+          expectedPackagePrice: 8,
+        },
+      ],
+      deliveryAddress: address,
+    });
+
+    const [first, second] = await Promise.all([
+      request(app).post("/api/orders").send(payloadFor(customerA)),
+      request(app).post("/api/orders").send(payloadFor(customerB)),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([200, 400]);
+
+    const orders = await Order.find({
+      customer: { $in: [customerA._id, customerB._id] },
+    }).lean();
+    expect(orders).toHaveLength(1);
+
+    const freshVariant = await require("../../models/variant.model")
+      .findById(variant._id)
+      .lean();
+    expect(freshVariant.reservedQuantity).toBe(2);
+    expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(1);
+  });
+
 });
