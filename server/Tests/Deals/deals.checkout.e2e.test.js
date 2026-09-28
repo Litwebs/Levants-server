@@ -1,6 +1,7 @@
 const request = require("supertest");
 const app = require("../testApp");
 const stripe = require("../../utils/stripe.util");
+const jwtUtil = require("../../utils/jwt.util");
 const Deal = require("../../models/deal.model");
 const Order = require("../../models/order.model");
 const {
@@ -428,17 +429,20 @@ describe("deals and product packages", () => {
 
   test("checkout combines package saving and partial store credit into one Stripe adjustment", async () => {
     const customer = await createCustomer();
+    customer.isGuest = false;
+    customer.status = "active";
     customer.creditBalance = 500;
     await customer.save();
+    const token = jwtUtil.signCustomerAccessToken(customer);
 
     const product = await createProduct();
     const variant = await createVariant({ product, stock: 20, price: 5 });
     const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
 
     const res = await request(app)
-      .post("/api/orders")
+      .post("/api/portal/orders/checkout")
+      .set("Authorization", `Bearer ${token}`)
       .send({
-        customerId: String(customer._id),
         items: [{ variantId: String(variant._id), quantity: 2 }],
         deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
         creditToApplyMinor: 200,
@@ -461,17 +465,20 @@ describe("deals and product packages", () => {
 
   test("checkout can settle a package fully with store credit without creating Stripe Checkout", async () => {
     const customer = await createCustomer();
+    customer.isGuest = false;
+    customer.status = "active";
     customer.creditBalance = 900;
     await customer.save();
+    const token = jwtUtil.signCustomerAccessToken(customer);
 
     const product = await createProduct();
     const variant = await createVariant({ product, stock: 20, price: 5 });
     const deal = await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
 
     const res = await request(app)
-      .post("/api/orders")
+      .post("/api/portal/orders/checkout")
+      .set("Authorization", `Bearer ${token}`)
       .send({
-        customerId: String(customer._id),
         items: [{ variantId: String(variant._id), quantity: 2 }],
         deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
         creditToApplyMinor: 900,
