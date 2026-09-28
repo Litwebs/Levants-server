@@ -12,6 +12,7 @@ function activeWindowFilter(now = new Date()) {
 
 async function populateDeals(query) {
   return query
+    .populate("image")
     .populate({
       path: "items.variant",
       select:
@@ -104,7 +105,7 @@ function mapPublicDeal(deal) {
     name: deal.name,
     slug: deal.slug,
     description: deal.description || "",
-    imageUrl: deal.imageUrl || fallbackImage,
+    imageUrl: deal.image?.url || fallbackImage,
     packagePrice: Number(packagePrice.toFixed(2)),
     originalValue: Number(originalValue.toFixed(2)),
     savings: Number(savings.toFixed(2)),
