@@ -21,6 +21,7 @@ const ListDeals = async (req, res) => {
   const result = await service.listDeals({
     page: Number(req.query.page || 1),
     pageSize: Number(req.query.pageSize || 20),
+    featured: req.query.featured,
   });
 
   return sendOk(res, result.data, { meta: result.meta });
