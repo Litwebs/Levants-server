@@ -1,6 +1,7 @@
 "use strict";
 
 const {
+  ADMIN_ORIGIN,
   API_ORIGIN,
   CONTROL_ORIGIN,
   CONTROL_TOKEN,
@@ -184,6 +185,7 @@ function portalHeaders(accessToken) {
 }
 
 module.exports = {
+  ADMIN_ORIGIN,
   API_ORIGIN,
   approveReview,
   autoResume,
