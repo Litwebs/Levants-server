@@ -19,7 +19,7 @@ export async function listDeals(params?: { page?: number; pageSize?: number }) {
   const data = unwrap<{ deals: Deal[] }>(res.data);
   return {
     deals: data?.deals ?? [],
-    meta: (res.data as Envelope<any>)?.meta,
+    meta: (res.data as Envelope<unknown>)?.meta,
   };
 }
 
