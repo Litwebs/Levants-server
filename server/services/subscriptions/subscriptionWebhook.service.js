@@ -321,10 +321,10 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       continue;
     }
 
-    const sourceItems = resolveOrderItemsForDelivery(
-      subscription,
-      deliveryDate,
-    );
+    const sourceItems =
+      Array.isArray(slot.itemOverride) && slot.itemOverride.length > 0
+        ? slot.itemOverride
+        : resolveOrderItemsForDelivery(subscription, deliveryDate);
     const subscriptionOrderItems = sourceItems.map((item) => ({
       product: item.product,
       variant: item.variant,

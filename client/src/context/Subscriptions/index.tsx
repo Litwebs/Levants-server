@@ -75,6 +75,19 @@ export type SubscriptionDelivery = {
   status: string;
   generatedAt?: string | null;
   failReason?: string | null;
+  itemOverride?: Array<{
+    product: string;
+    variant: string;
+    name: string;
+    sku: string;
+    unitPrice: number;
+    quantity: number;
+  }>;
+  reductions?: Array<{
+    operationId: string;
+    amountMinor: number;
+    creditedAt: string;
+  }>;
   createdAt: string;
   order?: {
     _id: string;

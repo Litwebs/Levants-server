@@ -1173,13 +1173,14 @@ export default function SubscriptionDetailsPage() {
                 <th>Status</th>
                 <th>Generated At</th>
                 <th>Order Ref</th>
+                <th>One-time Reduction</th>
                 <th>Failure Reason</th>
               </tr>
             </thead>
             <tbody>
               {!deliveriesLoading && deliveries.length === 0 ? (
                 <tr className={sharedTableStyles.emptyStateRow}>
-                  <td className={sharedTableStyles.emptyTableCell} colSpan={5}>
+                  <td className={sharedTableStyles.emptyTableCell} colSpan={6}>
                     No delivery history found
                   </td>
                 </tr>
@@ -1190,6 +1191,19 @@ export default function SubscriptionDetailsPage() {
                     <td>{renderSoftTag(delivery.status)}</td>
                     <td>{formatDate(delivery.generatedAt)}</td>
                     <td>{delivery.order?.orderId || "-"}</td>
+                    <td>
+                      {delivery.reductions?.length
+                        ? `${formatMoney(
+                            delivery.reductions.reduce(
+                              (sum, reduction) => sum + Number(reduction.amountMinor || 0),
+                              0,
+                            ) / 100,
+                          )} credit · ${delivery.itemOverride?.reduce(
+                            (sum, item) => sum + Number(item.quantity || 0),
+                            0,
+                          ) || 0} recurring item(s)`
+                        : "-"}
+                    </td>
                     <td>{delivery.failReason || "-"}</td>
                   </tr>
                 ))

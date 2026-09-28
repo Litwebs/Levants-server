@@ -66,6 +66,13 @@ const storeCreditTransactionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Stable idempotency key for externally retryable credit operations.
+    operationId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+
     metadata: {
       type: Object,
       default: {},
@@ -75,6 +82,13 @@ const storeCreditTransactionSchema = new mongoose.Schema(
 );
 
 storeCreditTransactionSchema.index({ customer: 1, createdAt: -1 });
+storeCreditTransactionSchema.index(
+  { customer: 1, operationId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { operationId: { $type: "string" } },
+  },
+);
 
 module.exports = mongoose.model(
   "StoreCreditTransaction",

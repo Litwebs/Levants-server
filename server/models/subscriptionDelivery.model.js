@@ -23,6 +23,29 @@ const deliveryAddOnItemSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const deliveryOverrideItemSchema = new mongoose.Schema(
+  {
+    product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+    variant: { type: mongoose.Schema.Types.ObjectId, ref: "ProductVariant", required: true },
+    name: { type: String, required: true },
+    sku: { type: String, required: true },
+    unitPrice: { type: Number, required: true, min: 0 },
+    quantity: { type: Number, required: true, min: 1 },
+  },
+  { _id: false },
+);
+
+const deliveryReductionSchema = new mongoose.Schema(
+  {
+    operationId: { type: String, required: true },
+    amountMinor: { type: Number, required: true, min: 1 },
+    creditedAt: { type: Date, required: true },
+    beforeItems: { type: [deliveryOverrideItemSchema], required: true },
+    afterItems: { type: [deliveryOverrideItemSchema], required: true },
+  },
+  { _id: false },
+);
+
 const deliveryAddOnSchema = new mongoose.Schema(
   {
     operationId: { type: String, required: true },
@@ -107,6 +130,21 @@ const subscriptionDeliverySchema = new mongoose.Schema(
     // linked Order now, or when the subscription invoice generates it later.
     addOns: {
       type: [deliveryAddOnSchema],
+      default: [],
+    },
+
+    // Delivery-scoped recurring item snapshot. When present it replaces the
+    // subscription/day-plan items for this delivery only; future deliveries
+    // continue to use the recurring plan unchanged.
+    itemOverride: {
+      type: [deliveryOverrideItemSchema],
+      default: undefined,
+    },
+
+    // Append-only audit trail for one-time reductions and the store credit
+    // granted for each accepted operation.
+    reductions: {
+      type: [deliveryReductionSchema],
       default: [],
     },
   },
