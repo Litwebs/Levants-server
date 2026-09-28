@@ -105,6 +105,18 @@ const AddSubscriptionItem = async (req, res) => {
   return sendOk(res, result.data, { message: result.message });
 };
 
+const ReduceNextDelivery = async (req, res) => {
+  const result = await service.ReduceNextDelivery({
+    customerId: req.customer._id,
+    subscriptionId: req.params.subscriptionId,
+    operationId: req.body.operationId,
+    items: req.body.items,
+  });
+  if (!result.success)
+    return sendErr(res, { statusCode: 400, message: result.message });
+  return sendOk(res, result.data, { message: result.message });
+};
+
 const AddNextDeliveryAddOn = async (req, res) => {
   const result = await service.AddNextDeliveryAddOn({
     customerId: req.customer._id,
@@ -166,6 +178,7 @@ module.exports = {
   CancelSubscription,
   AddSubscriptionItem,
   AddNextDeliveryAddOn,
+  ReduceNextDelivery,
   UpdateSubscriptionItem,
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,
