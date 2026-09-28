@@ -48,6 +48,24 @@ const emptyDraft = () => ({
   sortOrder: "0",
 });
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (
+    error &&
+    typeof error === "object" &&
+    "response" in error
+  ) {
+    const response = (error as {
+      response?: { data?: { message?: unknown } };
+    }).response;
+    if (typeof response?.data?.message === "string") {
+      return response.data.message;
+    }
+  }
+
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+};
+
 const toLocalInput = (value?: string | null) => {
   if (!value) return "";
   const d = new Date(value);
@@ -86,10 +104,10 @@ export const DealsPage = () => {
     try {
       const res = await listDeals({ page: 1, pageSize: 100 });
       setDeals(res.deals);
-    } catch (err: any) {
+    } catch (err: unknown) {
       showToast({
         type: "error",
-        title: err?.message || "Failed to load deals",
+        title: getErrorMessage(err, "Failed to load deals"),
       });
     } finally {
       setLoading(false);
@@ -245,11 +263,10 @@ export const DealsPage = () => {
       }
       setModalOpen(false);
       await load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       showToast({
         type: "error",
-        title:
-          err?.response?.data?.message || err?.message || "Failed to save deal",
+        title: getErrorMessage(err, "Failed to save deal"),
       });
     } finally {
       setSaving(false);
@@ -262,13 +279,10 @@ export const DealsPage = () => {
       await deactivateDeal(deal._id);
       showToast({ type: "success", title: "Deal deactivated" });
       await load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       showToast({
         type: "error",
-        title:
-          err?.response?.data?.message ||
-          err?.message ||
-          "Failed to deactivate deal",
+        title: getErrorMessage(err, "Failed to deactivate deal"),
       });
     } finally {
       setDeactivatingId(null);
