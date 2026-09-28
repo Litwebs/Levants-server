@@ -38,6 +38,8 @@ async function addCredit({
   orderId = null,
   actorUserId = null,
   metadata = {},
+  operationId = null,
+  session = null,
 } = {}) {
   const amount = toMinor(amountMinor);
   if (!customerId) return { ok: false, message: "customerId is required" };
@@ -45,10 +47,20 @@ async function addCredit({
     return { ok: false, message: "Amount must be greater than zero" };
   }
 
+  if (operationId) {
+    const existing = await StoreCreditTransaction.findOne({
+      customer: customerId,
+      operationId,
+    }).session(session || null);
+    if (existing) {
+      return { ok: true, balance: existing.balanceAfter, transaction: existing, idempotent: true };
+    }
+  }
+
   const updated = await Customer.findByIdAndUpdate(
     customerId,
     { $inc: { creditBalance: amount } },
-    { new: true, select: "creditBalance" },
+    { new: true, select: "creditBalance", session: session || undefined },
   );
   if (!updated) return { ok: false, message: "Customer not found" };
 
@@ -62,9 +74,10 @@ async function addCredit({
       subscription: subscriptionId,
       order: orderId,
       actorUser: actorUserId,
+      operationId,
       metadata,
     },
-  ]);
+  ], session ? { session } : undefined);
 
   return { ok: true, balance: updated.creditBalance, transaction };
 }
