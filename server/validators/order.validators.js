@@ -38,6 +38,7 @@ const checkoutOrderFields = {
       Joi.object({
         dealId: objectId.required(),
         quantity: Joi.number().integer().min(1).max(99).required(),
+        expectedPackagePrice: Joi.number().precision(2).positive().required(),
       }).unknown(false),
     )
     .max(20)
