@@ -215,6 +215,16 @@ describe("deals admin and public lifecycle", () => {
     expect(featured.data.deals).toHaveLength(1);
     expect(featured.data.deals[0].slug).toBe("featured-admin");
     expect(featured.meta.total).toBe(1);
+
+    const standard = await require("../../services/deals.admin.service").listDeals({
+      page: 1,
+      pageSize: 20,
+      featured: false,
+    });
+    expect(standard.success).toBe(true);
+    expect(standard.data.deals).toHaveLength(1);
+    expect(standard.data.deals[0].slug).toBe("standard-admin");
+    expect(standard.meta.total).toBe(1);
   });
 
   test("public list exposes only active, in-window, in-stock packages", async () => {
