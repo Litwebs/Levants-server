@@ -4,15 +4,18 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 
 const Customer = require("../../models/customer.model");
+const Deal = require("../../models/deal.model");
 const Order = require("../../models/order.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const Product = require("../../models/product.model");
 const ProductVariant = require("../../models/variant.model");
 const Review = require("../../models/review.model");
+const Role = require("../../models/role.model");
 const StoreCreditTransaction = require("../../models/storeCreditTransaction.model");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
+const User = require("../../models/user.model");
 const passwordUtil = require("../../utils/password.util");
 const stripe = require("../../utils/stripe.util");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
@@ -951,6 +954,227 @@ async function stripeState(subscription, customer) {
   return { remoteSubscription, paymentIntents, refunds };
 }
 
+
+async function createDealsFixture(options = {}) {
+  const scenarioId = `deals-${Date.now().toString(36)}-${crypto
+    .randomUUID()
+    .slice(0, 8)}`;
+
+  const variants = await createCatalog(scenarioId);
+  const stock = {
+    MILK: Number(options.milkStock ?? 8),
+    BUTTER: Number(options.butterStock ?? 6),
+    EGGS: Number(options.eggsStock ?? 10),
+  };
+  for (const [key, variant] of Object.entries(variants)) {
+    variant.stockQuantity = stock[key];
+    variant.reservedQuantity = 0;
+    await variant.save();
+  }
+
+  const customerData = await createCustomer(scenarioId, {
+    creditBalance: options.creditBalance ?? 0,
+    address: {
+      line1: "1 E2E Dairy Lane",
+      city: "Bradford",
+      postcode: "BD5 0AL",
+      country: "United Kingdom",
+    },
+  });
+
+  let secondCustomerData = null;
+  if (options.secondCustomer) {
+    secondCustomerData = await createCustomer(`${scenarioId}-second`, {
+      creditBalance: options.secondCreditBalance ?? options.creditBalance ?? 0,
+      address: {
+        line1: "2 E2E Dairy Lane",
+        city: "Bradford",
+        postcode: "BD5 0AL",
+        country: "United Kingdom",
+      },
+    });
+  }
+
+  const adminRole = await Role.findOneAndUpdate(
+    { name: "admin" },
+    {
+      $set: {
+        description: "E2E administrator",
+        permissions: ["*"],
+        isSystem: true,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  const adminEmail = `admin-${scenarioId}@example.com`;
+  const adminPassword = BASE_PASSWORD;
+  const adminPasswordHash = await passwordUtil.hashPassword(adminPassword);
+  const admin = await User.create({
+    name: "Deals E2E Admin",
+    email: adminEmail,
+    emailVerifiedAt: new Date(),
+    passwordHash: adminPasswordHash,
+    role: adminRole._id,
+    status: "active",
+    twoFactorEnabled: false,
+  });
+
+  const shapeCustomer = (data) => ({
+    customerId: String(data.customer._id),
+    credentials: {
+      email: data.email,
+      password: data.password,
+    },
+    stripeCustomerId: data.remoteCustomer.id,
+  });
+
+  return {
+    scenarioId,
+    admin: {
+      userId: String(admin._id),
+      credentials: {
+        email: adminEmail,
+        password: adminPassword,
+      },
+    },
+    customer: shapeCustomer(customerData),
+    secondCustomer: secondCustomerData ? shapeCustomer(secondCustomerData) : null,
+    variants: Object.fromEntries(
+      Object.entries(variants).map(([key, variant]) => [
+        key,
+        {
+          id: String(variant._id),
+          productId: String(variant.product._id),
+          productName: variant.product.name,
+          variantName: variant.name,
+          sku: variant.sku,
+          price: Number(variant.price),
+          stockQuantity: Number(variant.stockQuantity),
+        },
+      ]),
+    ),
+  };
+}
+
+async function mutateDealsFixture(input = {}) {
+  const {
+    dealId,
+    variantId,
+    dealActive,
+    packagePrice,
+    endsAt,
+    variantStatus,
+    stockQuantity,
+    reservedQuantity,
+    productStatus,
+  } = input;
+
+  if (dealId) {
+    const update = {};
+    if (typeof dealActive === "boolean") update.isActive = dealActive;
+    if (packagePrice !== undefined) update.packagePrice = Number(packagePrice);
+    if (endsAt !== undefined) update.endsAt = endsAt ? new Date(endsAt) : null;
+    if (Object.keys(update).length) {
+      await Deal.findByIdAndUpdate(dealId, { $set: update });
+    }
+  }
+
+  if (variantId) {
+    const variantUpdate = {};
+    if (variantStatus !== undefined) variantUpdate.status = variantStatus;
+    if (stockQuantity !== undefined) {
+      variantUpdate.stockQuantity = Number(stockQuantity);
+    }
+    if (reservedQuantity !== undefined) {
+      variantUpdate.reservedQuantity = Number(reservedQuantity);
+    }
+    if (Object.keys(variantUpdate).length) {
+      await ProductVariant.findByIdAndUpdate(variantId, { $set: variantUpdate });
+    }
+    if (productStatus !== undefined) {
+      const variant = await ProductVariant.findById(variantId).select("product");
+      if (!variant) throw new Error("Variant not found for product mutation");
+      await Product.findByIdAndUpdate(variant.product, {
+        $set: { status: productStatus },
+      });
+    }
+  }
+
+  return { updated: true };
+}
+
+async function getDealsState(customerId) {
+  const [customer, deals, orders, variants] = await Promise.all([
+    Customer.findById(customerId).lean(),
+    Deal.find({})
+      .sort({ createdAt: 1 })
+      .populate({
+        path: "items.variant",
+        populate: { path: "product" },
+      })
+      .lean(),
+    Order.find({ customer: customerId }).sort({ createdAt: 1 }).lean(),
+    ProductVariant.find({})
+      .populate("product")
+      .sort({ createdAt: 1 })
+      .lean(),
+  ]);
+
+  if (!customer) throw new Error("Deals E2E customer not found");
+
+  let stripeCheckout = null;
+  const latestStripeOrder = [...orders]
+    .reverse()
+    .find((order) => order.stripeCheckoutSessionId);
+  if (latestStripeOrder?.stripeCheckoutSessionId) {
+    const session = await stripe.checkout.sessions.retrieve(
+      latestStripeOrder.stripeCheckoutSessionId,
+    );
+    stripeCheckout = {
+      id: session.id,
+      status: session.status,
+      paymentStatus: session.payment_status,
+      amountSubtotal: session.amount_subtotal,
+      amountTotal: session.amount_total,
+      currency: session.currency,
+      customerEmail: session.customer_email,
+      metadata: session.metadata || {},
+      totalDetails: session.total_details || {},
+      expiresAt: session.expires_at,
+      url: session.url,
+    };
+  }
+
+  return JSON.parse(
+    JSON.stringify({
+      customer: {
+        _id: customer._id,
+        email: customer.email,
+        creditBalance: customer.creditBalance,
+      },
+      deals,
+      orders,
+      variants: variants.map((variant) => ({
+        _id: variant._id,
+        product: variant.product
+          ? {
+              _id: variant.product._id,
+              name: variant.product.name,
+              status: variant.product.status,
+            }
+          : null,
+        name: variant.name,
+        sku: variant.sku,
+        price: variant.price,
+        status: variant.status,
+        stockQuantity: variant.stockQuantity,
+        reservedQuantity: variant.reservedQuantity,
+      })),
+      stripeCheckout,
+    }),
+  );
+}
+
 async function getState(subscriptionId) {
   const subscription = await Subscription.findById(subscriptionId).lean();
   if (!subscription) throw new Error("Subscription fixture not found");
@@ -987,11 +1211,14 @@ async function getState(subscriptionId) {
 module.exports = {
   approveReview,
   autoResume,
+  createDealsFixture,
   createFixture,
   crossCutoff,
   deliverSignedInvoiceEvent,
   finalizeCancellation,
+  getDealsState,
   getState,
+  mutateDealsFixture,
   preparePaymentRetry,
   reset,
   setPaymentOutcome,
