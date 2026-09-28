@@ -193,10 +193,14 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     isManualImport &&
     (metadataImportedBaseTotal !== null || !inferredIncludeDeliveryFeeInTotal);
 
-  const deals = Array.isArray((metadata as any)?.deals)
-    ? (metadata as any).deals
-        .filter((deal: any) => deal && typeof deal === "object")
-        .map((deal: any) => ({
+  const rawDeals = metadata?.deals;
+  const deals: OrderDealSnapshot[] = Array.isArray(rawDeals)
+    ? rawDeals
+        .filter(
+          (deal): deal is Record<string, unknown> =>
+            Boolean(deal) && typeof deal === "object",
+        )
+        .map((deal) => ({
           dealId:
             typeof deal.dealId === "string" ? deal.dealId : undefined,
           name:
