@@ -45,10 +45,10 @@ test("scheduled cancellation keeps the locked delivery, then finalizes once and 
   const scheduled = await getState(request, fixture.subscriptionId);
   expect(scheduled.subscription.status).toBe("active");
   expect(scheduled.subscription.isCancellationScheduled).toBe(true);
-  const locked = deliveryForDate(scheduled, fixture.lockedDeliveryDate);
+  const locked = deliveryForDate(scheduled, fixture.firstOpenDeliveryDate);
   expect(["generated", "scheduled"]).toContain(locked?.status);
 
-  const duringLockedDay = new Date(fixture.lockedDeliveryDate);
+  const duringLockedDay = new Date(fixture.firstOpenDeliveryDate);
   duringLockedDay.setHours(18, 0, 0, 0);
   const early = await finalizeCancellation(
     request,
@@ -57,7 +57,7 @@ test("scheduled cancellation keeps the locked delivery, then finalizes once and 
   );
   expect(early.finalized).toBe(0);
 
-  const nextDay = new Date(fixture.lockedDeliveryDate);
+  const nextDay = new Date(fixture.firstOpenDeliveryDate);
   nextDay.setDate(nextDay.getDate() + 1);
   nextDay.setHours(6, 0, 0, 0);
   const first = await finalizeCancellation(
@@ -77,7 +77,7 @@ test("scheduled cancellation keeps the locked delivery, then finalizes once and 
   expect(finalized.subscription.status).toBe("cancelled");
   expect(finalized.subscription.isCancellationScheduled).toBe(false);
   expect(finalized.subscription.cancellationEffectiveAfter).toBeNull();
-  expect(orderForDate(finalized, fixture.lockedDeliveryDate)?.status).toBe(
+  expect(orderForDate(finalized, fixture.firstOpenDeliveryDate)?.status).toBe(
     "paid",
   );
 });
@@ -464,8 +464,8 @@ function assertItemScope(rule, fixture, before, after) {
       expect
         .soft(quantity(after.subscription.pendingChanges?.items, target.id))
         .toBe(expected);
-      const lockedOrder = orderForDate(after, fixture.lockedDeliveryDate);
-      const priorLockedOrder = orderForDate(before, fixture.lockedDeliveryDate);
+      const lockedOrder = orderForDate(after, fixture.firstOpenDeliveryDate);
+      const priorLockedOrder = orderForDate(before, fixture.firstOpenDeliveryDate);
       expect.soft(orderSnapshot(lockedOrder)).toEqual(
         orderSnapshot(priorLockedOrder),
       );
@@ -536,8 +536,8 @@ function assertItemScope(rule, fixture, before, after) {
     .soft(planQuantity(after.subscription, secondDay, target.id, true))
     .toBe(secondExpected);
 
-  const lockedBefore = orderForDate(before, fixture.lockedDeliveryDate);
-  const lockedAfter = orderForDate(after, fixture.lockedDeliveryDate);
+  const lockedBefore = orderForDate(before, fixture.firstOpenDeliveryDate);
+  const lockedAfter = orderForDate(after, fixture.firstOpenDeliveryDate);
   expect.soft(orderSnapshot(lockedAfter)).toEqual(orderSnapshot(lockedBefore));
   const openOrder = orderForDate(after, fixture.firstOpenDeliveryDate);
   assertChangedOrder(
@@ -683,11 +683,11 @@ function assertCancellation(rule, fixture, after) {
   }
 
   expect.soft(after.subscription.isCancellationScheduled).toBe(true);
-  const locked = deliveryForDate(after, fixture.lockedDeliveryDate);
+  const locked = deliveryForDate(after, fixture.firstOpenDeliveryDate);
   expect.soft(["generated", "scheduled"]).toContain(locked?.status);
   const later = after.deliveries.filter(
     (delivery) =>
-      new Date(delivery.scheduledDate) > new Date(fixture.lockedDeliveryDate),
+      new Date(delivery.scheduledDate) > new Date(fixture.firstOpenDeliveryDate),
   );
   expect.soft(later.every((delivery) => delivery.status === "cancelled")).toBe(
     true,
@@ -711,13 +711,13 @@ function assertPause(rule, fixture, after) {
   expect.soft(creditAmount(after)).toBe(0);
 
   if (!isBefore) {
-    const locked = deliveryForDate(after, fixture.lockedDeliveryDate);
+    const locked = deliveryForDate(after, fixture.firstOpenDeliveryDate);
     expect.soft(["generated", "scheduled"]).toContain(locked?.status);
   }
 
   const shouldBeSkipped = after.deliveries.filter((delivery) => {
     const date = new Date(delivery.scheduledDate);
-    if (!isBefore && date <= new Date(fixture.lockedDeliveryDate)) return false;
+    if (!isBefore && date <= new Date(fixture.firstOpenDeliveryDate)) return false;
     return date < new Date(fixture.resumeOn);
   });
   expect
@@ -898,7 +898,7 @@ test("one-time delivery reduction credits exact server price once and never chan
   });
   const token = await login(request, fixture.credentials);
   const before = await getState(request, fixture.subscriptionId);
-  const beforeOrder = orderForDate(before, fixture.lockedDeliveryDate);
+  const beforeOrder = orderForDate(before, fixture.firstOpenDeliveryDate);
   const operationId = "8d7d2d62-7eb4-4b0f-8ef0-111111111111";
 
   const payload = {
@@ -915,8 +915,8 @@ test("one-time delivery reduction credits exact server price once and never chan
   expect(first.ok(), await first.text()).toBe(true);
 
   const after = await getState(request, fixture.subscriptionId);
-  const afterDelivery = deliveryForDate(after, fixture.lockedDeliveryDate);
-  const afterOrder = orderForDate(after, fixture.lockedDeliveryDate);
+  const afterDelivery = deliveryForDate(after, fixture.firstOpenDeliveryDate);
+  const afterOrder = orderForDate(after, fixture.firstOpenDeliveryDate);
   expect(quantity(after.subscription.items, fixture.variants.MILK.id)).toBe(2);
   expect(quantity(afterDelivery.itemOverride, fixture.variants.MILK.id)).toBe(1);
   expect(quantity(afterOrder.items, fixture.variants.MILK.id)).toBe(1);
@@ -925,7 +925,7 @@ test("one-time delivery reduction credits exact server price once and never chan
   expect(afterDelivery.reductions).toHaveLength(1);
   expect(
     after.deliveries
-      .filter((candidate) => dayKey(candidate.scheduledDate) !== dayKey(fixture.lockedDeliveryDate))
+      .filter((candidate) => dayKey(candidate.scheduledDate) !== dayKey(fixture.firstOpenDeliveryDate))
       .every((candidate) => !candidate.itemOverride?.length),
   ).toBe(true);
 
@@ -936,7 +936,7 @@ test("one-time delivery reduction credits exact server price once and never chan
   expect(duplicate.ok(), await duplicate.text()).toBe(true);
   const afterDuplicate = await getState(request, fixture.subscriptionId);
   expect(creditAmount(afterDuplicate) - creditAmount(before)).toBe(500);
-  expect(deliveryForDate(afterDuplicate, fixture.lockedDeliveryDate).reductions).toHaveLength(1);
+  expect(deliveryForDate(afterDuplicate, fixture.firstOpenDeliveryDate).reductions).toHaveLength(1);
 
   const second = await request.post(
     `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/reduce`,
@@ -952,8 +952,8 @@ test("one-time delivery reduction credits exact server price once and never chan
   const afterSecond = await getState(request, fixture.subscriptionId);
   expect(creditAmount(afterSecond) - creditAmount(before)).toBe(800);
   expect(quantity(afterSecond.subscription.items, fixture.variants.BUTTER.id)).toBe(1);
-  expect(quantity(deliveryForDate(afterSecond, fixture.lockedDeliveryDate).itemOverride, fixture.variants.BUTTER.id)).toBe(0);
-  expect(deliveryForDate(afterSecond, fixture.lockedDeliveryDate).reductions).toHaveLength(2);
+  expect(quantity(deliveryForDate(afterSecond, fixture.firstOpenDeliveryDate).itemOverride, fixture.variants.BUTTER.id)).toBe(0);
+  expect(deliveryForDate(afterSecond, fixture.firstOpenDeliveryDate).reductions).toHaveLength(2);
 });
 
 test("one-time delivery reduction is rejected after cut-off without order or credit mutation", async ({ request }) => {
@@ -1026,5 +1026,5 @@ test("concurrent one-time reductions cannot double-credit the same delivery stat
 
   const after = await getState(request, fixture.subscriptionId);
   expect(creditAmount(after) - creditAmount(before)).toBe(500);
-  expect(deliveryForDate(after, fixture.lockedDeliveryDate).reductions).toHaveLength(1);
+  expect(deliveryForDate(after, fixture.firstOpenDeliveryDate).reductions).toHaveLength(1);
 });
