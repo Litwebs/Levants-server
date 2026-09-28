@@ -238,10 +238,14 @@ async function getOrdersStockRequirements({
           orderDbId: null,
         };
 
-        for (const item of resolveSubscriptionItemsForDelivery(
-          subscription,
-          delivery.scheduledDate,
-        )) {
+        const recurringItems =
+          Array.isArray(delivery.itemOverride) && delivery.itemOverride.length > 0
+            ? delivery.itemOverride
+            : resolveSubscriptionItemsForDelivery(
+                subscription,
+                delivery.scheduledDate,
+              );
+        for (const item of recurringItems) {
           upsert({
             variantId: item.variant,
             productId: item.product,
