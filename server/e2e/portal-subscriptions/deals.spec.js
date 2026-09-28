@@ -760,6 +760,8 @@ test("stock reserved by another buyer after carting blocks checkout without over
 }) => {
   const fixture = await createDealsFixture(request, {
     creditBalance: 5000,
+    secondCustomer: true,
+    secondCreditBalance: 0,
     milkStock: 2,
     butterStock: 1,
   });
@@ -769,14 +771,56 @@ test("stock reserved by another buyer after carting blocks checkout without over
   await mockAdminApi(adminPage, request);
   const dealName = await createDealViaAdmin(adminPage, fixture);
 
+  // Buyer A carts the last package while it is still available.
   await customerSignIn(page, fixture.customer.credentials);
   await addDealToCart(page, dealName);
 
-  await mutateDealsFixture(request, {
-    variantId: fixture.variants.MILK.id,
-    reservedQuantity: 2,
-  });
+  // Buyer B then checks out the same package first. This creates a real
+  // pending order backed by the normal stock-reservation transaction instead
+  // of mutating reservedQuantity directly.
+  const competitorContext = await browser.newContext();
+  const competitorPage = await competitorContext.newPage();
+  await customerSignIn(
+    competitorPage,
+    fixture.secondCustomer.credentials,
+  );
+  await addDealToCart(competitorPage, dealName);
+  await openCheckout(competitorPage);
 
+  const competitorResponsePromise = competitorPage.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/portal/orders/checkout",
+  );
+  await competitorPage
+    .getByRole("button", { name: "Place Order - £11.00", exact: true })
+    .click();
+  const competitorResponse = await competitorResponsePromise;
+  expect(competitorResponse.status()).toBe(200);
+
+  const competitorState = await getDealsState(
+    request,
+    fixture.secondCustomer.customerId,
+  );
+  expect(competitorState.orders).toHaveLength(1);
+  expect(competitorState.orders[0].status).toBe("pending");
+  expect(
+    Number(
+      variantBySku(competitorState, fixture.variants.MILK.sku)
+        .reservedQuantity,
+    ),
+  ).toBe(2);
+  expect(
+    Number(
+      variantBySku(competitorState, fixture.variants.BUTTER.sku)
+        .reservedQuantity,
+    ),
+  ).toBe(1);
+
+  await competitorContext.close();
+
+  // Buyer A is holding stale cart state. Server-side stock enforcement must
+  // reject checkout and leave their credit untouched.
   await openCheckout(page);
   const creditLabel = page
     .getByText("Apply store credit", { exact: true })
@@ -799,7 +843,9 @@ test("stock reserved by another buyer after carting blocks checkout without over
   expect(state.orders).toHaveLength(0);
   expect(Number(state.customer.creditBalance)).toBe(5000);
   const milk = variantBySku(state, fixture.variants.MILK.sku);
+  const butter = variantBySku(state, fixture.variants.BUTTER.sku);
   expect(Number(milk.reservedQuantity)).toBe(2);
+  expect(Number(butter.reservedQuantity)).toBe(1);
 
   await adminContext.close();
 });
