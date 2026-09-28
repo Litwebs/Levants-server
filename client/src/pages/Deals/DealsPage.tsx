@@ -24,6 +24,7 @@ import {
   type DealDraft,
 } from "@/context/Deals";
 import { useVariantSearch } from "@/pages/Discounts/useVariantSearch";
+import { Checkbox } from "@/components/ui/checkbox";
 import styles from "./DealsPage.module.css";
 
 type SelectedItem = {
@@ -523,26 +524,24 @@ export const DealsPage = () => {
 
             <div className={styles.full + " " + styles.checks}>
               <label className={styles.check}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={draft.isActive}
-                  onChange={(e) =>
+                  onCheckedChange={(checked) =>
                     setDraft((prev) => ({
                       ...prev,
-                      isActive: e.target.checked,
+                      isActive: checked === true,
                     }))
                   }
                 />
                 Active on storefront
               </label>
               <label className={styles.check}>
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={draft.isFeatured}
-                  onChange={(e) =>
+                  onCheckedChange={(checked) =>
                     setDraft((prev) => ({
                       ...prev,
-                      isFeatured: e.target.checked,
+                      isFeatured: checked === true,
                     }))
                   }
                 />
