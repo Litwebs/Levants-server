@@ -1028,3 +1028,102 @@ test("concurrent one-time reductions cannot double-credit the same delivery stat
   expect(creditAmount(after) - creditAmount(before)).toBe(500);
   expect(deliveryForDate(after, fixture.firstOpenDeliveryDate).reductions).toHaveLength(1);
 });
+
+
+test("one-time delivery reduction rejects increases, unknown variants, and removing every recurring item without mutation", async ({ request }) => {
+  await reset(request);
+  const fixture = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "before-cutoff",
+    action: ACTIONS.DECREASE_QUANTITY,
+    funds: FUNDS.FUNDED,
+  });
+  const token = await login(request, fixture.credentials);
+  const before = await getState(request, fixture.subscriptionId);
+  const url = `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/reduce`;
+
+  const invalidPayloads = [
+    {
+      operationId: "8d7d2d62-7eb4-4b0f-8ef0-666666666666",
+      items: [
+        { variantId: fixture.variants.MILK.id, quantity: 3 },
+        { variantId: fixture.variants.BUTTER.id, quantity: 1 },
+      ],
+    },
+    {
+      operationId: "8d7d2d62-7eb4-4b0f-8ef0-777777777777",
+      items: [{ variantId: "507f1f77bcf86cd799439011", quantity: 1 }],
+    },
+    {
+      operationId: "8d7d2d62-7eb4-4b0f-8ef0-888888888888",
+      items: [],
+    },
+  ];
+
+  for (const data of invalidPayloads) {
+    const response = await request.post(url, {
+      headers: portalHeaders(token),
+      data,
+    });
+    expect(response.status()).toBe(400);
+  }
+
+  const after = await getState(request, fixture.subscriptionId);
+  expect(creditAmount(after)).toBe(creditAmount(before));
+  expect(orderSnapshots(after.orders)).toEqual(orderSnapshots(before.orders));
+  expect(deliveryForDate(after, fixture.firstOpenDeliveryDate).reductions || []).toHaveLength(0);
+  expect(deliveryForDate(after, fixture.firstOpenDeliveryDate).itemOverride?.length || 0).toBe(0);
+});
+
+test("generated-order reduction preserves payment audit and add-on separation semantics", async ({ request }) => {
+  await reset(request);
+  const fixture = await createFixture(request, {
+    cadence: CADENCES.WEEKLY_SINGLE_DAY,
+    timing: "before-cutoff",
+    action: ACTIONS.DECREASE_QUANTITY,
+    funds: FUNDS.FUNDED,
+  });
+  const token = await login(request, fixture.credentials);
+  const before = await getState(request, fixture.subscriptionId);
+  const beforeOrder = orderForDate(before, fixture.firstOpenDeliveryDate);
+  expect(beforeOrder).toBeTruthy();
+
+  const response = await request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/reduce`,
+    {
+      headers: portalHeaders(token),
+      data: {
+        operationId: "8d7d2d62-7eb4-4b0f-8ef0-999999999999",
+        items: [
+          { variantId: fixture.variants.MILK.id, quantity: 1 },
+          { variantId: fixture.variants.BUTTER.id, quantity: 1 },
+        ],
+      },
+    },
+  );
+  expect(response.ok(), await response.text()).toBe(true);
+
+  const after = await getState(request, fixture.subscriptionId);
+  const afterOrder = orderForDate(after, fixture.firstOpenDeliveryDate);
+  expect(afterOrder.status).toBe(beforeOrder.status);
+  expect(afterOrder.deliveryStatus).toBe(beforeOrder.deliveryStatus);
+  expect(afterOrder.stripePaymentIntentId).toBe(beforeOrder.stripePaymentIntentId);
+  expect(afterOrder.stripeInvoiceId).toBe(beforeOrder.stripeInvoiceId);
+  expect(afterOrder.paymentAllocations).toEqual(beforeOrder.paymentAllocations);
+  expect(Number(afterOrder.amountPaid)).toBe(Number(beforeOrder.amountPaid));
+  expect(
+    afterOrder.items.filter((item) => item.isSubscriptionAddOn).map((item) => ({
+      variant: String(item.variant),
+      quantity: Number(item.quantity),
+      subtotal: Number(item.subtotal),
+    })),
+  ).toEqual(
+    beforeOrder.items.filter((item) => item.isSubscriptionAddOn).map((item) => ({
+      variant: String(item.variant),
+      quantity: Number(item.quantity),
+      subtotal: Number(item.subtotal),
+    })),
+  );
+  expect(Number(afterOrder.metadata?.oneTimeDeliveryReductionCreditMinor)).toBe(500);
+  expect(creditAmount(after) - creditAmount(before)).toBe(500);
+});
