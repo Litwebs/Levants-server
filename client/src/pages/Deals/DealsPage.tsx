@@ -128,9 +128,9 @@ export const DealsPage = () => {
   );
 
   const packagePrice = Number(draft.packagePrice || 0);
-  const saving = Math.max(0, originalValue - packagePrice);
+  const packageSaving = Math.max(0, originalValue - packagePrice);
   const savingPercent =
-    originalValue > 0 ? Math.round((saving / originalValue) * 100) : 0;
+    originalValue > 0 ? Math.round((packageSaving / originalValue) * 100) : 0;
 
   const openCreate = () => {
     setEditing(null);
@@ -652,10 +652,10 @@ export const DealsPage = () => {
                 <div
                   className={
                     styles.summaryValue +
-                    (saving > 0 ? " " + styles.positive : "")
+                    (packageSaving > 0 ? " " + styles.positive : "")
                   }
                 >
-                  £{saving.toFixed(2)}
+                  £{packageSaving.toFixed(2)}
                   {savingPercent > 0 ? " · " + savingPercent + "%" : ""}
                 </div>
               </div>
