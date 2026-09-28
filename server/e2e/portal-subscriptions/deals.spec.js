@@ -222,7 +222,7 @@ test("admin-created featured package completes through the real storefront with 
   const order = state.orders[0];
   expect(String(order._id)).toBe(String(checkoutBody.data.orderId));
   expect(order.status).toBe("paid");
-  expect(Number(order.subtotal)).toBe(13);
+  expect(Number(order.subtotal)).toBe(26);
   expect(Number(order.discountAmount)).toBe(6);
   expect(Number(order.deliveryFee)).toBe(1);
   expect(Number(order.total)).toBe(21);
