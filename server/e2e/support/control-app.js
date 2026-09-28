@@ -54,6 +54,39 @@ function createControlApp() {
     asyncRoute((req) => fixtures.createDealsFixture(req.body || {})),
   );
   app.get(
+    "/deals/admin",
+    asyncRoute((req) =>
+      fixtures.e2eAdminListDeals({
+        page: Number(req.query.page || 1),
+        pageSize: Number(req.query.pageSize || 20),
+        featured: req.query.featured,
+      }),
+    ),
+  );
+  app.post(
+    "/deals/admin",
+    asyncRoute((req) => fixtures.e2eAdminCreateDeal(req.body || {})),
+  );
+  app.patch(
+    "/deals/admin/:dealId",
+    asyncRoute((req) =>
+      fixtures.e2eAdminUpdateDeal(req.params.dealId, req.body || {}),
+    ),
+  );
+  app.delete(
+    "/deals/admin/:dealId",
+    asyncRoute((req) => fixtures.e2eAdminDeactivateDeal(req.params.dealId)),
+  );
+  app.get(
+    "/deals/admin-variants",
+    asyncRoute((req) =>
+      fixtures.e2eAdminSearchVariants({
+        q: req.query.q,
+        limit: Number(req.query.limit || 10),
+      }),
+    ),
+  );
+  app.get(
     "/deals/state/:customerId",
     asyncRoute((req) => fixtures.getDealsState(req.params.customerId)),
   );
