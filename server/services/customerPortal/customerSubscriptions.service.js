@@ -3740,14 +3740,20 @@ async function ReduceNextDelivery({
     return Response(false, "The delivery changed while your request was being processed. Please refresh and try again.", null);
   }
 
-  await CustomerNotification.create({
-    customer: customerId,
-    type: "subscription_updated",
-    title: "Next delivery reduced",
-    message: `${formatMinor(creditMinor)} was added to your store credit. Only your delivery on ${formatDateLabel(delivery.scheduledDate)} was changed; your recurring subscription is unchanged.`,
-    relatedOrder: delivery.order?._id || delivery.order || null,
-    relatedSubscription: subscription._id,
-  });
+  try {
+    await CustomerNotification.create({
+      customer: customerId,
+      type: "subscription_updated",
+      title: "Next delivery reduced",
+      message: `${formatMinor(creditMinor)} was added to your store credit. Only your delivery on ${formatDateLabel(delivery.scheduledDate)} was changed; your recurring subscription is unchanged.`,
+      relatedOrder: delivery.order?._id || delivery.order || null,
+      relatedSubscription: subscription._id,
+    });
+  } catch (error) {
+    logger.error(
+      `[Subscriptions] Delivery reduction committed for ${subscription.subscriptionNumber}, but notification creation failed: ${error.message}`,
+    );
+  }
 
   return Response(true, `${formatMinor(creditMinor)} was added to your store credit.`, {
     delivery: committedDelivery,
