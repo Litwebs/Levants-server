@@ -88,7 +88,7 @@ describe("deals and product packages", () => {
     });
 
     const result = await validateDealsForOrder({
-      dealClaims: [{ dealId: String(deal._id), quantity: 2 }],
+      dealClaims: [{ dealId: String(deal._id), quantity: 2, expectedPackagePrice: 8 }],
       resolvedItems: [
         {
           product: product._id,
@@ -119,7 +119,7 @@ describe("deals and product packages", () => {
       .send({
         customerId: String(customer._id),
         items: [{ variantId: String(variant._id), quantity: 2 }],
-        deals: [{ dealId: String(deal._id), quantity: 1 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
         deliveryAddress: address,
       });
 
@@ -170,7 +170,7 @@ describe("deals and product packages", () => {
       .send({
         customerId: String(customer._id),
         items: [{ variantId: String(variant._id), quantity: 2 }],
-        deals: [{ dealId: String(deal._id), quantity: 1 }],
+        deals: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
         discountCode: "SAVE10",
         deliveryAddress: address,
       });
