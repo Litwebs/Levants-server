@@ -184,6 +184,11 @@ test("admin-created featured package completes through the real storefront with 
 
   await customerSignIn(page, fixture.customer.credentials);
   await addDealToCart(page, dealName);
+  await page
+    .getByRole("button", { name: "Increase package quantity", exact: true })
+    .click();
+  await expect(page.getByText("£20.00", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("£21.00", { exact: true }).first()).toBeVisible();
   await openCheckout(page);
 
   const creditLabel = page
@@ -218,32 +223,33 @@ test("admin-created featured package completes through the real storefront with 
   expect(String(order._id)).toBe(String(checkoutBody.data.orderId));
   expect(order.status).toBe("paid");
   expect(Number(order.subtotal)).toBe(13);
-  expect(Number(order.discountAmount)).toBe(3);
+  expect(Number(order.discountAmount)).toBe(6);
   expect(Number(order.deliveryFee)).toBe(1);
-  expect(Number(order.total)).toBe(11);
-  expect(Number(order.creditApplied)).toBe(1100);
+  expect(Number(order.total)).toBe(21);
+  expect(Number(order.creditApplied)).toBe(2100);
   expect(order.metadata.deals).toHaveLength(1);
   expect(order.metadata.deals[0]).toMatchObject({
     name: dealName,
-    quantity: 1,
+    quantity: 2,
     packagePrice: 10,
     originalValue: 13,
     saving: 3,
   });
-  expect(Number(state.customer.creditBalance)).toBe(3900);
+  expect(Number(state.customer.creditBalance)).toBe(2900);
 
   const milk = variantBySku(state, fixture.variants.MILK.sku);
   const butter = variantBySku(state, fixture.variants.BUTTER.sku);
-  expect(Number(milk.stockQuantity)).toBe(6);
+  expect(Number(milk.stockQuantity)).toBe(4);
   expect(Number(milk.reservedQuantity)).toBe(0);
-  expect(Number(butter.stockQuantity)).toBe(5);
+  expect(Number(butter.stockQuantity)).toBe(4);
   expect(Number(butter.reservedQuantity)).toBe(0);
 
   await page.goto(`/portal/orders/${order._id}`);
   await expect(page.getByText("Package Deals", { exact: true })).toBeVisible();
   await expect(page.getByText(dealName, { exact: true })).toBeVisible();
-  await expect(page.getByText("Saved £3.00", { exact: true })).toBeVisible();
-  await expect(page.getByText("£11.00", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("Quantity 2", { exact: true })).toBeVisible();
+  await expect(page.getByText("Saved £6.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("£21.00", { exact: true }).last()).toBeVisible();
 
   await adminPage.goto(`${ADMIN_ORIGIN}/orders`);
   const adminOrderRow = adminPage
@@ -253,7 +259,8 @@ test("admin-created featured package completes through the real storefront with 
   await adminOrderRow.click();
   await expect(adminPage.getByText("Package Deals", { exact: true })).toBeVisible();
   await expect(adminPage.getByText(dealName, { exact: true })).toBeVisible();
-  await expect(adminPage.getByText("Saved £3.00", { exact: true })).toBeVisible();
+  await expect(adminPage.getByText("Quantity 2", { exact: true })).toBeVisible();
+  await expect(adminPage.getByText("Saved £6.00", { exact: true })).toBeVisible();
 
   await adminContext.close();
 });
