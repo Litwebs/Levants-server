@@ -923,6 +923,11 @@ test("one-time delivery reduction credits exact server price once and never chan
   expect(Number(afterOrder.total)).toBe(Number(beforeOrder.total) - 5);
   expect(creditAmount(after) - creditAmount(before)).toBe(500);
   expect(afterDelivery.reductions).toHaveLength(1);
+  expect(
+    after.deliveries
+      .filter((candidate) => dayKey(candidate.scheduledDate) !== dayKey(fixture.lockedDeliveryDate))
+      .every((candidate) => !candidate.itemOverride?.length),
+  ).toBe(true);
 
   const duplicate = await request.post(
     `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/reduce`,
