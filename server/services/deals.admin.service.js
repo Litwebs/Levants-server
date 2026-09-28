@@ -257,14 +257,16 @@ async function createDeal({ body, userId }) {
   };
 }
 
-async function listDeals({ page = 1, pageSize = 20 } = {}) {
+async function listDeals({ page = 1, pageSize = 20, featured } = {}) {
   const safePage = Math.max(1, Number(page) || 1);
   const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 20));
   const skip = (safePage - 1) * safePageSize;
+  const filter =
+    featured === true || featured === "true" ? { isFeatured: true } : {};
 
   const [total, deals] = await Promise.all([
-    Deal.countDocuments(),
-    Deal.find()
+    Deal.countDocuments(filter),
+    Deal.find(filter)
       .populate("image")
       .sort({ isFeatured: -1, sortOrder: 1, createdAt: -1 })
       .skip(skip)
