@@ -203,6 +203,10 @@ async function validateDealsForOrder({ dealClaims, resolvedItems }) {
     .populate({
       path: "items.variant",
       select: "name price status product",
+      populate: {
+        path: "product",
+        select: "status",
+      },
     })
     .lean();
 
@@ -246,7 +250,8 @@ async function validateDealsForOrder({ dealClaims, resolvedItems }) {
         !variantId ||
         !quantityPerPackage ||
         typeof livePrice !== "number" ||
-        component.variant?.status !== "active"
+        component.variant?.status !== "active" ||
+        component.variant?.product?.status !== "active"
       ) {
         return {
           success: false,
