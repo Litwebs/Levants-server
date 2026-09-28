@@ -175,8 +175,15 @@ async function validateDealsForOrder({ dealClaims, resolvedItems }) {
   for (const claim of claims) {
     const dealId = String(claim.dealId || "");
     const quantity = Number(claim.quantity);
+    const expectedPackagePrice = Number(claim.expectedPackagePrice);
 
-    if (!dealId || !Number.isInteger(quantity) || quantity <= 0) {
+    if (
+      !dealId ||
+      !Number.isInteger(quantity) ||
+      quantity <= 0 ||
+      !Number.isFinite(expectedPackagePrice) ||
+      expectedPackagePrice <= 0
+    ) {
       return { success: false, message: "Invalid deal selection" };
     }
     if (seen.has(dealId)) {
@@ -184,7 +191,7 @@ async function validateDealsForOrder({ dealClaims, resolvedItems }) {
     }
 
     seen.add(dealId);
-    normalizedClaims.push({ dealId, quantity });
+    normalizedClaims.push({ dealId, quantity, expectedPackagePrice });
   }
 
   const dealIds = normalizedClaims.map((claim) => claim.dealId);
@@ -255,6 +262,17 @@ async function validateDealsForOrder({ dealClaims, resolvedItems }) {
     }
 
     const packagePrice = Number(deal.packagePrice || 0);
+    if (
+      Math.round(packagePrice * 100) !==
+      Math.round(claim.expectedPackagePrice * 100)
+    ) {
+      return {
+        success: false,
+        message:
+          "This deal price has changed. Please refresh your basket and try again.",
+      };
+    }
+
     if (packagePrice <= 0 || packagePrice >= originalValuePerPackage) {
       return {
         success: false,
