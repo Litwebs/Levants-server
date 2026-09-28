@@ -1,7 +1,10 @@
 const Deal = require("../models/deal.model");
 const Variant = require("../models/variant.model");
 const base64ToTempFile = require("../utils/base64ToTempFile.util");
-const { uploadAndCreateFile } = require("./files.service");
+const {
+  uploadAndCreateFile,
+  deleteFileIfOrphaned,
+} = require("./files.service");
 
 function slugify(value) {
   return String(value || "")
@@ -386,7 +389,9 @@ async function updateDeal({ dealId, body }) {
   current.description =
     body.description !== undefined ? body.description : current.description;
 
+  let previousImageId = null;
   if (Object.prototype.hasOwnProperty.call(body, "image")) {
+    previousImageId = current.image ? String(current.image) : null;
     try {
       const imageId = await resolveImage(body.image, current.createdBy);
       current.image = imageId ?? null;
@@ -410,6 +415,17 @@ async function updateDeal({ dealId, body }) {
     body.sortOrder !== undefined ? Number(body.sortOrder) : current.sortOrder;
 
   await current.save();
+
+  if (
+    previousImageId &&
+    previousImageId !== String(current.image || "")
+  ) {
+    try {
+      await deleteFileIfOrphaned(previousImageId);
+    } catch {
+      // Image cleanup is best-effort and must not fail a valid deal update.
+    }
+  }
 
   const populated = await Deal.findById(current._id).populate("image").lean();
 
