@@ -3538,6 +3538,224 @@ async function CancelSubscription({
 }
 
 /**
+ * Reduce recurring items for exactly one upcoming delivery. The recurring
+ * subscription is never mutated. The value removed is granted as store credit.
+ */
+async function ReduceNextDelivery({
+  customerId,
+  subscriptionId,
+  operationId,
+  items,
+} = {}) {
+  const subscription = await Subscription.findOne({
+    _id: subscriptionId,
+    customer: customerId,
+  });
+  if (!subscription) return Response(false, "Subscription not found", null);
+  if (subscription.status !== "active") {
+    return Response(false, "Only active subscriptions can change an upcoming delivery.", null);
+  }
+
+  const candidates = await SubscriptionDelivery.find({
+    subscription: subscription._id,
+    customer: customerId,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: { $gte: startOfDay(new Date()) },
+  })
+    .populate("order")
+    .sort({ scheduledDate: 1 });
+  const delivery = candidates.find(
+    (candidate) =>
+      candidate.status === "scheduled" ||
+      (candidate.status === "generated" &&
+        candidate.order?.deliveryStatus === "ordered" &&
+        ["paid", "partially_paid", "partially_refunded"].includes(candidate.order?.status)),
+  );
+  if (!delivery) return Response(false, "No upcoming delivery is available", null);
+
+  const existingReduction = (delivery.reductions || []).find(
+    (entry) => entry.operationId === operationId,
+  );
+  if (existingReduction) {
+    return Response(true, "This delivery reduction was already applied.", {
+      delivery,
+      creditedMinor: existingReduction.amountMinor,
+      idempotent: true,
+    });
+  }
+
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
+  if (!cutoffAt || Date.now() >= cutoffAt.getTime()) {
+    return Response(false, "The cut-off for your next delivery has passed.", null);
+  }
+
+  const recurringOrderItems = delivery.order
+    ? (delivery.order.items || []).filter((item) => !item.isSubscriptionAddOn).map((item) => ({
+        product: item.product,
+        variant: item.variant,
+        name: item.name,
+        sku: item.sku,
+        unitPrice: Number(item.price),
+        quantity: Number(item.quantity),
+      }))
+    : null;
+  const deliveryWeekday = new Date(delivery.scheduledDate).getDay();
+  const dayPlan = Array.isArray(subscription.deliveryDayPlans)
+    ? subscription.deliveryDayPlans.find((plan) => Number(plan.day) === deliveryWeekday)
+    : null;
+  const baseline = delivery.itemOverride?.length
+    ? delivery.itemOverride
+    : recurringOrderItems?.length
+      ? recurringOrderItems
+      : dayPlan?.items?.length
+        ? dayPlan.items
+        : subscription.items;
+
+  const baselineByVariant = new Map(
+    (baseline || []).map((item) => [String(item.variant), {
+      product: item.product,
+      variant: item.variant,
+      name: item.name,
+      sku: item.sku,
+      unitPrice: Number(item.unitPrice),
+      quantity: Number(item.quantity),
+    }]),
+  );
+  const requested = new Map();
+  for (const item of items || []) {
+    const key = String(item.variantId);
+    requested.set(key, (requested.get(key) || 0) + Number(item.quantity || 0));
+  }
+  if (requested.size === 0) {
+    return Response(false, "At least one recurring item must remain in the delivery.", null);
+  }
+
+  const afterItems = [];
+  for (const [variantId, quantity] of requested) {
+    const current = baselineByVariant.get(variantId);
+    if (!current) {
+      return Response(false, "A one-time reduction cannot add products to the delivery.", null);
+    }
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > current.quantity) {
+      return Response(false, "A one-time reduction can only lower existing quantities.", null);
+    }
+    afterItems.push({ ...current, quantity });
+  }
+
+  const beforeMinor = [...baselineByVariant.values()].reduce(
+    (sum, item) => sum + Math.round(item.unitPrice * 100) * item.quantity,
+    0,
+  );
+  const afterMinor = afterItems.reduce(
+    (sum, item) => sum + Math.round(item.unitPrice * 100) * item.quantity,
+    0,
+  );
+  const creditMinor = beforeMinor - afterMinor;
+  if (creditMinor <= 0) {
+    return Response(false, "Please reduce at least one item quantity.", null);
+  }
+
+  const session = await mongoose.startSession();
+  let committedDelivery;
+  try {
+    await session.withTransaction(async () => {
+      const freshDelivery = await SubscriptionDelivery.findOne({
+        _id: delivery._id,
+        "reductions.operationId": { $ne: operationId },
+      }).session(session);
+      if (!freshDelivery) return;
+
+      const credit = await storeCreditService.addCredit({
+        customerId,
+        amountMinor: creditMinor,
+        type: "subscription_refund",
+        reason: `Store credit for reducing delivery ${deliveryDateKey(delivery.scheduledDate)} on ${subscription.subscriptionNumber}`,
+        subscriptionId: subscription._id,
+        orderId: delivery.order?._id || delivery.order || null,
+        operationId: `delivery-reduction:${delivery._id}:${operationId}`,
+        session,
+        metadata: {
+          subscriptionDeliveryId: String(delivery._id),
+          deliveryDate: deliveryDateKey(delivery.scheduledDate),
+          kind: "one_time_delivery_reduction",
+        },
+      });
+      if (!credit.ok) throw new Error(credit.message);
+
+      freshDelivery.itemOverride = afterItems;
+      freshDelivery.reductions.push({
+        operationId,
+        amountMinor: creditMinor,
+        creditedAt: new Date(),
+        beforeItems: [...baselineByVariant.values()],
+        afterItems,
+      });
+      await freshDelivery.save({ session });
+
+      if (freshDelivery.order) {
+        const order = await Order.findById(freshDelivery.order).session(session);
+        if (order) {
+          const addOns = (order.items || []).filter((item) => item.isSubscriptionAddOn);
+          const recurring = afterItems.map((item) => ({
+            product: item.product,
+            variant: item.variant,
+            name: item.name,
+            sku: item.sku,
+            price: item.unitPrice,
+            quantity: item.quantity,
+            subtotal: item.unitPrice * item.quantity,
+            isSubscriptionAddOn: false,
+          }));
+          order.items = [...recurring, ...addOns];
+          order.subtotal = order.items.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+          order.total = order.subtotal + Number(order.deliveryFee || 0);
+          order.metadata = {
+            ...(order.metadata || {}),
+            oneTimeDeliveryReductionCreditMinor:
+              Number(order.metadata?.oneTimeDeliveryReductionCreditMinor || 0) + creditMinor,
+          };
+          await order.save({ session });
+        }
+      }
+      committedDelivery = freshDelivery;
+    });
+  } catch (error) {
+    return Response(false, error?.message || "The delivery reduction could not be applied.", null);
+  } finally {
+    await session.endSession();
+  }
+
+  if (!committedDelivery) {
+    const duplicate = await SubscriptionDelivery.findById(delivery._id);
+    const reduction = (duplicate?.reductions || []).find((entry) => entry.operationId === operationId);
+    if (reduction) {
+      return Response(true, "This delivery reduction was already applied.", {
+        delivery: duplicate,
+        creditedMinor: reduction.amountMinor,
+        idempotent: true,
+      });
+    }
+    return Response(false, "The delivery changed while your request was being processed. Please refresh and try again.", null);
+  }
+
+  await CustomerNotification.create({
+    customer: customerId,
+    type: "subscription_updated",
+    title: "Next delivery reduced",
+    message: `${formatMinor(creditMinor)} was added to your store credit. Only your delivery on ${formatDateLabel(delivery.scheduledDate)} was changed; your recurring subscription is unchanged.`,
+    relatedOrder: delivery.order?._id || delivery.order || null,
+    relatedSubscription: subscription._id,
+  });
+
+  return Response(true, `${formatMinor(creditMinor)} was added to your store credit.`, {
+    delivery: committedDelivery,
+    creditedMinor: creditMinor,
+    recurringSubscriptionChanged: false,
+  });
+}
+
+/**
  * Add paid, one-time products to the customer's single next delivery without
  * changing the recurring subscription contents or Stripe recurring price.
  */
@@ -4020,6 +4238,7 @@ module.exports = {
   CancelSubscription,
   AddSubscriptionItem,
   AddNextDeliveryAddOn,
+  ReduceNextDelivery,
   UpdateSubscriptionItem,
   RemoveSubscriptionItem,
   GetSubscriptionDeliveries,
