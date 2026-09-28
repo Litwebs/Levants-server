@@ -3,6 +3,7 @@
 const path = require("path");
 const { defineConfig, devices } = require("@playwright/test");
 const {
+  ADMIN_ORIGIN,
   API_ORIGIN,
   CLIENT_ORIGIN,
   CONTROL_ORIGIN,
@@ -59,11 +60,12 @@ module.exports = defineConfig({
     {
       command: "npm run dev -- --host 127.0.0.1 --port 4174",
       cwd: adminClientRoot,
-      url: "http://127.0.0.1:4174",
+      url: ADMIN_ORIGIN,
       timeout: 120_000,
       reuseExistingServer: false,
       env: {
         ...process.env,
+        VITE_API_BASE_URL: `${API_ORIGIN}/api`,
       },
     },
   ],
