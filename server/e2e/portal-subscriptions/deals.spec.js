@@ -118,6 +118,35 @@ async function mockAdminApi(page, apiRequest) {
       return;
     }
 
+    if (pathname === "/api/admin/orders" && method === "GET") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "get",
+        `/deals/admin-orders?${url.searchParams.toString()}`,
+      );
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: proxied.body,
+      });
+      return;
+    }
+
+    const orderMatch = pathname.match(/^\/api\/admin\/orders\/([^/]+)$/);
+    if (orderMatch && method === "GET") {
+      const proxied = await proxyControl(
+        apiRequest,
+        "get",
+        `/deals/admin-orders/${encodeURIComponent(orderMatch[1])}`,
+      );
+      await route.fulfill({
+        status: proxied.status,
+        headers: adminCorsHeaders(),
+        body: proxied.body,
+      });
+      return;
+    }
+
     if (pathname === "/api/admin/deals" && method === "POST") {
       const proxied = await proxyControl(
         apiRequest,
@@ -288,7 +317,6 @@ async function addDealToCart(page, dealName) {
     .click();
   await expect(page.getByText(/added to your basket/i)).toBeVisible();
 
-  await page.getByRole("button", { name: "Cart", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Your Cart" })).toBeVisible();
   await expect(page.getByText(dealName, { exact: true })).toBeVisible();
   await expect(page.getByText("£10.00", { exact: true }).first()).toBeVisible();

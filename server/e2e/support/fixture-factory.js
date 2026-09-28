@@ -21,6 +21,7 @@ const stripe = require("../../utils/stripe.util");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
 const dealsAdminService = require("../../services/deals.admin.service");
 const variantsAdminService = require("../../services/variants.admin.service");
+const ordersAdminService = require("../../services/orders/orders.admin.service");
 const { API_ORIGIN } = require("./constants");
 
 const SUCCESS_METHOD = "pm_card_visa";
@@ -1004,6 +1005,41 @@ async function e2eAdminSearchVariants({ q, limit } = {}) {
   return result.data;
 }
 
+async function e2eAdminListOrders(query = {}) {
+  const {
+    page = 1,
+    pageSize = 50,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    ...filters
+  } = query || {};
+
+  const result = await ordersAdminService.ListOrders({
+    filters,
+    page: Number(page) || 1,
+    pageSize: Number(pageSize) || 50,
+    sortBy: String(sortBy || "createdAt"),
+    sortOrder: String(sortOrder || "desc") === "asc" ? "asc" : "desc",
+  });
+
+  if (!result.success) {
+    const error = new Error(result.message || "Failed to list admin orders");
+    error.statusCode = result.statusCode || 400;
+    throw error;
+  }
+  return result.data;
+}
+
+async function e2eAdminGetOrder(orderId) {
+  const result = await ordersAdminService.GetOrderById({ orderId });
+  if (!result.success) {
+    const error = new Error(result.message || "Failed to read admin order");
+    error.statusCode = result.statusCode || 404;
+    throw error;
+  }
+  return result.data;
+}
+
 async function createDealsFixture(options = {}) {
   const scenarioId = `deals-${Date.now().toString(36)}-${crypto
     .randomUUID()
@@ -1263,6 +1299,8 @@ module.exports = {
   createDealsFixture,
   createFixture,
   e2eAdminCreateDeal,
+  e2eAdminGetOrder,
+  e2eAdminListOrders,
   e2eAdminDeactivateDeal,
   e2eAdminListDeals,
   e2eAdminSearchVariants,

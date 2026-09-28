@@ -87,6 +87,14 @@ function createControlApp() {
     ),
   );
   app.get(
+    "/deals/admin-orders",
+    asyncRoute((req) => fixtures.e2eAdminListOrders(req.query || {})),
+  );
+  app.get(
+    "/deals/admin-orders/:orderId",
+    asyncRoute((req) => fixtures.e2eAdminGetOrder(req.params.orderId)),
+  );
+  app.get(
     "/deals/state/:customerId",
     asyncRoute((req) => fixtures.getDealsState(req.params.customerId)),
   );
