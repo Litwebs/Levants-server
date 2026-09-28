@@ -62,8 +62,7 @@ const dealSchema = new mongoose.Schema(
       default: "GBP",
       uppercase: true,
       trim: true,
-      minlength: 3,
-      maxlength: 3,
+      enum: ["GBP"],
     },
     isActive: {
       type: Boolean,
