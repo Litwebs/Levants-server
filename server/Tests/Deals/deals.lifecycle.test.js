@@ -188,6 +188,35 @@ describe("deals admin and public lifecycle", () => {
     expect(updateResult.statusCode).toBe(409);
   });
 
+  test("admin list honours featured filtering", async () => {
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 30, price: 5 });
+
+    await createDealFixture({
+      variant,
+      name: "Featured Admin",
+      slug: "featured-admin",
+      isFeatured: true,
+    });
+    await createDealFixture({
+      variant,
+      name: "Standard Admin",
+      slug: "standard-admin",
+      isFeatured: false,
+    });
+
+    const featured = await require("../../services/deals.admin.service").listDeals({
+      page: 1,
+      pageSize: 20,
+      featured: true,
+    });
+
+    expect(featured.success).toBe(true);
+    expect(featured.data.deals).toHaveLength(1);
+    expect(featured.data.deals[0].slug).toBe("featured-admin");
+    expect(featured.meta.total).toBe(1);
+  });
+
   test("public list exposes only active, in-window, in-stock packages", async () => {
     const product = await createProduct();
     const variant = await createVariant({ product, stock: 20, price: 5 });
