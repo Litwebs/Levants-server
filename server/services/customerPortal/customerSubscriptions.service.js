@@ -2112,6 +2112,7 @@ async function CreateSubscription({
   await subscription.validate();
 
   const snapshot = {
+    startedAt: new Date(),
     subscription: subscription.toObject(),
     product: {
       name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
@@ -2139,6 +2140,17 @@ async function CreateSubscription({
 }
 
 async function completeSubscriptionCreation(customer, snapshot, mutation) {
+  // Stripe may discard an idempotency key after 24 hours. If the remote
+  // outcome was never durably recorded, do not risk another charge on an old
+  // attempt. A recorded success can always finish local recovery safely.
+  const startedAt = snapshot.startedAt || mutation?.createdAt;
+  if (mutation && !snapshot.remoteSubscription && startedAt &&
+      Date.now() - new Date(startedAt).getTime() >= 23 * 60 * 60 * 1000) {
+    return Response(false,
+      "This payment attempt needs reconciliation. Please contact support before starting another subscription.",
+      { reconciliationRequired: true },
+    );
+  }
   const persistRemote = async (field, value) => {
     snapshot[field] = value;
     if (mutation) {

@@ -4436,6 +4436,26 @@ describe("Portal Subscriptions", () => {
     expect(await Subscription.countDocuments({ customer: customer._id })).toBe(1);
   });
 
+  it("does not resubmit an ambiguous creation after Stripe's retry window", async () => {
+    const operationId = crypto.randomUUID();
+    const payload = { operationId, frequency: "weekly", preferredDeliveryDay: 0,
+      deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }] };
+    const send = () => request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    stripe.subscriptions.create.mockRejectedValueOnce(new Error("connection reset"));
+    expect((await send()).status).toBe(400);
+    await require("../../models/subscriptionMutation.model").updateOne(
+      { customer: customer._id, operationId },
+      { $set: { "creationSnapshot.startedAt": new Date(Date.now() - 25 * 3600000) } },
+    );
+    stripe.subscriptions.create.mockClear();
+    const retry = await send();
+    expect(retry.status).toBe(400);
+    expect(retry.body.message).toMatch(/reconciliation/);
+    expect(stripe.subscriptions.create).not.toHaveBeenCalled();
+    expect(await Subscription.countDocuments({ customer: customer._id })).toBe(0);
+  });
+
   it.each([false, true])("refunds remaining captured balance after a decrease (allocations: %s)", async (withAllocations) => {
     const sub = await createBasicSubscription();
     const order = await createPaidOrderFor(sub);
