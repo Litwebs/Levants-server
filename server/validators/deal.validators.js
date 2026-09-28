@@ -1,6 +1,10 @@
 const Joi = require("joi");
 
 const objectId = Joi.string().hex().length(24);
+const imageField = Joi.alternatives()
+  .try(objectId, Joi.string().pattern(/^data:image\//))
+  .allow(null, "")
+  .optional();
 
 const dealItemSchema = Joi.object({
   variantId: objectId.required(),
@@ -16,7 +20,7 @@ const createDealSchema = Joi.object({
     .max(160)
     .optional(),
   description: Joi.string().trim().max(3000).allow("").optional(),
-  imageUrl: Joi.string().trim().uri().max(2048).allow("").optional(),
+  image: imageField,
   items: Joi.array().items(dealItemSchema).min(1).max(30).required(),
   packagePrice: Joi.number().precision(2).positive().required(),
   currency: Joi.string().trim().uppercase().length(3).default("GBP"),
@@ -36,7 +40,7 @@ const updateDealSchema = Joi.object({
     .max(160)
     .optional(),
   description: Joi.string().trim().max(3000).allow("").optional(),
-  imageUrl: Joi.string().trim().uri().max(2048).allow("").optional(),
+  image: imageField,
   items: Joi.array().items(dealItemSchema).min(1).max(30).optional(),
   packagePrice: Joi.number().precision(2).positive().optional(),
   currency: Joi.string().trim().uppercase().length(3).optional(),
