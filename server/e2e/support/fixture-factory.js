@@ -16,6 +16,7 @@ const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const passwordUtil = require("../../utils/password.util");
 const stripe = require("../../utils/stripe.util");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
+const subscriptionWebhookService = require("../../services/subscriptions/subscriptionWebhook.service");
 const { API_ORIGIN } = require("./constants");
 
 const SUCCESS_METHOD = "pm_card_visa";
@@ -638,7 +639,7 @@ async function createFixture(options = {}) {
     });
     resumeFundingRefundId = refund.id;
   }
-  const createPaidOrders = options.lifecycle !== "resume";
+  const createPaidOrders = options.lifecycle !== "resume" && options.createPaidOrders !== false;
   const { deliveries, orders } = await replaceDeliverySchedule({
     subscription,
     config,
@@ -765,6 +766,29 @@ async function createFixture(options = {}) {
   };
   tracked.fixtures.set(fixture.subscriptionId, fixture);
   return fixture;
+}
+
+async function generateScheduledDelivery(subscriptionId) {
+  const fixture = tracked.fixtures.get(String(subscriptionId));
+  if (!fixture) throw new Error("Unknown E2E subscription fixture");
+  const subscription = await Subscription.findById(subscriptionId);
+  if (!subscription) throw new Error("Subscription fixture not found");
+  const delivery = await SubscriptionDelivery.findOne({
+    subscription: subscriptionId,
+    status: "scheduled",
+  }).sort({ scheduledDate: 1 });
+  if (!delivery) throw new Error("Fixture has no scheduled delivery to generate");
+
+  const invoiceId = `in_e2e_generation_${crypto.randomUUID().replace(/-/g, "")}`;
+  await subscriptionWebhookService.HandleSubscriptionInvoicePaid({
+    id: invoiceId,
+    subscription: subscription.stripeSubscriptionId,
+    payment_intent: fixture.initialPaymentIntentId,
+    currency: "gbp",
+    period_start: Math.floor(new Date(delivery.scheduledDate).getTime() / 1000),
+    status_transitions: { paid_at: Math.floor(Date.now() / 1000) },
+  });
+  return { invoiceId, deliveryDate: delivery.scheduledDate };
 }
 
 async function setPaymentOutcome(subscriptionId, outcome) {
@@ -992,6 +1016,7 @@ module.exports = {
   deliverSignedInvoiceEvent,
   finalizeCancellation,
   getState,
+  generateScheduledDelivery,
   preparePaymentRetry,
   reset,
   setPaymentOutcome,
