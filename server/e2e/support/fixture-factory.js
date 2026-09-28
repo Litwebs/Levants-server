@@ -19,6 +19,8 @@ const User = require("../../models/user.model");
 const passwordUtil = require("../../utils/password.util");
 const stripe = require("../../utils/stripe.util");
 const subscriptionService = require("../../services/customerPortal/customerSubscriptions.service");
+const dealsAdminService = require("../../services/deals.admin.service");
+const variantsAdminService = require("../../services/variants.admin.service");
 const { API_ORIGIN } = require("./constants");
 
 const SUCCESS_METHOD = "pm_card_visa";
@@ -955,6 +957,53 @@ async function stripeState(subscription, customer) {
 }
 
 
+
+async function e2eAdminListDeals(options = {}) {
+  const result = await dealsAdminService.listDeals(options);
+  if (!result.success) throw new Error(result.message || "Failed to list deals");
+  return { ...result.data, meta: result.meta };
+}
+
+async function e2eAdminCreateDeal(body = {}) {
+  const result = await dealsAdminService.createDeal({ body, userId: null });
+  if (!result.success) {
+    const error = new Error(result.message || "Failed to create deal");
+    error.statusCode = result.statusCode || 400;
+    throw error;
+  }
+  return result.data;
+}
+
+async function e2eAdminUpdateDeal(dealId, body = {}) {
+  const result = await dealsAdminService.updateDeal({ dealId, body });
+  if (!result.success) {
+    const error = new Error(result.message || "Failed to update deal");
+    error.statusCode = result.statusCode || 400;
+    throw error;
+  }
+  return result.data;
+}
+
+async function e2eAdminDeactivateDeal(dealId) {
+  const result = await dealsAdminService.deactivateDeal({ dealId });
+  if (!result.success) {
+    const error = new Error(result.message || "Failed to deactivate deal");
+    error.statusCode = result.statusCode || 400;
+    throw error;
+  }
+  return result.data;
+}
+
+async function e2eAdminSearchVariants({ q, limit } = {}) {
+  const result = await variantsAdminService.SearchVariants({ q, limit });
+  if (!result.success) {
+    const error = new Error(result.message || "Failed to search variants");
+    error.statusCode = result.statusCode || 400;
+    throw error;
+  }
+  return result.data;
+}
+
 async function createDealsFixture(options = {}) {
   const scenarioId = `deals-${Date.now().toString(36)}-${crypto
     .randomUUID()
@@ -1213,6 +1262,11 @@ module.exports = {
   autoResume,
   createDealsFixture,
   createFixture,
+  e2eAdminCreateDeal,
+  e2eAdminDeactivateDeal,
+  e2eAdminListDeals,
+  e2eAdminSearchVariants,
+  e2eAdminUpdateDeal,
   crossCutoff,
   deliverSignedInvoiceEvent,
   finalizeCancellation,
