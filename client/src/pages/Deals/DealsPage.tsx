@@ -119,7 +119,6 @@ export const DealsPage = () => {
     setDraft(emptyDraft());
     setSelectedItems([]);
     setImageChanged(false);
-    setImageChanged(false);
     setQuery("");
     setModalOpen(true);
   };
@@ -148,6 +147,7 @@ export const DealsPage = () => {
         quantity: Number(item.quantity || 1),
       })),
     );
+    setImageChanged(false);
     setQuery("");
     setModalOpen(true);
   };
