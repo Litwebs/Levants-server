@@ -89,11 +89,16 @@ jobs:
           SERVER_HEAD_REF: ${{ github.head_ref }}
         run: |
           portal_ref="main"
-          # Cross-repository feature branches share a name; the server branch
-          # adds a "-server" suffix (for example, feature/foo-server).
-          candidate_ref="${SERVER_HEAD_REF%-server}"
+          # Prefer the exact same feature branch in the portal repo. Keep
+          # compatibility with older server branches that add a "-server" suffix.
+          candidate_ref="$SERVER_HEAD_REF"
+          if [[ -n "$SERVER_HEAD_REF" ]] && ! \
+            git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
+              "refs/heads/$candidate_ref" > /dev/null 2>&1; then
+            candidate_ref="${SERVER_HEAD_REF%-server}"
+          fi
 
-          if [[ -n "$SERVER_HEAD_REF" && "$candidate_ref" != "$SERVER_HEAD_REF" ]] && \
+          if [[ -n "$candidate_ref" ]] && \
             git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
               "refs/heads/$candidate_ref" > /dev/null 2>&1; then
             portal_ref="$candidate_ref"
