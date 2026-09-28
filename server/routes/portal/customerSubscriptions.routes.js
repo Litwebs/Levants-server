@@ -16,6 +16,7 @@ const {
   updateSubscriptionSchema,
   subscriptionItemSchema,
   nextDeliveryAddOnSchema,
+  nextDeliveryReductionSchema,
   updateSubscriptionItemSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
@@ -78,6 +79,13 @@ router.post(
   validateParams(subscriptionIdParamSchema),
   validateBody(subscriptionItemSchema),
   asyncHandler(controller.AddSubscriptionItem),
+);
+
+router.post(
+  "/:subscriptionId/next-delivery/reduce",
+  validateParams(subscriptionIdParamSchema),
+  validateBody(nextDeliveryReductionSchema),
+  asyncHandler(controller.ReduceNextDelivery),
 );
 
 router.post(
