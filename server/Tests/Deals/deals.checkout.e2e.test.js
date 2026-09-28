@@ -155,6 +155,40 @@ describe("deals and product packages", () => {
     expect(checkoutArgs.discounts).toEqual([{ coupon: "coupon_test_123" }]);
   });
 
+  test("checkout refuses a stale package price instead of silently charging a changed price", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 10, price: 5 });
+    const deal = await createDealFixture({
+      variant,
+      quantity: 2,
+      packagePrice: 8,
+    });
+
+    deal.packagePrice = 7.5;
+    await deal.save();
+
+    const res = await request(app)
+      .post("/api/orders")
+      .send({
+        customerId: String(customer._id),
+        items: [{ variantId: String(variant._id), quantity: 2 }],
+        deals: [
+          {
+            dealId: String(deal._id),
+            quantity: 1,
+            expectedPackagePrice: 8,
+          },
+        ],
+        deliveryAddress: address,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/price has changed/i);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
   test("checkout refuses a deal combined with a discount code", async () => {
     const customer = await createCustomer();
     const product = await createProduct();
