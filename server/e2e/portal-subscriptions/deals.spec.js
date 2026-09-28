@@ -318,7 +318,9 @@ async function addDealToCart(page, dealName) {
   await expect(page.getByText(/added to your basket/i)).toBeVisible();
 
   await expect(page.getByRole("heading", { name: "Your Cart" })).toBeVisible();
-  await expect(page.getByText(dealName, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 4, name: dealName, exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("£10.00", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("£11.00", { exact: true }).first()).toBeVisible();
 }
