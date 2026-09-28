@@ -89,14 +89,20 @@ jobs:
           SERVER_HEAD_REF: ${{ github.head_ref }}
         run: |
           portal_ref="main"
-          # Cross-repository feature branches share a name; the server branch
-          # adds a "-server" suffix (for example, feature/foo-server).
-          candidate_ref="${SERVER_HEAD_REF%-server}"
+          exact_ref="$SERVER_HEAD_REF"
+          suffix_ref="${SERVER_HEAD_REF%-server}"
 
-          if [[ -n "$SERVER_HEAD_REF" && "$candidate_ref" != "$SERVER_HEAD_REF" ]] && \
+          # Prefer an exact cross-repository branch match (for example
+          # feat/deals in both repositories). Fall back to the historical
+          # feature/foo-server -> feature/foo convention.
+          if [[ -n "$exact_ref" ]] && \
             git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
-              "refs/heads/$candidate_ref" > /dev/null 2>&1; then
-            portal_ref="$candidate_ref"
+              "refs/heads/$exact_ref" > /dev/null 2>&1; then
+            portal_ref="$exact_ref"
+          elif [[ -n "$suffix_ref" && "$suffix_ref" != "$exact_ref" ]] && \
+            git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
+              "refs/heads/$suffix_ref" > /dev/null 2>&1; then
+            portal_ref="$suffix_ref"
           fi
 
           echo "ref=$portal_ref" >> "$GITHUB_OUTPUT"
