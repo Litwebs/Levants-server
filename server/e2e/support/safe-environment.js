@@ -62,6 +62,13 @@ function configureSafeEnvironment() {
     if (!process.env[name] && source[name]) process.env[name] = source[name];
   }
 
+  // CI intentionally supplies isolated JWT secrets but has no repository .env.
+  // Real admin authentication therefore needs safe, explicit E2E lifetimes.
+  process.env.JWT_ACCESS_EXPIRES_IN =
+    process.env.JWT_ACCESS_EXPIRES_IN || "15m";
+  process.env.JWT_REFRESH_EXPIRES_IN =
+    process.env.JWT_REFRESH_EXPIRES_IN || "30d";
+
   process.env.STRIPE_SECRET_KEY = secretKey;
   process.env.STRIPE_PUBLISHABLE_KEY = publishableKey;
   process.env.STRIPE_WEBHOOK_SECRET =
