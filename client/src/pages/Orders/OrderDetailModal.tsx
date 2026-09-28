@@ -251,7 +251,14 @@ const OrderDetailModal = ({
                 <div className={styles.detailSection}>
                   <h4 className={styles.detailTitle}>Package Deals</h4>
                   <div className={styles.packageList}>
-                    {selectedOrder.deals.map((deal: any, index: number) => (
+                    {selectedOrder.deals.map((deal: {
+                      dealId?: string;
+                      slug?: string;
+                      name: string;
+                      quantity: number;
+                      packagePrice: number;
+                      saving?: number;
+                    }, index: number) => (
                       <div
                         key={deal.dealId || deal.slug || index}
                         className={styles.packageItem}
