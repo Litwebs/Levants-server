@@ -2115,3 +2115,1024 @@
     padding: 44px 14px 18px;
   }
 }
+
+
+/* 2026 workbench refinement: larger, quieter, less dashboard-like */
+.catalogRoot {
+  background: #f7f7f5;
+  font-size: 15px;
+}
+
+.topBar {
+  min-height: 72px;
+  padding: 0 clamp(24px, 3.5vw, 64px);
+}
+
+.brandBlock {
+  gap: 12px;
+}
+
+.brandBlock strong {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.brandBlock span:not(.brandMark) {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.brandMark {
+  width: 36px;
+  height: 36px;
+  color: #134436;
+  background: #ffffff;
+  border: 1px solid #d9e0dd;
+  border-radius: 8px;
+}
+
+.backLink {
+  gap: 8px;
+  font-size: 14px;
+}
+
+.hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 48px;
+  align-items: center;
+  padding: 36px clamp(24px, 3.5vw, 64px) 34px;
+}
+
+.heroCopy {
+  max-width: 900px;
+}
+
+.heroEyebrow {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.hero h1 {
+  margin: 8px 0 10px;
+  max-width: none;
+  font-size: clamp(30px, 3vw, 42px);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.hero p {
+  max-width: 860px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.hero p code {
+  font-size: 14px;
+}
+
+.heroStats {
+  display: flex;
+  gap: 26px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.heroStats > div {
+  min-width: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 7px;
+  border: 0;
+}
+
+.heroStats strong {
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.heroStats span {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.coverageSuccess,
+.coverageWarning {
+  margin: 0 clamp(24px, 3.5vw, 64px);
+  padding: 13px 0;
+  border: 0;
+  border-bottom: 1px solid #e4e7e5;
+  border-radius: 0;
+  background: transparent;
+  font-size: 14px;
+}
+
+.coverageSuccess {
+  color: #38695b;
+}
+
+.coverageSuccess code {
+  font-size: 13px;
+}
+
+.coverageWarning {
+  color: #8a5b18;
+}
+
+.catalogLayout {
+  max-width: 1840px;
+  padding: 34px clamp(24px, 3.5vw, 64px) 120px;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 42px;
+}
+
+.sidebar {
+  top: 26px;
+  max-height: calc(100vh - 52px);
+  padding-right: 10px;
+}
+
+.searchBox {
+  height: 46px;
+  gap: 10px;
+  padding: 0 12px 0 14px;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.searchBox input {
+  font-size: 14px;
+}
+
+.searchBox kbd {
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.foundationLink {
+  margin: 18px 0 12px;
+  padding: 10px 8px;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.foundationLink small {
+  font-size: 12px;
+}
+
+.sidebarNav {
+  gap: 18px;
+}
+
+.sidebarGroup {
+  gap: 3px;
+}
+
+.sidebarGroupTitle {
+  padding: 5px 8px;
+  color: #7c837f;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sidebarGroupTitle small {
+  font-size: 11px;
+}
+
+.sidebarGroup a {
+  padding: 8px;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.foundationSection,
+.categorySection {
+  margin-bottom: 64px;
+}
+
+.sectionHeading,
+.categoryHeading {
+  margin-bottom: 22px;
+  align-items: center;
+}
+
+.sectionHeading > div > span {
+  margin-bottom: 5px;
+  color: #5f756d;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.categoryHeading > div > span {
+  display: none;
+}
+
+.sectionHeading h2,
+.categoryHeading h2 {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.sectionHeading p {
+  max-width: 850px;
+  margin-top: 9px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.sectionHeading code {
+  font-size: 13px;
+}
+
+.categoryHeading small {
+  font-size: 13px;
+}
+
+.tokenGrid {
+  gap: 18px;
+}
+
+.tokenPanel {
+  padding: 22px;
+  border-radius: 8px;
+}
+
+.tokenPanelHeader {
+  margin-bottom: 18px;
+}
+
+.tokenPanelHeader strong {
+  font-size: 15px;
+}
+
+.tokenPanelHeader span {
+  min-width: auto;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 13px;
+}
+
+.colorGrid {
+  gap: 13px;
+}
+
+.colorSwatch {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+}
+
+.colorToken code,
+.scaleRow code,
+.radiusToken code,
+.typeTokenList code {
+  font-size: 11px;
+}
+
+.colorToken span,
+.scaleRow > span:last-child,
+.radiusToken small,
+.typeTokenList span {
+  font-size: 11px;
+}
+
+.story {
+  margin-bottom: 28px;
+  border-radius: 8px;
+  box-shadow: 0 1px 0 rgba(17, 24, 39, 0.02);
+}
+
+.storyHeader {
+  min-height: 96px;
+  padding: 24px 26px 20px;
+  align-items: flex-start;
+}
+
+.storyTitleRow {
+  gap: 12px;
+}
+
+.storyTitleRow h3 {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.storyTitleRow code {
+  padding: 2px 0;
+  color: #7b817e;
+  background: transparent;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+.storyHeader p {
+  max-width: 780px;
+  margin-top: 7px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.storyTabs {
+  gap: 20px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.storyTabs button {
+  height: 38px;
+  padding: 0 1px;
+  gap: 7px;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.storyTabs button:hover {
+  color: #111827;
+}
+
+.storyTabs .activeTab {
+  color: #134436;
+  background: transparent;
+  box-shadow: none;
+  border-bottom-color: #134436;
+}
+
+.storyToolbar {
+  min-height: 52px;
+  padding: 0 20px;
+  gap: 12px;
+  color: #717773;
+  background: #fbfbfa;
+  font-size: 12px;
+  font-weight: 550;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.resetStoryButton {
+  gap: 7px;
+  padding: 7px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.viewportControls {
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.viewportControls button {
+  width: 34px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+.viewportControls .activeViewport {
+  color: #134436;
+  background: #ffffff;
+  border-color: #d1d5db;
+  box-shadow: none;
+}
+
+.storyWorkspace {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  min-height: 420px;
+}
+
+.previewStage {
+  min-height: 420px;
+  padding: 48px;
+  background: #f8f8f6;
+  background-image: none;
+}
+
+.previewFrame {
+  min-height: 300px;
+  padding: 36px;
+  background: #ffffff;
+  border: 1px solid #e2e4e3;
+  border-radius: 6px;
+}
+
+.previewTablet {
+  width: min(820px, 100%);
+}
+
+.previewMobile {
+  width: min(430px, 100%);
+}
+
+.controlsPanel {
+  padding: 24px;
+  gap: 16px;
+  border-left-color: #e3e5e4;
+}
+
+.controlsHeading {
+  margin-bottom: 4px;
+  color: #4f5652;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.controlGroup {
+  padding-top: 16px;
+  gap: 11px;
+}
+
+.controlLabel {
+  color: #5f6662;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.controlField {
+  gap: 7px;
+}
+
+.controlField > span,
+.booleanControl > span {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.controlField input,
+.controlField select {
+  height: 40px;
+  padding: 0 11px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.booleanControl {
+  min-height: 36px;
+}
+
+.booleanControl input {
+  width: 18px;
+  height: 18px;
+}
+
+.usageHeader {
+  min-height: 46px;
+  padding: 0 20px;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.usageHeader button {
+  gap: 7px;
+  font-size: 12px;
+}
+
+.usagePanel pre {
+  max-height: 360px;
+  padding: 20px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.apiPanel,
+.usageExplorer,
+.keyboardGuide {
+  padding: 24px;
+}
+
+.apiPanel {
+  gap: 18px;
+}
+
+.apiDeclaration {
+  border-radius: 6px;
+}
+
+.apiDeclarationHeader {
+  min-height: 48px;
+  padding: 11px 14px;
+}
+
+.apiDeclarationHeader strong {
+  font-size: 14px;
+}
+
+.apiDeclarationHeader span {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 11px;
+  text-transform: none;
+}
+
+.apiDeclarationHeader code {
+  font-size: 12px;
+}
+
+.apiTable {
+  font-size: 13px;
+}
+
+.apiTable th {
+  padding: 11px 14px;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.apiTable td {
+  padding: 12px 14px;
+}
+
+.apiTable code,
+.typeDefinition {
+  font-size: 12px;
+}
+
+.typeDefinition {
+  padding: 15px;
+}
+
+.emptyPanel {
+  padding: 32px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.sourceTabs {
+  min-height: 48px;
+  padding: 0 16px;
+  gap: 16px;
+}
+
+.sourceTabs button {
+  height: 39px;
+  padding: 0 1px;
+  font-size: 13px;
+}
+
+.sourceCode {
+  max-height: 680px;
+  padding: 22px;
+  font-size: 12.5px;
+  line-height: 1.72;
+}
+
+.usageSummaryGrid {
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.usageSummaryGrid > div {
+  padding: 16px 0;
+  gap: 5px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #e2e4e3;
+  border-radius: 0;
+}
+
+.usageSummaryGrid strong {
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.usageSummaryGrid span {
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.usageExplorerToolbar {
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.usageSearch {
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 5px;
+}
+
+.usageSearch input {
+  font-size: 13px;
+}
+
+.usageScope {
+  gap: 2px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.usageScope button {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.usageScope .usageScopeActive {
+  background: #ffffff;
+  border-color: #d1d5db;
+  box-shadow: none;
+}
+
+.usageLegend {
+  margin-bottom: 16px;
+  padding: 12px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+.usageLegend code {
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+.usageGroups {
+  gap: 18px;
+}
+
+.usageGroup {
+  border-radius: 6px;
+}
+
+.usageGroupHeader {
+  min-height: 46px;
+  padding: 0 14px;
+}
+
+.usageGroupHeader strong {
+  font-size: 13px;
+}
+
+.usageGroupHeader span {
+  font-size: 12px;
+}
+
+.usageRow {
+  min-height: 72px;
+  padding: 13px 14px;
+  gap: 16px;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 1fr) auto 36px;
+}
+
+.usageFileHeading {
+  gap: 9px;
+}
+
+.usageFileHeading strong {
+  font-size: 13px;
+}
+
+.usageFileHeading span {
+  font-size: 12px;
+}
+
+.usageFile > code {
+  font-size: 11px;
+}
+
+.usageSymbols {
+  gap: 7px;
+}
+
+.usageSymbols code,
+.usageSymbols small,
+.usageMeta span,
+.usageMeta strong {
+  font-size: 11px;
+}
+
+.usageSymbols code,
+.usageSymbols small {
+  padding: 4px 6px;
+}
+
+.usageSourceLink {
+  width: 34px;
+  height: 34px;
+  border-radius: 5px;
+}
+
+.keyboardGuideHeader strong {
+  font-size: 15px;
+}
+
+.keyboardGuideHeader span {
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.keyboardActions button {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.keyboardChecks {
+  gap: 10px;
+}
+
+.keyboardCheck {
+  min-height: 62px;
+  padding: 12px 13px;
+  border-radius: 6px;
+}
+
+.keySequence {
+  min-width: 90px;
+}
+
+.keyboardPanel kbd {
+  min-width: 30px;
+  padding: 4px 7px;
+  font-size: 10px;
+}
+
+.keyboardCheck p,
+.keyboardNoInteraction,
+.keyboardObservations p {
+  font-size: 12px;
+}
+
+.keyboardNoInteraction {
+  padding: 13px;
+  border-radius: 6px;
+}
+
+.keyboardObservations {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 6px;
+}
+
+.keyboardObservations strong {
+  margin-bottom: 7px;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.keyboardWorkspace {
+  grid-template-columns: minmax(0, 1fr) 330px;
+  min-height: 390px;
+}
+
+.keyboardTestSurface {
+  min-height: 390px;
+  padding: 56px 36px 36px;
+  background: #f8f8f6;
+  background-image: none;
+}
+
+.keyboardSurfaceLabel {
+  top: 14px;
+  left: 16px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.keyboardInspector {
+  padding: 18px;
+  gap: 14px;
+}
+
+.keyboardInspectorBlock {
+  padding: 13px;
+  border-radius: 6px;
+}
+
+.keyboardInspectorBlock > span,
+.keyboardInspectorHeading > span {
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.keyboardInspectorBlock > strong {
+  margin-top: 7px;
+  font-size: 12px;
+}
+
+.keyboardInspectorHeading small {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: 10px;
+}
+
+.keyboardInspectorBlock > p,
+.focusOrderList,
+.keyEventLog span {
+  font-size: 11px;
+}
+
+.keyEventLog small {
+  font-size: 10px;
+}
+
+.demoConstraint,
+.demoSearchConstraint,
+.demoSkeletonStack {
+  width: min(100%, 520px);
+}
+
+.demoCardConstraint {
+  width: min(100%, 640px);
+}
+
+.demoToolbarSearch {
+  width: min(420px, 100%);
+}
+
+.demoParagraph,
+.demoClickNote,
+.demoInlineNote {
+  font-size: 13px;
+}
+
+.demoVariantMatrix {
+  width: min(100%, 900px);
+  gap: 16px;
+}
+
+.demoVariantRow {
+  grid-template-columns: 110px repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.demoVariantRow > span,
+.demoBadgeRow > span {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+.demoBadgeMatrix {
+  width: min(100%, 680px);
+  gap: 14px;
+}
+
+.demoBadgeRow {
+  grid-template-columns: 110px 130px 150px;
+  gap: 14px;
+}
+
+@media (max-width: 1180px) {
+  .catalogLayout {
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 28px;
+  }
+
+  .storyWorkspace,
+  .keyboardWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .controlsPanel,
+  .keyboardInspector {
+    border-left: 0;
+    border-top: 1px solid #e5e7eb;
+  }
+}
+
+@media (max-width: 820px) {
+  .topBar {
+    padding-inline: 18px;
+  }
+
+  .hero {
+    padding: 28px 18px 26px;
+    gap: 24px;
+  }
+
+  .hero h1 {
+    font-size: 32px;
+  }
+
+  .hero p {
+    font-size: 15px;
+  }
+
+  .heroStats {
+    gap: 18px;
+  }
+
+  .coverageSuccess,
+  .coverageWarning {
+    margin-inline: 18px;
+    font-size: 13px;
+  }
+
+  .catalogLayout {
+    padding: 28px 18px 80px;
+  }
+
+  .storyHeader {
+    padding: 20px;
+  }
+
+  .storyTabs {
+    gap: 16px;
+  }
+
+  .previewStage {
+    min-height: 340px;
+    padding: 24px;
+  }
+
+  .previewFrame {
+    min-height: 240px;
+    padding: 24px;
+  }
+
+  .controlsPanel {
+    padding: 20px;
+  }
+
+  .usageExplorer,
+  .apiPanel,
+  .keyboardGuide {
+    padding: 18px;
+  }
+}
+
+@media (max-width: 520px) {
+  .heroStats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+    gap: 8px;
+  }
+
+  .heroStats > div {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .heroStats strong {
+    font-size: 16px;
+  }
+
+  .heroStats span {
+    font-size: 11px;
+  }
+
+  .storyTitleRow {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .storyTabs button {
+    padding-inline: 0;
+    font-size: 12px;
+  }
+
+  .storyTabs button svg {
+    display: block;
+  }
+
+  .previewStage {
+    padding: 16px;
+  }
+
+  .previewFrame {
+    padding: 18px;
+  }
+}
