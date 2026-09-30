@@ -12,6 +12,7 @@ import {
 import { catalogEntries, categoryOrder } from "./CatalogStories";
 import { ResettableStory } from "./CatalogUI";
 import {
+  getComponentSources,
   getExportedCommonModules,
   getVariablesSource,
 } from "./catalogSource";
@@ -196,12 +197,15 @@ export default function ComponentCatalog() {
   const filteredEntries = catalogEntries.filter((entry) => {
     if (!normalizedQuery) return true;
 
+    const sourceText = getComponentSources(entry.moduleName).tsx;
+
     return [
       entry.title,
       entry.category,
       entry.description,
       entry.moduleName,
       ...(entry.keywords ?? []),
+      sourceText,
     ]
       .join(" ")
       .toLowerCase()
@@ -301,7 +305,7 @@ export default function ComponentCatalog() {
               ref={searchRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search components..."
+              placeholder="Search components or props..."
               aria-label="Search component catalog"
             />
             <kbd>/</kbd>
