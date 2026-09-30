@@ -1,0 +1,40 @@
+name: Component catalog feature check
+
+on:
+  push:
+    branches:
+      - feature/component-catalog
+
+permissions:
+  contents: read
+
+jobs:
+  client-catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Verify catalog coverage
+        working-directory: client
+        run: npm run check:component-catalog
+
+      - name: Lint catalog and router
+        working-directory: client
+        run: npx eslint src/pages/ComponentCatalog src/App.tsx
+
+      - name: Build client
+        working-directory: client
+        run: npm run build
