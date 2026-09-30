@@ -46,6 +46,8 @@ Access:
 - `stories/` — category-focused interactive story modules.
 - `CatalogUI.tsx` — reusable story chrome and control primitives.
 - `catalogSource.ts` — source loading and API extraction.
+- `catalogUsage.ts` — source-derived import/usage analysis across the client.
+- `catalogKeyboard.ts` — component-specific keyboard expectations and source observations.
 - `ComponentCatalog.module.css` — isolated workbench styling.
 - `scripts/check-component-catalog.mjs` — registry/barrel coverage check.
 
@@ -79,3 +81,41 @@ fine when the component API explicitly expects them, such as
 The API and Source tabs remain the authoritative view for every property,
 including inherited native HTML attributes and styling escape hatches such as
 `className`.
+
+
+## Usage Explorer
+
+Every story has a Usage tab. It scans the real client TypeScript/TSX source at
+build time through Vite raw imports and finds consumers of the component module.
+
+It reports:
+- application files using the component;
+- shared components depending on it;
+- imported subcomponents such as `CardHeader`, `TableCell`, or
+  `TabsTrigger`;
+- static identifier-reference counts;
+- barrel vs direct imports;
+- feature/code-area grouping;
+- a direct GitHub link to the import line on the component-catalog branch.
+
+The catalog source itself is excluded so it does not inflate usage counts.
+Reference counts are static source occurrences, not runtime render counts.
+
+## Keyboard Testing
+
+Every story has a Keyboard tab with:
+- the real configured component rendered in an isolated test surface;
+- a component-specific expected-key guide;
+- source observations describing current keyboard/accessibility behaviour;
+- “Focus first control”;
+- a focus-order scanner;
+- the currently focused element;
+- a live keydown event log with modifiers and prevented events.
+
+The profiles intentionally describe current gaps as well as supported
+behaviour. For example, the current Modal supports Escape but has no focus trap,
+Tabs uses native buttons but does not implement arrow-key tab navigation, and
+clickable/sortable Table elements currently need keyboard semantics.
+
+Keyboard mode is a manual inspection tool, not a replacement for automated
+accessibility testing.
