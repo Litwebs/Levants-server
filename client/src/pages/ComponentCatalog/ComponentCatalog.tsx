@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { catalogEntries, categoryOrder } from "./CatalogStories";
+import { catalogEntries, categoryOrder } from "./CatalogStories";\nimport { ResettableStory } from "./CatalogUI";
 import {
   getExportedCommonModules,
   getVariablesSource,
