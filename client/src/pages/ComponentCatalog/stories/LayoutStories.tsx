@@ -19,6 +19,7 @@ import {
   LoadingScreen,
   Modal,
   ModalFooter,
+  PageContainer,
   PageToolbar,
   Select,
   Skeleton,
@@ -56,6 +57,40 @@ import {
   TextControl,
 } from "../CatalogUI";
 import styles from "../ComponentCatalog.module.css";
+
+export function PageContainerStory() {
+  const [width, setWidth] = useState<
+    "narrow" | "standard" | "wide" | "full"
+  >("wide");
+
+  return (
+    <CatalogStory
+      title="PageContainer"
+      description="Centered, fluid page wrapper with consistent application width limits."
+      moduleName="PageContainer"
+      code={`<PageContainer width="${width}">\n  <YourPage />\n</PageContainer>`}
+      controls={
+        <SelectControl
+          label="width"
+          value={width}
+          options={["narrow", "standard", "wide", "full"]}
+          onChange={(value) => setWidth(value as typeof width)}
+        />
+      }
+    >
+      <div className={styles.demoWideConstraint}>
+        <PageContainer width={width}>
+          <Card>
+            <CardContent>
+              Page content remains fluid until it reaches the selected maximum
+              width.
+            </CardContent>
+          </Card>
+        </PageContainer>
+      </div>
+    </CatalogStory>
+  );
+}
 
 export function FormGridStory() {
   const [viewMode, setViewMode] = useState(false);

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Camera, Upload } from "lucide-react";
-import { Button, Modal, ModalFooter } from "../../components/common";
+import { Button, Modal, ModalFooter, Select } from "../../components/common";
 import styles from "./Orders.module.css";
 import { getStatusBadge } from "./order.utils";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -254,36 +254,33 @@ const OrderStatusModal = ({
           </p>
         )}
 
-        <label className={inline ? styles.visuallyHidden : styles.statusOptionsLabel} htmlFor="order-delivery-status">
-          New status
-        </label>
-        <select
+        <Select
           id="order-delivery-status"
-          className={styles.statusSelect}
+          className={styles.statusSelectField}
+          label={inline ? undefined : "New status"}
+          aria-label={inline ? "New status" : undefined}
+          placeholder={inline ? "Update status" : "Select a status"}
           value={selectedStatus || ""}
-          onChange={(event) => {
-            const value = event.target.value || null;
+          onChange={(nextValue) => {
+            const value = nextValue || null;
             setSelectedStatus(value);
             setIsStatusModalOpen(Boolean(value));
           }}
           disabled={isUpdating || isDeliveredLockedForDriver}
-        >
-          <option value="">{inline ? "Update status" : "Select a status"}</option>
-          {statuses.map((status) => {
+          options={statuses.map((status) => {
             const isCurrent = normalizedCurrent === status;
             const isEarlier = statusIndex(status) < currentStatusIndex;
-            return (
-              <option
-                key={status}
-                value={status}
-                disabled={isCurrent || isEarlier}
-              >
-                {status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())}
-                {isCurrent ? " (current)" : isEarlier ? " (completed)" : ""}
-              </option>
-            );
+            return {
+              value: status,
+              label: `${status
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (character) =>
+                  character.toUpperCase(),
+                )}${isCurrent ? " (current)" : isEarlier ? " (completed)" : ""}`,
+              disabled: isCurrent || isEarlier,
+            };
           })}
-        </select>
+        />
 
         {!inline && statusDetails}
       </div>

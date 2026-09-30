@@ -2,7 +2,13 @@ import { Download, RefreshCw } from "lucide-react";
 import { Button } from "../../components/common";
 import styles from "./Orders.module.css";
 
-const OrdersHeader = ({ filteredOrders, meta, exportToCSV, refresh }: any) => {
+const OrdersHeader = ({
+  filteredOrders,
+  meta,
+  exportToCSV,
+  refresh,
+  loading,
+}: any) => {
   const totalOrders = meta?.total ?? filteredOrders.length;
 
   return (
@@ -24,6 +30,7 @@ const OrdersHeader = ({ filteredOrders, meta, exportToCSV, refresh }: any) => {
           variant="outline"
           leftIcon={<RefreshCw size={16} />}
           onClick={refresh}
+          disabled={loading}
         >
           Refresh
         </Button>

@@ -4,6 +4,7 @@ import {
   CreateSearchStory,
   InputStory,
   SelectStory,
+  ToggleStory,
 } from "./stories/FormsStories";
 import { BadgeStory, SkeletonStory } from "./stories/DisplayStories";
 import { CardStory, ModalStory } from "./stories/SurfacesStories";
@@ -16,6 +17,7 @@ import { DataTableCardStory, TableStory } from "./stories/DataStories";
 import {
   FiltersCardLayoutStory,
   FormGridStory,
+  PageContainerStory,
 } from "./stories/LayoutStories";
 
 export const catalogEntries: CatalogEntry[] = [
@@ -45,6 +47,15 @@ export const catalogEntries: CatalogEntry[] = [
     moduleName: "Select",
     keywords: ["dropdown", "form", "field", "options"],
     component: SelectStory,
+  },
+  {
+    id: "toggle",
+    title: "Toggle",
+    category: "Forms",
+    description: "Theme-native binary switch with accessible input behavior.",
+    moduleName: "Toggle",
+    keywords: ["switch", "checkbox", "boolean", "setting"],
+    component: ToggleStory,
   },
   {
     id: "create-search",
@@ -144,6 +155,15 @@ export const catalogEntries: CatalogEntry[] = [
     moduleName: "DataTableCard",
     keywords: ["data", "pagination", "loading", "table"],
     component: DataTableCardStory,
+  },
+  {
+    id: "page-container",
+    title: "PageContainer",
+    category: "Layout",
+    description: "Centered responsive wrapper with shared maximum widths.",
+    moduleName: "PageContainer",
+    keywords: ["page", "layout", "width", "container"],
+    component: PageContainerStory,
   },
   {
     id: "form-grid",

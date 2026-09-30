@@ -1,8 +1,10 @@
 import {
   Button,
   Card,
+  Input,
   Modal,
   ModalFooter,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -10,14 +12,27 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/common";
-import { AlertTriangle, CalendarDays, Package, Upload, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarDays,
+  Upload,
+  ChevronDown,
+  ChevronUp,
+  Trash2,
+} from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
 import { useEffect, useRef, useState } from "react";
 import type { OrdersStockRequirements } from "../../context/Orders";
 import type { Order } from "./useOrders";
 
-const DELIVERY_STATUSES = ["ordered", "dispatched", "in_transit", "delivered", "returned"] as const;
+const DELIVERY_STATUSES = [
+  "ordered",
+  "dispatched",
+  "in_transit",
+  "delivered",
+  "returned",
+] as const;
 
 interface Props {
   selectedOrders: string[];
@@ -66,8 +81,7 @@ const OrdersBulkActions = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
   const [isCalculatingStock, setIsCalculatingStock] = useState(false);
-  const [stockSource, setStockSource] =
-    useState<StockSource>("delivery_date");
+  const [stockSource, setStockSource] = useState<StockSource>("delivery_date");
   const [stockDeliveryDate, setStockDeliveryDate] = useState(today);
   const [stockOrderTypeScope, setStockOrderTypeScope] = useState<
     "both" | "normal" | "subscription"
@@ -77,10 +91,14 @@ const OrdersBulkActions = ({
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const selectedStatusIndexes = filteredOrders
     .filter((order) => selectedOrders.includes(order.id))
-    .map((order) => DELIVERY_STATUSES.indexOf(order.deliveryStatus as typeof DELIVERY_STATUSES[number]));
+    .map((order) =>
+      DELIVERY_STATUSES.indexOf(
+        order.deliveryStatus as (typeof DELIVERY_STATUSES)[number],
+      ),
+    );
   const furthestSelectedStatus = selectedStatusIndexes.length
     ? Math.max(...selectedStatusIndexes)
     : -1;
@@ -127,26 +145,35 @@ const OrdersBulkActions = ({
                 )}
               </Button>
             ) : null}
-            {hasSelectedOrders && canDeleteOrders ? (
+            <div
+              className={`${styles.selectionActions} ${
+                hasSelectedOrders ? styles.selectionActionsVisible : ""
+              }`}
+              aria-hidden={!hasSelectedOrders}
+            >
+              {canDeleteOrders ? (
+                <Button
+                  variant="ghost"
+                  className={styles.bulkDeleteButton}
+                  size="sm"
+                  disabled={!hasSelectedOrders}
+                  tabIndex={hasSelectedOrders ? 0 : -1}
+                  onClick={() => setIsDeleteConfirmOpen(true)}
+                >
+                  <Trash2 size={16} />
+                  Delete
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
-                className={styles.bulkDeleteButton}
                 size="sm"
-                onClick={() => setIsDeleteConfirmOpen(true)}
-              >
-                <Trash2 size={16} />
-                Delete…
-              </Button>
-            ) : null}
-            {hasSelectedOrders ? (
-              <Button
-                variant="ghost"
-                size="sm"
+                disabled={!hasSelectedOrders}
+                tabIndex={hasSelectedOrders ? 0 : -1}
                 onClick={() => setSelectedOrders([])}
               >
                 Clear Selection
               </Button>
-            ) : null}
+            </div>
           </div>
         </div>
 
@@ -157,19 +184,37 @@ const OrdersBulkActions = ({
           }`}
           aria-hidden={!isExpanded}
         >
-          {hasSelectedOrders && canUpdateOrders && (
-            <div className={styles.bulkSection}>
-              <h3 className={styles.bulkSectionTitle}><CalendarDays size={20} aria-hidden="true" /> Update delivery</h3>
+          <div className={styles.bulkSectionsInner}>
+            {canUpdateOrders && (
+              <div
+                className={`${styles.selectionTools} ${
+                  hasSelectedOrders ? styles.selectionToolsVisible : ""
+                }`}
+                aria-hidden={!hasSelectedOrders}
+              >
+                <div className={styles.selectionToolsInner}>
+                  <div
+                    className={`${styles.bulkSection} ${styles.updateDeliverySection}`}
+                  >
+                    <h3 className={styles.bulkSectionTitle}>
+                      <CalendarDays size={20} aria-hidden="true" /> Update
+                      delivery
+                    </h3>
 
-
-              <div className={styles.bulkSectionRow}>
+                    <div className={styles.bulkSectionRow}>
                 <div className={styles.filterGroup}>
-                  <label htmlFor="bulk-delivery-date" className={styles.filterLabel}>Delivery date</label>
+                  <label
+                    htmlFor="bulk-delivery-date"
+                    className={styles.filterLabel}
+                  >
+                    Delivery date
+                  </label>
                   <input
                     id="bulk-delivery-date"
                     type="date"
                     className={styles.filterInput}
                     min={today}
+                    disabled={!hasSelectedOrders}
                     value={deliveryDate}
                     onChange={(e) => setDeliveryDate(e.target.value)}
                   />
@@ -179,7 +224,7 @@ const OrdersBulkActions = ({
                   variant="outline"
                   size="sm"
                   isLoading={isAssigning}
-                  disabled={!deliveryDate}
+                  disabled={!hasSelectedOrders || !deliveryDate}
                   onClick={async () => {
                     if (!deliveryDate) return;
                     setIsAssigning(true);
@@ -192,41 +237,53 @@ const OrdersBulkActions = ({
                 >
                   Set delivery date
                 </Button>
-              </div>
+                    </div>
 
-              <div className={styles.bulkSectionRow}>
-                <div className={styles.filterGroup}>
-                  <label htmlFor="bulk-delivery-status" className={styles.filterLabel}>Delivery status</label>
-                  <select id="bulk-delivery-status" className={styles.filterInput}
-                    value={deliveryStatus} onChange={(e) => setDeliveryStatus(e.target.value)}>
-                    <option value="">Choose a status…</option>
-                    {DELIVERY_STATUSES.map((status, index) => (
-                      <option key={status} value={status} disabled={index <= furthestSelectedStatus}>
-                        {status.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())}
-                        {index <= furthestSelectedStatus ? " (unavailable)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <Button variant="outline" size="sm" disabled={!deliveryStatus}
+                    <div className={styles.bulkSectionRow}>
+                <Select
+                  id="bulk-delivery-status"
+                  className={styles.filterGroup}
+                  label="Delivery status"
+                  placeholder="Choose a status…"
+                  fullWidth
+                  disabled={!hasSelectedOrders}
+                  value={deliveryStatus}
+                  onChange={setDeliveryStatus}
+                  options={DELIVERY_STATUSES.map((status, index) => ({
+                    value: status,
+                    label: `${status
+                      .replace(/_/g, " ")
+                      .replace(/\b\w/g, (character) =>
+                        character.toUpperCase(),
+                      )}${index <= furthestSelectedStatus ? " (unavailable)" : ""}`,
+                    disabled: index <= furthestSelectedStatus,
+                  }))}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!hasSelectedOrders || !deliveryStatus}
                   isLoading={isUpdatingStatus}
                   onClick={async () => {
                     if (!deliveryStatus || isUpdatingStatus) return;
                     setIsUpdatingStatus(true);
-                    try { await bulkUpdateStatus(deliveryStatus); }
-                    finally { setIsUpdatingStatus(false); }
-                  }}>
+                    try {
+                      await bulkUpdateStatus(deliveryStatus);
+                    } finally {
+                      setIsUpdatingStatus(false);
+                    }
+                  }}
+                >
                   Update status
                 </Button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {canReadDelivery && (
-            <div className={styles.bulkSection}>
-              <h3 className={styles.bulkSectionTitle}><Package size={20} aria-hidden="true" /> Plan stock</h3>
-
-
+            {canReadDelivery && (
+            <div className={`${styles.bulkSection} ${styles.stockSection}`}>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -239,65 +296,57 @@ const OrdersBulkActions = ({
               />
 
               <div className={styles.bulkSectionRow}>
-                <div className={styles.filterGroup}>
-                  <label htmlFor="stock-source" className={styles.filterLabel}>Count orders from</label>
-                  <select
-                    id="stock-source"
-                    className={styles.filterInput}
-                    value={stockSource}
-                    onChange={(e) =>
-                      setStockSource(e.target.value as StockSource)
-                    }
-                  >
-                    <option value="delivery_date">Delivery date</option>
-                    <option
-                      value="selected_orders"
-                      disabled={!hasSelectedOrders}
-                    >
-                      Selected orders ({selectedOrders.length})
-                    </option>
-                    <option value="file">Uploaded file only</option>
-                  </select>
-                </div>
+                <Select
+                  id="stock-source"
+                  className={styles.filterGroup}
+                  label="Count orders from"
+                  fullWidth
+                  value={stockSource}
+                  onChange={(value) => setStockSource(value as StockSource)}
+                  options={[
+                    { value: "delivery_date", label: "Delivery date" },
+                    {
+                      value: "selected_orders",
+                      label: `Selected orders (${selectedOrders.length})`,
+                      disabled: !hasSelectedOrders,
+                    },
+                    { value: "file", label: "Uploaded file only" },
+                  ]}
+                />
 
                 {stockSource === "delivery_date" ? (
-                  <div className={styles.filterGroup}>
-                    <label htmlFor="stock-delivery-date" className={styles.filterLabel}>
-                      Delivery date
-                    </label>
-                    <input
-                      id="stock-delivery-date"
-                      type="date"
-                      className={styles.filterInput}
-                      value={stockDeliveryDate}
-                      onChange={(e) => setStockDeliveryDate(e.target.value)}
-                    />
-                  </div>
+                  <Input
+                    id="stock-delivery-date"
+                    className={styles.filterGroup}
+                    label="Delivery date"
+                    type="date"
+                    fullWidth
+                    value={stockDeliveryDate}
+                    onChange={(event) =>
+                      setStockDeliveryDate(event.target.value)
+                    }
+                  />
                 ) : null}
 
                 {stockSource !== "file" ? (
-                  <div className={styles.filterGroup}>
-                    <label htmlFor="stock-order-type" className={styles.filterLabel}>Include</label>
-                    <select
-                      id="stock-order-type"
-                      className={styles.filterInput}
-                      value={stockOrderTypeScope}
-                      onChange={(e) =>
-                        setStockOrderTypeScope(
-                          e.target.value as
-                            | "both"
-                            | "normal"
-                            | "subscription",
-                        )
-                      }
-                    >
-                      <option value="both">All orders</option>
-                      <option value="normal">One-time orders</option>
-                      <option value="subscription">Subscriptions</option>
-                    </select>
-                  </div>
+                  <Select
+                    id="stock-order-type"
+                    className={styles.filterGroup}
+                    label="Include"
+                    fullWidth
+                    value={stockOrderTypeScope}
+                    onChange={(value) =>
+                      setStockOrderTypeScope(
+                        value as "both" | "normal" | "subscription",
+                      )
+                    }
+                    options={[
+                      { value: "both", label: "All orders" },
+                      { value: "normal", label: "One-time orders" },
+                      { value: "subscription", label: "Subscriptions" },
+                    ]}
+                  />
                 ) : null}
-
               </div>
 
               <div className={styles.stockScopeNote} role="status">
@@ -307,44 +356,46 @@ const OrdersBulkActions = ({
                     ? `Counts ${selectedOrders.length} selected orders, filtered by type.`
                     : "Counts all order rows in your uploaded sheet."}
               </div>
-              <div className={styles.bulkUploadRow}>
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Upload size={16} aria-hidden="true" />
-                      {ordersFile ? "Change file" : stockSource === "file" ? "Choose file" : "Add sheet (optional)"}
-                    </Button>
+              <div className={styles.stockActions}>
+                <div className={styles.bulkUploadRow}>
+                <>
+                  <Button
+                    variant="outline"
+                    size="md"
+                    leftIcon={<Upload size={16} aria-hidden="true" />}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {ordersFile
+                      ? "Change file"
+                      : stockSource === "file"
+                        ? "Choose file"
+                        : "Add sheet (optional)"}
+                  </Button>
 
-                    {ordersFile ? (
-                      <>
-                        <span
-                          className={styles.bulkFileName}
-                          title={ordersFile.name}
-                        >
-                          {ordersFile.name}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setOrdersFile(null);
-                            if (fileInputRef.current)
-                              fileInputRef.current.value = "";
-                          }}
-                        >
-                          Clear file
-                        </Button>
-                      </>
-                    ) : null}
-                  </>
-              </div>
-              {ordersFile && stockSource !== "file" && (
-                <p className={styles.bulkSectionHelp}>All sheet rows are added. Only upload orders not already counted.</p>
-              )}
-              <div className={styles.stockCalculateRow}>
+                  {ordersFile ? (
+                    <>
+                      <span
+                        className={styles.bulkFileName}
+                        title={ordersFile.name}
+                      >
+                        {ordersFile.name}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setOrdersFile(null);
+                          if (fileInputRef.current)
+                            fileInputRef.current.value = "";
+                        }}
+                      >
+                        Clear file
+                      </Button>
+                    </>
+                  ) : null}
+                </>
+                </div>
+                <div className={styles.stockCalculateRow}>
                 <Button
                   variant="primary"
                   size="sm"
@@ -375,9 +426,17 @@ const OrdersBulkActions = ({
                 >
                   Calculate stock needed
                 </Button>
+                </div>
               </div>
+              {ordersFile && stockSource !== "file" && (
+                <p className={styles.bulkSectionHelp}>
+                  All sheet rows are added. Only upload orders not already
+                  counted.
+                </p>
+              )}
             </div>
           )}
+          </div>
         </div>
       </Card>
 
@@ -390,16 +449,17 @@ const OrdersBulkActions = ({
         >
           {stockResult.sources?.deliveryDate ? (
             <p className={styles.stockResultSummary}>
-              Requirements for {stockResult.sources.deliveryDate}: {" "}
-              {stockResult.sources.ordersFound || 0} order records and {" "}
-              {stockResult.sources.scheduledSubscriptionDeliveriesFound || 0}
-              {" "}scheduled subscription deliveries.
+              Requirements for {stockResult.sources.deliveryDate}:{" "}
+              {stockResult.sources.ordersFound || 0} order records and{" "}
+              {stockResult.sources.scheduledSubscriptionDeliveriesFound || 0}{" "}
+              scheduled subscription deliveries.
             </p>
           ) : null}
           {stockResult.sources?.sheet ? (
             <p className={styles.stockResultSummary}>
               Includes {stockResult.sources.sheet.usableRows || 0} sheet rows
-              from {stockResult.sources.sheet.originalName || "the uploaded file"}.
+              from{" "}
+              {stockResult.sources.sheet.originalName || "the uploaded file"}.
             </p>
           ) : null}
           <Table>

@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import React from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardFooter } from "../Card";
 import { Button } from "../Button";
 import { Select } from "../Select";
+import { LoadingScreen } from "../LoadingScreen";
 import styles from "./DataTableCard.module.css";
 
 interface PaginationOption {
@@ -33,9 +34,6 @@ interface DataTableCardProps {
   tableWrapperClassName?: string;
   loading?: boolean;
   loadingText?: string;
-  loadingOverlayClassName?: string;
-  loadingInnerClassName?: string;
-  spinnerClassName?: string;
   pagination?: PaginationConfig;
   children: React.ReactNode;
 }
@@ -46,24 +44,11 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
   tableWrapperClassName,
   loading = false,
   loadingText = "Loading...",
-  loadingOverlayClassName,
-  loadingInnerClassName,
-  spinnerClassName,
   pagination,
   children,
 }) => {
   const cx = (...classes: Array<string | undefined>) =>
     classes.filter(Boolean).join(" ");
-
-  const [paginationAction, setPaginationAction] = useState<
-    "prev" | "next" | null
-  >(null);
-
-  useEffect(() => {
-    if (!loading) {
-      setPaginationAction(null);
-    }
-  }, [loading]);
 
   return (
     <Card className={className}>
@@ -71,22 +56,13 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
         <div className={cx(styles.tableWrapper, tableWrapperClassName)}>
           {children}
         </div>
+        <LoadingScreen
+          active={loading}
+          label={loadingText}
+          minimumVisibleMs={450}
+          variant="contained"
+        />
       </div>
-
-      {loading ? (
-        <div
-          className={cx(styles.tableLoadingOverlay, loadingOverlayClassName)}
-          aria-live="polite"
-        >
-          <div className={cx(styles.tableLoadingInner, loadingInnerClassName)}>
-            <Loader2
-              size={16}
-              className={cx(styles.spinnerIcon, spinnerClassName)}
-            />
-            {loadingText}
-          </div>
-        </div>
-      ) : null}
 
       {pagination ? (
         <CardFooter
@@ -138,23 +114,13 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
                 size="sm"
                 disabled={Boolean(pagination.loading) || pagination.page <= 1}
                 onClick={() => {
-                  setPaginationAction("prev");
                   pagination.setPage((currentPage) =>
                     Math.max(1, currentPage - 1),
                   );
                 }}
               >
-                {pagination.loading && paginationAction === "prev" ? (
-                  <Loader2
-                    size={14}
-                    className={cx(styles.spinnerIcon, spinnerClassName)}
-                  />
-                ) : (
-                  <>
-                    <ChevronLeft size={16} />
-                    Prev
-                  </>
-                )}
+                <ChevronLeft size={16} />
+                Prev
               </Button>
 
               <div
@@ -171,23 +137,13 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
                   pagination.page >= pagination.totalPages
                 }
                 onClick={() => {
-                  setPaginationAction("next");
                   pagination.setPage((currentPage) =>
                     Math.min(pagination.totalPages, currentPage + 1),
                   );
                 }}
               >
-                {pagination.loading && paginationAction === "next" ? (
-                  <Loader2
-                    size={14}
-                    className={cx(styles.spinnerIcon, spinnerClassName)}
-                  />
-                ) : (
-                  <>
-                    Next
-                    <ChevronRight size={16} />
-                  </>
-                )}
+                Next
+                <ChevronRight size={16} />
               </Button>
             </div>
           </div>

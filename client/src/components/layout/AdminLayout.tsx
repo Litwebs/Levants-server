@@ -44,18 +44,21 @@ import styles from "./AdminLayout.module.css";
 
 const navItems = [
   {
+    group: "workspace",
     path: "/",
     label: "Overview",
     icon: LayoutDashboard,
     requiredAny: ["analytics.read"],
   },
   {
+    group: "operations",
     path: "/delivery-runs",
     label: "Delivery Runs",
     icon: Truck,
     requiredAny: ["delivery.routes.read"],
   },
   {
+    group: "operations",
     path: "/orders",
     label: "Orders",
     icon: ShoppingCart,
@@ -63,48 +66,56 @@ const navItems = [
     badgeKey: "pendingOrders" as const,
   },
   {
+    group: "catalogue",
     path: "/products",
     label: "Products",
     icon: Package,
     requiredAny: ["products.read"],
   },
   {
+    group: "customers",
     path: "/customers",
     label: "Customers",
     icon: Users,
     requiredAny: ["customers.read"],
   },
   {
+    group: "operations",
     path: "/subscriptions",
     label: "Subscriptions",
     icon: RefreshCw,
     requiredAny: ["orders.read"],
   },
   {
+    group: "catalogue",
     path: "/discounts",
     label: "Discounts",
     icon: Tag,
     requiredAny: ["promotions.read"],
   },
   {
+    group: "engagement",
     path: "/announcements",
     label: "Announcements",
     icon: Megaphone,
     requiredAny: ["announcements.read"],
   },
   {
+    group: "engagement",
     path: "/broadcasts",
     label: "Broadcasts",
     icon: Radio,
     requiredAny: ["broadcasts.read"],
   },
   {
+    group: "catalogue",
     path: "/categories",
     label: "Categories",
     icon: LayoutList,
     requiredAny: ["categories.read"],
   },
   {
+    group: "customers",
     path: "/reviews",
     label: "Reviews",
     icon: Star,
@@ -112,6 +123,7 @@ const navItems = [
     badgeKey: "pendingReviews" as const,
   },
   {
+    group: "system",
     path: "/component-catalog",
     label: "Component Lab",
     icon: Component,
@@ -119,11 +131,21 @@ const navItems = [
     adminOnly: true,
   },
   {
+    group: "system",
     path: "/settings",
     label: "Settings",
     icon: Settings,
   },
 ];
+
+const navGroups = [
+  { id: "workspace", label: "Workspace" },
+  { id: "operations", label: "Operations" },
+  { id: "catalogue", label: "Catalogue" },
+  { id: "customers", label: "Customers" },
+  { id: "engagement", label: "Engagement" },
+  { id: "system", label: "System" },
+] as const;
 
 type NavCounts = { pendingOrders: number; pendingReviews: number };
 
@@ -333,12 +355,15 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             </div>
           )}
           {!collapsed && (
-            <span
-              className={styles.logoText}
-              title={businessBranding.companyName}
-            >
-              {businessBranding.companyName}
-            </span>
+            <div className={styles.logoCopy}>
+              <span
+                className={styles.logoText}
+                title={businessBranding.companyName}
+              >
+                {businessBranding.companyName}
+              </span>
+              <span className={styles.logoSubtitle}>by Litwebs</span>
+            </div>
           )}
           <button
             type="button"
@@ -351,31 +376,49 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </div>
 
         <nav className={styles.nav}>
-          {visibleNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.path ||
-              (item.path === "/orders" && location.pathname.startsWith("/orders/"));
-            const badge = (item as any).badgeKey
-              ? navCounts[(item as any).badgeKey as keyof NavCounts]
-              : 0;
+          {navGroups.map((group) => {
+            const groupItems = visibleNavItems.filter(
+              (item) => item.group === group.id,
+            );
+            if (groupItems.length === 0) return null;
+
             return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={`${styles.navItem} ${isActive ? styles.active : ""}`}
-                title={collapsed ? item.label : undefined}
-                onClick={() => setMobileSidebarOpen(false)}
-              >
-                <Icon size={20} />
+              <div className={styles.navGroup} key={group.id}>
                 {!collapsed && (
-                  <span className={styles.navLabel}>{item.label}</span>
+                  <div className={styles.navGroupLabel}>{group.label}</div>
                 )}
-                {badge > 0 && (
-                  <span className={styles.navBadge}>
-                    {badge > 99 ? "99+" : badge}
-                  </span>
-                )}
-              </NavLink>
+                <div className={styles.navGroupItems}>
+                  {groupItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive =
+                      location.pathname === item.path ||
+                      (item.path === "/orders" &&
+                        location.pathname.startsWith("/orders/"));
+                    const badge = (item as any).badgeKey
+                      ? navCounts[(item as any).badgeKey as keyof NavCounts]
+                      : 0;
+                    return (
+                      <NavLink
+                        key={item.path}
+                        to={item.path}
+                        className={`${styles.navItem} ${isActive ? styles.active : ""}`}
+                        title={collapsed ? item.label : undefined}
+                        onClick={() => setMobileSidebarOpen(false)}
+                      >
+                        <Icon size={20} />
+                        {!collapsed && (
+                          <span className={styles.navLabel}>{item.label}</span>
+                        )}
+                        {badge > 0 && (
+                          <span className={styles.navBadge}>
+                            {badge > 99 ? "99+" : badge}
+                          </span>
+                        )}
+                      </NavLink>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </nav>

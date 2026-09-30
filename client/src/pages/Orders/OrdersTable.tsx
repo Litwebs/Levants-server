@@ -1,11 +1,4 @@
-import { AlertTriangle, Trash2 } from "lucide-react";
-import {
-  Button,
-  DataTableCard,
-  Modal,
-  ModalFooter,
-  Table,
-} from "../../components/common";
+import { DataTableCard, Table } from "../../components/common";
 import {
   getStatusBadge,
   getPaymentBadge,
@@ -13,9 +6,7 @@ import {
 } from "./order.utils";
 import styles from "./Orders.module.css";
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
-import { useState } from "react";
 import { Link } from "react-router-dom";
-import { usePermissions } from "@/hooks/usePermissions";
 
 const OrdersTable = ({
   filteredOrders,
@@ -30,19 +21,9 @@ const OrdersTable = ({
   pageSize,
   setPageSize,
   meta,
-  deleteOrder,
 }: any) => {
-  const { hasPermission } = usePermissions();
-  const canDeleteOrders = hasPermission("orders.delete");
   const total = meta?.total ?? filteredOrders?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
-  const [confirmOrder, setConfirmOrder] = useState<any | null>(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
-  const closeConfirm = () => {
-    if (deleteLoading) return;
-    setConfirmOrder(null);
-  };
 
   const formatOrderCreatedAt = (value: string) => {
     const date = new Date(value);
@@ -63,24 +44,11 @@ const OrdersTable = ({
     });
   };
 
-  const confirmDelete = async () => {
-    if (!confirmOrder || !deleteOrder) return;
-    setDeleteLoading(true);
-    try {
-      const result = await deleteOrder(confirmOrder.id);
-      if (result?.deleted) {
-        setConfirmOrder(null);
-      }
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
   return (
     <DataTableCard
       className={styles.tableCard}
       loading={loading}
-      loadingText="Loading..."
+      loadingText="Loading orders…"
       pagination={{
         page,
         pageSize,
@@ -102,6 +70,8 @@ const OrdersTable = ({
             <th>
               <input
                 type="checkbox"
+                className={styles.checkbox}
+                aria-label="Select all orders"
                 checked={
                   selectedOrders.length === filteredOrders.length &&
                   filteredOrders.length > 0
@@ -118,14 +88,13 @@ const OrdersTable = ({
             <th>Delivery Status</th>
             <th>Payment</th>
             <th>Delivery Date</th>
-            <th></th>
           </tr>
         </thead>
 
         <tbody>
           {(filteredOrders?.length ?? 0) === 0 ? (
             <tr className={sharedTableStyles.emptyStateRow}>
-              <td className={sharedTableStyles.emptyTableCell} colSpan={10}>
+              <td className={sharedTableStyles.emptyTableCell} colSpan={9}>
                 {loading ? "Loading orders…" : "No orders found."}
               </td>
             </tr>
@@ -146,6 +115,7 @@ const OrdersTable = ({
                 <td className={styles.checkboxCol} data-label="Select">
                   <input
                     type="checkbox"
+                    aria-label={`Select order ${order.orderNumber}`}
                     checked={selectedOrders.includes(order.id)}
                     onChange={() => toggleOrderSelection(order.id)}
                     onClick={(e) => e.stopPropagation()}
@@ -228,67 +198,12 @@ const OrdersTable = ({
                   </div>
                 </td>
 
-                <td className={styles.rowActionsCell} data-label="Actions">
-                  {canDeleteOrders ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setConfirmOrder(order);
-                      }}
-                    >
-                      <Trash2 size={16} />
-                      Delete
-                    </Button>
-                  ) : null}
-                </td>
               </tr>
             ))
           )}
         </tbody>
       </Table>
 
-      <Modal
-        isOpen={!!confirmOrder}
-        onClose={closeConfirm}
-        title="Delete Order"
-        size="sm"
-      >
-        <div className={styles.deleteConfirmContent}>
-          <div className={styles.deleteConfirmIcon}>
-            <AlertTriangle size={20} />
-          </div>
-          <div>
-            <p className={styles.deleteConfirmTitle}>Delete this order?</p>
-            <p className={styles.deleteConfirmText}>
-              {confirmOrder?.orderNumber
-                ? `This will permanently delete ${confirmOrder.orderNumber}.`
-                : "This will permanently delete the selected order."}
-            </p>
-          </div>
-        </div>
-
-        <ModalFooter>
-          <Button
-            variant="outline"
-            onClick={closeConfirm}
-            disabled={deleteLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="danger"
-            onClick={confirmDelete}
-            disabled={deleteLoading || !deleteOrder}
-            isLoading={deleteLoading}
-          >
-            <Trash2 size={16} />
-            Delete
-          </Button>
-        </ModalFooter>
-      </Modal>
     </DataTableCard>
   );
 };

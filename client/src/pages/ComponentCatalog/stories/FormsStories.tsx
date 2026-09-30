@@ -34,6 +34,7 @@ import {
   TabsList,
   TabsTrigger,
   TagFilters,
+  Toggle,
   ToolbarEnd,
   ToolbarStart,
   useToast,
@@ -56,6 +57,33 @@ import {
   TextControl,
 } from "../CatalogUI";
 import styles from "../ComponentCatalog.module.css";
+
+export function ToggleStory() {
+  const [checked, setChecked] = useState(true);
+  const [disabled, setDisabled] = useState(false);
+
+  return (
+    <CatalogStory
+      title="Toggle"
+      description="Theme-native binary switch used for preferences and boolean filters."
+      moduleName="Toggle"
+      code={`<Toggle checked={${checked}} onChange={(event) => setChecked(event.target.checked)}${disabled ? " disabled" : ""} />`}
+      controls={
+        <ControlGroup label="State">
+          <BooleanControl label="checked" checked={checked} onChange={setChecked} />
+          <BooleanControl label="disabled" checked={disabled} onChange={setDisabled} />
+        </ControlGroup>
+      }
+    >
+      <Toggle
+        checked={checked}
+        disabled={disabled}
+        aria-label="Example setting"
+        onChange={(event) => setChecked(event.target.checked)}
+      />
+    </CatalogStory>
+  );
+}
 
 export function InputStory() {
   const [label, setLabel] = useState("Email address");
