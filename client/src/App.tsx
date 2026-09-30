@@ -322,15 +322,18 @@ const App = () => (
                             element={<Navigate to="/" replace />}
                           />
                           <Route path="/settings" element={<Settings />} />
-                          <Route
-                            path="/component-catalog"
-                            element={
+                        </Route>
+
+                        <Route
+                          path="/component-catalog"
+                          element={
+                            <RequireAuth>
                               <RequireAdmin>
                                 <ComponentCatalog />
                               </RequireAdmin>
-                            }
-                          />
-                        </Route>
+                            </RequireAuth>
+                          }
+                        />
                       </Routes>
                     </BrowserRouter>
                 </AnalyticsProvider>
