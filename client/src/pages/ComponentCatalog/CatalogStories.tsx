@@ -68,6 +68,7 @@ function ButtonStory() {
   const [fullWidth, setFullWidth] = useState(false);
   const [leftIcon, setLeftIcon] = useState(true);
   const [rightIcon, setRightIcon] = useState(false);
+  const [showMatrix, setShowMatrix] = useState(false);
 
   const code = `<Button
   variant="${variant}"
@@ -96,22 +97,38 @@ function ButtonStory() {
             <BooleanControl label="leftIcon" checked={leftIcon} onChange={setLeftIcon} />
             <BooleanControl label="rightIcon" checked={rightIcon} onChange={setRightIcon} />
           </ControlGroup>
+          <BooleanControl label="show variant matrix" checked={showMatrix} onChange={setShowMatrix} />
         </>
       }
     >
-      <div className={styles.demoConstraint}>
-        <Button
-          variant={variant as any}
-          size={size as any}
-          isLoading={loading}
-          disabled={disabled}
-          fullWidth={fullWidth}
-          leftIcon={leftIcon ? <Plus /> : undefined}
-          rightIcon={rightIcon ? <ChevronRight /> : undefined}
-        >
-          {label || "Button"}
-        </Button>
-      </div>
+      {showMatrix ? (
+        <div className={styles.demoVariantMatrix}>
+          {["primary", "secondary", "outline", "ghost", "danger"].map((matrixVariant) => (
+            <div className={styles.demoVariantRow} key={matrixVariant}>
+              <span>{matrixVariant}</span>
+              {["sm", "md", "lg"].map((matrixSize) => (
+                <Button key={matrixSize} variant={matrixVariant as any} size={matrixSize as any}>
+                  {matrixSize}
+                </Button>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className={styles.demoConstraint}>
+          <Button
+            variant={variant as any}
+            size={size as any}
+            isLoading={loading}
+            disabled={disabled}
+            fullWidth={fullWidth}
+            leftIcon={leftIcon ? <Plus /> : undefined}
+            rightIcon={rightIcon ? <ChevronRight /> : undefined}
+          >
+            {label || "Button"}
+          </Button>
+        </div>
+      )}
     </CatalogStory>
   );
 }
