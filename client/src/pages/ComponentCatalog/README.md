@@ -42,7 +42,8 @@ Access:
 ## Files
 
 - `ComponentCatalog.tsx` — shell, navigation, search, source coverage, tokens.
-- `CatalogStories.ts` — small registry mapping every common module to a story.\n- `stories/` — category-focused interactive story modules.
+- `CatalogStories.ts` — small registry mapping every common module to a story.
+- `stories/` — category-focused interactive story modules.
 - `CatalogUI.tsx` — reusable story chrome and control primitives.
 - `catalogSource.ts` — source loading and API extraction.
 - `ComponentCatalog.module.css` — isolated workbench styling.
