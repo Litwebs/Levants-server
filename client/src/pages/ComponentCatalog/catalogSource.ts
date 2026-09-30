@@ -157,7 +157,7 @@ export function extractApiDeclarations(source: string): ApiDeclaration[] {
   const seen = new Set<string>();
 
   const interfacePattern =
-    /(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\s*(?:extends\s+([^\{]+))?\s*\{/g;
+    /(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\s*(?:extends\s+([^{]+))?\s*\{/g;
 
   let match: RegExpExecArray | null;
 
