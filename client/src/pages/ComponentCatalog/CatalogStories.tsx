@@ -319,6 +319,7 @@ function BadgeStory() {
   const [size, setSize] = useState("sm");
   const [dot, setDot] = useState(true);
   const [label, setLabel] = useState("Active");
+  const [showMatrix, setShowMatrix] = useState(false);
 
   return (
     <CatalogStory
@@ -332,10 +333,23 @@ function BadgeStory() {
           <SelectControl label="size" value={size} options={["sm", "md"]} onChange={setSize} />
           <TextControl label="children" value={label} onChange={setLabel} />
           <BooleanControl label="dot" checked={dot} onChange={setDot} />
+          <BooleanControl label="show variant matrix" checked={showMatrix} onChange={setShowMatrix} />
         </>
       }
     >
-      <Badge variant={variant as any} size={size as any} dot={dot}>{label || "Badge"}</Badge>
+      {showMatrix ? (
+        <div className={styles.demoBadgeMatrix}>
+          {["default", "success", "warning", "error", "info", "outline"].map((matrixVariant) => (
+            <div className={styles.demoBadgeRow} key={matrixVariant}>
+              <span>{matrixVariant}</span>
+              <Badge variant={matrixVariant as any} size="sm">Small</Badge>
+              <Badge variant={matrixVariant as any} size="md" dot>Medium</Badge>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <Badge variant={variant as any} size={size as any} dot={dot}>{label || "Badge"}</Badge>
+      )}
     </CatalogStory>
   );
 }
