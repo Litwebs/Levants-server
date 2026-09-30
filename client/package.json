@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test:map-tiles": "node scripts/check-map-tiles.mjs",
     "check:release": "npm run test:map-tiles && npm run lint -- --max-warnings 395 && npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:component-catalog": "node scripts/check-component-catalog.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
