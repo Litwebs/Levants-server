@@ -1,0 +1,177 @@
+import type { CatalogEntry } from "./CatalogUI";
+import { ButtonStory } from "./stories/ActionsStories";
+import {
+  CreateSearchStory,
+  InputStory,
+  SelectStory,
+} from "./stories/FormsStories";
+import { BadgeStory, SkeletonStory } from "./stories/DisplayStories";
+import { CardStory, ModalStory } from "./stories/SurfacesStories";
+import { PageToolbarStory, TabsStory } from "./stories/NavigationStories";
+import {
+  LoadingScreenStory,
+  ToastStory,
+} from "./stories/FeedbackStories";
+import { DataTableCardStory, TableStory } from "./stories/DataStories";
+import {
+  FiltersCardLayoutStory,
+  FormGridStory,
+} from "./stories/LayoutStories";
+
+export const catalogEntries: CatalogEntry[] = [
+  {
+    id: "button",
+    title: "Button",
+    category: "Actions",
+    description: "Variants, sizes, loading, icons and native button behavior.",
+    moduleName: "Button",
+    keywords: ["action", "cta", "submit", "danger", "loading"],
+    component: ButtonStory,
+  },
+  {
+    id: "input",
+    title: "Input",
+    category: "Forms",
+    description: "Labeled input with icons, hints, errors and native attributes.",
+    moduleName: "Input",
+    keywords: ["form", "field", "text", "validation"],
+    component: InputStory,
+  },
+  {
+    id: "select",
+    title: "Select",
+    category: "Forms",
+    description: "Native select wrapper with options, labels and validation.",
+    moduleName: "Select",
+    keywords: ["dropdown", "form", "field", "options"],
+    component: SelectStory,
+  },
+  {
+    id: "create-search",
+    title: "CreateSearch",
+    category: "Forms",
+    description: "Search input with selectable results and async states.",
+    moduleName: "CreateSearch",
+    keywords: ["autocomplete", "search", "suggestions", "create"],
+    component: CreateSearchStory,
+  },
+  {
+    id: "badge",
+    title: "Badge",
+    category: "Display",
+    description: "Semantic compact labels and status indicators.",
+    moduleName: "Badge",
+    keywords: ["status", "pill", "tag"],
+    component: BadgeStory,
+  },
+  {
+    id: "skeleton",
+    title: "Skeleton",
+    category: "Display",
+    description: "Shimmer placeholders for content loading.",
+    moduleName: "Skeleton",
+    keywords: ["loading", "placeholder", "shimmer"],
+    component: SkeletonStory,
+  },
+  {
+    id: "card",
+    title: "Card",
+    category: "Surfaces",
+    description: "Composable surface and its header/content/footer primitives.",
+    moduleName: "Card",
+    keywords: ["surface", "container", "panel"],
+    component: CardStory,
+  },
+  {
+    id: "modal",
+    title: "Modal",
+    category: "Surfaces",
+    description: "Fixed overlay with sizes, body lock, Escape close and footer.",
+    moduleName: "Modal",
+    keywords: ["dialog", "overlay", "popup"],
+    component: ModalStory,
+  },
+  {
+    id: "tabs",
+    title: "Tabs",
+    category: "Navigation",
+    description: "Controlled and uncontrolled tab navigation primitives.",
+    moduleName: "Tabs",
+    keywords: ["navigation", "tablist", "content"],
+    component: TabsStory,
+  },
+  {
+    id: "page-toolbar",
+    title: "PageToolbar",
+    category: "Navigation",
+    description: "Responsive page-level search/filter/action composition.",
+    moduleName: "PageToolbar",
+    keywords: ["toolbar", "filters", "actions", "tags"],
+    component: PageToolbarStory,
+  },
+  {
+    id: "toast",
+    title: "Toast",
+    category: "Feedback",
+    description: "Global transient notifications through ToastProvider.",
+    moduleName: "Toast",
+    keywords: ["notification", "success", "error", "warning"],
+    component: ToastStory,
+  },
+  {
+    id: "loading-screen",
+    title: "LoadingScreen",
+    category: "Feedback",
+    description: "Full-screen blocking loading state.",
+    moduleName: "LoadingScreen",
+    keywords: ["loading", "spinner", "overlay"],
+    component: LoadingScreenStory,
+  },
+  {
+    id: "table",
+    title: "Table",
+    category: "Data",
+    description: "Composable tables with sorting, row states and alignment.",
+    moduleName: "Table",
+    keywords: ["data", "grid", "sorting", "row"],
+    component: TableStory,
+  },
+  {
+    id: "data-table-card",
+    title: "DataTableCard",
+    category: "Data",
+    description: "Table card shell with loading overlay and pagination.",
+    moduleName: "DataTableCard",
+    keywords: ["data", "pagination", "loading", "table"],
+    component: DataTableCardStory,
+  },
+  {
+    id: "form-grid",
+    title: "FormGrid",
+    category: "Layout",
+    description: "Responsive label/control form composition.",
+    moduleName: "FormGrid",
+    keywords: ["form", "layout", "row", "section"],
+    component: FormGridStory,
+  },
+  {
+    id: "filters-card-layout",
+    title: "FiltersCardLayout",
+    category: "Layout",
+    description: "Expandable Card shell for feature-defined filters.",
+    moduleName: "FiltersCardLayout",
+    keywords: ["filters", "layout", "expand", "card"],
+    component: FiltersCardLayoutStory,
+  },
+];
+
+export const categoryOrder = [
+  "Actions",
+  "Forms",
+  "Display",
+  "Surfaces",
+  "Navigation",
+  "Feedback",
+  "Data",
+  "Layout",
+] as const;
