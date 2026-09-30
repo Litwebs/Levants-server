@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
@@ -356,10 +356,9 @@ export default function ComponentCatalog() {
                   <small>{group.entries.length} component{group.entries.length === 1 ? "" : "s"}</small>
                 </div>
 
-                {group.entries.map((entry) => {
-                  const Story = entry.component;
-                  return <Story key={entry.id} />;
-                })}
+                {group.entries.map((entry) => (
+                  <ResettableStory key={entry.id} Story={entry.component} />
+                ))}
               </section>
             ))
           )}
