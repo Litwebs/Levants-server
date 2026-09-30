@@ -1,0 +1,144 @@
+.catalogRoot {
+  /* Explicit light-theme token scope: intentionally ignores [data-theme="dark"]. */
+  --color-primary: #2da380;
+  --color-primary-light: #2d8268;
+  --color-primary-dark: #134436;
+  --color-primary-bg: rgba(26, 95, 74, 0.08);
+  --color-secondary: #e8a838;
+  --color-secondary-light: #f5c565;
+  --color-secondary-dark: #c88b20;
+  --color-white: #ffffff;
+  --color-cream: #fafafa;
+  --color-cream-dark: #f5f0e8;
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+  --color-success: #10b981;
+  --color-success-bg: rgba(16, 185, 129, 0.1);
+  --color-warning: #f59e0b;
+  --color-warning-bg: rgba(245, 158, 11, 0.1);
+  --color-error: #ef4444;
+  --color-error-bg: rgba(239, 68, 68, 0.1);
+  --color-info: #3b82f6;
+  --color-info-bg: rgba(59, 130, 246, 0.1);
+  --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --text-xs: .75rem;
+  --text-sm: .875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --radius-sm: .25rem;
+  --radius-md: .375rem;
+  --radius-lg: .5rem;
+  --radius-xl: .75rem;
+  --radius-full: 9999px;
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --z-modal: 1010;
+  --z-popover: 1020;
+  --z-toast: 1100;
+
+  min-height: 100vh;
+  background: #f6f7f8;
+  color: #1f2937;
+  font-family: var(--font-body);
+  padding-bottom: 80px;
+}
+
+.catalogRoot *, .catalogRoot *::before, .catalogRoot *::after { box-sizing: border-box; }
+
+.hero {
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 40px clamp(24px, 4vw, 64px) 32px;
+}
+.hero > div { max-width: 1400px; margin: 0 auto; }
+.hero h1 { margin: 5px 0 10px; font-size: 34px; color: #111827; }
+.hero p { margin: 0; max-width: 800px; color: #6b7280; }
+.eyebrow { color: #2da380; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 12px clamp(24px, 4vw, 64px);
+  background: rgba(255,255,255,.96);
+  border-bottom: 1px solid #e5e7eb;
+  backdrop-filter: blur(12px);
+}
+.nav a { padding: 8px 12px; border-radius: 8px; color: #4b5563; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.nav a:hover { color: #134436; background: #f3f4f6; }
+
+.content { max-width: 1400px; margin: 0 auto; padding: 30px clamp(24px, 4vw, 64px); }
+.category { scroll-margin-top: 76px; margin-bottom: 48px; }
+.categoryTitle { font-size: 18px; margin: 0 0 16px; color: #111827; }
+
+.playground {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.playgroundHeader { display: flex; justify-content: space-between; gap: 18px; padding: 20px 22px; border-bottom: 1px solid #e5e7eb; }
+.playgroundHeader h2 { margin: 0 0 4px; font-size: 17px; color: #111827; }
+.playgroundHeader p { margin: 0; color: #6b7280; font-size: 13px; }
+.sourcePath { align-self: flex-start; color: #6b7280; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 7px; font-size: 11px; }
+
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 280px; min-height: 220px; }
+.previewPane { padding: 30px; display: flex; align-items: center; justify-content: center; background-image: linear-gradient(#eef0f2 1px, transparent 1px), linear-gradient(90deg, #eef0f2 1px, transparent 1px); background-size: 20px 20px; background-color: #fafafa; }
+.previewPane > * { max-width: 100%; }
+.previewNarrow { width: min(100%, 430px); }
+.controlsPane { padding: 20px; border-left: 1px solid #e5e7eb; background: #fff; display: flex; flex-direction: column; gap: 14px; }
+.controlsPane h3 { margin: 0 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #6b7280; }
+.controlStack { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: #4b5563; }
+.controlStack input, .controlStack select { width: 100%; height: 34px; padding: 0 9px; border: 1px solid #d1d5db; border-radius: 7px; background: #fff; color: #111827; }
+.controlRow { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; font-weight: 600; color: #4b5563; }
+
+.propTableWrap { overflow-x: auto; border-top: 1px solid #e5e7eb; }
+.propTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.propTable th { text-align: left; background: #f9fafb; color: #6b7280; text-transform: uppercase; font-size: 10px; letter-spacing: .05em; }
+.propTable th, .propTable td { padding: 10px 14px; border-bottom: 1px solid #f0f1f2; vertical-align: top; }
+.propTable code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #134436; }
+
+.buttonRow { display: flex; gap: 10px; flex-wrap: wrap; }
+.skeletonPreview { width: min(100%, 420px); display: flex; flex-direction: column; gap: 18px; }
+.filterTop { display: flex; gap: 10px; align-items: center; width: min(100%, 700px); }
+.filterExpanded { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding-top: 16px; }
+.expandWrap { display: grid; grid-template-rows: 0fr; opacity: 0; overflow: hidden; transition: grid-template-rows 220ms ease, opacity 160ms ease; }
+.expandOpen { grid-template-rows: 1fr; opacity: 1; }
+.expandInner { min-height: 0; overflow: hidden; }
+
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: 1fr; }
+  .controlsPane { border-left: 0; border-top: 1px solid #e5e7eb; }
+  .playgroundHeader { flex-direction: column; }
+  .sourcePath { align-self: flex-start; }
+}
