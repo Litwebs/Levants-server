@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 import {
   Check,
   Clipboard,
@@ -55,7 +55,7 @@ export function CatalogStory({
   const [tab, setTab] = useState<StoryTab>("preview");
   const [viewport, setViewport] = useState<ViewportMode>("responsive");
   const [sourceTab, setSourceTab] = useState<"tsx" | "css">("tsx");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false);\n  const resetStory = useContext(StoryResetContext);
 
   const sources = useMemo(() => getComponentSources(moduleName), [moduleName]);
   const api = useMemo(
