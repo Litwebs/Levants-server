@@ -64,7 +64,9 @@ const DeleteVariant = async (req, res) => {
 const SearchVariants = async (req, res) => {
   const result = await service.SearchVariants({
     q: req.query.q,
-    limit: Number(req.query.limit) || 10,
+    page: Number(req.query.page) || 1,
+    pageSize: Number(req.query.pageSize || req.query.limit) || 8,
+    inStock: req.query.inStock === true || req.query.inStock === "true",
   });
 
   if (!result.success) {

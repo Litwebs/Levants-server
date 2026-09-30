@@ -229,16 +229,16 @@ async function customerSignIn(page, credentials, redirect = "/deals") {
 }
 
 async function addVariantFromAdmin(page, search, expectedProductName) {
-  const input = page.getByLabel("Find product variant");
+  const input = page.getByLabel("Search products or variants");
   await input.fill(search);
 
   const result = page
     .getByText(expectedProductName, { exact: false })
     .last()
-    .locator("xpath=ancestor::div[.//button[normalize-space()='Add']][1]");
+    .locator("xpath=ancestor::div[.//button[contains(@aria-label,'Add variant')]][1]");
 
   await expect(result).toBeVisible();
-  await result.getByRole("button", { name: "Add", exact: true }).click();
+  await result.getByRole("button", { name: /Add variant/ }).click();
   await input.fill("");
 }
 
@@ -255,14 +255,10 @@ async function createDealViaAdmin(page, fixture, {
   ).toBeVisible();
 
   await page.getByRole("button", { name: "New Deal", exact: true }).click();
+  await expect(page).toHaveURL(/\/deals\/new$/);
   await expect(
-    page.getByText("Create product package", { exact: true }),
+    page.getByRole("heading", { name: "Create product package", exact: true }),
   ).toBeVisible();
-
-  await page.getByLabel("Deal name *").fill(name);
-  await page.getByLabel("Package price (£) *").fill(packagePrice);
-  if (startsAt) await page.getByLabel("Starts at").fill(startsAt);
-  if (endsAt) await page.getByLabel("Ends at").fill(endsAt);
 
   await addVariantFromAdmin(
     page,
@@ -275,12 +271,24 @@ async function createDealViaAdmin(page, fixture, {
     fixture.variants.BUTTER.productName,
   );
 
-  const qtyInputs = page.getByLabel("Quantity for Standard");
+  const qtyInputs = page.getByRole("spinbutton", {
+    name: /Quantity for Standard/,
+  });
   await expect(qtyInputs).toHaveCount(2);
   await qtyInputs.nth(0).fill("2");
 
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByLabel("Deal name *").fill(name);
+  await page.getByLabel("Package price (£) *").fill(packagePrice);
+
+  await expect(page.getByText("£13.00", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(/£3\.00\s+23%/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  if (startsAt) await page.getByLabel("Starts at").fill(startsAt);
+  if (endsAt) await page.getByLabel("Ends at").fill(endsAt);
+
   if (featured) {
-    const checkbox = page.getByRole("checkbox", {
+    const checkbox = page.getByRole("switch", {
       name: "Featured deal",
       exact: true,
     });
@@ -289,11 +297,11 @@ async function createDealViaAdmin(page, fixture, {
     }
   }
 
-  await expect(page.getByText("£13.00", { exact: true })).toBeVisible();
-  await expect(page.getByText("£3.00 · 23%", { exact: true })).toBeVisible();
+  await expect(page.getByText(/£3\.00 \(23%\)/).first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Create deal", exact: true }).click();
-  await expect(page.getByText("Deal created", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Create product package", exact: true }).first().click();
+  await expect(page.getByText("Product package created", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/deals$/);
 
   const row = page
     .getByText(name, { exact: true })
@@ -388,6 +396,70 @@ test.beforeEach(async ({ request }) => {
 
 test.afterAll(async ({ request }) => {
   await reset(request);
+});
+
+test("product package creation route preserves manual slugs and validates product selection", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createDealsFixture(request, { creditBalance: 0 });
+  await mockAdminApi(page, request);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+
+  await page.goto(`${ADMIN_ORIGIN}/deals`);
+  await page.getByRole("button", { name: "New Deal", exact: true }).click();
+  await expect(page).toHaveURL(/\/deals\/new$/);
+
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByText("Add at least one product variant to continue.", { exact: true }),
+  ).toBeVisible();
+
+  const search = page.getByLabel("Search products or variants");
+  await search.fill(fixture.variants.MILK.sku);
+  await page.getByRole("button", { name: /Add variant/ }).click();
+  await expect(page.locator("[id^='selected-variant-']")).toHaveCount(1);
+
+  await page.getByRole("button", { name: /View selected/ }).click();
+  await expect(page.locator("[id^='selected-variant-']")).toBeFocused();
+  await expect(page.locator("[id^='selected-variant-']")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const name = page.getByLabel("Deal name *");
+  const slug = page.getByLabel("Storefront URL");
+  await name.fill("Weekend & Family Box");
+  await expect(slug).toHaveValue("weekend-and-family-box");
+  await slug.fill("weekend-special");
+  await name.fill("Renamed Family Box");
+  await expect(slug).toHaveValue("weekend-special");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByText("Enter a package price greater than £0.00.")).toBeVisible();
+  await page.getByLabel("Package price (£) *").fill("1");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page.getByLabel("Starts at").fill("2030-03-20T12:00");
+  await page.getByLabel("Ends at").fill("2030-03-20T11:00");
+  await page.getByRole("button", { name: "Create product package", exact: true }).click();
+  await expect(page.getByText("End date must be after the start date.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page
+    .getByRole("button", { name: /Remove .*Standard/ })
+    .click();
+  await expect(
+    page.getByText("Added variants will appear here for quantity review.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("Package contents", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 
 test("admin-created featured package completes through the real storefront with store credit and persists exact business results", async ({

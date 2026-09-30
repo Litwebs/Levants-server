@@ -55,7 +55,7 @@ describe("GET /api/admin/variants/search (E2E)", () => {
 
     const product = await createProduct({ userId: admin._id, name: "Milk" });
 
-    await Variant.create({
+    const active = await Variant.create({
       product: product._id,
       name: "Milk Active",
       sku: `S-ACT-${Date.now()}`,
@@ -87,6 +87,24 @@ describe("GET /api/admin/variants/search (E2E)", () => {
     expect(res.body.success).toBe(true);
 
     const ids = (res.body.data.variants || []).map((v) => String(v._id));
+    const activeResult = (res.body.data.variants || []).find(
+      (variant) => String(variant._id) === String(active._id),
+    );
     expect(ids).not.toContain(String(archived._id));
+    expect(activeResult).toEqual(
+      expect.objectContaining({
+        stockQuantity: 10,
+        reservedQuantity: 0,
+        availableQuantity: 10,
+        thumbnailImage: expect.objectContaining({
+          url: "https://example.com/img.jpg",
+        }),
+        product: expect.objectContaining({
+          name: "Milk",
+          category: "Dairy",
+          status: "active",
+        }),
+      }),
+    );
   });
 });

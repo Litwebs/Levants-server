@@ -6,7 +6,16 @@ export type VariantSearchItem = {
   sku: string;
   price?: number;
   status?: "active" | "inactive" | string;
-  product?: { name: string } | null;
+  stockQuantity?: number;
+  reservedQuantity?: number;
+  availableQuantity?: number;
+  thumbnailImage?: { url?: string } | null;
+  product?: {
+    name: string;
+    category?: string;
+    status?: string;
+    thumbnailImage?: { url?: string } | null;
+  } | null;
 };
 
 type ApiEnvelope<T> = {
@@ -22,8 +31,18 @@ const unwrapData = <T,>(payload: unknown): T | null => {
   return payload as T;
 };
 
-export async function searchVariants(params: { q: string; limit?: number }) {
+export type VariantSearchPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export async function searchVariants(params: { q?: string; page?: number; pageSize?: number; inStock?: boolean }) {
   const res = await api.get("/admin/variants/search", { params });
-  const data = unwrapData<{ variants: VariantSearchItem[] }>(res.data);
-  return data?.variants ?? [];
+  const data = unwrapData<{ variants: VariantSearchItem[]; pagination?: VariantSearchPagination }>(res.data);
+  return {
+    variants: data?.variants ?? [],
+    pagination: data?.pagination ?? { page: 1, pageSize: params.pageSize ?? 8, total: 0, totalPages: 1 },
+  };
 }

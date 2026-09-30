@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Badge,
   Button,
@@ -27,6 +28,7 @@ import {
 import { useVariantSearch } from "@/pages/Discounts/useVariantSearch";
 import { Checkbox } from "@/components/ui/checkbox";
 import styles from "./DealsPage.module.css";
+import { navigateWithDealTransition } from "./dealNavigation";
 
 type SelectedItem = {
   variantId: string;
@@ -77,6 +79,7 @@ const toLocalInput = (value?: string | null) => {
 };
 
 export const DealsPage = () => {
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const { hasPermission } = usePermissions();
   const canCreate = hasPermission("promotions.create");
@@ -137,12 +140,7 @@ export const DealsPage = () => {
     originalValue > 0 ? Math.round((packageSaving / originalValue) * 100) : 0;
 
   const openCreate = () => {
-    setEditing(null);
-    setDraft(emptyDraft());
-    setSelectedItems([]);
-    setImageChanged(false);
-    setQuery("");
-    setModalOpen(true);
+    navigateWithDealTransition(navigate, "/deals/new", "forward");
   };
 
   const openEdit = (deal: Deal) => {

@@ -300,37 +300,58 @@ async function DeleteVariant({ variantId }) {
 /**
  * Search variants globally (admin autocomplete)
  */
-async function SearchVariants({ q, limit = 10 } = {}) {
+async function SearchVariants({ q, page = 1, pageSize = 8, inStock = false } = {}) {
   const queryText = String(q || "").trim();
-  if (!queryText) {
-    return { success: true, data: { variants: [] } };
-  }
-
-  const safeLimit = Math.min(Math.max(Number(limit) || 10, 1), 25);
-  const rx = new RegExp(queryText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  const safePage = Math.max(Number(page) || 1, 1);
+  const safePageSize = Math.min(Math.max(Number(pageSize) || 8, 1), 24);
+  const rx = queryText
+    ? new RegExp(queryText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+    : null;
 
   // Match by variant name/sku OR product name/slug/category
-  const products = await Product.find({
-    $or: [{ name: rx }, { slug: rx }, { category: rx }],
-  })
-    .select("_id")
-    .limit(200)
-    .lean();
+  const products = rx
+    ? await Product.find({
+        $or: [{ name: rx }, { slug: rx }, { category: rx }],
+      })
+        .select("_id")
+        .limit(200)
+        .lean()
+    : [];
   const productIds = products.map((p) => p._id);
 
-  const variants = await Variant.find({
-    $or: [
-      { name: rx },
-      { sku: rx },
-      ...(productIds.length > 0 ? [{ product: { $in: productIds } }] : []),
-    ],
+  const variantQuery = {
     status: { $ne: "archived" },
-  })
-    .select("name sku price product status")
-    .populate({ path: "product", select: "name" })
+    ...(rx
+      ? {
+          $or: [
+            { name: rx },
+            { sku: rx },
+            ...(productIds.length > 0 ? [{ product: { $in: productIds } }] : []),
+          ],
+        }
+      : {}),
+    ...(inStock
+      ? { $expr: { $gt: [{ $subtract: [{ $ifNull: ["$stockQuantity", 0] }, { $ifNull: ["$reservedQuantity", 0] }] }, 0] } }
+      : {}),
+  };
+
+  const [total, variants] = await Promise.all([
+    Variant.countDocuments(variantQuery),
+    Variant.find(variantQuery)
+    .select(
+      "name sku price product status stockQuantity reservedQuantity thumbnailImage",
+    )
+    .populate({ path: "thumbnailImage", select: "url" })
+    .populate({
+      path: "product",
+      select: "name category status thumbnailImage",
+      populate: { path: "thumbnailImage", select: "url" },
+    })
     .sort({ createdAt: -1 })
-    .limit(safeLimit)
-    .lean();
+    .skip((safePage - 1) * safePageSize)
+    .limit(safePageSize)
+    .lean(),
+  ]);
 
   const shaped = variants.map((v) => ({
     _id: String(v._id),
@@ -338,13 +359,36 @@ async function SearchVariants({ q, limit = 10 } = {}) {
     sku: v.sku,
     price: typeof v.price === "number" ? v.price : undefined,
     status: v.status,
+    stockQuantity: Number(v.stockQuantity || 0),
+    reservedQuantity: Number(v.reservedQuantity || 0),
+    availableQuantity: Math.max(
+      0,
+      Number(v.stockQuantity || 0) - Number(v.reservedQuantity || 0),
+    ),
+    thumbnailImage: v.thumbnailImage || null,
     product:
       v.product && typeof v.product === "object"
-        ? { name: v.product.name }
+        ? {
+            name: v.product.name,
+            category: v.product.category,
+            status: v.product.status,
+            thumbnailImage: v.product.thumbnailImage || null,
+          }
         : null,
   }));
 
-  return { success: true, data: { variants: shaped } };
+  return {
+    success: true,
+    data: {
+      variants: shaped,
+      pagination: {
+        page: safePage,
+        pageSize: safePageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+      },
+    },
+  };
 }
 
 module.exports = {
