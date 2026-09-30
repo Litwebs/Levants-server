@@ -32,6 +32,7 @@ import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
 import { RequireAdmin } from "./components/auth/RequireAdmin";
+import { RequireLitwebsEmail } from "./components/auth/RequireLitwebsEmail";
 import ComponentCatalog from "./pages/ComponentCatalog/ComponentCatalog";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -330,9 +331,11 @@ const App = () => (
                           path="/component-catalog"
                           element={
                             <RequireAuth>
-                              <RequireAdmin>
-                                <ComponentCatalog />
-                              </RequireAdmin>
+                              <RequireLitwebsEmail>
+                                <RequireAdmin>
+                                  <ComponentCatalog />
+                                </RequireAdmin>
+                              </RequireLitwebsEmail>
                             </RequireAuth>
                           }
                         />
