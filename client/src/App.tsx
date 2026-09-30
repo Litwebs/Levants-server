@@ -30,7 +30,7 @@ import { AccessProvider } from "./context/Access";
 import { CustomersProvider } from "./context/Customers";
 import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
-import { RequirePermission } from "./components/auth/RequirePermission";
+import { RequirePermission } from "./components/auth/RequirePermission";\nimport { RequireAdmin } from "./components/auth/RequireAdmin";\nimport ComponentCatalog from "./pages/ComponentCatalog/ComponentCatalog";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
@@ -322,6 +322,14 @@ const App = () => (
                             element={<Navigate to="/" replace />}
                           />
                           <Route path="/settings" element={<Settings />} />
+                          <Route
+                            path="/component-catalog"
+                            element={
+                              <RequireAdmin>
+                                <ComponentCatalog />
+                              </RequireAdmin>
+                            }
+                          />
                         </Route>
                       </Routes>
                     </BrowserRouter>
