@@ -382,8 +382,10 @@ export const DeliveryRunsPage: React.FC = () => {
           />
           <p className={styles.formHelp}>
             Upload an XLSX or CSV file to create additional one-time paid orders
-            for this route. Use product SKUs in the order column, separated by
-            commas (for example, "1x SKU-1, 2x SKU-2").
+            for this route. Columns: name, address, postcode, contact, order,
+            delivery fee, total, and Delivery Instructions. Use product SKUs in
+            the order column, separated by commas (for example, "1x SKU-1, 2x
+            SKU-2").
           </p>
           <button
             type="button"

@@ -46,6 +46,12 @@ router.use(requirePermission("orders.read"));
 router.get("/", asyncHandler(controller.ListOrders));
 
 router.get(
+  "/:orderId/emails",
+  validateParams(orderIdParamSchema),
+  asyncHandler(controller.GetOrderEmailAudit),
+);
+
+router.get(
   "/:orderId",
   validateParams(orderIdParamSchema),
   asyncHandler(controller.GetOrderById),
