@@ -1420,3 +1420,698 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Usage Explorer */
+.usageExplorer {
+  padding: 16px;
+  background: #fafafa;
+}
+
+.usageSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.usageSummaryGrid > div {
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.usageSummaryGrid strong {
+  color: #111827;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.usageSummaryGrid span {
+  color: #6b7280;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.usageExplorerToolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.usageSearch {
+  min-width: 0;
+  flex: 1;
+  height: 35px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+}
+
+.usageSearch svg {
+  flex-shrink: 0;
+  color: #9ca3af;
+}
+
+.usageSearch input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #111827;
+  font: inherit;
+  font-size: 10px;
+}
+
+.usageScope {
+  display: inline-flex;
+  padding: 3px;
+  background: #eef0f2;
+  border-radius: 7px;
+}
+
+.usageScope button {
+  height: 29px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.usageScope .usageScopeActive {
+  color: #134436;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.usageLegend {
+  margin-bottom: 12px;
+  padding: 9px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6b7280;
+  background: #f3f6f5;
+  border: 1px solid #e1e9e6;
+  border-radius: 7px;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.usageLegend > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.usageLegend code {
+  padding: 1px 5px;
+  color: #134436;
+  background: #ffffff;
+  border: 1px solid #d8e4e0;
+  border-radius: 4px;
+  font-size: 8px;
+}
+
+.usageGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.usageGroup {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.usageGroupHeader {
+  min-height: 37px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #4b5563;
+  background: #fbfbfc;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.usageGroupHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.usageGroupHeader strong {
+  font-size: 10px;
+}
+
+.usageGroupHeader span {
+  color: #9ca3af;
+  font-size: 9px;
+}
+
+.usageRows {
+  display: flex;
+  flex-direction: column;
+}
+
+.usageRow {
+  min-height: 58px;
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 1fr) auto 30px;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #f1f2f3;
+}
+
+.usageRow:last-child {
+  border-bottom: 0;
+}
+
+.usageRow:hover {
+  background: #fcfdfd;
+}
+
+.usageFile {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.usageFileHeading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.usageFileHeading strong {
+  flex-shrink: 0;
+  color: #111827;
+  font-size: 10px;
+}
+
+.usageFileHeading span {
+  overflow: hidden;
+  color: #6b7280;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usageFile > code {
+  overflow: hidden;
+  color: #9ca3af;
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.usageSymbols {
+  min-width: 0;
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.usageSymbols > span {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #dce6e2;
+  border-radius: 5px;
+  background: #f5f9f7;
+}
+
+.usageSymbols code {
+  padding: 3px 5px;
+  color: #134436;
+  font-size: 8px;
+}
+
+.usageSymbols small {
+  min-width: 20px;
+  padding: 3px 5px;
+  color: #6b7280;
+  background: #ffffff;
+  border-left: 1px solid #dce6e2;
+  font-size: 8px;
+  text-align: center;
+}
+
+.usageMeta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.usageMeta span {
+  padding: 2px 5px;
+  color: #6b7280;
+  background: #f3f4f6;
+  border-radius: 4px;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.usageMeta strong {
+  color: #4b5563;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.usageSourceLink {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: #6b7280 !important;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.usageSourceLink:hover {
+  color: #134436 !important;
+  border-color: #bfd3cc;
+  background: #f3f8f6;
+}
+
+/* Keyboard Testing */
+.keyboardPanel {
+  background: #fafafa;
+}
+
+.keyboardGuide {
+  padding: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.keyboardGuideHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 13px;
+}
+
+.keyboardGuideHeader > div:first-child {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.keyboardGuideHeader > div:first-child > svg {
+  margin-top: 1px;
+  flex-shrink: 0;
+  color: #2d8268;
+}
+
+.keyboardGuideHeader strong {
+  display: block;
+  color: #111827;
+  font-size: 11px;
+}
+
+.keyboardGuideHeader span {
+  display: block;
+  margin-top: 3px;
+  color: #6b7280;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.keyboardActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.keyboardActions button {
+  min-height: 29px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #4b5563;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.keyboardActions button:hover {
+  color: #134436;
+  border-color: #bfd3cc;
+  background: #f5f9f7;
+}
+
+.keyboardChecks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.keyboardCheck {
+  min-height: 48px;
+  padding: 9px 10px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+}
+
+.keySequence {
+  min-width: 70px;
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.keyboardPanel kbd {
+  min-width: 24px;
+  padding: 3px 5px;
+  display: inline-flex;
+  justify-content: center;
+  color: #374151;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 1.1;
+}
+
+.keyboardCheck p {
+  color: #6b7280;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.keyboardNoInteraction {
+  padding: 10px;
+  color: #6b7280;
+  background: #ffffff;
+  border: 1px dashed #d1d5db;
+  border-radius: 7px;
+  font-size: 9px;
+}
+
+.keyboardObservations {
+  margin-top: 10px;
+  padding: 10px 11px;
+  color: #6b7280;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 7px;
+}
+
+.keyboardObservations strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #92400e;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.keyboardObservations p {
+  position: relative;
+  padding-left: 11px;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.keyboardObservations p + p {
+  margin-top: 3px;
+}
+
+.keyboardObservations p::before {
+  content: "•";
+  position: absolute;
+  left: 1px;
+  color: #d97706;
+}
+
+.keyboardWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 270px;
+  min-height: 310px;
+}
+
+.keyboardTestSurface {
+  position: relative;
+  min-width: 0;
+  min-height: 310px;
+  padding: 44px 28px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #fafafa;
+  background-image:
+    linear-gradient(#eef0f2 1px, transparent 1px),
+    linear-gradient(90deg, #eef0f2 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.keyboardTestSurface:focus-within {
+  box-shadow: inset 0 0 0 2px rgba(45, 163, 128, 0.18);
+}
+
+.keyboardSurfaceLabel {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  padding: 3px 6px;
+  color: #6b7280;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #e5e7eb;
+  border-radius: 5px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.keyboardRenderedComponent {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.keyboardRenderedComponent > * {
+  max-width: 100%;
+}
+
+.keyboardInspector {
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #ffffff;
+  border-left: 1px solid #e5e7eb;
+}
+
+.keyboardInspectorBlock {
+  padding: 10px;
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+}
+
+.keyboardInspectorBlock > span,
+.keyboardInspectorHeading > span {
+  display: block;
+  color: #9ca3af;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.keyboardInspectorBlock > strong {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: #134436;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.keyboardInspectorHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.keyboardInspectorHeading small {
+  min-width: 20px;
+  padding: 2px 5px;
+  color: #6b7280;
+  background: #eef0f2;
+  border-radius: 999px;
+  font-size: 8px;
+  text-align: center;
+}
+
+.keyboardInspectorBlock > p {
+  margin-top: 6px !important;
+  color: #9ca3af;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.focusOrderList {
+  margin: 7px 0 0;
+  padding-left: 18px;
+  color: #4b5563;
+  font-size: 8px;
+  line-height: 1.65;
+}
+
+.focusOrderList li {
+  padding-left: 2px;
+}
+
+.keyEventLog {
+  max-height: 180px;
+  margin-top: 7px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.keyEventLog > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.keyEventLog span {
+  overflow: hidden;
+  color: #4b5563;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keyEventLog small {
+  color: #b45309;
+  font-size: 7px;
+}
+
+@media (max-width: 1180px) {
+  .keyboardWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .keyboardInspector {
+    border-top: 1px solid #e5e7eb;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .storyTabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .storyTabs button {
+    flex-shrink: 0;
+  }
+
+  .usageSummaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .usageExplorerToolbar,
+  .usageLegend,
+  .keyboardGuideHeader {
+    flex-direction: column;
+  }
+
+  .keyboardActions {
+    justify-content: flex-start;
+  }
+
+  .usageRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .usageSymbols,
+  .usageMeta {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .usageSourceLink {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .keyboardChecks {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .usageSummaryGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .usageExplorer {
+    padding: 10px;
+  }
+
+  .usageScope {
+    width: 100%;
+  }
+
+  .usageScope button {
+    flex: 1;
+  }
+
+  .keyboardGuide {
+    padding: 12px;
+  }
+
+  .keyboardTestSurface {
+    padding: 44px 14px 18px;
+  }
+}
