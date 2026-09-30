@@ -34,6 +34,8 @@ import { RequirePermission } from "./components/auth/RequirePermission";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
+import { DealsPage } from "./pages/Deals/DealsPage";
+import { CreateDealPage } from "./pages/Deals/CreateDealPage";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
 import { BroadcastsPage } from "./pages/Broadcasts/BroadcastsPage";
@@ -268,6 +270,22 @@ const App = () => (
                             }
                           />
 
+                          <Route
+                            path="/deals"
+                            element={
+                              <RequirePermission permission="promotions.read">
+                                <DealsPage />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/deals/new"
+                            element={
+                              <RequirePermission permission="promotions.create">
+                                <CreateDealPage />
+                              </RequirePermission>
+                            }
+                          />
                           <Route
                             path="/discounts"
                             element={

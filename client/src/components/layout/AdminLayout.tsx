@@ -20,6 +20,7 @@ import {
   LayoutList,
   Star,
   RefreshCw,
+  Gift,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -77,6 +78,12 @@ const navItems = [
     label: "Subscriptions",
     icon: RefreshCw,
     requiredAny: ["orders.read"],
+  },
+  {
+    path: "/deals",
+    label: "Deals",
+    icon: Gift,
+    requiredAny: ["promotions.read"],
   },
   {
     path: "/discounts",

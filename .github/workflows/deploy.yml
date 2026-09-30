@@ -89,14 +89,20 @@ jobs:
           SERVER_HEAD_REF: ${{ github.head_ref }}
         run: |
           portal_ref="main"
-          # Cross-repository feature branches share a name; the server branch
-          # adds a "-server" suffix (for example, feature/foo-server).
-          candidate_ref="${SERVER_HEAD_REF%-server}"
+          exact_ref="$SERVER_HEAD_REF"
+          suffix_ref="${SERVER_HEAD_REF%-server}"
 
-          if [[ -n "$SERVER_HEAD_REF" && "$candidate_ref" != "$SERVER_HEAD_REF" ]] && \
+          # Prefer an exact cross-repository branch match (for example
+          # feat/deals in both repositories). Fall back to the historical
+          # feature/foo-server -> feature/foo convention.
+          if [[ -n "$exact_ref" ]] && \
             git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
-              "refs/heads/$candidate_ref" > /dev/null 2>&1; then
-            portal_ref="$candidate_ref"
+              "refs/heads/$exact_ref" > /dev/null 2>&1; then
+            portal_ref="$exact_ref"
+          elif [[ -n "$suffix_ref" && "$suffix_ref" != "$exact_ref" ]] && \
+            git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
+              "refs/heads/$suffix_ref" > /dev/null 2>&1; then
+            portal_ref="$suffix_ref"
           fi
 
           echo "ref=$portal_ref" >> "$GITHUB_OUTPUT"
@@ -148,6 +154,10 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | sudo tee /etc/apt/sources.list.d/stripe.list
           sudo apt-get update
           sudo apt-get install -y stripe
+
+      - name: Run Deals E2E gate
+        working-directory: server
+        run: E2E_USE_STRIPE_CLI=1 E2E_USE_TEST_CLOCKS=0 npx playwright test e2e/portal-subscriptions/deals.spec.js --workers=1
 
       - name: Run all subscription and signed-webhook E2E tests
         working-directory: server

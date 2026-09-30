@@ -47,8 +47,11 @@ const listVariantsQuerySchema = Joi.object({
 }).unknown(false);
 
 const searchVariantsQuerySchema = Joi.object({
-  q: Joi.string().trim().min(1).required(),
-  limit: Joi.number().integer().min(1).max(25).default(10),
+  q: Joi.string().trim().allow("").max(100).default(""),
+  page: Joi.number().integer().min(1).default(1),
+  pageSize: Joi.number().integer().min(1).max(24).default(8),
+  limit: Joi.number().integer().min(1).max(25).optional(),
+  inStock: Joi.boolean().truthy("true").falsy("false").default(false),
 }).unknown(false);
 
 module.exports = {

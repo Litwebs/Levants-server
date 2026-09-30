@@ -32,6 +32,17 @@ const checkoutOrderFields = {
     )
     .min(1)
     .required(),
+
+  deals: Joi.array()
+    .items(
+      Joi.object({
+        dealId: objectId.required(),
+        quantity: Joi.number().integer().min(1).max(99).required(),
+        expectedPackagePrice: Joi.number().precision(2).positive().required(),
+      }).unknown(false),
+    )
+    .max(20)
+    .optional(),
 };
 
 const createOrderSchema = Joi.object({

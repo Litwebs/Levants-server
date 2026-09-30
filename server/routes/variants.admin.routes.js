@@ -31,7 +31,7 @@ router.use(apiLimiter);
 
 router.get(
   "/search",
-  requirePermission(["products.read", "orders.update"]),
+  requirePermission(["products.read", "orders.update", "promotions.create"]),
   validateQuery(searchVariantsQuerySchema),
   asyncHandler(controller.SearchVariants),
 );

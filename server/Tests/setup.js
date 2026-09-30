@@ -152,6 +152,7 @@ beforeAll(async () => {
     require("../models/variant.model").init(),
     require("../models/discount.model").init(),
     require("../models/discountRedemption.model").init(),
+    require("../models/deal.model").init(),
     require("../models/order.model").init(),
     require("../models/subscription.model").init(),
     require("../models/subscriptionDelivery.model").init(),

@@ -13,11 +13,13 @@ const adminVariantRoutes = require("../routes/variants.admin.routes");
 const adminCustomerRoutes = require("../routes/customers.admin.routes");
 const publicCustomerRoutes = require("../routes/customers.public.routes");
 const publicDiscountRoutes = require("../routes/discounts.public.routes");
+const publicDealRoutes = require("../routes/deals.public.routes");
 const publicOrderRoutes = require("../routes/orders.public.routes");
 const publicDeliveryRoutes = require("../routes/delivery.public.routes");
 const adminDeliveryRoutes = require("../routes/delivery.routes");
 const adminOrderRoutes = require("../routes/orders.admin.routes");
 const adminDiscountRoutes = require("../routes/discounts.admin.routes");
+const adminDealRoutes = require("../routes/deals.admin.routes");
 const stripeWebhookRoutes = require("../routes/stripe.webhook.routes");
 const broadcastRoutes = require("../routes/broadcasts.routes");
 
@@ -42,6 +44,7 @@ app.use("/api/business-info", businessInfoRoutes);
 // 🟢 PUBLIC (frontend)
 app.use("/api/products", publicProductRoutes);
 app.use("/api/discounts", publicDiscountRoutes);
+app.use("/api/deals", publicDealRoutes);
 app.use("/api/delivery", publicDeliveryRoutes);
 app.use("/api/orders", publicOrderRoutes);
 
@@ -50,6 +53,7 @@ app.use("/api/admin/products", adminProductRoutes);
 app.use("/api/admin/products", adminVariantRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/discounts", adminDiscountRoutes);
+app.use("/api/admin/deals", adminDealRoutes);
 app.use("/api/admin/delivery", adminDeliveryRoutes);
 app.use("/api/admin/broadcasts", broadcastRoutes);
 

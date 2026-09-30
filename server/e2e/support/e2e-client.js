@@ -1,6 +1,7 @@
 "use strict";
 
 const {
+  ADMIN_ORIGIN,
   API_ORIGIN,
   CONTROL_ORIGIN,
   CONTROL_TOKEN,
@@ -36,6 +37,41 @@ async function createFixture(request, options) {
     timeout: 90_000,
   });
   return responseJson(response, "E2E fixture creation");
+}
+
+
+async function createDealsFixture(request, options = {}) {
+  const response = await request.post(`${CONTROL_ORIGIN}/deals/fixtures`, {
+    headers: controlHeaders,
+    data: options,
+    timeout: 90_000,
+  });
+  return responseJson(response, "Deals E2E fixture creation");
+}
+
+async function getDealsState(request, customerId) {
+  const response = await request.get(
+    `${CONTROL_ORIGIN}/deals/state/${encodeURIComponent(customerId)}`,
+    { headers: controlHeaders, timeout: 60_000 },
+  );
+  return responseJson(response, "Deals E2E state read");
+}
+
+async function mutateDealsFixture(request, input) {
+  const response = await request.post(`${CONTROL_ORIGIN}/deals/mutate`, {
+    headers: controlHeaders,
+    data: input || {},
+    timeout: 30_000,
+  });
+  return responseJson(response, "Deals E2E mutation");
+}
+
+async function redeliverDealCheckoutCompleted(request, sessionId) {
+  const response = await request.post(
+    `${CONTROL_ORIGIN}/deals/checkout/${encodeURIComponent(sessionId)}/redeliver`,
+    { headers: controlHeaders, timeout: 60_000 },
+  );
+  return responseJson(response, "Deal checkout webhook redelivery");
 }
 
 async function getEmails(request) {
@@ -157,19 +193,26 @@ function portalHeaders(accessToken) {
 }
 
 module.exports = {
+  ADMIN_ORIGIN,
   API_ORIGIN,
+  CONTROL_ORIGIN,
+  CONTROL_TOKEN,
   approveReview,
   autoResume,
+  createDealsFixture,
   createFixture,
   clearEmails,
   crossCutoff,
   deliverSignedInvoiceEvent,
   finalizeCancellation,
+  getDealsState,
   getState,
   getEmails,
   login,
+  mutateDealsFixture,
   portalHeaders,
   preparePaymentRetry,
+  redeliverDealCheckoutCompleted,
   reset,
   setPaymentOutcome,
 };

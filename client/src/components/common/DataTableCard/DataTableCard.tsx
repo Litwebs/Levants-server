@@ -10,7 +10,7 @@ interface PaginationOption {
   label: string;
 }
 
-interface PaginationConfig {
+export interface PaginationConfig {
   page: number;
   pageSize: number;
   total: number;
@@ -26,6 +26,96 @@ interface PaginationConfig {
   pageButtonsClassName?: string;
   pageLabelClassName?: string;
 }
+
+interface DataPaginationProps {
+  pagination: PaginationConfig;
+  spinnerClassName?: string;
+}
+
+export const DataPagination: React.FC<DataPaginationProps> = ({
+  pagination,
+  spinnerClassName,
+}) => {
+  const [paginationAction, setPaginationAction] = useState<
+    "prev" | "next" | null
+  >(null);
+
+  useEffect(() => {
+    if (!pagination.loading) setPaginationAction(null);
+  }, [pagination.loading]);
+
+  const cx = (...classes: Array<string | undefined>) =>
+    classes.filter(Boolean).join(" ");
+
+  return (
+    <CardFooter
+      className={cx(styles.paginationFooter, pagination.footerClassName)}
+    >
+      <div className={cx(styles.paginationInfo, pagination.infoClassName)}>
+        Showing{" "}
+        {pagination.total === 0
+          ? 0
+          : (pagination.page - 1) * pagination.pageSize + 1}{" "}
+        -{" "}
+        {pagination.total === 0
+          ? 0
+          : Math.min(pagination.page * pagination.pageSize, pagination.total)}{" "}
+        of {pagination.total}
+      </div>
+
+      <div className={cx(styles.paginationControls, pagination.controlsClassName)}>
+        <Select
+          className={cx(styles.pageSizeSelect, pagination.pageSizeSelectClassName)}
+          value={String(pagination.pageSize)}
+          disabled={pagination.loading}
+          onChange={(value) => {
+            pagination.setPageSize(Number(value));
+            pagination.setPage(1);
+          }}
+          options={pagination.pageSizeOptions}
+        />
+
+        <div className={cx(styles.pageButtons, pagination.pageButtonsClassName)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={Boolean(pagination.loading) || pagination.page <= 1}
+            onClick={() => {
+              setPaginationAction("prev");
+              pagination.setPage((currentPage) => Math.max(1, currentPage - 1));
+            }}
+          >
+            {pagination.loading && paginationAction === "prev" ? (
+              <Loader2 size={14} className={cx(styles.spinnerIcon, spinnerClassName)} />
+            ) : (
+              <><ChevronLeft size={16} /> Prev</>
+            )}
+          </Button>
+
+          <div className={cx(styles.pageLabel, pagination.pageLabelClassName)}>
+            Page {pagination.page} / {pagination.totalPages}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={Boolean(pagination.loading) || pagination.page >= pagination.totalPages}
+            onClick={() => {
+              setPaginationAction("next");
+              pagination.setPage((currentPage) => Math.min(pagination.totalPages, currentPage + 1));
+            }}
+          >
+            {pagination.loading && paginationAction === "next" ? (
+              <Loader2 size={14} className={cx(styles.spinnerIcon, spinnerClassName)} />
+            ) : (
+              <>Next <ChevronRight size={16} /></>
+            )}
+          </Button>
+        </div>
+      </div>
+    </CardFooter>
+  );
+};
 
 interface DataTableCardProps {
   className?: string;
@@ -55,16 +145,6 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
   const cx = (...classes: Array<string | undefined>) =>
     classes.filter(Boolean).join(" ");
 
-  const [paginationAction, setPaginationAction] = useState<
-    "prev" | "next" | null
-  >(null);
-
-  useEffect(() => {
-    if (!loading) {
-      setPaginationAction(null);
-    }
-  }, [loading]);
-
   return (
     <Card className={className}>
       <div className={cx(styles.tableArea, tableAreaClassName)}>
@@ -88,111 +168,7 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
         </div>
       ) : null}
 
-      {pagination ? (
-        <CardFooter
-          className={cx(styles.paginationFooter, pagination.footerClassName)}
-        >
-          <div className={cx(styles.paginationInfo, pagination.infoClassName)}>
-            Showing{" "}
-            {pagination.total === 0
-              ? 0
-              : (pagination.page - 1) * pagination.pageSize + 1}{" "}
-            -{" "}
-            {pagination.total === 0
-              ? 0
-              : Math.min(
-                  pagination.page * pagination.pageSize,
-                  pagination.total,
-                )}{" "}
-            of {pagination.total}
-          </div>
-
-          <div
-            className={cx(
-              styles.paginationControls,
-              pagination.controlsClassName,
-            )}
-          >
-            <Select
-              className={cx(
-                styles.pageSizeSelect,
-                pagination.pageSizeSelectClassName,
-              )}
-              value={String(pagination.pageSize)}
-              disabled={pagination.loading}
-              onChange={(value) => {
-                pagination.setPageSize(Number(value));
-                pagination.setPage(1);
-              }}
-              options={pagination.pageSizeOptions}
-            />
-
-            <div
-              className={cx(
-                styles.pageButtons,
-                pagination.pageButtonsClassName,
-              )}
-            >
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={Boolean(pagination.loading) || pagination.page <= 1}
-                onClick={() => {
-                  setPaginationAction("prev");
-                  pagination.setPage((currentPage) =>
-                    Math.max(1, currentPage - 1),
-                  );
-                }}
-              >
-                {pagination.loading && paginationAction === "prev" ? (
-                  <Loader2
-                    size={14}
-                    className={cx(styles.spinnerIcon, spinnerClassName)}
-                  />
-                ) : (
-                  <>
-                    <ChevronLeft size={16} />
-                    Prev
-                  </>
-                )}
-              </Button>
-
-              <div
-                className={cx(styles.pageLabel, pagination.pageLabelClassName)}
-              >
-                Page {pagination.page} / {pagination.totalPages}
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={
-                  Boolean(pagination.loading) ||
-                  pagination.page >= pagination.totalPages
-                }
-                onClick={() => {
-                  setPaginationAction("next");
-                  pagination.setPage((currentPage) =>
-                    Math.min(pagination.totalPages, currentPage + 1),
-                  );
-                }}
-              >
-                {pagination.loading && paginationAction === "next" ? (
-                  <Loader2
-                    size={14}
-                    className={cx(styles.spinnerIcon, spinnerClassName)}
-                  />
-                ) : (
-                  <>
-                    Next
-                    <ChevronRight size={16} />
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </CardFooter>
-      ) : null}
+      {pagination ? <DataPagination pagination={pagination} spinnerClassName={spinnerClassName} /> : null}
     </Card>
   );
 };
