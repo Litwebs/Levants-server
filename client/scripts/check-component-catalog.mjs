@@ -10,7 +10,7 @@ const clientDir = path.resolve(scriptsDir, "..");
 const barrelPath = path.join(clientDir, "src/components/common/index.ts");
 const storiesPath = path.join(
   clientDir,
-  "src/pages/ComponentCatalog/CatalogStories.tsx",
+  "src/pages/ComponentCatalog/CatalogStories.ts",
 );
 
 const barrel = fs.readFileSync(barrelPath, "utf8");
