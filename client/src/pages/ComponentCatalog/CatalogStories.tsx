@@ -864,9 +864,9 @@ function FiltersCardLayoutStory() {
   isExpanded={${expanded}}
   topRow={...}
   expandedContent={...}
-  expandedWrapClassName={styles.filtersWrap}
-  expandedOpenClassName={styles.filtersOpen}
-  expandedInnerClassName={styles.filtersInner}
+  expandedWrapClassName={sharedFilters.filtersRowWrap}
+  expandedOpenClassName={sharedFilters.filtersRowOpen}
+  expandedInnerClassName={sharedFilters.filtersRowInner}
 />`}
       controls={
         <>
