@@ -5,6 +5,7 @@ import {
   Code2,
   FileCode2,
   Monitor,
+  RotateCcw,
   Smartphone,
   Tablet,
 } from "lucide-react";
@@ -37,6 +38,18 @@ export type CatalogEntry = {
 type ViewportMode = "responsive" | "tablet" | "mobile";
 type StoryTab = "preview" | "api" | "source";
 
+const StoryResetContext = createContext<(() => void) | null>(null);
+
+export function ResettableStory({ Story }: { Story: React.ComponentType }) {
+  const [revision, setRevision] = useState(0);
+
+  return (
+    <StoryResetContext.Provider value={() => setRevision((value) => value + 1)}>
+      <Story key={revision} />
+    </StoryResetContext.Provider>
+  );
+}
+
 export function CatalogStory({
   title,
   description,
@@ -66,9 +79,14 @@ export function CatalogStory({
 
   const copyCode = async () => {
     if (!code) return;
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
   };
 
   const frameClass = [
@@ -121,6 +139,16 @@ export function CatalogStory({
       {tab === "preview" ? (
         <>
           <div className={styles.storyToolbar}>
+            {resetStory ? (
+              <button
+                type="button"
+                className={styles.resetStoryButton}
+                onClick={resetStory}
+              >
+                <RotateCcw size={13} />
+                Reset component
+              </button>
+            ) : null}
             <span>Preview width</span>
             <div className={styles.viewportControls}>
               <button
