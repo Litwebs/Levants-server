@@ -1,18 +1,27 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useMemo, useRef, useState } from "react";
 import {
   Check,
   Clipboard,
   Code2,
+  ExternalLink,
   FileCode2,
+  Focus,
+  GitBranch,
+  Keyboard,
+  ListTree,
   Monitor,
   RotateCcw,
+  Search,
   Smartphone,
   Tablet,
+  Trash2,
 } from "lucide-react";
 import {
   extractApiDeclarations,
   getComponentSources,
 } from "./catalogSource";
+import { getComponentUsage } from "./catalogUsage";
+import { getKeyboardProfile } from "./catalogKeyboard";
 import styles from "./ComponentCatalog.module.css";
 
 export type CatalogCategory =
@@ -36,7 +45,7 @@ export type CatalogEntry = {
 };
 
 type ViewportMode = "responsive" | "tablet" | "mobile";
-type StoryTab = "preview" | "api" | "source";
+type StoryTab = "preview" | "usage" | "keyboard" | "api" | "source";
 
 const StoryResetContext = createContext<(() => void) | null>(null);
 
@@ -47,6 +56,374 @@ export function ResettableStory({ Story }: { Story: React.ComponentType }) {
     <StoryResetContext.Provider value={() => setRevision((value) => value + 1)}>
       <Story key={revision} />
     </StoryResetContext.Provider>
+  );
+}
+
+function UsageExplorer({ moduleName }: { moduleName: string }) {
+  const summary = useMemo(() => getComponentUsage(moduleName), [moduleName]);
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<"all" | "application" | "shared">("all");
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = summary.usages.filter((usage) => {
+    if (scope !== "all" && usage.kind !== scope) return false;
+    if (!normalizedQuery) return true;
+
+    return [
+      usage.sourcePath,
+      usage.area,
+      usage.feature,
+      ...usage.symbols.flatMap((symbol) => [
+        symbol.exportedName,
+        symbol.localName,
+      ]),
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
+  });
+
+  const grouped = filtered.reduce<Record<string, typeof filtered>>(
+    (groups, usage) => {
+      const key = usage.area;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(usage);
+      return groups;
+    },
+    {},
+  );
+
+  const githubUrl = (sourcePath: string, line: number) =>
+    "https://github.com/Litwebs/Levants-server/blob/feature/component-catalog/client/src/" +
+    sourcePath +
+    "#L" +
+    line;
+
+  return (
+    <div className={styles.usageExplorer}>
+      <div className={styles.usageSummaryGrid}>
+        <div>
+          <strong>{summary.applicationFiles}</strong>
+          <span>application files</span>
+        </div>
+        <div>
+          <strong>{summary.sharedFiles}</strong>
+          <span>shared dependencies</span>
+        </div>
+        <div>
+          <strong>{summary.references}</strong>
+          <span>source references</span>
+        </div>
+        <div>
+          <strong>{summary.areas}</strong>
+          <span>code areas</span>
+        </div>
+      </div>
+
+      <div className={styles.usageExplorerToolbar}>
+        <label className={styles.usageSearch}>
+          <Search size={14} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter files, features or exported symbols..."
+          />
+        </label>
+
+        <div className={styles.usageScope}>
+          {[
+            ["all", "All"],
+            ["application", "Application"],
+            ["shared", "Shared"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={scope === value ? styles.usageScopeActive : ""}
+              onClick={() => setScope(value as typeof scope)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className={styles.usageLegend}>
+        <span>
+          Exports:{" "}
+          {summary.exportedSymbols.map((symbol) => (
+            <code key={symbol}>{symbol}</code>
+          ))}
+        </span>
+        <span>
+          Reference counts are static identifier occurrences, not runtime render
+          counts.
+        </span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className={styles.emptyPanel}>
+          No source usages match the current filter.
+        </div>
+      ) : (
+        <div className={styles.usageGroups}>
+          {Object.entries(grouped).map(([area, usages]) => (
+            <section className={styles.usageGroup} key={area}>
+              <div className={styles.usageGroupHeader}>
+                <div>
+                  <ListTree size={14} />
+                  <strong>{area}</strong>
+                </div>
+                <span>{usages.length} file{usages.length === 1 ? "" : "s"}</span>
+              </div>
+
+              <div className={styles.usageRows}>
+                {usages.map((usage) => (
+                  <div className={styles.usageRow} key={usage.sourcePath}>
+                    <div className={styles.usageFile}>
+                      <div className={styles.usageFileHeading}>
+                        <strong>{usage.feature}</strong>
+                        <span>{usage.file}</span>
+                      </div>
+                      <code>{usage.sourcePath}</code>
+                    </div>
+
+                    <div className={styles.usageSymbols}>
+                      {usage.symbols.map((symbol) => (
+                        <span
+                          key={symbol.exportedName + ":" + symbol.localName}
+                          title={
+                            symbol.localName === symbol.exportedName
+                              ? symbol.exportedName
+                              : symbol.exportedName + " as " + symbol.localName
+                          }
+                        >
+                          <code>{symbol.localName}</code>
+                          <small>{symbol.references}</small>
+                        </span>
+                      ))}
+                    </div>
+
+                    <div className={styles.usageMeta}>
+                      {usage.importStyles.map((style) => (
+                        <span key={style}>{style}</span>
+                      ))}
+                      <strong>{usage.references} refs</strong>
+                    </div>
+
+                    <a
+                      className={styles.usageSourceLink}
+                      href={githubUrl(usage.sourcePath, usage.importLine)}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open this usage on GitHub"
+                    >
+                      <ExternalLink size={14} />
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function describeFocusable(element: HTMLElement) {
+  const tag = element.tagName.toLowerCase();
+  const ariaLabel = element.getAttribute("aria-label");
+  const text = element.textContent?.trim().replace(/\s+/g, " ").slice(0, 60);
+  const name = ariaLabel || text || element.getAttribute("name") || element.id;
+
+  return name ? tag + ' "' + name + '"' : tag;
+}
+
+function KeyboardTestPanel({
+  moduleName,
+  children,
+}: {
+  moduleName: string;
+  children: React.ReactNode;
+}) {
+  const profile = useMemo(() => getKeyboardProfile(moduleName), [moduleName]);
+  const testSurfaceRef = useRef<HTMLDivElement>(null);
+  const [focused, setFocused] = useState("Nothing focused");
+  const [focusOrder, setFocusOrder] = useState<string[]>([]);
+  const [events, setEvents] = useState<
+    Array<{
+      id: number;
+      key: string;
+      target: string;
+      modifiers: string;
+      prevented: boolean;
+    }>
+  >([]);
+
+  const focusSelector = [
+    "button:not([disabled])",
+    "[href]",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
+
+  const scanFocusOrder = () => {
+    const elements = Array.from(
+      testSurfaceRef.current?.querySelectorAll<HTMLElement>(focusSelector) ?? [],
+    ).filter((element) => {
+      const style = window.getComputedStyle(element);
+      return style.display !== "none" && style.visibility !== "hidden";
+    });
+
+    setFocusOrder(elements.map(describeFocusable));
+    return elements;
+  };
+
+  const focusFirst = () => {
+    const elements = scanFocusOrder();
+    elements[0]?.focus();
+  };
+
+  return (
+    <div className={styles.keyboardPanel}>
+      <div className={styles.keyboardGuide}>
+        <div className={styles.keyboardGuideHeader}>
+          <div>
+            <Keyboard size={18} />
+            <div>
+              <strong>{profile.title}</strong>
+              <span>Use your physical keyboard against the real rendered component.</span>
+            </div>
+          </div>
+
+          <div className={styles.keyboardActions}>
+            <button type="button" onClick={focusFirst}>
+              <Focus size={13} />
+              Focus first control
+            </button>
+            <button type="button" onClick={scanFocusOrder}>
+              <ListTree size={13} />
+              Scan focus order
+            </button>
+            <button type="button" onClick={() => setEvents([])}>
+              <Trash2 size={13} />
+              Clear log
+            </button>
+          </div>
+        </div>
+
+        {profile.checks.length ? (
+          <div className={styles.keyboardChecks}>
+            {profile.checks.map((check, index) => (
+              <div className={styles.keyboardCheck} key={index}>
+                <div className={styles.keySequence}>
+                  {check.keys.map((key) => (
+                    <kbd key={key}>{key === " " ? "Space" : key}</kbd>
+                  ))}
+                </div>
+                <p>{check.expected}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.keyboardNoInteraction}>
+            This component is not expected to receive keyboard interaction
+            itself.
+          </div>
+        )}
+
+        <div className={styles.keyboardObservations}>
+          <strong>Source observations</strong>
+          {profile.observations.map((observation) => (
+            <p key={observation}>{observation}</p>
+          ))}
+        </div>
+      </div>
+
+      <div className={styles.keyboardWorkspace}>
+        <div
+          ref={testSurfaceRef}
+          className={styles.keyboardTestSurface}
+          onFocusCapture={(event) =>
+            setFocused(describeFocusable(event.target as HTMLElement))
+          }
+          onKeyDownCapture={(event) => {
+            const modifiers = [
+              event.shiftKey ? "Shift" : "",
+              event.ctrlKey ? "Ctrl" : "",
+              event.altKey ? "Alt" : "",
+              event.metaKey ? "Meta" : "",
+            ]
+              .filter(Boolean)
+              .join("+");
+
+            setEvents((current) => [
+              {
+                id: Date.now() + Math.random(),
+                key: event.key === " " ? "Space" : event.key,
+                target: describeFocusable(event.target as HTMLElement),
+                modifiers,
+                prevented: event.defaultPrevented,
+              },
+              ...current,
+            ].slice(0, 20));
+          }}
+        >
+          <div className={styles.keyboardSurfaceLabel}>Interactive test surface</div>
+          <div className={styles.keyboardRenderedComponent}>{children}</div>
+        </div>
+
+        <aside className={styles.keyboardInspector}>
+          <div className={styles.keyboardInspectorBlock}>
+            <span>Currently focused</span>
+            <strong>{focused}</strong>
+          </div>
+
+          <div className={styles.keyboardInspectorBlock}>
+            <div className={styles.keyboardInspectorHeading}>
+              <span>Focus order</span>
+              <small>{focusOrder.length}</small>
+            </div>
+            {focusOrder.length ? (
+              <ol className={styles.focusOrderList}>
+                {focusOrder.map((item, index) => (
+                  <li key={index}>{item}</li>
+                ))}
+              </ol>
+            ) : (
+              <p>Run “Scan focus order” to inspect tabbable descendants.</p>
+            )}
+          </div>
+
+          <div className={styles.keyboardInspectorBlock}>
+            <div className={styles.keyboardInspectorHeading}>
+              <span>Key event log</span>
+              <small>{events.length}</small>
+            </div>
+            {events.length ? (
+              <div className={styles.keyEventLog}>
+                {events.map((entry) => (
+                  <div key={entry.id}>
+                    <kbd>
+                      {entry.modifiers
+                        ? entry.modifiers + "+" + entry.key
+                        : entry.key}
+                    </kbd>
+                    <span>{entry.target}</span>
+                    {entry.prevented ? <small>prevented</small> : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p>Focus the test surface and press keys to record events.</p>
+            )}
+          </div>
+        </aside>
+      </div>
+    </div>
   );
 }
 
@@ -116,6 +493,22 @@ export function CatalogStory({
           >
             <Monitor size={14} />
             Preview
+          </button>
+          <button
+            type="button"
+            className={tab === "usage" ? styles.activeTab : ""}
+            onClick={() => setTab("usage")}
+          >
+            <GitBranch size={14} />
+            Usage
+          </button>
+          <button
+            type="button"
+            className={tab === "keyboard" ? styles.activeTab : ""}
+            onClick={() => setTab("keyboard")}
+          >
+            <Keyboard size={14} />
+            Keyboard
           </button>
           <button
             type="button"
@@ -196,7 +589,7 @@ export function CatalogStory({
           {code ? (
             <div className={styles.usagePanel}>
               <div className={styles.usageHeader}>
-                <span>Current usage</span>
+                <span>Current JSX</span>
                 <button type="button" onClick={copyCode}>
                   {copied ? <Check size={14} /> : <Clipboard size={14} />}
                   {copied ? "Copied" : "Copy"}
@@ -206,6 +599,14 @@ export function CatalogStory({
             </div>
           ) : null}
         </>
+      ) : null}
+
+      {tab === "usage" ? <UsageExplorer moduleName={moduleName} /> : null}
+
+      {tab === "keyboard" ? (
+        <KeyboardTestPanel moduleName={moduleName}>
+          {children}
+        </KeyboardTestPanel>
       ) : null}
 
       {tab === "api" ? (
