@@ -20,6 +20,7 @@ import {
   LayoutList,
   Star,
   RefreshCw,
+  Component,
 } from "lucide-react";
 import { LogOut } from "lucide-react";
 import {
@@ -38,6 +39,7 @@ import {
   getBusinessBranding,
   getBusinessInitials,
 } from "@/lib/businessBranding";
+import { hasLitwebsEmail } from "@/lib/internalAccess";
 import styles from "./AdminLayout.module.css";
 
 const navItems = [
@@ -108,6 +110,13 @@ const navItems = [
     icon: Star,
     requiredAny: ["reviews.read"],
     badgeKey: "pendingReviews" as const,
+  },
+  {
+    path: "/component-catalog",
+    label: "Component Lab",
+    icon: Component,
+    internalLitwebsOnly: true,
+    adminOnly: true,
   },
   {
     path: "/settings",
@@ -237,10 +246,28 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     typeof user?.role === "string" ? user.role : user?.role?.name;
 
   const visibleNavItems = navItems.filter((item) => {
+    const itemConfig = item as typeof item & {
+      internalLitwebsOnly?: boolean;
+      adminOnly?: boolean;
+      requiredAny?: string[];
+    };
+
     if (item.path === "/orders" && String(roleLabel || "") === "driver") {
       return false;
     }
-    const requiredAny = (item as any).requiredAny as string[] | undefined;
+
+    if (itemConfig.internalLitwebsOnly && !hasLitwebsEmail(user?.email)) {
+      return false;
+    }
+
+    if (
+      itemConfig.adminOnly &&
+      String(roleLabel || "").toLowerCase() !== "admin"
+    ) {
+      return false;
+    }
+
+    const requiredAny = itemConfig.requiredAny;
     if (!Array.isArray(requiredAny) || requiredAny.length === 0) return true;
     return hasAnyPermission(requiredAny);
   });
