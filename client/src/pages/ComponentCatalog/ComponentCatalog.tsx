@@ -6,7 +6,6 @@ import {
   Component,
   FileCode2,
   Search,
-  ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
 import { catalogEntries, categoryOrder } from "./CatalogStories";
@@ -237,7 +236,7 @@ export default function ComponentCatalog() {
           </span>
           <div>
             <strong>Levants Component Lab</strong>
-            <span>Internal design-system workbench</span>
+            <span>Shared UI reference</span>
           </div>
         </div>
 
@@ -249,32 +248,18 @@ export default function ComponentCatalog() {
 
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
-          <div className={styles.heroEyebrow}>
-            <ShieldCheck size={15} />
-            Admin-only · light-mode isolated
-          </div>
-          <h1>Build, inspect and stress-test the shared UI.</h1>
+          <div className={styles.heroEyebrow}>Component reference</div>
+          <h1>Shared UI components</h1>
           <p>
-            Every preview below renders the real component from
-            <code> src/components/common</code>. API tables and source views are
-            derived from the component files in the browser build, not copied into
-            separate documentation.
+            Real components from <code>src/components/common</code>, with live
+            controls, usage, keyboard testing, API details and source.
           </p>
         </div>
 
         <div className={styles.heroStats}>
-          <div>
-            <strong>{catalogEntries.length}</strong>
-            <span>interactive modules</span>
-          </div>
-          <div>
-            <strong>{exportedModules.length}</strong>
-            <span>barrel exports</span>
-          </div>
-          <div>
-            <strong>{coveragePercent}%</strong>
-            <span>catalog coverage</span>
-          </div>
+          <div><strong>{catalogEntries.length}</strong><span>components</span></div>
+          <div><strong>{exportedModules.length}</strong><span>exports</span></div>
+          <div><strong>{coveragePercent}%</strong><span>coverage</span></div>
         </div>
       </section>
 
@@ -353,10 +338,7 @@ export default function ComponentCatalog() {
                 id={"category-" + group.category.toLowerCase()}
               >
                 <div className={styles.categoryHeading}>
-                  <div>
-                    <span>{group.category}</span>
-                    <h2>{group.category}</h2>
-                  </div>
+                  <h2>{group.category}</h2>
                   <small>{group.entries.length} component{group.entries.length === 1 ? "" : "s"}</small>
                 </div>
 
