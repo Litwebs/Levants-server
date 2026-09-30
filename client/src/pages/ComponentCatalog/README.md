@@ -42,7 +42,7 @@ Access:
 ## Files
 
 - `ComponentCatalog.tsx` — shell, navigation, search, source coverage, tokens.
-- `CatalogStories.tsx` — registry and one interactive story per shared module.
+- `CatalogStories.ts` — small registry mapping every common module to a story.\n- `stories/` — category-focused interactive story modules.
 - `CatalogUI.tsx` — reusable story chrome and control primitives.
 - `catalogSource.ts` — source loading and API extraction.
 - `ComponentCatalog.module.css` — isolated workbench styling.
@@ -52,7 +52,7 @@ Access:
 
 When a new folder is exported from `src/components/common/index.ts`:
 
-1. Add a story component to `CatalogStories.tsx`.
+1. Add the story to the appropriate file in `stories/`.
 2. Render the real component and expose meaningful runtime props as controls.
 3. Add one registry entry with the exact exported module folder in
    `moduleName`.
