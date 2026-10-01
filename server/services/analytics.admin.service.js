@@ -24,6 +24,9 @@ const {
   SALES_CHANNEL_EXPRESSION,
   EFFECTIVE_PAID_AT_EXPRESSION,
   COLLECTED_AMOUNT_EXPRESSION,
+  COLLECTED_MERCHANDISE_EXPRESSION,
+  COLLECTED_DELIVERY_EXPRESSION,
+  COLLECTED_DISCOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
   buildSalesOrderMatch,
   buildRefundLedgerPrefilter,
@@ -70,6 +73,40 @@ const PERFORMANCE_COMPARISON_METRICS = [
   "averageUnitsPerOrder",
 ];
 
+const roundPercentage = (value, total) =>
+  total > 0
+    ? Math.round(((value / total) * 100 + Number.EPSILON) * 100) / 100
+    : 0;
+
+const buildRevenueComposition = (metrics = {}) => {
+  const merchandiseRevenue = Number(metrics.merchandiseRevenue) || 0;
+  const deliveryRevenue = Number(metrics.deliveryRevenue) || 0;
+  const discountAmount = Number(metrics.discountAmount) || 0;
+  const discountedOrders = Number(metrics.discountedOrders) || 0;
+  const grossRevenue = Number(metrics.grossRevenue) || 0;
+  const refundAmount = Number(metrics.refundAmount) || 0;
+  const netRevenue = Number(metrics.netRevenue) || 0;
+  const preDiscountRevenue = merchandiseRevenue + deliveryRevenue;
+
+  return {
+    merchandiseRevenue,
+    deliveryRevenue,
+    discountAmount,
+    discountedOrders,
+    averageDiscountPerDiscountedOrder:
+      discountedOrders > 0 ? discountAmount / discountedOrders : 0,
+    discountRate: roundPercentage(discountAmount, preDiscountRevenue),
+    preDiscountRevenue,
+    grossRevenue,
+    merchandiseRevenue,
+    deliveryRevenue,
+    discountAmount,
+    discountedOrders,
+    refundAmount,
+    netRevenue,
+  };
+};
+
 async function GetPerformanceMetrics({
   range,
   from,
@@ -111,6 +148,18 @@ async function GetPerformanceMetrics({
           _id: null,
           totalOrders: { $sum: 1 },
           grossRevenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+          merchandiseRevenue: { $sum: COLLECTED_MERCHANDISE_EXPRESSION },
+          deliveryRevenue: { $sum: COLLECTED_DELIVERY_EXPRESSION },
+          discountAmount: { $sum: COLLECTED_DISCOUNT_EXPRESSION },
+          discountedOrders: {
+            $sum: {
+              $cond: [
+                { $gt: [COLLECTED_DISCOUNT_EXPRESSION, 0] },
+                1,
+                0,
+              ],
+            },
+          },
           unitsSold: { $sum: "$_analyticsUnitsInOrder" },
         },
       },
@@ -174,10 +223,18 @@ async function GetPerformanceMetrics({
     (legacyRefundAgg?.[0]?.refundAmount ?? 0);
   const netRevenue = grossRevenue - refundAmount;
   const unitsSold = sales.unitsSold ?? 0;
+  const merchandiseRevenue = sales.merchandiseRevenue ?? 0;
+  const deliveryRevenue = sales.deliveryRevenue ?? 0;
+  const discountAmount = sales.discountAmount ?? 0;
+  const discountedOrders = sales.discountedOrders ?? 0;
 
   return {
     totalOrders,
     grossRevenue,
+    merchandiseRevenue,
+    deliveryRevenue,
+    discountAmount,
+    discountedOrders,
     refundAmount,
     netRevenue,
     revenue: netRevenue,
@@ -394,6 +451,10 @@ async function GetSummary({
       // collected sales in the period less refunds issued in the period.
       revenue,
       grossRevenue,
+      merchandiseRevenue,
+      deliveryRevenue,
+      discountAmount,
+      discountedOrders,
       refundAmount,
       netRevenue,
       averageOrderValue,
@@ -467,6 +528,18 @@ async function GetSalesBreakdown({
           _id: "$_analyticsChannel",
           totalOrders: { $sum: 1 },
           grossRevenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+          merchandiseRevenue: { $sum: COLLECTED_MERCHANDISE_EXPRESSION },
+          deliveryRevenue: { $sum: COLLECTED_DELIVERY_EXPRESSION },
+          discountAmount: { $sum: COLLECTED_DISCOUNT_EXPRESSION },
+          discountedOrders: {
+            $sum: {
+              $cond: [
+                { $gt: [COLLECTED_DISCOUNT_EXPRESSION, 0] },
+                1,
+                0,
+              ],
+            },
+          },
           unitsSold: { $sum: "$_analyticsUnitsInOrder" },
         },
       },
@@ -549,12 +622,18 @@ async function GetSalesBreakdown({
               ? "Subscription"
               : "Imported",
         grossRevenue: 0,
+        merchandiseRevenue: 0,
+        deliveryRevenue: 0,
+        discountAmount: 0,
+        discountedOrders: 0,
         refundAmount: 0,
         netRevenue: 0,
         totalOrders: 0,
         unitsSold: 0,
         averageOrderValue: 0,
         averageUnitsPerOrder: 0,
+        averageDiscountPerDiscountedOrder: 0,
+        discountRate: 0,
         grossRevenueShare: 0,
         orderShare: 0,
       },
@@ -567,6 +646,10 @@ async function GetSalesBreakdown({
 
     channel.totalOrders = Number(row.totalOrders) || 0;
     channel.grossRevenue = Number(row.grossRevenue) || 0;
+    channel.merchandiseRevenue = Number(row.merchandiseRevenue) || 0;
+    channel.deliveryRevenue = Number(row.deliveryRevenue) || 0;
+    channel.discountAmount = Number(row.discountAmount) || 0;
+    channel.discountedOrders = Number(row.discountedOrders) || 0;
     channel.unitsSold = Number(row.unitsSold) || 0;
   }
 
@@ -580,6 +663,10 @@ async function GetSalesBreakdown({
   const totals = channels.reduce(
     (acc, channel) => {
       acc.grossRevenue += channel.grossRevenue;
+      acc.merchandiseRevenue += channel.merchandiseRevenue;
+      acc.deliveryRevenue += channel.deliveryRevenue;
+      acc.discountAmount += channel.discountAmount;
+      acc.discountedOrders += channel.discountedOrders;
       acc.refundAmount += channel.refundAmount;
       acc.totalOrders += channel.totalOrders;
       acc.unitsSold += channel.unitsSold;
@@ -587,12 +674,18 @@ async function GetSalesBreakdown({
     },
     {
       grossRevenue: 0,
+      merchandiseRevenue: 0,
+      deliveryRevenue: 0,
+      discountAmount: 0,
+      discountedOrders: 0,
       refundAmount: 0,
       netRevenue: 0,
       totalOrders: 0,
       unitsSold: 0,
       averageOrderValue: 0,
       averageUnitsPerOrder: 0,
+      averageDiscountPerDiscountedOrder: 0,
+      discountRate: 0,
     },
   );
 
@@ -601,11 +694,14 @@ async function GetSalesBreakdown({
     totals.totalOrders > 0 ? totals.grossRevenue / totals.totalOrders : 0;
   totals.averageUnitsPerOrder =
     totals.totalOrders > 0 ? totals.unitsSold / totals.totalOrders : 0;
-
-  const percentage = (value, total) =>
-    total > 0
-      ? Math.round(((value / total) * 100 + Number.EPSILON) * 100) / 100
+  totals.averageDiscountPerDiscountedOrder =
+    totals.discountedOrders > 0
+      ? totals.discountAmount / totals.discountedOrders
       : 0;
+  totals.discountRate = roundPercentage(
+    totals.discountAmount,
+    totals.merchandiseRevenue + totals.deliveryRevenue,
+  );
 
   for (const channel of channels) {
     channel.netRevenue = channel.grossRevenue - channel.refundAmount;
@@ -615,11 +711,22 @@ async function GetSalesBreakdown({
         : 0;
     channel.averageUnitsPerOrder =
       channel.totalOrders > 0 ? channel.unitsSold / channel.totalOrders : 0;
-    channel.grossRevenueShare = percentage(
+    channel.averageDiscountPerDiscountedOrder =
+      channel.discountedOrders > 0
+        ? channel.discountAmount / channel.discountedOrders
+        : 0;
+    channel.discountRate = roundPercentage(
+      channel.discountAmount,
+      channel.merchandiseRevenue + channel.deliveryRevenue,
+    );
+    channel.grossRevenueShare = roundPercentage(
       channel.grossRevenue,
       totals.grossRevenue,
     );
-    channel.orderShare = percentage(channel.totalOrders, totals.totalOrders);
+    channel.orderShare = roundPercentage(
+      channel.totalOrders,
+      totals.totalOrders,
+    );
   }
 
   return {
@@ -628,6 +735,27 @@ async function GetSalesBreakdown({
       channels,
       totals,
     },
+  };
+}
+
+async function GetRevenueComposition({
+  range,
+  from,
+  to,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const metrics = await GetPerformanceMetrics({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+
+  return {
+    success: true,
+    data: buildRevenueComposition(metrics),
   };
 }
 
@@ -1290,6 +1418,7 @@ async function GetDashboard({
       // Kept for existing consumers while the analytics UI is migrated.
       summary: summary.data,
       revenue: revenue.data,
+      revenueComposition: buildRevenueComposition(summary.data),
       topProducts: topProducts.data,
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
@@ -1304,6 +1433,7 @@ module.exports = {
   GetSummary,
   GetSummaryComparison,
   GetPerformanceMetrics,
+  GetRevenueComposition,
   GetSalesBreakdown,
   GetRevenueSeries,
   GetRevenueOverview,
