@@ -91,4 +91,28 @@ describe("analytics query validation", () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
   });
+  test("rejects unbounded daily or weekly all-time series", async () => {
+    const cookie = await loginAdmin();
+
+    for (const interval of ["day", "week"]) {
+      const res = await request(app)
+        .get(`/api/admin/analytics/revenue?range=all&interval=${interval}`)
+        .set("Cookie", cookie);
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain("monthly or yearly");
+    }
+  });
+
+  test("all-time analytics allow bounded-granularity monthly series", async () => {
+    const cookie = await loginAdmin();
+
+    const res = await request(app)
+      .get("/api/admin/analytics/revenue?range=all&interval=month")
+      .set("Cookie", cookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.interval).toBe("month");
+  });
+
 });
