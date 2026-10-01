@@ -6,6 +6,7 @@ const {
 } = require("./analyticsDate.util");
 
 const SUPPORTED_REVENUE_INTERVALS = ["day", "week", "month", "year"];
+const MAX_REVENUE_SERIES_BUCKETS = 1000;
 
 const normalizeRevenueInterval = (interval) => {
   const normalized =
@@ -168,6 +169,51 @@ const isoWeekLabel = ({ year, month, day }) => {
   return `${isoYear}-W${String(week).padStart(2, "0")}`;
 };
 
+const estimateRevenueSeriesBucketCount = ({
+  interval,
+  range,
+  from,
+  to,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+  now,
+} = {}) => {
+  const normalizedInterval = normalizeRevenueInterval(interval);
+  const parsed = parseDateRange({ range, from, to, timeZone, now });
+  if (parsed.invalid || !parsed.start || !parsed.end) return 0;
+
+  const start = parseYmdLabel(formatYmdInTimeZone(parsed.start, timeZone));
+  const end = parseYmdLabel(formatYmdInTimeZone(parsed.end, timeZone));
+  if (!start || !end) return 0;
+
+  if (normalizedInterval === "year") {
+    return end.year - start.year + 1;
+  }
+
+  if (normalizedInterval === "month") {
+    return (
+      (end.year - start.year) * 12 +
+      (end.month - start.month) +
+      1
+    );
+  }
+
+  const startMs = Date.UTC(start.year, start.month - 1, start.day);
+  const endMs = Date.UTC(end.year, end.month - 1, end.day);
+
+  if (normalizedInterval === "day") {
+    return Math.floor((endMs - startMs) / 86400000) + 1;
+  }
+
+  const startDate = new Date(startMs);
+  const endDate = new Date(endMs);
+  const startWeekday = startDate.getUTCDay() || 7;
+  const endWeekday = endDate.getUTCDay() || 7;
+  const startMondayMs = startMs - (startWeekday - 1) * 86400000;
+  const endMondayMs = endMs - (endWeekday - 1) * 86400000;
+
+  return Math.floor((endMondayMs - startMondayMs) / (7 * 86400000)) + 1;
+};
+
 const buildExpectedSeriesLabels = ({
   interval,
   range,
@@ -301,7 +347,9 @@ const summarizeRevenueSeries = (points = []) =>
 
 module.exports = {
   SUPPORTED_REVENUE_INTERVALS,
+  MAX_REVENUE_SERIES_BUCKETS,
   normalizeRevenueInterval,
+  estimateRevenueSeriesBucketCount,
   buildRevenueSeriesStages,
   buildExpectedSeriesLabels,
   fillRevenueSeriesPoints,
