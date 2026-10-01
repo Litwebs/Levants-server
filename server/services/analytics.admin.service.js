@@ -44,7 +44,9 @@ const {
 } = require("../utils/analyticsStock.util");
 
 const {
+  MAX_REVENUE_SERIES_BUCKETS,
   normalizeRevenueInterval,
+  estimateRevenueSeriesBucketCount,
   buildRevenueSeriesStages,
   fillRevenueSeriesPoints,
   summarizeRevenueSeries,
@@ -434,6 +436,21 @@ async function GetRevenueSeries({
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
   const normalizedInterval = normalizeRevenueInterval(interval);
+  const bucketCount = estimateRevenueSeriesBucketCount({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+
+  if (bucketCount > MAX_REVENUE_SERIES_BUCKETS) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `Requested time series contains ${bucketCount} buckets; maximum is ${MAX_REVENUE_SERIES_BUCKETS}. Use a coarser interval or a shorter date range.`,
+    };
+  }
 
   const salesMatch = buildSalesOrderMatch({
     range,
@@ -930,6 +947,23 @@ async function GetDashboard({
       lowStockPromise,
       outOfStockPromise,
     ]);
+
+  const failed = [
+    comparison,
+    revenue,
+    topProducts,
+    recentOrders,
+    lowStock,
+    outOfStock,
+  ].find((result) => !result?.success);
+
+  if (failed) {
+    return {
+      success: false,
+      statusCode: failed.statusCode || 500,
+      message: failed.message || "Analytics dashboard request failed",
+    };
+  }
 
   return {
     success: true,
