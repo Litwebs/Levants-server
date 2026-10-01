@@ -83,6 +83,19 @@ describe("analytics overview dashboard dataset", () => {
       averageUnitsPerOrder: 3,
     });
 
+    expect(result.data.revenueComposition).toEqual({
+      merchandiseRevenue: 120,
+      deliveryRevenue: 0,
+      discountAmount: 0,
+      discountedOrders: 0,
+      averageDiscountPerDiscountedOrder: 0,
+      discountRate: 0,
+      preDiscountRevenue: 120,
+      grossRevenue: 120,
+      refundAmount: 20,
+      netRevenue: 100,
+    });
+
     expect(result.data.salesBreakdown).toEqual(
       expect.objectContaining({
         channels: [
