@@ -160,6 +160,7 @@ describe("analytics financial foundation", () => {
         revenue: 77,
         averageOrderValue: 15,
         unitsSold: 6,
+        averageUnitsPerOrder: 1,
         pendingOrders: 2,
         paidOrders: 3,
         partiallyPaidOrders: 1,
@@ -308,4 +309,139 @@ describe("analytics financial foundation", () => {
       }),
     ]);
   });
+  test("compares KPI performance against the resolved previous period", async () => {
+    const { customer, item } = await fixture();
+
+    const currentItemTwo = {
+      ...item,
+      quantity: 2,
+      subtotal: item.price * 2,
+    };
+
+    await createOrder({
+      customer,
+      status: "paid",
+      items: [currentItemTwo],
+      overrides: {
+        subtotal: 100,
+        total: 100,
+        paidAt: new Date("2026-06-10T12:00:00.000Z"),
+      },
+    });
+
+    await createOrder({
+      customer,
+      status: "partially_refunded",
+      items: [item],
+      overrides: {
+        subtotal: 50,
+        total: 50,
+        paidAt: new Date("2026-06-11T12:00:00.000Z"),
+        refunds: [
+          {
+            stripeRefundId: "re_comparison_current",
+            currency: "GBP",
+            amount: 10,
+            amountMinor: 1000,
+            status: "succeeded",
+            refundedAt: new Date("2026-06-12T12:00:00.000Z"),
+          },
+        ],
+      },
+    });
+
+    await createOrder({
+      customer,
+      status: "paid",
+      items: [item],
+      overrides: {
+        subtotal: 100,
+        total: 100,
+        paidAt: new Date("2026-06-08T12:00:00.000Z"),
+      },
+    });
+
+    const result = await analyticsService.GetSummaryComparison({
+      range: "custom",
+      from: "2026-06-10",
+      to: "2026-06-12",
+      timeZone: "Europe/London",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        available: true,
+        strategy: "previous_period",
+        currentPeriod: expect.objectContaining({
+          from: "2026-06-10",
+          to: "2026-06-12",
+          days: 3,
+        }),
+        previousPeriod: expect.objectContaining({
+          from: "2026-06-07",
+          to: "2026-06-09",
+          days: 3,
+        }),
+        current: expect.objectContaining({
+          grossRevenue: 150,
+          refundAmount: 10,
+          netRevenue: 140,
+          totalOrders: 2,
+          unitsSold: 3,
+          averageOrderValue: 75,
+          averageUnitsPerOrder: 1.5,
+        }),
+        previous: expect.objectContaining({
+          grossRevenue: 100,
+          refundAmount: 0,
+          netRevenue: 100,
+          totalOrders: 1,
+          unitsSold: 1,
+          averageOrderValue: 100,
+          averageUnitsPerOrder: 1,
+        }),
+      }),
+    );
+
+    expect(result.data.changes.grossRevenue).toEqual(
+      expect.objectContaining({
+        absoluteChange: 50,
+        percentChange: 50,
+        direction: "up",
+      }),
+    );
+    expect(result.data.changes.netRevenue.percentChange).toBe(40);
+    expect(result.data.changes.totalOrders.percentChange).toBe(100);
+    expect(result.data.changes.unitsSold.percentChange).toBe(200);
+    expect(result.data.changes.averageOrderValue.percentChange).toBe(-25);
+    expect(result.data.changes.averageUnitsPerOrder.percentChange).toBe(50);
+    expect(result.data.changes.refundAmount).toEqual(
+      expect.objectContaining({
+        current: 10,
+        previous: 0,
+        percentChange: null,
+        percentChangeAvailable: false,
+      }),
+    );
+  });
+
+  test("all-time comparison is explicitly unavailable", async () => {
+    const result = await analyticsService.GetSummaryComparison({
+      range: "all",
+      timeZone: "Europe/London",
+    });
+
+    expect(result).toEqual({
+      success: true,
+      data: expect.objectContaining({
+        available: false,
+        reason: "unbounded_range",
+        current: null,
+        previous: null,
+        changes: null,
+      }),
+    });
+  });
+
 });
