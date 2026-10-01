@@ -20,6 +20,8 @@ const {
 
 const {
   COLLECTED_ORDER_STATUSES,
+  SALES_CHANNELS,
+  SALES_CHANNEL_EXPRESSION,
   EFFECTIVE_PAID_AT_EXPRESSION,
   COLLECTED_AMOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
@@ -418,6 +420,208 @@ async function GetSummary({
         Refunded: summaryCounts.refunded,
         "Refund Failed": counts.refund_failed,
       },
+    },
+  };
+}
+
+async function GetSalesBreakdown({
+  range,
+  from,
+  to,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const refundBaseMatch = {
+    ...ACTIVE_ORDER_MATCH,
+  };
+
+  const [salesRows, refundRows, legacyRefundRows] = await Promise.all([
+    Order.aggregate([
+      { $match: salesMatch },
+      {
+        $addFields: {
+          _analyticsChannel: SALES_CHANNEL_EXPRESSION,
+          _analyticsUnitsInOrder: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$items", []] },
+                as: "item",
+                in: { $ifNull: ["$item.quantity", 0] },
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$_analyticsChannel",
+          totalOrders: { $sum: 1 },
+          grossRevenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+          unitsSold: { $sum: "$_analyticsUnitsInOrder" },
+        },
+      },
+    ]),
+
+    Order.aggregate([
+      {
+        $match: {
+          ...refundBaseMatch,
+          ...buildRefundLedgerPrefilter({ range, from, to, timeZone }),
+        },
+      },
+      {
+        $addFields: {
+          _analyticsChannel: SALES_CHANNEL_EXPRESSION,
+        },
+      },
+      { $unwind: "$refunds" },
+      {
+        $match: buildRefundEventMatch({
+          range,
+          from,
+          to,
+          timeZone,
+        }),
+      },
+      {
+        $group: {
+          _id: "$_analyticsChannel",
+          refundAmount: { $sum: REFUND_AMOUNT_EXPRESSION },
+        },
+      },
+    ]),
+
+    Order.aggregate([
+      {
+        $match: {
+          ...refundBaseMatch,
+          status: "refunded",
+          ...buildLegacyRefundEventMatch({ range, from, to, timeZone }),
+        },
+      },
+      {
+        $addFields: {
+          _analyticsSucceededRefundCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ["$refunds", []] },
+                as: "refund",
+                cond: { $eq: ["$refund.status", "succeeded"] },
+              },
+            },
+          },
+        },
+      },
+      { $match: { _analyticsSucceededRefundCount: 0 } },
+      {
+        $addFields: {
+          _analyticsChannel: SALES_CHANNEL_EXPRESSION,
+        },
+      },
+      {
+        $group: {
+          _id: "$_analyticsChannel",
+          refundAmount: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+        },
+      },
+    ]),
+  ]);
+
+  const rowsByChannel = new Map(
+    SALES_CHANNELS.map((channel) => [
+      channel,
+      {
+        key: channel,
+        label:
+          channel === "website"
+            ? "Website One-Time"
+            : channel === "subscription"
+              ? "Subscription"
+              : "Imported",
+        grossRevenue: 0,
+        refundAmount: 0,
+        netRevenue: 0,
+        totalOrders: 0,
+        unitsSold: 0,
+        averageOrderValue: 0,
+        averageUnitsPerOrder: 0,
+        grossRevenueShare: 0,
+        orderShare: 0,
+      },
+    ]),
+  );
+
+  for (const row of salesRows || []) {
+    const channel = rowsByChannel.get(row._id);
+    if (!channel) continue;
+
+    channel.totalOrders = Number(row.totalOrders) || 0;
+    channel.grossRevenue = Number(row.grossRevenue) || 0;
+    channel.unitsSold = Number(row.unitsSold) || 0;
+  }
+
+  for (const row of [...(refundRows || []), ...(legacyRefundRows || [])]) {
+    const channel = rowsByChannel.get(row._id);
+    if (!channel) continue;
+    channel.refundAmount += Number(row.refundAmount) || 0;
+  }
+
+  const channels = SALES_CHANNELS.map((key) => rowsByChannel.get(key));
+  const totals = channels.reduce(
+    (acc, channel) => {
+      acc.grossRevenue += channel.grossRevenue;
+      acc.refundAmount += channel.refundAmount;
+      acc.totalOrders += channel.totalOrders;
+      acc.unitsSold += channel.unitsSold;
+      return acc;
+    },
+    {
+      grossRevenue: 0,
+      refundAmount: 0,
+      netRevenue: 0,
+      totalOrders: 0,
+      unitsSold: 0,
+      averageOrderValue: 0,
+      averageUnitsPerOrder: 0,
+    },
+  );
+
+  totals.netRevenue = totals.grossRevenue - totals.refundAmount;
+  totals.averageOrderValue =
+    totals.totalOrders > 0 ? totals.grossRevenue / totals.totalOrders : 0;
+  totals.averageUnitsPerOrder =
+    totals.totalOrders > 0 ? totals.unitsSold / totals.totalOrders : 0;
+
+  const percentage = (value, total) =>
+    total > 0
+      ? Math.round(((value / total) * 100 + Number.EPSILON) * 100) / 100
+      : 0;
+
+  for (const channel of channels) {
+    channel.netRevenue = channel.grossRevenue - channel.refundAmount;
+    channel.averageOrderValue =
+      channel.totalOrders > 0
+        ? channel.grossRevenue / channel.totalOrders
+        : 0;
+    channel.averageUnitsPerOrder =
+      channel.totalOrders > 0 ? channel.unitsSold / channel.totalOrders : 0;
+    channel.grossRevenueShare = percentage(
+      channel.grossRevenue,
+      totals.grossRevenue,
+    );
+    channel.orderShare = percentage(channel.totalOrders, totals.totalOrders);
+  }
+
+  return {
+    success: true,
+    data: {
+      channels,
+      totals,
     },
   };
 }
@@ -991,6 +1195,12 @@ async function GetDashboard({
     limit: 5,
     orderSource,
   });
+  const salesBreakdownPromise = GetSalesBreakdown({
+    range,
+    from,
+    to,
+    timeZone,
+  });
   const recentOrdersPromise = GetRecentOrders({
     range,
     from,
@@ -1023,19 +1233,27 @@ async function GetDashboard({
     },
   });
 
-  const [comparison, revenue, topProducts, recentOrders, stockSnapshot] =
-    await Promise.all([
-      comparisonPromise,
-      revenuePromise,
-      topProductsPromise,
-      recentOrdersPromise,
-      stockSnapshotPromise,
-    ]);
+  const [
+    comparison,
+    revenue,
+    topProducts,
+    salesBreakdown,
+    recentOrders,
+    stockSnapshot,
+  ] = await Promise.all([
+    comparisonPromise,
+    revenuePromise,
+    topProductsPromise,
+    salesBreakdownPromise,
+    recentOrdersPromise,
+    stockSnapshotPromise,
+  ]);
 
   const failed = [
     comparison,
     revenue,
     topProducts,
+    salesBreakdown,
     recentOrders,
     stockSnapshot,
   ].find((result) => !result?.success);
@@ -1059,6 +1277,7 @@ async function GetDashboard({
       summary: summary.data,
       revenue: revenue.data,
       topProducts: topProducts.data,
+      salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
       outOfStock: stockSnapshot.data.outOfStock,
@@ -1071,6 +1290,7 @@ module.exports = {
   GetSummary,
   GetSummaryComparison,
   GetPerformanceMetrics,
+  GetSalesBreakdown,
   GetRevenueSeries,
   GetRevenueOverview,
   GetOrderStatusCounts,
