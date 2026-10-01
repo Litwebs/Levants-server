@@ -10,14 +10,23 @@ export type AnalyticsDateRange =
   | "lastYear"
   | "custom";
 
-export type AnalyticsOrderSource = "all" | "website" | "imported";
+export type AnalyticsOrderSource =
+  | "all"
+  | "website"
+  | "subscription"
+  | "imported";
 
 export type RevenueInterval = "week" | "month" | "year";
 
 export type AnalyticsSummary = {
   totalOrders: number;
   revenue: number;
+  grossRevenue: number;
+  refundAmount: number;
+  netRevenue: number;
+  averageOrderValue: number;
   unitsSold: number;
+  averageUnitsPerOrder: number;
   totalRefunds: number;
   newCustomers: number;
   repeatCustomers: number;
@@ -39,6 +48,58 @@ export type AnalyticsSummary = {
     Refunded: number;
     "Refund Failed": number;
   };
+};
+
+export type AnalyticsOverviewMetrics = {
+  netRevenue: number;
+  grossRevenue: number;
+  refundAmount: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+};
+
+export type AnalyticsMetricChange = {
+  current: number;
+  previous: number;
+  absoluteChange: number;
+  percentChange: number | null;
+  percentChangeAvailable: boolean;
+  direction: "up" | "down" | "flat";
+};
+
+export type AnalyticsComparisonPeriod = {
+  from: string;
+  to: string;
+  start: string;
+  end: string;
+  days: number;
+};
+
+export type AnalyticsOverviewComparison = {
+  available: boolean;
+  reason: string | null;
+  strategy: string | null;
+  timeZone: string;
+  currentPeriod: AnalyticsComparisonPeriod | null;
+  previousPeriod: AnalyticsComparisonPeriod | null;
+  current: (AnalyticsOverviewMetrics & { revenue?: number }) | null;
+  previous: (AnalyticsOverviewMetrics & { revenue?: number }) | null;
+  changes: {
+    grossRevenue: AnalyticsMetricChange;
+    refundAmount: AnalyticsMetricChange;
+    netRevenue: AnalyticsMetricChange;
+    totalOrders: AnalyticsMetricChange;
+    unitsSold: AnalyticsMetricChange;
+    averageOrderValue: AnalyticsMetricChange;
+    averageUnitsPerOrder: AnalyticsMetricChange;
+  } | null;
+};
+
+export type AnalyticsOverview = {
+  metrics: AnalyticsOverviewMetrics;
+  comparison: AnalyticsOverviewComparison;
 };
 
 export type RevenuePoint = {
@@ -124,6 +185,7 @@ export type LowStockResult = {
 };
 
 export type AnalyticsDashboard = {
+  overview: AnalyticsOverview;
   summary: AnalyticsSummary;
   revenue: RevenueSeries;
   topProducts: TopProductsResult;
