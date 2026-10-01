@@ -44,7 +44,10 @@ const {
 } = require("../utils/analyticsStock.util");
 
 const {
+  normalizeRevenueInterval,
   buildRevenueSeriesStages,
+  fillRevenueSeriesPoints,
+  summarizeRevenueSeries,
 } = require("../utils/analyticsRevenueSeries.util");
 
 const {
@@ -430,7 +433,7 @@ async function GetRevenueSeries({
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
-  if (typeof interval !== "string") interval = "week";
+  const normalizedInterval = normalizeRevenueInterval(interval);
 
   const salesMatch = buildSalesOrderMatch({
     range,
@@ -441,18 +444,18 @@ async function GetRevenueSeries({
   });
   const sourceMatch = buildOrderSourceMatch(orderSource);
 
-  const salesStages = buildRevenueSeriesStages(interval, range, {
+  const salesStages = buildRevenueSeriesStages(normalizedInterval, range, {
     dateExpression: EFFECTIVE_PAID_AT_EXPRESSION,
     timeZone,
   });
   const refundDateExpression = {
     $ifNull: ["$refunds.refundedAt", "$refunds.createdAt"],
   };
-  const refundStages = buildRevenueSeriesStages(interval, range, {
+  const refundStages = buildRevenueSeriesStages(normalizedInterval, range, {
     dateExpression: refundDateExpression,
     timeZone,
   });
-  const legacyRefundStages = buildRevenueSeriesStages(interval, range, {
+  const legacyRefundStages = buildRevenueSeriesStages(normalizedInterval, range, {
     dateExpression: "$refund.refundedAt",
     timeZone,
   });
@@ -562,15 +565,34 @@ async function GetRevenueSeries({
     byLabel.set(row.label, point);
   }
 
-  const points = Array.from(byLabel.values()).sort((a, b) =>
+  const sparsePoints = Array.from(byLabel.values()).sort((a, b) =>
     String(a.label).localeCompare(String(b.label)),
   );
+  const points = fillRevenueSeriesPoints({
+    points: sparsePoints,
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const totals = summarizeRevenueSeries(points);
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
 
   return {
     success: true,
     data: {
-      interval,
+      interval: normalizedInterval,
+      period:
+        parsedPeriod.start && parsedPeriod.end
+          ? {
+              from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+              to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+              timeZone: parsedPeriod.timeZone,
+            }
+          : null,
       points,
+      totals,
     },
   };
 }
