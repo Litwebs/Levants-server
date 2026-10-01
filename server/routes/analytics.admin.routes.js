@@ -38,6 +38,12 @@ router.get(
   asyncHandler(controller.GetSummaryComparison),
 );
 router.get(
+  "/revenue-composition",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetRevenueComposition),
+);
+
+router.get(
   "/sales-breakdown",
   validateAnalyticsQuery(),
   asyncHandler(controller.GetSalesBreakdown),
