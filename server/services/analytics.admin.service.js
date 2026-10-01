@@ -432,11 +432,27 @@ async function GetRevenueSeries({
   range,
   from,
   to,
-  interval = "week",
+  interval,
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
-  const normalizedInterval = normalizeRevenueInterval(interval);
+  const isUnbounded =
+    !from &&
+    !to &&
+    (range === undefined || range === "all");
+  const normalizedInterval = normalizeRevenueInterval(
+    interval || (isUnbounded ? "month" : "week"),
+  );
+
+  if (isUnbounded && ["day", "week"].includes(normalizedInterval)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "All-time analytics require a monthly or yearly time-series interval.",
+    };
+  }
+
   const bucketCount = estimateRevenueSeriesBucketCount({
     interval: normalizedInterval,
     range,
@@ -878,7 +894,7 @@ async function GetDashboard({
   range,
   from,
   to,
-  interval = "week",
+  interval,
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
