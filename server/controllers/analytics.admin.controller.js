@@ -42,6 +42,7 @@ const GetSalesBreakdown = async (req, res) => {
     range: req.query.range,
     from: req.query.from,
     to: req.query.to,
+    orderSource: req.query.orderSource,
   });
 
   if (!result.success) {
