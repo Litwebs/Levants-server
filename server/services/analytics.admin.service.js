@@ -267,6 +267,7 @@ async function GetSummary({
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
   stockCountsPromise,
+  performanceMetricsPromise,
 } = {}) {
   // Operational/status metrics follow order creation time. Financial metrics
   // follow paidAt, with createdAt only as a legacy fallback.
@@ -346,7 +347,8 @@ async function GetSummary({
 
   const [performance, statusCounts, stockCounts, customersAgg] =
     await Promise.all([
-      GetPerformanceMetrics({ range, from, to, orderSource, timeZone }),
+      performanceMetricsPromise ||
+        GetPerformanceMetrics({ range, from, to, orderSource, timeZone }),
 
       Order.aggregate([
         {
@@ -1175,6 +1177,20 @@ async function GetDashboard({
     (snapshot) => snapshot.data.counts,
   );
 
+  const salesBreakdownPromise = GetSalesBreakdown({
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const isAllSources = !orderSource || orderSource === "all";
+  const performanceMetricsPromise = isAllSources
+    ? salesBreakdownPromise.then((breakdown) => ({
+        ...breakdown.data.totals,
+        revenue: breakdown.data.totals.netRevenue,
+      }))
+    : null;
+
   const summaryPromise = GetSummary({
     range,
     from,
@@ -1182,6 +1198,7 @@ async function GetDashboard({
     orderSource,
     timeZone,
     stockCountsPromise,
+    performanceMetricsPromise,
   });
   const revenuePromise = GetRevenueSeries({
     range,
@@ -1197,12 +1214,6 @@ async function GetDashboard({
     to,
     limit: 5,
     orderSource,
-  });
-  const salesBreakdownPromise = GetSalesBreakdown({
-    range,
-    from,
-    to,
-    timeZone,
   });
   const recentOrdersPromise = GetRecentOrders({
     range,
