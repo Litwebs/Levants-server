@@ -83,6 +83,40 @@ describe("analytics overview dashboard dataset", () => {
       averageUnitsPerOrder: 3,
     });
 
+    expect(result.data.salesBreakdown).toEqual(
+      expect.objectContaining({
+        channels: [
+          expect.objectContaining({
+            key: "website",
+            grossRevenue: 120,
+            refundAmount: 20,
+            netRevenue: 100,
+            totalOrders: 1,
+            unitsSold: 3,
+            grossRevenueShare: 100,
+            orderShare: 100,
+          }),
+          expect.objectContaining({
+            key: "subscription",
+            grossRevenue: 0,
+            totalOrders: 0,
+          }),
+          expect.objectContaining({
+            key: "imported",
+            grossRevenue: 0,
+            totalOrders: 0,
+          }),
+        ],
+        totals: expect.objectContaining({
+          grossRevenue: 120,
+          refundAmount: 20,
+          netRevenue: 100,
+          totalOrders: 1,
+          unitsSold: 3,
+        }),
+      }),
+    );
+
     expect(result.data.overview.comparison).toEqual(
       expect.objectContaining({
         available: true,
