@@ -88,22 +88,30 @@ async function GetPerformanceMetrics({
     ...sourceMatch,
   };
 
-  const [salesAgg, unitsSoldAgg, refundAgg, legacyRefundAgg] = await Promise.all([
+  const [salesAgg, refundAgg, legacyRefundAgg] = await Promise.all([
     Order.aggregate([
       { $match: salesMatch },
+      {
+        $addFields: {
+          _analyticsUnitsInOrder: {
+            $sum: {
+              $map: {
+                input: { $ifNull: ["$items", []] },
+                as: "item",
+                in: { $ifNull: ["$item.quantity", 0] },
+              },
+            },
+          },
+        },
+      },
       {
         $group: {
           _id: null,
           totalOrders: { $sum: 1 },
           grossRevenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+          unitsSold: { $sum: "$_analyticsUnitsInOrder" },
         },
       },
-    ]),
-
-    Order.aggregate([
-      { $match: salesMatch },
-      { $unwind: "$items" },
-      { $group: { _id: null, unitsSold: { $sum: "$items.quantity" } } },
     ]),
 
     Order.aggregate([
@@ -163,7 +171,7 @@ async function GetPerformanceMetrics({
     (refundAgg?.[0]?.refundAmount ?? 0) +
     (legacyRefundAgg?.[0]?.refundAmount ?? 0);
   const netRevenue = grossRevenue - refundAmount;
-  const unitsSold = unitsSoldAgg?.[0]?.unitsSold ?? 0;
+  const unitsSold = sales.unitsSold ?? 0;
 
   return {
     totalOrders,
@@ -174,6 +182,73 @@ async function GetPerformanceMetrics({
     averageOrderValue: totalOrders > 0 ? grossRevenue / totalOrders : 0,
     unitsSold,
     averageUnitsPerOrder: totalOrders > 0 ? unitsSold / totalOrders : 0,
+  };
+}
+
+async function GetStockCounts() {
+  const [result] = await ProductVariant.aggregate([
+    { $match: { status: "active" } },
+    STOCK_AVAILABLE_ADD_FIELDS,
+    {
+      $facet: {
+        lowStock: [LOW_STOCK_MATCH, { $count: "count" }],
+        outOfStock: [OUT_OF_STOCK_MATCH, { $count: "count" }],
+      },
+    },
+    {
+      $project: {
+        lowStockItems: {
+          $ifNull: [{ $arrayElemAt: ["$lowStock.count", 0] }, 0],
+        },
+        outOfStockItems: {
+          $ifNull: [{ $arrayElemAt: ["$outOfStock.count", 0] }, 0],
+        },
+      },
+    },
+  ]);
+
+  return {
+    lowStockItems: result?.lowStockItems ?? 0,
+    outOfStockItems: result?.outOfStockItems ?? 0,
+  };
+}
+
+async function GetDashboardStockSnapshot({ limit = 50 } = {}) {
+  const lim = Math.max(1, Math.min(Number(limit) || 50, 200));
+
+  const [result] = await ProductVariant.aggregate([
+    { $match: { status: "active" } },
+    STOCK_AVAILABLE_ADD_FIELDS,
+    {
+      $facet: {
+        lowStock: [
+          LOW_STOCK_MATCH,
+          { $sort: { available: 1 } },
+          { $limit: lim },
+          STOCK_PRODUCT_LOOKUP,
+          STOCK_PRODUCT_UNWIND,
+          ...STOCK_DEDUP_STAGES,
+          STOCK_ITEM_PROJECT,
+        ],
+        outOfStock: [
+          OUT_OF_STOCK_MATCH,
+          { $sort: { available: 1 } },
+          { $limit: lim },
+          STOCK_PRODUCT_LOOKUP,
+          STOCK_PRODUCT_UNWIND,
+          ...STOCK_DEDUP_STAGES,
+          STOCK_ITEM_PROJECT,
+        ],
+      },
+    },
+  ]);
+
+  return {
+    success: true,
+    data: {
+      lowStock: { items: result?.lowStock || [] },
+      outOfStock: { items: result?.outOfStock || [] },
+    },
   };
 }
 
@@ -260,41 +335,24 @@ async function GetSummary({
         },
       ];
 
-  const [
-    performance,
-    statusCounts,
-    lowStockCountAgg,
-    outOfStockCountAgg,
-    customersAgg,
-  ] = await Promise.all([
-    GetPerformanceMetrics({ range, from, to, orderSource, timeZone }),
+  const [performance, statusCounts, stockCounts, customersAgg] =
+    await Promise.all([
+      GetPerformanceMetrics({ range, from, to, orderSource, timeZone }),
 
-    Order.aggregate([
-      {
-        $match: {
-          ...orderMatch,
-          status: { $in: ANALYTICS_ORDER_STATUSES },
+      Order.aggregate([
+        {
+          $match: {
+            ...orderMatch,
+            status: { $in: ANALYTICS_ORDER_STATUSES },
+          },
         },
-      },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-    ]),
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
 
-    ProductVariant.aggregate([
-      { $match: { status: "active" } },
-      STOCK_AVAILABLE_ADD_FIELDS,
-      LOW_STOCK_MATCH,
-      { $count: "count" },
-    ]),
+      GetStockCounts(),
 
-    ProductVariant.aggregate([
-      { $match: { status: "active" } },
-      STOCK_AVAILABLE_ADD_FIELDS,
-      OUT_OF_STOCK_MATCH,
-      { $count: "count" },
-    ]),
-
-    Order.aggregate(customerAggPipeline),
-  ]);
+      Order.aggregate(customerAggPipeline),
+    ]);
 
   const {
     totalOrders,
@@ -314,8 +372,8 @@ async function GetSummary({
   const counts = buildAnalyticsCounts(statusCounts);
   const summaryCounts = summarizeAnalyticsCounts(counts);
 
-  const lowStockItemsCount = lowStockCountAgg?.[0]?.count ?? 0;
-  const outOfStockItemsCount = outOfStockCountAgg?.[0]?.count ?? 0;
+  const lowStockItemsCount = stockCounts.lowStockItems;
+  const outOfStockItemsCount = stockCounts.outOfStockItems;
 
   return {
     success: true,
@@ -927,8 +985,7 @@ async function GetDashboard({
     limit: 5,
     orderSource,
   });
-  const lowStockPromise = GetLowStock({ limit: 50 });
-  const outOfStockPromise = GetOutOfStock({ limit: 50 });
+  const stockSnapshotPromise = GetDashboardStockSnapshot({ limit: 50 });
 
   // Reuse the current-period financial work already performed by GetSummary.
   // Only the previous period needs an additional comparison query.
@@ -955,14 +1012,13 @@ async function GetDashboard({
     },
   });
 
-  const [comparison, revenue, topProducts, recentOrders, lowStock, outOfStock] =
+  const [comparison, revenue, topProducts, recentOrders, stockSnapshot] =
     await Promise.all([
       comparisonPromise,
       revenuePromise,
       topProductsPromise,
       recentOrdersPromise,
-      lowStockPromise,
-      outOfStockPromise,
+      stockSnapshotPromise,
     ]);
 
   const failed = [
@@ -970,8 +1026,7 @@ async function GetDashboard({
     revenue,
     topProducts,
     recentOrders,
-    lowStock,
-    outOfStock,
+    stockSnapshot,
   ].find((result) => !result?.success);
 
   if (failed) {
@@ -994,8 +1049,8 @@ async function GetDashboard({
       revenue: revenue.data,
       topProducts: topProducts.data,
       recentOrders: recentOrders.data,
-      lowStock: lowStock.data,
-      outOfStock: outOfStock.data,
+      lowStock: stockSnapshot.data.lowStock,
+      outOfStock: stockSnapshot.data.outOfStock,
     },
   };
 }
