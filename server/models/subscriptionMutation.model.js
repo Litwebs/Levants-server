@@ -40,6 +40,7 @@ const subscriptionMutationSchema = new mongoose.Schema(
       default: "processing",
       index: true,
     },
+    itemIncreaseSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
     creationSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
     response: {
       type: mongoose.Schema.Types.Mixed,

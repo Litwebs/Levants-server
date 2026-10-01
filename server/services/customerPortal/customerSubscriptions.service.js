@@ -1467,6 +1467,109 @@ async function updateUpcomingSubscriptionOrderForDay(
  *  - After cut-off: changes are staged in `pendingChanges` and take effect
  *    from the following delivery.
  */
+// Freeze both the payment request and fulfillment targets before calling Stripe.
+async function prepareSubscriptionItemIncrease({ subscription, customer, operationId, fields, orderEdits, amountMinor, actionLabel }) {
+  const mutation = operationId && await SubscriptionMutation.findOne({
+    customer: customer._id, subscription: subscription._id, operationId,
+  });
+  if (!mutation) throw new Error("A durable operation ID is required for an item increase");
+  if (mutation.itemIncreaseSnapshot) return completeSubscriptionItemIncrease(mutation);
+  const remote = await stripe.customers.retrieve(customer.stripeCustomerId);
+  const paymentMethod = remote?.invoice_settings?.default_payment_method;
+  if (!paymentMethod) return Response(false, "Please add a default card first", null);
+  const snapshot = {
+    startedAt: new Date(), baseVersion: Number(subscription.customerVersion || 0),
+    fields, orderEdits, amountMinor, actionLabel,
+    idempotencyKey: `subscription:${subscription._id}:mutation:${operationId}:charge:attempt:${mutation.attempts || 1}`,
+    chargeParams: {
+      amount: amountMinor, currency: "gbp", customer: customer.stripeCustomerId,
+      payment_method: typeof paymentMethod === "string" ? paymentMethod : paymentMethod.id,
+      off_session: true, confirm: true,
+      description: `${actionLabel} – ${subscription.subscriptionNumber}`,
+      metadata: { subscriptionId: String(subscription._id), subscriptionNumber: subscription.subscriptionNumber,
+        type: "subscription_modification", operationId },
+    },
+  };
+  mutation.itemIncreaseSnapshot = snapshot;
+  await mutation.save();
+  return completeSubscriptionItemIncrease(mutation);
+}
+
+async function RecoverSubscriptionItemIncrease({ customerId, subscriptionId, operationId }) {
+  const mutation = await SubscriptionMutation.findOne({ customer: customerId, subscription: subscriptionId, operationId });
+  if (!mutation?.itemIncreaseSnapshot) return null;
+  return completeSubscriptionItemIncrease(mutation);
+}
+
+async function completeSubscriptionItemIncrease(mutation) {
+  if (mutation.status === "completed" && mutation.response) return mutation.response;
+  const snapshot = mutation.itemIncreaseSnapshot;
+  let paymentIntent = snapshot.paymentIntent;
+  if (!paymentIntent) {
+    // After Stripe's retention window an ambiguous request must be reconciled,
+    // not sent again with a potentially expired idempotency key.
+    if (Date.now() - new Date(snapshot.startedAt).getTime() >= 23 * 60 * 60 * 1000) {
+      return Response(false, "This payment attempt needs reconciliation. Please contact support before making another change.", { reconciliationRequired: true });
+    }
+    try {
+      paymentIntent = await stripe.paymentIntents.create(snapshot.chargeParams, {
+        idempotencyKey: snapshot.idempotencyKey || `subscription:${mutation.subscription}:mutation:${mutation.operationId}:charge`,
+      });
+    } catch (error) {
+      // A definitive card decline has not collected money. Allow selecting a
+      // replacement card; ambiguous transport errors keep the frozen request.
+      if (error.type === "StripeCardError" && error.payment_intent?.status === "requires_payment_method") {
+        await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { itemIncreaseSnapshot: null } });
+      }
+      return Response(false, error.message || "We couldn't charge your card", null);
+    }
+    await SubscriptionMutation.updateOne({ _id: mutation._id }, {
+      $set: { "itemIncreaseSnapshot.paymentIntent": paymentIntent },
+    });
+  }
+  if (paymentIntent.status !== "succeeded") {
+    return Response(false, "The payment has not completed. Please contact support before making another change.", { reconciliationRequired: true });
+  }
+
+  let result;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const updated = await Subscription.findOneAndUpdate({
+        _id: mutation.subscription, customer: mutation.customer, status: "active",
+        customerVersion: snapshot.baseVersion,
+      }, {
+        $set: { ...snapshot.fields, stripePriceSyncPending: true },
+        $inc: { customerVersion: 1 },
+      }, { new: true, runValidators: true, session });
+      if (!updated) throw new Error("Paid item change needs reconciliation: subscription version changed");
+      for (const edit of snapshot.orderEdits) {
+        const saved = await updateUpcomingSubscriptionOrder(updated, edit.items, {
+          orderId: edit.orderId, chargedMinor: edit.chargedMinor,
+          paymentIntent, operationId: mutation.operationId, session,
+        });
+        if (!saved) throw new Error("Paid item change needs reconciliation: delivery order is no longer editable");
+      }
+      result = Response(true, `You've been charged ${formatMinor(snapshot.amountMinor)} for the added items on your upcoming delivery.`, {
+        subscription: updated.toObject(), appliedTo: "upcoming", chargedMinor: snapshot.amountMinor,
+        billingSync: { status: "pending" },
+      });
+      // Commit the replay response with the plan and orders. Losing the HTTP
+      // response cannot make the same operation execute against the new version.
+      await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: {
+        status: "completed", response: JSON.parse(JSON.stringify(result)),
+        completedAt: new Date(), lastError: null,
+      } }, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+  await sendSubscriptionUpdateEmail({ customerId: mutation.customer,
+    subscription: result.data.subscription, title: snapshot.actionLabel, message: result.message,
+  }).catch(error => console.error("[SubscriptionItemIncrease] Notification failed:", error.message));
+  return result;
+}
+
 async function applyItemChange(
   subscription,
   customer,
@@ -1541,38 +1644,13 @@ async function applyItemChange(
   const deltaMinor = newMinor - oldMinor;
 
   if (deltaMinor > 0) {
-    const charge = await chargeDeltaNow(
-      subscription,
-      customer,
-      deltaMinor,
-      `${actionLabel} – ${subscription.subscriptionNumber}`,
-      operationId
-        ? `subscription:${subscription._id}:mutation:${operationId}:charge`
-        : undefined,
-    );
-    if (!charge.ok) {
-      return Response(false, charge.message, null);
-    }
-    subscription.items = nextItems;
-    await subscription.save();
-    await syncStripeSubscriptionPrice(subscription);
-    await updateUpcomingSubscriptionOrder(subscription, nextItems, {
-      chargedMinor: deltaMinor,
-      paymentIntent: charge.paymentIntent,
-      operationId,
-    });
-    const enriched = await enrichSubscriptionWithVariantImages(subscription);
-    const message = `You've been charged ${formatMinor(deltaMinor)} for the added items on your upcoming delivery, and future invoices have been updated.`;
-    await sendSubscriptionUpdateEmail({
-      customer,
-      subscription,
-      title: actionLabel,
-      message,
-    });
-    return Response(true, message, {
-      subscription: enriched,
-      appliedTo: "upcoming",
-      chargedMinor: deltaMinor,
+    const order = await Order.findOne({ subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded", "refunded"] }, deliveryStatus: "ordered",
+    }).sort({ deliveryDate: -1, createdAt: -1 }).select("_id").lean();
+    return prepareSubscriptionItemIncrease({
+      subscription, customer, operationId, fields: { items: nextItems },
+      orderEdits: order ? [{ orderId: order._id, items: nextItems, chargedMinor: deltaMinor }] : [],
+      amountMinor: deltaMinor, actionLabel,
     });
   }
 
@@ -2755,20 +2833,43 @@ async function UpdateSubscription({
     openChangedDeliveryDays.length > 0 &&
     dayPlanChargeMinor > 0
   ) {
-    const customer = await Customer.findById(customerId);
-    const charge = await chargeDeltaNow(
-      subscription,
-      customer,
-      dayPlanChargeMinor,
-      `Subscription change – ${subscription.subscriptionNumber}`,
-      operationId
-        ? `subscription:${subscription._id}:mutation:${operationId}:charge`
-        : undefined,
-    );
-    if (!charge.ok) {
-      return Response(false, charge.message, null);
+    // Keep schedule/address mutations separate from an immediate charge: those
+    // operations may move or refund the very orders this payment is backing.
+    if (scheduleChangeRequested || deliveryAddressId !== undefined) {
+      return Response(false, "Please save delivery schedule or address changes separately from item increases.", null);
     }
-    dayPlanPaymentIntent = charge.paymentIntent;
+    const orders = await Order.find({ subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded"] }, deliveryStatus: "ordered",
+    }).sort({ deliveryDate: 1 }).lean();
+    const orderEdits = [];
+    for (const day of openChangedDeliveryDays) {
+      const items = liveDeliveryDayPlans.find(plan => Number(plan.day) === Number(day))?.items || [];
+      const previous = currentLiveDayPlans.find(plan => Number(plan.day) === Number(day))?.items || [];
+      const delta = calculateSubscriptionTotalMinor(items) - calculateSubscriptionTotalMinor(previous);
+      if (delta < 0) {
+        return Response(false, "Please save delivery-day increases and decreases separately.", null);
+      }
+      const order = orders.find(order => order.deliveryDate &&
+        weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(day));
+      if (order) orderEdits.push({ orderId: order._id, items, chargedMinor: delta });
+    }
+    const fields = { items: liveSubscriptionItems, deliveryDayPlans: liveDeliveryDayPlans };
+    if (notes !== undefined) fields.notes = notes || null;
+    if (shouldStageFutureDayPlan) {
+      const effectiveFrom = lockedChangedDeliveryDays.length > 0
+        ? calculateFirstSubscriptionDeliveryDate({ frequency: targetFrequency,
+            preferredDeliveryDay: lockedChangedDeliveryDays[0], preferredDeliveryDays: lockedChangedDeliveryDays,
+            referenceDate: new Date(), settings })
+        : subscription.nextDeliveryDate
+          ? addFrequencyDays(subscription.nextDeliveryDate, subscription.frequency, getEffectiveDeliveryDays(subscription)) : null;
+      fields.pendingChanges = {
+        ...(subscription.pendingChanges?.toObject?.() || subscription.pendingChanges || {}),
+        items: resolvedSubscriptionItems, deliveryDayPlans: resolvedDeliveryDayPlans, effectiveFrom,
+      };
+    }
+    const customer = await Customer.findById(customerId);
+    return prepareSubscriptionItemIncrease({ subscription, customer, operationId, fields, orderEdits,
+      amountMinor: dayPlanChargeMinor, actionLabel: "Subscription updated" });
   }
 
   if (
@@ -4409,6 +4510,7 @@ async function GetPreparedSubscriptionDraft({ customerId } = {}) {
 }
 
 module.exports = {
+  RecoverSubscriptionItemIncrease,
   CreateSubscription,
   ListSubscriptions,
   GetSubscription,

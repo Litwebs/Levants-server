@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("crypto");
+const Subscription = require("../../models/subscription.model");
 const service = require("../../services/customerPortal/customerSubscriptions.service");
 const {
   executeIdempotentSubscriptionMutation,
@@ -50,6 +52,17 @@ async function runMutation(
     execute,
   },
 ) {
+  // Older callers omit operationId. Keep their payment retries stable while
+  // the local version is unchanged; modern callers retain their explicit ID.
+  if (subscriptionId && !req.body?.operationId &&
+      ["add_subscription_item", "replace_subscription_items", "update_subscription_item", "update_subscription"].includes(mutationType)) {
+    const current = await Subscription.findOne({ _id: subscriptionId, customer: req.customer._id })
+      .select("customerVersion").lean();
+    req.body = req.body || {};
+    req.body.operationId = `legacy-increase:${crypto.createHash("sha256")
+      .update(JSON.stringify({ subscriptionId, mutationType, payload, version: current?.customerVersion || 0 }))
+      .digest("hex")}`;
+  }
   return executeIdempotentSubscriptionMutation({
     customerId: req.customer._id,
     subscriptionId,
@@ -58,7 +71,14 @@ async function runMutation(
     mutationType,
     payload,
     reserveResourceId,
-    execute,
+    execute: async (context) => {
+      const recovery = subscriptionId && req.body?.operationId
+        ? await service.RecoverSubscriptionItemIncrease({
+            customerId: req.customer._id, subscriptionId, operationId: req.body.operationId,
+          })
+        : null;
+      return recovery ? reconcileBillingForMutation(recovery) : execute(context);
+    },
   });
 }
 

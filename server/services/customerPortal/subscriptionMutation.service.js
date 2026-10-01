@@ -240,6 +240,14 @@ async function executeSubscriptionConcurrencyGuard({
   if (!claim.ok) return claim.response;
 
   try {
+    // An accepted charge must finish its saved fulfillment change before another
+    // customer mutation can replace the baseline or cancel the target delivery.
+    const pending = subscriptionId && await SubscriptionMutation.findOne({
+      customer: customerId, subscription: subscriptionId,
+      itemIncreaseSnapshot: { $ne: null }, status: { $ne: "completed" },
+      operationId: { $ne: operationId },
+    }).select("_id").lean();
+    if (pending) return busyResponse(claim.currentVersion);
     return await execute();
   } finally {
     await releaseSubscriptionMutationLock({
@@ -400,7 +408,7 @@ async function executeIdempotentSubscriptionMutation({
     return result;
   } catch (error) {
     await SubscriptionMutation.updateOne(
-      { _id: mutation._id },
+      { _id: mutation._id, status: { $ne: "completed" } },
       {
         $set: {
           status: "failed",

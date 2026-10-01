@@ -4670,6 +4670,99 @@ describe("Portal Subscriptions", () => {
   });
 
   it.each([
+    ["single", "order-save"], ["multi", "order-save"],
+    ["single", "payment-checkpoint"], ["single", "remote-response"],
+    ["single", "response-save"],
+  ])("recovers paid item increases atomically (%s, %s)", async (mode, failurePoint) => {
+    const created = await request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 3 }] });
+    expect(created.status).toBe(201);
+    const sub = created.body.data.subscription;
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const order = await createPaidOrderFor(sub);
+    order.deliveryDate = deliveries[0].scheduledDate;
+    await order.save();
+    const day = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
+    const otherDay = (day + 3) % 7;
+    if (mode === "multi") {
+      await Subscription.findByIdAndUpdate(sub._id, {
+        preferredDeliveryDay: day, preferredDeliveryDays: [day, otherDay],
+        deliveryDayPlans: [day, otherDay].map(day => ({ day, items: sub.items })),
+        items: sub.items.map(item => ({ ...item, quantity: 6 })),
+      });
+    }
+    const before = await Subscription.findById(sub._id).lean();
+    const payload = { operationId: crypto.randomUUID(), expectedVersion: before.customerVersion,
+      ...(mode === "single" ? { items: [{ itemId: sub.items[0]._id, quantity: 4 }] }
+        : { changedDeliveryDays: [day], deliveryDayPlans: [
+            { day, items: [{ variantId, quantity: 4 }] },
+            { day: otherDay, items: [{ variantId, quantity: 3 }] },
+          ] }) };
+    const send = () => (mode === "single"
+      ? request(app).put(`/api/portal/subscriptions/${sub._id}/items`)
+      : request(app).patch(`/api/portal/subscriptions/${sub._id}`))
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    stripe.paymentIntents.create.mockClear();
+    let fault;
+    const Mutation = require("../../models/subscriptionMutation.model");
+    if (failurePoint === "order-save") {
+      fault = jest.spyOn(Order.prototype, "save").mockRejectedValueOnce(new Error("injected order failure"));
+    } else if (failurePoint === "remote-response") {
+      stripe.paymentIntents.create.mockRejectedValueOnce(new Error("response lost after capture"));
+    } else {
+      const original = Mutation.updateOne.bind(Mutation);
+      let injected = false;
+      fault = jest.spyOn(Mutation, "updateOne").mockImplementation((filter, update, options) => {
+        const target = failurePoint === "payment-checkpoint"
+          ? update.$set?.["itemIncreaseSnapshot.paymentIntent"]
+          : update.$set?.status === "completed" && !options?.session;
+        if (target && !injected) { injected = true; throw new Error("injected checkpoint failure"); }
+        return original(filter, update, options);
+      });
+    }
+    const failed = await send();
+    expect(failed.status).toBe(failurePoint === "remote-response" ? 400 : 500);
+    fault?.mockRestore();
+    const afterFailure = await Subscription.findById(sub._id).lean();
+    const failedOrder = await Order.findById(order._id).lean();
+    if (failurePoint === "response-save") {
+      expect(afterFailure.items[0].quantity).toBe(4);
+      expect(failedOrder.items[0].quantity).toBe(4);
+      expect((await Mutation.findOne({ operationId: payload.operationId })).status).toBe("completed");
+    } else {
+      expect(afterFailure.items).toEqual(before.items);
+      expect(afterFailure.customerVersion).toBe(before.customerVersion);
+      expect(failedOrder.items[0].quantity).toBe(3);
+      expect(failedOrder.amountPaid).toBe(7.5);
+      const conflicting = await request(app).post(`/api/portal/subscriptions/${sub._id}/pause`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ operationId: crypto.randomUUID(), resumeOn: new Date(Date.now() + 21 * 86400000).toISOString() });
+      expect(conflicting.status).toBe(409);
+    }
+    await SubscriptionSettings.updateOne({ singletonKey: "subscription-settings" }, { $set: { cutoffDaysBefore: 14 } });
+    // Recovery must use the original card and amount even after mutable data changes.
+    await ProductVariant.findByIdAndUpdate(variantId, { price: 99 });
+    stripe.customers.retrieve.mockResolvedValue({ invoice_settings: { default_payment_method: "pm_changed" } });
+    const recovered = await send();
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.data.chargedMinor).toBe(250);
+    const fulfilled = await Order.findById(order._id).lean();
+    expect(fulfilled.items[0].quantity).toBe(4);
+    expect(fulfilled.items[0].price).toBe(2.5);
+    expect(fulfilled.amountPaid).toBe(10);
+    expect(fulfilled.paymentAllocations.filter(a => a.source === "modification")).toHaveLength(1);
+    const plan = await Subscription.findById(sub._id).lean();
+    expect(plan.items[0].quantity).toBe(mode === "multi" ? 7 : 4);
+    if (mode === "multi") expect(plan.deliveryDayPlans.find(p => p.day === otherDay).items[0].quantity).toBe(3);
+    expect((await send()).status).toBe(200);
+    const calls = stripe.paymentIntents.create.mock.calls;
+    expect(calls).toHaveLength(["payment-checkpoint", "remote-response"].includes(failurePoint) ? 2 : 1);
+    for (const call of calls) expect(call).toEqual(calls[0]);
+  });
+
+  it.each([
     ["pause", "credit", false], ["pause", "refund", false],
     ["cancel", "credit", false], ["cancel", "refund", false],
     ["remove-day", "credit", false], ["remove-day", "refund", false],
