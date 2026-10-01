@@ -24,6 +24,7 @@ const {
   COLLECTED_AMOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
   buildSalesOrderMatch,
+  buildRefundLedgerPrefilter,
   buildRefundEventMatch,
   buildLegacyRefundEventMatch,
 } = require("../utils/analyticsMetric.util");
@@ -106,7 +107,7 @@ async function GetPerformanceMetrics({
     ]),
 
     Order.aggregate([
-      { $match: { ...refundBaseMatch, "refunds.status": "succeeded" } },
+      { $match: { ...refundBaseMatch, ...buildRefundLedgerPrefilter({ range, from, to, timeZone }) } },
       { $unwind: "$refunds" },
       {
         $match: buildRefundEventMatch({
@@ -496,7 +497,7 @@ async function GetRevenueSeries({
         $match: {
           ...ACTIVE_ORDER_MATCH,
           ...sourceMatch,
-          "refunds.status": "succeeded",
+          ...buildRefundLedgerPrefilter({ range, from, to, timeZone }),
         },
       },
       { $unwind: "$refunds" },
