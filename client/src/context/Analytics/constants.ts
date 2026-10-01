@@ -62,8 +62,6 @@ export type AnalyticsOverviewMetrics = {
   unitsSold: number;
   averageOrderValue: number;
   averageUnitsPerOrder: number;
-  averageDiscountPerDiscountedOrder: number;
-  discountRate: number;
 };
 
 export type AnalyticsMetricChange = {
@@ -145,6 +143,8 @@ export type SalesBreakdownTotals = {
   unitsSold: number;
   averageOrderValue: number;
   averageUnitsPerOrder: number;
+  averageDiscountPerDiscountedOrder: number;
+  discountRate: number;
 };
 
 export type SalesBreakdown = {
