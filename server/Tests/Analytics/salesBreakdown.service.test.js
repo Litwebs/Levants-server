@@ -199,6 +199,44 @@ describe("analytics sales channel breakdown", () => {
       averageOrderValue: 52,
       averageUnitsPerOrder: 2.2,
     });
+
+    const importedOnly = await analyticsService.GetSalesBreakdown({
+      from: "2026-06-10",
+      to: "2026-06-12",
+      orderSource: "imported",
+      timeZone: "Europe/London",
+    });
+
+    expect(importedOnly.data.totals).toEqual({
+      grossRevenue: 50,
+      refundAmount: 0,
+      netRevenue: 50,
+      totalOrders: 2,
+      unitsSold: 5,
+      averageOrderValue: 25,
+      averageUnitsPerOrder: 2.5,
+    });
+    expect(importedOnly.data.channels).toEqual([
+      expect.objectContaining({
+        key: "website",
+        grossRevenue: 0,
+        totalOrders: 0,
+        grossRevenueShare: 0,
+      }),
+      expect.objectContaining({
+        key: "subscription",
+        grossRevenue: 0,
+        totalOrders: 0,
+        grossRevenueShare: 0,
+      }),
+      expect.objectContaining({
+        key: "imported",
+        grossRevenue: 50,
+        totalOrders: 2,
+        grossRevenueShare: 100,
+        orderShare: 100,
+      }),
+    ]);
   });
 
   test("returns stable zero rows for channels with no sales", async () => {
