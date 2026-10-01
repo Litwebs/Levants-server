@@ -31,6 +31,7 @@ const {
 } = require("./subscriptionEmailNotifications.service");
 
 const { replaceRecurringOrderItems } = require("../../utils/subscriptionOrderItems.util");
+const { remainingSubscriptionOrderValueMinor } = require("../../utils/subscriptionOrderSettlement.util");
 
 const STRIPE_INTERVALS = {
   weekly: { interval: "week", interval_count: 1 },
@@ -2886,10 +2887,7 @@ async function UpdateSubscription({
       eligibleOrders.length > 0 ? await Customer.findById(customerId) : null;
 
     for (const order of eligibleOrders) {
-      const amountMinor = Math.max(
-        0,
-        Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
-      );
+      const amountMinor = remainingSubscriptionOrderValueMinor(order);
       if (amountMinor <= 0) continue;
 
       if (refundMethod === "refund") {
@@ -3344,10 +3342,7 @@ async function PauseSubscription({
   };
 
   for (const order of eligibleOrders) {
-    const amountMinor = Math.max(
-      0,
-      Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
-    );
+    const amountMinor = remainingSubscriptionOrderValueMinor(order);
     if (amountMinor <= 0) continue;
 
     let stripeRefundId = null;
@@ -3571,10 +3566,7 @@ async function CancelSubscription({
     }
 
     for (const refundableOrder of refundableOrders) {
-      const amountPaid = Number(
-        refundableOrder.amountPaid ?? refundableOrder.total ?? 0,
-      );
-      const refundAmountMinor = Math.max(0, Math.round(amountPaid * 100));
+      const refundAmountMinor = remainingSubscriptionOrderValueMinor(refundableOrder);
 
       if (refundAmountMinor <= 0) {
         return Response(
@@ -3651,10 +3643,7 @@ async function CancelSubscription({
       .exec();
 
     if (refundableOrder) {
-      const amountPaid = Number(
-        refundableOrder.amountPaid ?? refundableOrder.total ?? 0,
-      );
-      const refundAmountMinor = Math.max(0, Math.round(amountPaid * 100));
+      const refundAmountMinor = remainingSubscriptionOrderValueMinor(refundableOrder);
 
       if (refundAmountMinor <= 0) {
         return Response(

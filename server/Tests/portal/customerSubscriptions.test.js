@@ -4669,6 +4669,80 @@ describe("Portal Subscriptions", () => {
     ).toBe(1);
   });
 
+  it.each([
+    ["pause", "credit", false], ["pause", "refund", false],
+    ["cancel", "credit", false], ["cancel", "refund", false],
+    ["remove-day", "credit", false], ["remove-day", "refund", false],
+    ["pause", "credit", true], ["cancel", "refund", true],
+  ])("settles only remaining value after credit decrease (%s, %s, add-on: %s)", async (action, refundMethod, withAddOn) => {
+    const created = await request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 3 }] });
+    expect(created.status).toBe(201);
+    const sub = created.body.data.subscription;
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const order = await createPaidOrderFor(sub);
+    order.deliveryDate = deliveries[0].scheduledDate;
+    order.deliveryFee = 1;
+    order.total += 1;
+    order.amountPaid += 1;
+    await order.save();
+    await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, {
+      order: order._id, status: "generated", generatedAt: new Date(),
+    });
+    if (withAddOn) {
+      const added = await request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({ operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] });
+      expect(added.status).toBe(200);
+    }
+    const decrease = await request(app).put(`/api/portal/subscriptions/${sub._id}/items`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId: crypto.randomUUID(), items: [{ itemId: sub.items[0]._id, quantity: 1 }], refundMethod: "credit" });
+    expect(decrease.status).toBe(200);
+    expect(decrease.body.data.creditedMinor).toBe(500);
+    const remainingMinor = withAddOn ? 600 : 350;
+    const decreasedOrder = await Order.findById(order._id).lean();
+    expect(decreasedOrder.amountPaid).toBe(withAddOn ? 11 : 8.5);
+    expect(decreasedOrder.total).toBe(remainingMinor / 100);
+
+    let send;
+    const payload = { operationId: crypto.randomUUID(), refundMethod };
+    if (action === "remove-day") {
+      const day = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
+      const otherDay = (day + 3) % 7;
+      const updated = await Subscription.findById(sub._id).lean();
+      await Subscription.findByIdAndUpdate(sub._id, {
+        preferredDeliveryDay: day, preferredDeliveryDays: [day, otherDay],
+        deliveryDayPlans: [day, otherDay].map(day => ({ day, items: updated.items })),
+        items: updated.items.map(item => ({ ...item, quantity: item.quantity * 2 })),
+      });
+      Object.assign(payload, { preferredDeliveryDay: otherDay, preferredDeliveryDays: [otherDay] });
+      send = () => request(app).patch(`/api/portal/subscriptions/${sub._id}`);
+    } else {
+      if (action === "pause") payload.resumeOn = new Date(Date.now() + 21 * 86400000).toISOString();
+      send = () => request(app).post(`/api/portal/subscriptions/${sub._id}/${action}`);
+    }
+    stripe.refunds.create.mockClear();
+    const settle = () => send().set("Authorization", `Bearer ${accessToken}`).send(payload);
+    const result = await settle();
+    expect(result.status).toBe(200);
+    expect(result.body.data[refundMethod === "credit" ? "creditedMinor" : "refundedMinor"]).toBe(remainingMinor);
+    expect((await Customer.findById(customer._id)).creditBalance).toBe(500 + (refundMethod === "credit" ? remainingMinor : 0));
+    if (refundMethod === "refund") {
+      expect(stripe.refunds.create).toHaveBeenCalledTimes(1);
+      expect(stripe.refunds.create.mock.calls[0][0].amount).toBe(remainingMinor);
+    } else {
+      expect(stripe.refunds.create).not.toHaveBeenCalled();
+    }
+    expect((await Order.findById(order._id)).status).toBe("refunded");
+    const creditCount = await StoreCreditTransaction.countDocuments({ customer: customer._id });
+    expect((await settle()).status).toBe(200);
+    expect(await StoreCreditTransaction.countDocuments({ customer: customer._id })).toBe(creditCount);
+    expect(stripe.refunds.create).toHaveBeenCalledTimes(refundMethod === "refund" ? 1 : 0);
+  });
+
   it("rolls back a decrease if its order snapshot cannot commit, then retries once", async () => {
     await StoreCreditTransaction.init();
     const createRes = await request(app)
