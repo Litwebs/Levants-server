@@ -358,6 +358,7 @@ async function GetSummaryComparison({
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
   now = new Date(),
+  currentMetrics,
 } = {}) {
   const periods = resolveComparisonPeriods({
     range,
@@ -384,20 +385,22 @@ async function GetSummaryComparison({
     };
   }
 
-  const [current, previous] = await Promise.all([
-    GetPerformanceMetrics({
+  const previousPromise = GetPerformanceMetrics({
+    from: periods.previous.from,
+    to: periods.previous.to,
+    orderSource,
+    timeZone: periods.timeZone,
+  });
+
+  const current =
+    currentMetrics ||
+    (await GetPerformanceMetrics({
       from: periods.current.from,
       to: periods.current.to,
       orderSource,
       timeZone: periods.timeZone,
-    }),
-    GetPerformanceMetrics({
-      from: periods.previous.from,
-      to: periods.previous.to,
-      orderSource,
-      timeZone: periods.timeZone,
-    }),
-  ]);
+    }));
+  const previous = await previousPromise;
 
   return {
     success: true,
@@ -837,20 +840,83 @@ async function GetDashboard({
   to,
   interval = "week",
   orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
-  const [summary, revenue, topProducts, recentOrders, lowStock, outOfStock] =
+  const summaryPromise = GetSummary({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const revenuePromise = GetRevenueSeries({
+    range,
+    from,
+    to,
+    interval,
+    orderSource,
+    timeZone,
+  });
+  const topProductsPromise = GetTopProducts({
+    range,
+    from,
+    to,
+    limit: 5,
+    orderSource,
+  });
+  const recentOrdersPromise = GetRecentOrders({
+    range,
+    from,
+    to,
+    limit: 5,
+    orderSource,
+  });
+  const lowStockPromise = GetLowStock({ limit: 50 });
+  const outOfStockPromise = GetOutOfStock({ limit: 50 });
+
+  // Reuse the current-period financial work already performed by GetSummary.
+  // Only the previous period needs an additional comparison query.
+  const summary = await summaryPromise;
+  const overviewMetrics = {
+    netRevenue: summary.data.netRevenue,
+    grossRevenue: summary.data.grossRevenue,
+    refundAmount: summary.data.refundAmount,
+    totalOrders: summary.data.totalOrders,
+    unitsSold: summary.data.unitsSold,
+    averageOrderValue: summary.data.averageOrderValue,
+    averageUnitsPerOrder: summary.data.averageUnitsPerOrder,
+  };
+
+  const comparisonPromise = GetSummaryComparison({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+    currentMetrics: {
+      ...overviewMetrics,
+      revenue: summary.data.revenue,
+    },
+  });
+
+  const [comparison, revenue, topProducts, recentOrders, lowStock, outOfStock] =
     await Promise.all([
-      GetSummary({ range, from, to, orderSource }),
-      GetRevenueSeries({ range, from, to, interval, orderSource }),
-      GetTopProducts({ range, from, to, limit: 5, orderSource }),
-      GetRecentOrders({ range, from, to, limit: 5, orderSource }),
-      GetLowStock({ limit: 50 }),
-      GetOutOfStock({ limit: 50 }),
+      comparisonPromise,
+      revenuePromise,
+      topProductsPromise,
+      recentOrdersPromise,
+      lowStockPromise,
+      outOfStockPromise,
     ]);
 
   return {
     success: true,
     data: {
+      overview: {
+        metrics: overviewMetrics,
+        comparison: comparison.data,
+      },
+      // Kept for existing consumers while the analytics UI is migrated.
       summary: summary.data,
       revenue: revenue.data,
       topProducts: topProducts.data,
