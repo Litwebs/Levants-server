@@ -292,6 +292,11 @@
   font-weight: var(--font-semibold);
 }
 
+.trendFlat {
+  color: var(--color-gray-600);
+  font-weight: var(--font-semibold);
+}
+
 .trendLabel {
   color: var(--color-gray-400);
 }
