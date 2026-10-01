@@ -21,6 +21,7 @@ router.get("/dashboard", asyncHandler(controller.GetDashboard));
 
 // Granular endpoints
 router.get("/summary", asyncHandler(controller.GetSummary));
+router.get("/comparison", asyncHandler(controller.GetSummaryComparison));
 router.get("/revenue", asyncHandler(controller.GetRevenueSeries));
 router.get("/revenue-overview", asyncHandler(controller.GetRevenueOverview));
 router.get("/order-status", asyncHandler(controller.GetOrderStatusCounts));
