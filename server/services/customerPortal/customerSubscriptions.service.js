@@ -1506,6 +1506,14 @@ async function completeSubscriptionItemIncrease(mutation) {
   if (mutation.status === "completed" && mutation.response) return mutation.response;
   const snapshot = mutation.itemIncreaseSnapshot;
   let paymentIntent = snapshot.paymentIntent;
+  if (paymentIntent && paymentIntent.status !== "succeeded") {
+    // A known processing intent may have completed since the last response.
+    // Retrieve that intent rather than creating another payment attempt.
+    paymentIntent = await stripe.paymentIntents.retrieve(paymentIntent.id);
+    await SubscriptionMutation.updateOne({ _id: mutation._id }, {
+      $set: { "itemIncreaseSnapshot.paymentIntent": paymentIntent },
+    });
+  }
   if (!paymentIntent) {
     // After Stripe's retention window an ambiguous request must be reconciled,
     // not sent again with a potentially expired idempotency key.

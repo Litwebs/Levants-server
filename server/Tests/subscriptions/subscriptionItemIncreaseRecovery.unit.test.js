@@ -1,6 +1,6 @@
 "use strict";
 
-jest.mock("../../utils/stripe.util", () => ({ paymentIntents: { create: jest.fn() } }));
+jest.mock("../../utils/stripe.util", () => ({ paymentIntents: { create: jest.fn(), retrieve: jest.fn() } }));
 jest.mock("../../services/customerPortal/subscriptionEmailNotifications.service", () => ({ sendSubscriptionUpdateEmail: jest.fn(async () => {}) }));
 const mongoose = require("mongoose");
 const Subscription = require("../../models/subscription.model");
@@ -76,4 +76,23 @@ it("does not complete a payment against a missing fulfillment target", async () 
   jest.spyOn(Order, "findOne").mockReturnValue(query);
   await expect(run()).rejects.toThrow("delivery order is no longer editable");
   expect(Mutation.updateOne.mock.calls.some(([, update]) => update.$set.status === "completed")).toBe(false);
+});
+
+
+it("recovers a processing payment by retrieving the same intent", async () => {
+  stripe.paymentIntents.create.mockResolvedValueOnce({ id: "pi_processing", status: "processing" });
+  expect((await run()).success).toBe(false);
+  stripe.paymentIntents.retrieve.mockResolvedValueOnce({ id: "pi_processing", status: "succeeded" });
+  expect((await run()).success).toBe(true);
+  expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith("pi_processing");
+  expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+});
+
+it("releases a definitively declined attempt so a replacement card can be used", async () => {
+  stripe.paymentIntents.create.mockRejectedValueOnce(Object.assign(new Error("declined"), {
+    type: "StripeCardError", payment_intent: { status: "requires_payment_method" },
+  }));
+  expect((await run()).success).toBe(false);
+  expect(Mutation.updateOne).toHaveBeenCalledWith({ _id: "m" }, { $set: { itemIncreaseSnapshot: null } });
+  expect(Subscription.findOneAndUpdate).not.toHaveBeenCalled();
 });

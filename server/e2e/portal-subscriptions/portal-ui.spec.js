@@ -1093,7 +1093,7 @@ test("increases quantity before cut-off and updates Mongo, the paid order, and S
     page
       .getByRole("main")
       .getByText(
-        /You've been charged .* for the added items on your upcoming delivery, and future invoices have been updated\./i,
+        /You've been charged .* for the added items on your upcoming delivery\./i,
       ),
   ).toBeVisible();
 

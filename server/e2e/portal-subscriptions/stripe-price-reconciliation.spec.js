@@ -55,10 +55,10 @@ test("recurring price sync failure is marked pending and reconciliation repairs 
     fixture.variants.EGGS.id,
   );
 
-  // One failure hits the legacy service sync attempt and the second hits the
-  // controller-level integrity reconciliation. The API must persist a durable
-  // reliability marker instead of silently pretending billing is synchronized.
-  await failNextStripePriceSyncs(request, fixture.subscriptionId, 2);
+  // Paid increases commit fulfillment first, then run one controller-level
+  // billing reconciliation. Fail that attempt and verify the durable pending
+  // marker; the next explicit reconciliation must repair without another charge.
+  await failNextStripePriceSyncs(request, fixture.subscriptionId, 1);
 
   const response = await request.post(
     `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/items`,
