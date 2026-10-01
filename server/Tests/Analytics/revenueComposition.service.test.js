@@ -176,4 +176,62 @@ describe("analytics revenue composition", () => {
       netRevenue: 40,
     });
   });
+  test("refunded imported orders retain the actual partial amount collected", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product, price: 10, stock: 100 });
+    const eventAt = new Date("2026-06-11T12:00:00.000Z");
+
+    await createOrder({
+      customer,
+      status: "refunded",
+      items: [
+        {
+          product: product._id,
+          variant: variant._id,
+          name: variant.name,
+          sku: variant.sku,
+          price: 10,
+          quantity: 4,
+          subtotal: 40,
+        },
+      ],
+      overrides: {
+        subtotal: 80,
+        deliveryFee: 4,
+        totalBeforeDiscount: 84,
+        discountAmount: 4,
+        isDiscounted: true,
+        total: 80,
+        amountPaid: 40,
+        paidAt: eventAt,
+        metadata: { manualImport: true },
+        refund: {
+          refundedAt: eventAt,
+          reason: "Legacy imported refund",
+        },
+      },
+    });
+
+    const result = await analyticsService.GetRevenueComposition({
+      from: "2026-06-10",
+      to: "2026-06-12",
+      orderSource: "imported",
+      timeZone: "Europe/London",
+    });
+
+    expect(result.data).toEqual({
+      merchandiseRevenue: 40,
+      deliveryRevenue: 2,
+      discountAmount: 2,
+      discountedOrders: 1,
+      averageDiscountPerDiscountedOrder: 2,
+      discountRate: 4.76,
+      preDiscountRevenue: 42,
+      grossRevenue: 40,
+      refundAmount: 40,
+      netRevenue: 0,
+    });
+  });
+
 });
