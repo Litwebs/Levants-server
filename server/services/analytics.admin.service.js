@@ -239,6 +239,8 @@ async function GetDashboardStockSnapshot({ limit = 50 } = {}) {
           ...STOCK_DEDUP_STAGES,
           STOCK_ITEM_PROJECT,
         ],
+        lowStockCount: [LOW_STOCK_MATCH, { $count: "count" }],
+        outOfStockCount: [OUT_OF_STOCK_MATCH, { $count: "count" }],
       },
     },
   ]);
@@ -246,6 +248,10 @@ async function GetDashboardStockSnapshot({ limit = 50 } = {}) {
   return {
     success: true,
     data: {
+      counts: {
+        lowStockItems: result?.lowStockCount?.[0]?.count ?? 0,
+        outOfStockItems: result?.outOfStockCount?.[0]?.count ?? 0,
+      },
       lowStock: { items: result?.lowStock || [] },
       outOfStock: { items: result?.outOfStock || [] },
     },
@@ -258,6 +264,7 @@ async function GetSummary({
   to,
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+  stockCountsPromise,
 } = {}) {
   // Operational/status metrics follow order creation time. Financial metrics
   // follow paidAt, with createdAt only as a legacy fallback.
@@ -349,7 +356,7 @@ async function GetSummary({
         { $group: { _id: "$status", count: { $sum: 1 } } },
       ]),
 
-      GetStockCounts(),
+      stockCountsPromise || GetStockCounts(),
 
       Order.aggregate(customerAggPipeline),
     ]);
@@ -956,12 +963,18 @@ async function GetDashboard({
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
+  const stockSnapshotPromise = GetDashboardStockSnapshot({ limit: 50 });
+  const stockCountsPromise = stockSnapshotPromise.then(
+    (snapshot) => snapshot.data.counts,
+  );
+
   const summaryPromise = GetSummary({
     range,
     from,
     to,
     orderSource,
     timeZone,
+    stockCountsPromise,
   });
   const revenuePromise = GetRevenueSeries({
     range,
@@ -985,8 +998,6 @@ async function GetDashboard({
     limit: 5,
     orderSource,
   });
-  const stockSnapshotPromise = GetDashboardStockSnapshot({ limit: 50 });
-
   // Reuse the current-period financial work already performed by GetSummary.
   // Only the previous period needs an additional comparison query.
   const summary = await summaryPromise;
