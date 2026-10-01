@@ -2,6 +2,7 @@
 
 const {
   DEFAULT_ANALYTICS_TIME_ZONE,
+  parseDateRange,
   buildEventDateMatch,
 } = require("./analyticsDate.util");
 const {
@@ -106,6 +107,41 @@ const buildSalesOrderMatch = ({
     }),
   );
 
+const buildRefundLedgerPrefilter = ({
+  range,
+  from,
+  to,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+  now,
+} = {}) => {
+  const parsed = parseDateRange({ range, from, to, timeZone, now });
+
+  if (parsed.invalid) {
+    return { _id: { $exists: false } };
+  }
+
+  const succeededRefund = { status: "succeeded" };
+  if (!parsed.start && !parsed.end) {
+    return { refunds: { $elemMatch: succeededRefund } };
+  }
+
+  const dateRange = {};
+  if (parsed.start) dateRange.$gte = parsed.start;
+  if (parsed.end) dateRange.$lte = parsed.end;
+
+  return {
+    refunds: {
+      $elemMatch: {
+        status: "succeeded",
+        $or: [
+          { refundedAt: dateRange },
+          { refundedAt: null, createdAt: dateRange },
+        ],
+      },
+    },
+  };
+};
+
 const buildRefundEventMatch = ({
   range,
   from,
@@ -149,6 +185,7 @@ module.exports = {
   COLLECTED_AMOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
   buildSalesOrderMatch,
+  buildRefundLedgerPrefilter,
   buildRefundEventMatch,
   buildLegacyRefundEventMatch,
 };
