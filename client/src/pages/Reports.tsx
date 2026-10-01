@@ -209,6 +209,7 @@ const Reports = () => {
     [topProducts, maxTopRevenue],
   );
 
+  const salesChannels = dashboard?.salesBreakdown?.channels ?? [];
   const recentOrders = dashboard?.recentOrders?.orders ?? [];
   const lowStockItems = dashboard?.lowStock?.items ?? [];
 
@@ -449,6 +450,64 @@ const Reports = () => {
             <span className={styles.chartTotal}>
               Period Total: {formatCompactNumber(totalOrdersInPeriod)} orders
             </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Sales by Channel</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.salesMixGrid}>
+            {salesChannels.map((channel) => (
+              <div key={channel.key} className={styles.salesMixCard}>
+                <div className={styles.salesMixHeader}>
+                  <span className={styles.salesMixTitle}>{channel.label}</span>
+                  <span className={styles.salesMixShare}>
+                    {formatDecimal(channel.grossRevenueShare)}% of gross sales
+                  </span>
+                </div>
+
+                <div className={styles.salesMixPrimary}>
+                  {formatCurrency(channel.netRevenue)}
+                </div>
+                <div className={styles.salesMixLabel}>Net revenue</div>
+
+                <div className={styles.salesMixStats}>
+                  <div>
+                    <span className={styles.salesMixStatValue}>
+                      {formatCurrency(channel.grossRevenue)}
+                    </span>
+                    <span className={styles.salesMixStatLabel}>Gross</span>
+                  </div>
+                  <div>
+                    <span className={styles.salesMixStatValue}>
+                      {formatCompactNumber(channel.totalOrders)}
+                    </span>
+                    <span className={styles.salesMixStatLabel}>Orders</span>
+                  </div>
+                  <div>
+                    <span className={styles.salesMixStatValue}>
+                      {formatCurrency(channel.averageOrderValue)}
+                    </span>
+                    <span className={styles.salesMixStatLabel}>AOV</span>
+                  </div>
+                  <div>
+                    <span className={styles.salesMixStatValue}>
+                      {formatCompactNumber(channel.unitsSold)}
+                    </span>
+                    <span className={styles.salesMixStatLabel}>Units</span>
+                  </div>
+                </div>
+
+                {channel.refundAmount > 0 ? (
+                  <div className={styles.salesMixRefund}>
+                    Refunds: {formatCurrency(channel.refundAmount)}
+                  </div>
+                ) : null}
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
