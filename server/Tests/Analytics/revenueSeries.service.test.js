@@ -195,4 +195,21 @@ describe("analytics revenue/orders time series", () => {
       "2026",
     ]);
   });
+  test("service layer rejects excessive bucket requests even outside HTTP routing", async () => {
+    const result = await analyticsService.GetRevenueSeries({
+      from: "2020-01-01",
+      to: "2026-01-01",
+      interval: "day",
+      timeZone: "Europe/London",
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        success: false,
+        statusCode: 400,
+      }),
+    );
+    expect(result.message).toContain("maximum is 1000");
+  });
+
 });
