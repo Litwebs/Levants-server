@@ -428,16 +428,19 @@ async function GetSalesBreakdown({
   range,
   from,
   to,
+  orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
   const salesMatch = buildSalesOrderMatch({
     range,
     from,
     to,
+    orderSource,
     timeZone,
   });
   const refundBaseMatch = {
     ...ACTIVE_ORDER_MATCH,
+    ...buildOrderSourceMatch(orderSource),
   };
 
   const [salesRows, refundRows, legacyRefundRows] = await Promise.all([
