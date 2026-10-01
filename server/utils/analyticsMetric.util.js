@@ -67,35 +67,35 @@ const EFFECTIVE_PAID_AT_EXPRESSION = {
 
 const COLLECTED_AMOUNT_EXPRESSION = {
   $cond: [
-    { $eq: ["$status", "partially_paid"] },
+    { $ne: [{ $ifNull: ["$amountPaid", null] }, null] },
     { $ifNull: ["$amountPaid", 0] },
-    { $ifNull: ["$total", 0] },
+    {
+      $cond: [
+        { $eq: ["$status", "partially_paid"] },
+        0,
+        { $ifNull: ["$total", 0] },
+      ],
+    },
   ],
 };
 
 const COLLECTED_FRACTION_EXPRESSION = {
   $cond: [
-    { $eq: ["$status", "partially_paid"] },
+    { $gt: [{ $ifNull: ["$total", 0] }, 0] },
     {
-      $cond: [
-        { $gt: [{ $ifNull: ["$total", 0] }, 0] },
+      $min: [
+        1,
         {
-          $min: [
-            1,
+          $max: [
+            0,
             {
-              $max: [
-                0,
-                {
-                  $divide: [
-                    { $ifNull: ["$amountPaid", 0] },
-                    "$total",
-                  ],
-                },
+              $divide: [
+                COLLECTED_AMOUNT_EXPRESSION,
+                "$total",
               ],
             },
           ],
         },
-        0,
       ],
     },
     1,
