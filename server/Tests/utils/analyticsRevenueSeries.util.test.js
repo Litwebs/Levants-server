@@ -1,5 +1,7 @@
 const {
+  MAX_REVENUE_SERIES_BUCKETS,
   normalizeRevenueInterval,
+  estimateRevenueSeriesBucketCount,
   buildRevenueSeriesStages,
   buildExpectedSeriesLabels,
   fillRevenueSeriesPoints,
@@ -238,4 +240,49 @@ describe("analyticsRevenueSeries.util", () => {
       expect(groupId.week).toBeDefined();
     },
   );
+  test("estimates bucket counts without materializing huge ranges", () => {
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "day",
+        from: "2026-01-01",
+        to: "2026-01-31",
+      }),
+    ).toBe(31);
+
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "week",
+        from: "2025-12-29",
+        to: "2026-01-11",
+      }),
+    ).toBe(2);
+
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "month",
+        from: "2025-11-01",
+        to: "2026-02-28",
+      }),
+    ).toBe(4);
+
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "year",
+        from: "2024-01-01",
+        to: "2026-12-31",
+      }),
+    ).toBe(3);
+  });
+
+  test("series bucket safety limit is intentionally bounded", () => {
+    expect(MAX_REVENUE_SERIES_BUCKETS).toBe(1000);
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "day",
+        from: "2020-01-01",
+        to: "2026-01-01",
+      }),
+    ).toBeGreaterThan(MAX_REVENUE_SERIES_BUCKETS);
+  });
+
 });
