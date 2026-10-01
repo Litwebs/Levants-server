@@ -2,7 +2,6 @@ import { useEffect, useMemo } from "react";
 import {
   DollarSign,
   ShoppingCart,
-  Truck,
   Package,
   BarChart3,
 } from "lucide-react";
@@ -21,6 +20,7 @@ import {
   useAnalyticsApi,
   type AnalyticsDateRange,
   type AnalyticsOrderSource,
+  type AnalyticsMetricChange,
   type RevenueInterval,
 } from "../context/Analytics";
 
@@ -45,6 +45,41 @@ const getCustomerLabel = (order: any) => {
   const c = order?.customer;
   const name = `${c?.firstName || ""} ${c?.lastName || ""}`.trim();
   return name || c?.email || "Guest";
+};
+
+
+const formatDecimal = (value: unknown, maximumFractionDigits = 2) => {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("en-GB", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+  });
+};
+
+const KpiTrend = ({ change }: { change?: AnalyticsMetricChange }) => {
+  if (!change) return null;
+
+  const value = change.percentChangeAvailable
+    ? `${change.percentChange && change.percentChange > 0 ? "+" : ""}${formatDecimal(
+        change.percentChange ?? 0,
+        2,
+      )}%`
+    : "New";
+
+  const trendClass =
+    change.direction === "up"
+      ? styles.trendUp
+      : change.direction === "down"
+        ? styles.trendDown
+        : styles.trendFlat;
+
+  return (
+    <span className={styles.kpiTrend}>
+      <span className={trendClass}>{value}</span>
+      <span className={styles.trendLabel}>vs previous period</span>
+    </span>
+  );
 };
 
 const Reports = () => {
@@ -97,10 +132,16 @@ const Reports = () => {
   }[] = [
     { value: "all", label: "All Sources" },
     { value: "website", label: "Website" },
+    { value: "subscription", label: "Subscription" },
     { value: "imported", label: "Imported" },
   ];
 
   const summary = dashboard?.summary;
+  const overview = dashboard?.overview;
+  const overviewMetrics = overview?.metrics;
+  const overviewChanges = overview?.comparison?.available
+    ? overview.comparison.changes
+    : null;
   const revenuePoints = dashboard?.revenue?.points ?? [];
 
   const revenueChartData = useMemo(
@@ -238,96 +279,11 @@ const Reports = () => {
               <DollarSign size={24} />
             </div>
             <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>Revenue</span>
+              <span className={styles.kpiLabel}>Net Revenue</span>
               <span className={styles.kpiValue}>
-                {formatCurrency(summary?.revenue ?? 0)}
+                {formatCurrency(overviewMetrics?.netRevenue ?? summary?.netRevenue ?? 0)}
               </span>
-            </div>
-          </div>
-        </Card>
-
-        <Card className={styles.kpiCard}>
-          <div className={styles.kpiContent}>
-            <div className={`${styles.kpiIcon} ${styles.primary}`}>
-              <ShoppingCart size={24} />
-            </div>
-            <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>Total Orders</span>
-              <span className={styles.kpiValue}>
-                {summary?.totalOrders ?? 0}
-              </span>
-            </div>
-          </div>
-        </Card>
-
-        <Card className={styles.kpiCard}>
-          <div className={styles.kpiContent}>
-            <div className={`${styles.kpiIcon} ${styles.warning}`}>
-              <BarChart3 size={24} />
-            </div>
-            <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>New Orders</span>
-              <span className={styles.kpiValue}>
-                {summary?.pendingOrders ?? 0}
-              </span>
-            </div>
-          </div>
-        </Card>
-
-        <Card className={styles.kpiCard}>
-          <div className={styles.kpiContent}>
-            <div className={`${styles.kpiIcon} ${styles.info}`}>
-              <Truck size={24} />
-            </div>
-            <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>Out for Delivery</span>
-              <span className={styles.kpiValue}>
-                {summary?.paidOrders ?? 0}
-              </span>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <div className={styles.kpiGrid}>
-        <Card className={styles.kpiCard}>
-          <div className={styles.kpiContent}>
-            <div className={`${styles.kpiIcon} ${styles.success}`}>
-              <Truck size={24} />
-            </div>
-            <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>Delivered</span>
-              <span className={styles.kpiValue}>
-                {summary?.refundedOrders ?? 0}
-              </span>
-            </div>
-          </div>
-        </Card>
-
-        <Card className={styles.kpiCard}>
-          <div className={styles.kpiContent}>
-            <div className={`${styles.kpiIcon} ${styles.warning}`}>
-              <Package size={24} />
-            </div>
-            <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>Low Stock Items</span>
-              <span className={styles.kpiValue}>
-                {summary?.lowStockItems ?? 0}
-              </span>
-            </div>
-          </div>
-        </Card>
-
-        <Card className={styles.kpiCard}>
-          <div className={styles.kpiContent}>
-            <div className={`${styles.kpiIcon} ${styles.error}`}>
-              <ShoppingCart size={24} />
-            </div>
-            <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>Cancelled</span>
-              <span className={styles.kpiValue}>
-                {summary?.cancelledOrders ?? 0}
-              </span>
+              <KpiTrend change={overviewChanges?.netRevenue} />
             </div>
           </div>
         </Card>
@@ -338,10 +294,77 @@ const Reports = () => {
               <DollarSign size={24} />
             </div>
             <div className={styles.kpiInfo}>
-              <span className={styles.kpiLabel}>Revenue (chart total)</span>
+              <span className={styles.kpiLabel}>Gross Sales</span>
               <span className={styles.kpiValue}>
-                {formatCurrency(totalRevenueInPeriod)}
+                {formatCurrency(overviewMetrics?.grossRevenue ?? summary?.grossRevenue ?? 0)}
               </span>
+              <KpiTrend change={overviewChanges?.grossRevenue} />
+            </div>
+          </div>
+        </Card>
+
+        <Card className={styles.kpiCard}>
+          <div className={styles.kpiContent}>
+            <div className={`${styles.kpiIcon} ${styles.info}`}>
+              <ShoppingCart size={24} />
+            </div>
+            <div className={styles.kpiInfo}>
+              <span className={styles.kpiLabel}>Orders</span>
+              <span className={styles.kpiValue}>
+                {formatCompactNumber(overviewMetrics?.totalOrders ?? summary?.totalOrders ?? 0)}
+              </span>
+              <KpiTrend change={overviewChanges?.totalOrders} />
+            </div>
+          </div>
+        </Card>
+
+        <Card className={styles.kpiCard}>
+          <div className={styles.kpiContent}>
+            <div className={`${styles.kpiIcon} ${styles.warning}`}>
+              <Package size={24} />
+            </div>
+            <div className={styles.kpiInfo}>
+              <span className={styles.kpiLabel}>Units Sold</span>
+              <span className={styles.kpiValue}>
+                {formatCompactNumber(overviewMetrics?.unitsSold ?? summary?.unitsSold ?? 0)}
+              </span>
+              <KpiTrend change={overviewChanges?.unitsSold} />
+            </div>
+          </div>
+        </Card>
+
+        <Card className={styles.kpiCard}>
+          <div className={styles.kpiContent}>
+            <div className={`${styles.kpiIcon} ${styles.primary}`}>
+              <BarChart3 size={24} />
+            </div>
+            <div className={styles.kpiInfo}>
+              <span className={styles.kpiLabel}>Average Order Value</span>
+              <span className={styles.kpiValue}>
+                {formatCurrency(
+                  overviewMetrics?.averageOrderValue ?? summary?.averageOrderValue ?? 0,
+                )}
+              </span>
+              <KpiTrend change={overviewChanges?.averageOrderValue} />
+            </div>
+          </div>
+        </Card>
+
+        <Card className={styles.kpiCard}>
+          <div className={styles.kpiContent}>
+            <div className={`${styles.kpiIcon} ${styles.info}`}>
+              <BarChart3 size={24} />
+            </div>
+            <div className={styles.kpiInfo}>
+              <span className={styles.kpiLabel}>Average Units / Order</span>
+              <span className={styles.kpiValue}>
+                {formatDecimal(
+                  overviewMetrics?.averageUnitsPerOrder ??
+                    summary?.averageUnitsPerOrder ??
+                    0,
+                )}
+              </span>
+              <KpiTrend change={overviewChanges?.averageUnitsPerOrder} />
             </div>
           </div>
         </Card>
