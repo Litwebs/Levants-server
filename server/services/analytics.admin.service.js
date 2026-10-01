@@ -134,7 +134,7 @@ async function GetPerformanceMetrics({
               $filter: {
                 input: { $ifNull: ["$refunds", []] },
                 as: "refund",
-                cond: { $eq: ["$refund.status", "succeeded"] },
+                cond: { $eq: ["$$refund.status", "succeeded"] },
               },
             },
           },
