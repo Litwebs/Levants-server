@@ -98,10 +98,6 @@ const buildRevenueComposition = (metrics = {}) => {
     discountRate: roundPercentage(discountAmount, preDiscountRevenue),
     preDiscountRevenue,
     grossRevenue,
-    merchandiseRevenue,
-    deliveryRevenue,
-    discountAmount,
-    discountedOrders,
     refundAmount,
     netRevenue,
   };
@@ -425,6 +421,10 @@ async function GetSummary({
   const {
     totalOrders,
     grossRevenue,
+    merchandiseRevenue,
+    deliveryRevenue,
+    discountAmount,
+    discountedOrders,
     refundAmount,
     netRevenue,
     revenue,
