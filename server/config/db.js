@@ -2,6 +2,67 @@ const mongoose = require("mongoose");
 const { mongoUri, env } = require("./env");
 const logger = require("../utils/logger.util");
 
+
+const ANALYTICS_ORDER_INDEXES = [
+  {
+    key: { status: 1, paidAt: 1 },
+    name: "analytics_status_paidAt",
+  },
+  {
+    key: { status: 1, createdAt: 1 },
+    name: "analytics_status_createdAt",
+  },
+  {
+    key: { orderType: 1, status: 1, paidAt: 1 },
+    name: "analytics_orderType_status_paidAt",
+  },
+  {
+    key: { "metadata.manualImport": 1, status: 1, paidAt: 1 },
+    name: "analytics_import_status_paidAt",
+  },
+  {
+    key: { subscription: 1, status: 1, paidAt: 1 },
+    name: "analytics_subscription_status_paidAt",
+  },
+  {
+    key: { "refunds.status": 1, "refunds.refundedAt": 1 },
+    name: "analytics_refund_status_refundedAt",
+  },
+];
+
+const indexKeysEqual = (actual, expected) => {
+  const actualEntries = Object.entries(actual || {});
+  const expectedEntries = Object.entries(expected || {});
+
+  return (
+    actualEntries.length === expectedEntries.length &&
+    expectedEntries.every(
+      ([field, direction], index) =>
+        actualEntries[index]?.[0] === field &&
+        actualEntries[index]?.[1] === direction,
+    )
+  );
+};
+
+async function ensureIndexesByKey(collection, specs) {
+  if (!collection) return;
+
+  const indexes = await collection.indexes();
+
+  for (const spec of specs) {
+    const exists = indexes.some((index) => indexKeysEqual(index?.key, spec.key));
+    if (exists) continue;
+
+    await collection.createIndex(spec.key, { name: spec.name });
+  }
+}
+
+async function ensureAnalyticsOrderIndexes() {
+  const collection = mongoose.connection?.db?.collection("orders");
+  if (!collection) return;
+  await ensureIndexesByKey(collection, ANALYTICS_ORDER_INDEXES);
+}
+
 async function ensureDiscountCodeIndex() {
   const collection = mongoose.connection?.db?.collection("discounts");
   if (!collection) return;
@@ -116,6 +177,7 @@ const connectDb = async () => {
     await ensureDiscountCodeIndex();
     await ensureSubscriptionDeliveryUniqueIndex();
     await ensureSubscriptionOrderInvoiceUniqueIndex();
+    await ensureAnalyticsOrderIndexes();
 
     if (env !== "test") {
       logger.db("MongoDB connected");
@@ -128,4 +190,8 @@ const connectDb = async () => {
 
 module.exports = {
   connectDb,
+  ANALYTICS_ORDER_INDEXES,
+  indexKeysEqual,
+  ensureIndexesByKey,
+  ensureAnalyticsOrderIndexes,
 };
