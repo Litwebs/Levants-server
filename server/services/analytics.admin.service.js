@@ -24,6 +24,7 @@ const {
   SALES_CHANNEL_EXPRESSION,
   EFFECTIVE_PAID_AT_EXPRESSION,
   COLLECTED_AMOUNT_EXPRESSION,
+  COLLECTED_FRACTION_EXPRESSION,
   COLLECTED_MERCHANDISE_EXPRESSION,
   COLLECTED_DELIVERY_EXPRESSION,
   COLLECTED_DISCOUNT_EXPRESSION,
@@ -72,6 +73,39 @@ const PERFORMANCE_COMPARISON_METRICS = [
   "averageOrderValue",
   "averageUnitsPerOrder",
 ];
+
+const PRODUCT_LINE_REVENUE_EXPRESSION = {
+  $let: {
+    vars: {
+      lineSubtotal: { $ifNull: ["$items.subtotal", 0] },
+      orderSubtotal: { $ifNull: ["$subtotal", 0] },
+      collectedFraction: COLLECTED_FRACTION_EXPRESSION,
+      collectedDiscount: COLLECTED_DISCOUNT_EXPRESSION,
+    },
+    in: {
+      $max: [
+        0,
+        {
+          $subtract: [
+            { $multiply: ["$lineSubtotal", "$collectedFraction"] },
+            {
+              $cond: [
+                { $gt: ["$orderSubtotal", 0] },
+                {
+                  $multiply: [
+                    { $divide: ["$lineSubtotal", "$orderSubtotal"] },
+                    "$collectedDiscount",
+                  ],
+                },
+                0,
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
 
 const SALES_CHANNEL_LABELS = {
   website: "Website One-Time",
@@ -1220,81 +1254,168 @@ async function GetTopProducts({
   to,
   limit = 5,
   orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
   const salesMatch = buildSalesOrderMatch({
     range,
     from,
     to,
     orderSource,
+    timeZone,
   });
 
   const lim = Math.max(1, Math.min(Number(limit) || 5, 25));
 
-  const rows = await Order.aggregate([
+  const [result] = await Order.aggregate([
     { $match: salesMatch },
+    { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+    { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
     { $unwind: "$items" },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
     {
       $group: {
-        _id: { product: "$items.product", variant: "$items.variant" },
-        revenue: { $sum: "$items.subtotal" },
-        quantity: { $sum: "$items.quantity" },
+        _id: {
+          product: "$items.product",
+          variant: "$items.variant",
+        },
+        productNameSnapshot: { $first: "$items.productName" },
+        variantNameSnapshot: { $first: "$items.name" },
+        skuSnapshot: { $first: "$items.sku" },
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        quantity: { $sum: { $ifNull: ["$items.quantity", 0] } },
       },
     },
-    {
-      $lookup: {
-        from: "products",
-        localField: "_id.product",
-        foreignField: "_id",
-        as: "product",
-      },
-    },
-    { $unwind: "$product" },
-    {
-      $lookup: {
-        from: "productvariants",
-        localField: "_id.variant",
-        foreignField: "_id",
-        as: "variant",
-      },
-    },
-    { $unwind: "$variant" },
     {
       $group: {
         _id: "$_id.product",
         productId: { $first: "$_id.product" },
-        productName: { $first: "$product.name" },
+        productNames: { $addToSet: "$productNameSnapshot" },
         totalRevenue: { $sum: "$revenue" },
         totalQuantity: { $sum: "$quantity" },
         variants: {
           $push: {
             variantId: "$_id.variant",
-            name: "$variant.name",
-            sku: "$variant.sku",
+            name: "$variantNameSnapshot",
+            sku: "$skuSnapshot",
             revenue: "$revenue",
             quantity: "$quantity",
+            averageSellingPrice: {
+              $cond: [
+                { $gt: ["$quantity", 0] },
+                { $divide: ["$revenue", "$quantity"] },
+                0,
+              ],
+            },
           },
         },
       },
     },
-    { $sort: { totalRevenue: -1 } },
-    { $limit: lim },
+    {
+      $lookup: {
+        from: "products",
+        localField: "productId",
+        foreignField: "_id",
+        as: "catalogProduct",
+      },
+    },
+    {
+      $addFields: {
+        _snapshotProductNames: {
+          $filter: {
+            input: "$productNames",
+            as: "productName",
+            cond: {
+              $and: [
+                { $ne: ["$$productName", null] },
+                { $ne: ["$$productName", ""] },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        productId: 1,
+        productName: {
+          $ifNull: [
+            { $arrayElemAt: ["$_snapshotProductNames", 0] },
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogProduct.name", 0] },
+                {
+                  $concat: [
+                    "Deleted product · ",
+                    {
+                      $substrBytes: [
+                        { $toString: "$productId" },
+                        18,
+                        6,
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        catalogStatus: {
+          $ifNull: [
+            { $arrayElemAt: ["$catalogProduct.status", 0] },
+            "deleted",
+          ],
+        },
+        totalRevenue: 1,
+        totalQuantity: 1,
+        averageSellingPrice: {
+          $cond: [
+            { $gt: ["$totalQuantity", 0] },
+            { $divide: ["$totalRevenue", "$totalQuantity"] },
+            0,
+          ],
+        },
+        variants: 1,
+      },
+    },
+    {
+      $facet: {
+        byRevenue: [
+          { $sort: { totalRevenue: -1, totalQuantity: -1, productName: 1 } },
+          { $limit: lim },
+        ],
+        byUnits: [
+          { $sort: { totalQuantity: -1, totalRevenue: -1, productName: 1 } },
+          { $limit: lim },
+        ],
+      },
+    },
   ]);
 
-  // Sort variants inside each product (desc revenue)
-  const products = (rows || []).map((p) => ({
-    productId: p.productId,
-    productName: p.productName,
-    totalRevenue: p.totalRevenue,
-    totalQuantity: p.totalQuantity,
-    variants: (p.variants || []).sort(
-      (a, b) => (b.revenue || 0) - (a.revenue || 0),
+  const normalizeProduct = (product) => ({
+    ...product,
+    variants: [...(product?.variants || [])].sort(
+      (left, right) =>
+        (right.revenue || 0) - (left.revenue || 0) ||
+        (right.quantity || 0) - (left.quantity || 0),
     ),
-  }));
+  });
+
+  const byRevenue = (result?.byRevenue || []).map(normalizeProduct);
+  const byUnits = (result?.byUnits || []).map(normalizeProduct);
 
   return {
     success: true,
     data: {
-      products,
+      products: byRevenue,
+      byRevenue,
+      byUnits,
+      metricBasis: {
+        revenue:
+          "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
+        units:
+          "Units on collected orders, including partially-paid orders.",
+      },
     },
   };
 }

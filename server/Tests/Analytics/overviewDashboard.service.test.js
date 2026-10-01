@@ -120,6 +120,23 @@ describe("analytics overview dashboard dataset", () => {
       }),
     );
 
+    expect(result.data.topProducts).toEqual(
+      expect.objectContaining({
+        byRevenue: [
+          expect.objectContaining({
+            totalRevenue: 120,
+            totalQuantity: 3,
+          }),
+        ],
+        byUnits: [
+          expect.objectContaining({
+            totalRevenue: 120,
+            totalQuantity: 3,
+          }),
+        ],
+      }),
+    );
+
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,
       deliveryRevenue: 0,

@@ -12,6 +12,14 @@ const orderItemSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Product display-name snapshot at order creation time. Optional for
+    // legacy orders created before product-name snapshotting was introduced.
+    productName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
     variant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductVariant",

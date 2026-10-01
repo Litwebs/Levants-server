@@ -229,18 +229,27 @@ export type TopProductVariant = {
   sku: string;
   revenue: number;
   quantity: number;
+  averageSellingPrice: number;
 };
 
 export type TopProduct = {
   productId: string;
   productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
   totalRevenue: number;
   totalQuantity: number;
+  averageSellingPrice: number;
   variants: TopProductVariant[];
 };
 
 export type TopProductsResult = {
   products: TopProduct[];
+  byRevenue: TopProduct[];
+  byUnits: TopProduct[];
+  metricBasis: {
+    revenue: string;
+    units: string;
+  };
 };
 
 export type RecentOrder = {

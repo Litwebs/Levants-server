@@ -198,19 +198,36 @@ const Reports = () => {
     ].filter((d) => d.value > 0);
   }, [summary?.orderStatus]);
 
-  const topProducts = dashboard?.topProducts?.products ?? [];
-  const maxTopRevenue = topProducts[0]?.totalRevenue || 1;
+  const productsByRevenue =
+    dashboard?.topProducts?.byRevenue ?? dashboard?.topProducts?.products ?? [];
+  const productsByUnits = dashboard?.topProducts?.byUnits ?? [];
+  const maxProductRevenue = productsByRevenue[0]?.totalRevenue || 1;
+  const maxProductUnits = productsByUnits[0]?.totalQuantity || 1;
 
-  const topProductsChart = useMemo(
+  const productsByRevenueChart = useMemo(
     () =>
-      topProducts.map((p) => ({
-        label: p.productName,
-        value: p.totalQuantity,
-        percentage: (p.totalRevenue / maxTopRevenue) * 100,
-        revenue: p.totalRevenue,
-        variants: p.variants,
+      productsByRevenue.map((product) => ({
+        productId: product.productId,
+        label: product.productName,
+        value: product.totalRevenue,
+        percentage: (product.totalRevenue / maxProductRevenue) * 100,
+        units: product.totalQuantity,
+        catalogStatus: product.catalogStatus,
       })),
-    [topProducts, maxTopRevenue],
+    [productsByRevenue, maxProductRevenue],
+  );
+
+  const productsByUnitsChart = useMemo(
+    () =>
+      productsByUnits.map((product) => ({
+        productId: product.productId,
+        label: product.productName,
+        value: product.totalQuantity,
+        percentage: (product.totalQuantity / maxProductUnits) * 100,
+        revenue: product.totalRevenue,
+        catalogStatus: product.catalogStatus,
+      })),
+    [productsByUnits, maxProductUnits],
   );
 
   const salesChannels = dashboard?.salesBreakdown?.channels ?? [];
@@ -620,26 +637,34 @@ const Reports = () => {
       <div className={styles.chartsGrid}>
         <Card className={styles.chartCard}>
           <CardHeader>
-            <CardTitle>Top Products (Top 5)</CardTitle>
+            <CardTitle>Product Rankings</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Top by Revenue</span>
+              <span className={styles.variantMeta}>Collected merchandise</span>
+            </div>
             <div className={styles.productRanking}>
-              {topProductsChart.length === 0 && !loading ? (
+              {productsByRevenueChart.length === 0 && !loading ? (
                 <div className={styles.emptyState}>No data</div>
               ) : (
-                topProductsChart.map((p, index) => (
-                  <div key={p.label} className={styles.rankItem}>
+                productsByRevenueChart.map((product, index) => (
+                  <div key={product.productId} className={styles.rankItem}>
                     <span className={styles.rankNumber}>#{index + 1}</span>
                     <div className={styles.rankInfo}>
-                      <span className={styles.rankName}>{p.label}</span>
+                      <span className={styles.rankName}>
+                        {product.label}
+                        {product.catalogStatus === "deleted" ? " · Deleted" : ""}
+                      </span>
                       <span className={styles.rankMeta}>
-                        {p.value} units · {formatCurrency(p.revenue)}
+                        {formatCurrency(product.value)} ·{" "}
+                        {formatCompactNumber(product.units)} units
                       </span>
                     </div>
                     <div className={styles.rankBar}>
                       <div
                         className={styles.rankFill}
-                        style={{ width: `${p.percentage}%` }}
+                        style={{ width: `${product.percentage}%` }}
                       />
                     </div>
                   </div>
@@ -647,41 +672,43 @@ const Reports = () => {
               )}
             </div>
 
-            {topProducts.length > 0 ? (
-              <div className={styles.variantBlock}>
-                {topProducts.map((p) => (
-                  <div key={p.productId} className={styles.variantCard}>
-                    <div className={styles.variantHeader}>
-                      <span className={styles.variantTitle}>
-                        {p.productName}
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Top by Units</span>
+              <span className={styles.variantMeta}>Historical units sold</span>
+            </div>
+            <div className={styles.productRanking}>
+              {productsByUnitsChart.length === 0 && !loading ? (
+                <div className={styles.emptyState}>No data</div>
+              ) : (
+                productsByUnitsChart.map((product, index) => (
+                  <div key={product.productId} className={styles.rankItem}>
+                    <span className={styles.rankNumber}>#{index + 1}</span>
+                    <div className={styles.rankInfo}>
+                      <span className={styles.rankName}>
+                        {product.label}
+                        {product.catalogStatus === "deleted" ? " · Deleted" : ""}
                       </span>
-                      <span className={styles.variantMeta}>
-                        {formatCurrency(p.totalRevenue)} · {p.totalQuantity}{" "}
-                        units
+                      <span className={styles.rankMeta}>
+                        {formatCompactNumber(product.value)} units ·{" "}
+                        {formatCurrency(product.revenue)}
                       </span>
                     </div>
-                    <div className={styles.variantList}>
-                      {(p.variants || []).map((v) => (
-                        <div key={v.variantId} className={styles.variantItem}>
-                          <div className={styles.variantLeft}>
-                            <span className={styles.variantName}>{v.name}</span>
-                            <span className={styles.variantSku}>{v.sku}</span>
-                          </div>
-                          <div className={styles.variantRight}>
-                            <span className={styles.variantRevenue}>
-                              {formatCurrency(v.revenue)}
-                            </span>
-                            <span className={styles.variantQty}>
-                              {v.quantity}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                    <div className={styles.rankBar}>
+                      <div
+                        className={styles.rankFill}
+                        style={{ width: `${product.percentage}%` }}
+                      />
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : null}
+                ))
+              )}
+            </div>
+
+            <div className={styles.chartFooter}>
+              <span className={styles.chartTotal}>
+                Product revenue excludes delivery fees and item-unattributed refunds.
+              </span>
+            </div>
           </CardContent>
         </Card>
 

@@ -4,6 +4,9 @@ const mongoose = require("mongoose");
 
 const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
+const {
+  attachProductNameSnapshots,
+} = require("../../utils/orderItemSnapshot.util");
 
 const { buildActiveOrderIdQuery } = require("../../utils/ordersAdmin.util");
 
@@ -176,6 +179,8 @@ async function UpdateOrderItems({
 
     subtotal += lineSubtotal;
   }
+
+  await attachProductNameSnapshots(resolvedItems);
 
   if (!resolvedItems.length) {
     return {
