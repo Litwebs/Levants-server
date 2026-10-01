@@ -19,11 +19,100 @@ interface SimpleChartProps {
 
 export const SimpleBarChart: React.FC<SimpleChartProps> = ({
   data,
+  type,
   height = 200,
   showLabels = true,
   color = "primary",
   valueFormatter,
 }) => {
+  if (type === "line") {
+    const values = data.map((point) => point.value);
+    let minValue = Math.min(0, ...(values.length ? values : [0]));
+    let maxValue = Math.max(0, ...(values.length ? values : [0]));
+
+    if (minValue === maxValue) {
+      maxValue = minValue + 1;
+    }
+
+    const range = maxValue - minValue;
+    const plotTop = 8;
+    const plotBottom = 76;
+    const plotHeight = plotBottom - plotTop;
+    const xAt = (index: number) =>
+      data.length <= 1 ? 50 : 4 + (index / (data.length - 1)) * 92;
+    const yAt = (value: number) =>
+      plotTop + ((maxValue - value) / range) * plotHeight;
+    const zeroY = yAt(0);
+    const points = data
+      .map((point, index) => `${xAt(index)},${yAt(point.value)}`)
+      .join(" ");
+    const labelStep = Math.max(1, Math.ceil(data.length / 10));
+
+    return (
+      <div className={styles.chartContainer} style={{ height }}>
+        <div className={styles.lineChart}>
+          <svg
+            className={styles.lineSvg}
+            viewBox="0 0 100 84"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="Time series chart"
+          >
+            <line
+              x1="4"
+              x2="96"
+              y1={zeroY}
+              y2={zeroY}
+              className={styles.lineBaseline}
+            />
+            {data.length > 1 ? (
+              <polyline
+                points={points}
+                className={`${styles.linePath} ${styles[color]}`}
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {data.map((point, index) => (
+              <circle
+                key={`${point.label}-${index}`}
+                cx={xAt(index)}
+                cy={yAt(point.value)}
+                r="1.4"
+                className={`${styles.linePoint} ${styles[color]}`}
+                vectorEffect="non-scaling-stroke"
+              >
+                <title>
+                  {`${point.label}: ${
+                    valueFormatter
+                      ? valueFormatter(point.value)
+                      : point.value.toLocaleString("en-GB")
+                  }`}
+                </title>
+              </circle>
+            ))}
+          </svg>
+
+          {showLabels ? (
+            <div className={styles.lineLabels}>
+              {data.map((point, index) => {
+                const visible =
+                  index % labelStep === 0 || index === data.length - 1;
+                return (
+                  <span
+                    key={`${point.label}-label-${index}`}
+                    className={styles.lineLabel}
+                  >
+                    {visible ? point.label : ""}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   const maxValue = data.length ? Math.max(...data.map((d) => d.value)) : 0;
 
   return (
