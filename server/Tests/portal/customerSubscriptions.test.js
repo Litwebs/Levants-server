@@ -28,6 +28,7 @@ const {
   zonedParts,
 } = require("../../utils/subscriptionCutoff.util");
 const crypto = require("crypto");
+const subscriptionClock = require("../../utils/subscriptionClock.util");
 
 // Mock geocode so tests don't make real HTTP calls
 jest.mock("../../Integration/google.geocode", () => ({
@@ -321,8 +322,7 @@ describe("Portal Subscriptions", () => {
   });
 
   it("does not duplicate legacy UTC-midnight slots that are the same London delivery day", async () => {
-    jest.useFakeTimers({ doNotFake: ["nextTick", "setImmediate", "setTimeout", "setInterval", "clearTimeout", "clearInterval", "performance", "hrtime", "queueMicrotask"] });
-    jest.setSystemTime(new Date("2026-07-01T12:00:00Z"));
+    jest.spyOn(subscriptionClock, "now").mockReturnValue(new Date("2026-07-01T12:00:00Z").getTime());
     const sub = await createBasicSubscription();
     await SubscriptionDelivery.deleteMany({ subscription: sub._id });
 
@@ -418,7 +418,7 @@ describe("Portal Subscriptions", () => {
 
   it("uses the immediate upcoming Sunday when subscribing on Friday before cutoff", async () => {
     const fixedNow = new Date("2026-05-08T12:00:00.000Z");
-    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(fixedNow.getTime());
+    const nowSpy = jest.spyOn(subscriptionClock, "now").mockReturnValue(fixedNow.getTime());
 
     try {
       await SubscriptionSettings.findOneAndUpdate(
@@ -653,14 +653,7 @@ describe("Portal Subscriptions", () => {
         ? "2026-09-06T14:38:00.000Z"
         : "2026-09-07T14:38:00.000Z",
     );
-    jest.useFakeTimers({
-      now,
-      doNotFake: [
-        "hrtime", "nextTick", "performance", "queueMicrotask",
-        "setImmediate", "clearImmediate", "setInterval", "clearInterval",
-        "setTimeout", "clearTimeout",
-      ],
-    });
+    const clockSpy = jest.spyOn(subscriptionClock, "now").mockReturnValue(now.getTime());
     try {
       const today = startOfDayInTimeZone(now, SUBSCRIPTION_TIME_ZONE);
       const staleDate = new Date("2026-08-02T08:00:00.000Z");
@@ -701,7 +694,7 @@ describe("Portal Subscriptions", () => {
         ),
       ).toEqual(expectedKeys);
     } finally {
-      jest.useRealTimers();
+      clockSpy.mockRestore();
     }
   });
 
@@ -2984,7 +2977,7 @@ describe("Portal Subscriptions", () => {
   it("multi-day update supports day plans before cutoff and rejects single-day day-plans", async () => {
     const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
     const nowSpy = jest
-      .spyOn(Date, "now")
+      .spyOn(subscriptionClock, "now")
       .mockReturnValue(mixedCutoffNow.getTime());
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -3044,7 +3037,7 @@ describe("Portal Subscriptions", () => {
   it("multi-day day-plan decrease before cutoff settles as refund/credit and does not charge", async () => {
     const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
     const nowSpy = jest
-      .spyOn(Date, "now")
+      .spyOn(subscriptionClock, "now")
       .mockReturnValue(mixedCutoffNow.getTime());
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -3119,7 +3112,7 @@ describe("Portal Subscriptions", () => {
   it("stages a changed locked delivery day in a multi-day plan without immediate charge and updates Stripe for the next invoice", async () => {
     const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
     const nowSpy = jest
-      .spyOn(Date, "now")
+      .spyOn(subscriptionClock, "now")
       .mockReturnValue(mixedCutoffNow.getTime());
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -3188,7 +3181,7 @@ describe("Portal Subscriptions", () => {
   it("reducing multi-day weekly subscription to one day before cutoff refunds removed-day order", async () => {
     const openCutoffNow = new Date("2026-07-06T08:00:00.000Z");
     const nowSpy = jest
-      .spyOn(Date, "now")
+      .spyOn(subscriptionClock, "now")
       .mockReturnValue(openCutoffNow.getTime());
 
     await SubscriptionSettings.findOneAndUpdate(
@@ -3313,7 +3306,7 @@ describe("Portal Subscriptions", () => {
   it("charges only the open-day delta immediately when a staged locked-day plan already exists", async () => {
     const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
     const nowSpy = jest
-      .spyOn(Date, "now")
+      .spyOn(subscriptionClock, "now")
       .mockReturnValue(mixedCutoffNow.getTime());
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -3405,7 +3398,7 @@ describe("Portal Subscriptions", () => {
   it("increasing one day's item only updates that day's generated order", async () => {
     const mixedCutoffNow = new Date("2026-07-07T12:00:00.000Z");
     const nowSpy = jest
-      .spyOn(Date, "now")
+      .spyOn(subscriptionClock, "now")
       .mockReturnValue(mixedCutoffNow.getTime());
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -3938,7 +3931,7 @@ describe("Portal Subscriptions", () => {
       nextDeliveryDate: nextDelivery,
     });
 
-    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(cutoffAt.getTime());
+    const nowSpy = jest.spyOn(subscriptionClock, "now").mockReturnValue(cutoffAt.getTime());
 
     const res = await request(app)
       .post(`/api/portal/subscriptions/${sub._id}/items`)
@@ -3982,7 +3975,7 @@ describe("Portal Subscriptions", () => {
 
     const cutoffMinusOneMinute = cutoffAt.getTime() - 60 * 1000;
     const nowSpy = jest
-      .spyOn(Date, "now")
+      .spyOn(subscriptionClock, "now")
       .mockReturnValue(cutoffMinusOneMinute);
 
     const res = await request(app)
@@ -4025,7 +4018,7 @@ describe("Portal Subscriptions", () => {
     });
 
     const cutoffPlusOneMinute = cutoffAt.getTime() + 60 * 1000;
-    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(cutoffPlusOneMinute);
+    const nowSpy = jest.spyOn(subscriptionClock, "now").mockReturnValue(cutoffPlusOneMinute);
 
     const res = await request(app)
       .post(`/api/portal/subscriptions/${sub._id}/items`)

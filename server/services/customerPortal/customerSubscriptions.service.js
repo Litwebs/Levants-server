@@ -1,6 +1,7 @@
 "use strict";
 
 const mongoose = require("mongoose");
+const subscriptionClock = require("../../utils/subscriptionClock.util");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
@@ -119,7 +120,7 @@ function getEffectiveDeliveryDays(subscription) {
 
 async function getUpcomingDeliveryDate(
   subscriptionId,
-  referenceDate = new Date(),
+  referenceDate = new Date(subscriptionClock.now()),
 ) {
   const delivery = await SubscriptionDelivery.findOne({
     subscription: subscriptionId,
@@ -188,24 +189,24 @@ function calculateDayPlanTotalMinor(dayPlans = []) {
  * "now" from the test clock so the computed dates are valid.
  */
 async function getEffectiveNowMs(stripeCustomerId) {
-  if (!stripeCustomerId) return Date.now();
+  if (!stripeCustomerId) return subscriptionClock.now();
   try {
     const stripeCustomer = await stripe.customers.retrieve(stripeCustomerId);
-    if (!stripeCustomer || stripeCustomer.deleted) return Date.now();
+    if (!stripeCustomer || stripeCustomer.deleted) return subscriptionClock.now();
 
     const testClockId =
       typeof stripeCustomer.test_clock === "string"
         ? stripeCustomer.test_clock
         : stripeCustomer.test_clock?.id;
-    if (!testClockId) return Date.now();
+    if (!testClockId) return subscriptionClock.now();
 
     const clock = await stripe.testHelpers.testClocks.retrieve(testClockId);
     const frozenSeconds = Number(clock?.frozen_time);
     return Number.isFinite(frozenSeconds) && frozenSeconds > 0
       ? frozenSeconds * 1000
-      : Date.now();
+      : subscriptionClock.now();
   } catch {
-    return Date.now();
+    return subscriptionClock.now();
   }
 }
 
@@ -300,7 +301,7 @@ async function markSubscriptionOrderPaymentRefunded({
   await Payment.updateMany(paymentFilter, {
     $set: {
       status: "refunded",
-      refundedAt: refundedAt || new Date(),
+      refundedAt: refundedAt || new Date(subscriptionClock.now()),
     },
   });
 }
@@ -314,7 +315,7 @@ async function markSubscriptionOrderPaymentRefunded({
 function calculateNextDeliveryDate(
   preferredDay,
   frequency,
-  from = new Date(),
+  from = new Date(subscriptionClock.now()),
   preferredDays = [],
   options = {},
 ) {
@@ -381,7 +382,7 @@ function calculateFirstSubscriptionDeliveryDate({
   referenceDate,
   settings,
 } = {}) {
-  const now = new Date(referenceDate || Date.now());
+  const now = new Date(referenceDate || subscriptionClock.now());
   let searchFrom = new Date(now);
 
   // Find the first candidate delivery with an open cut-off window.
@@ -420,7 +421,7 @@ function calculateFirstSubscriptionDeliveryDate({
 async function scheduleUpcomingDeliveries(subscription, session) {
   if (!subscription?.nextDeliveryDate) return;
 
-  const today = startOfDay(new Date());
+  const today = startOfDay(new Date(subscriptionClock.now()));
   let nextDate = new Date(subscription.nextDeliveryDate);
   const deliveryDays = getEffectiveDeliveryDays(subscription);
   let guard = 0;
@@ -548,14 +549,14 @@ const computeCutoffDate = computeSubscriptionCutoffDate;
 async function getCutoffStatus(subscription) {
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const cutoffAt = computeCutoffDate(subscription.nextDeliveryDate, settings);
-  const isPastCutoff = cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
+  const isPastCutoff = cutoffAt ? subscriptionClock.now() >= cutoffAt.getTime() : false;
   return { settings, cutoffAt, isPastCutoff };
 }
 
 function buildDeliveryDayCutoffs(
   subscription,
   settings,
-  referenceDate = new Date(),
+  referenceDate = new Date(subscriptionClock.now()),
 ) {
   const reference = new Date(referenceDate);
   const referenceMs = reference.getTime();
@@ -618,7 +619,7 @@ function parsePauseResumeDate(resumeOn) {
     return { ok: false, message: "Please choose a valid resume date." };
   }
 
-  const today = startOfDay(new Date());
+  const today = startOfDay(new Date(subscriptionClock.now()));
   const minResume = addCalendarDaysInTimeZone(
     today,
     1,
@@ -649,7 +650,7 @@ function parsePauseResumeDate(resumeOn) {
 
 async function getResumeNextDeliveryDate(
   subscription,
-  referenceDate = new Date(),
+  referenceDate = new Date(subscriptionClock.now()),
 ) {
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const eligibilityStart = startOfDay(
@@ -862,7 +863,7 @@ async function AutoResumePausedSubscriptions({
 } = {}) {
   const filter = {
     status: "paused",
-    pausedUntil: { $ne: null, $lte: new Date() },
+    pausedUntil: { $ne: null, $lte: new Date(subscriptionClock.now()) },
   };
 
   if (subscriptionId) filter._id = subscriptionId;
@@ -903,7 +904,7 @@ async function AutoResumePausedSubscriptions({
  */
 async function FinalizeScheduledCancellations({
   subscriptionId,
-  referenceDate = new Date(),
+  referenceDate = new Date(subscriptionClock.now()),
 } = {}) {
   const filter = {
     status: "active",
@@ -1373,15 +1374,15 @@ async function updateUpcomingSubscriptionOrder(
         amountMinor: refundedMinor,
         amount: refundedMinor / 100,
         status: "succeeded",
-        refundedAt: new Date(),
-        createdAt: new Date(),
+        refundedAt: new Date(subscriptionClock.now()),
+        createdAt: new Date(subscriptionClock.now()),
         restock: false,
       });
     }
     order.refund = {
       ...(order.refund || {}),
       stripeRefundId: refundRecord.stripeRefundId,
-      refundedAt: order.refund?.refundedAt || new Date(),
+      refundedAt: order.refund?.refundedAt || new Date(subscriptionClock.now()),
     };
   }
 
@@ -1478,7 +1479,7 @@ async function prepareSubscriptionItemIncrease({ subscription, customer, operati
   const paymentMethod = remote?.invoice_settings?.default_payment_method;
   if (!paymentMethod) return Response(false, "Please add a default card first", null);
   const snapshot = {
-    startedAt: new Date(), baseVersion: Number(subscription.customerVersion || 0),
+    startedAt: new Date(subscriptionClock.now()), baseVersion: Number(subscription.customerVersion || 0),
     fields, orderEdits, amountMinor, actionLabel,
     idempotencyKey: `subscription:${subscription._id}:mutation:${operationId}:charge:attempt:${mutation.attempts || 1}`,
     chargeParams: {
@@ -1508,7 +1509,7 @@ async function completeSubscriptionItemIncrease(mutation) {
   if (!paymentIntent) {
     // After Stripe's retention window an ambiguous request must be reconciled,
     // not sent again with a potentially expired idempotency key.
-    if (Date.now() - new Date(snapshot.startedAt).getTime() >= 23 * 60 * 60 * 1000) {
+    if (subscriptionClock.now() - new Date(snapshot.startedAt).getTime() >= 23 * 60 * 60 * 1000) {
       return Response(false, "This payment attempt needs reconciliation. Please contact support before making another change.", { reconciliationRequired: true });
     }
     try {
@@ -1558,7 +1559,7 @@ async function completeSubscriptionItemIncrease(mutation) {
       // response cannot make the same operation execute against the new version.
       await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: {
         status: "completed", response: JSON.parse(JSON.stringify(result)),
-        completedAt: new Date(), lastError: null,
+        completedAt: new Date(subscriptionClock.now()), lastError: null,
       } }, { session });
     });
   } finally {
@@ -1582,7 +1583,7 @@ async function applyItemChange(
   const upcomingDeliveryDate = await getUpcomingDeliveryDate(subscription._id);
   const upcomingCutoffAt = computeCutoffDate(upcomingDeliveryDate, settings);
   const isPastUpcomingCutoff = upcomingCutoffAt
-    ? Date.now() >= upcomingCutoffAt.getTime()
+    ? subscriptionClock.now() >= upcomingCutoffAt.getTime()
     : false;
   const effectiveIsPastCutoff = isPastCutoff || isPastUpcomingCutoff;
   const hasStagedPendingItems =
@@ -2169,7 +2170,7 @@ async function CreateSubscription({
   await subscription.validate();
 
   const snapshot = {
-    startedAt: new Date(),
+    startedAt: new Date(subscriptionClock.now()),
     subscription: subscription.toObject(),
     product: {
       name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
@@ -2202,7 +2203,7 @@ async function completeSubscriptionCreation(customer, snapshot, mutation) {
   // attempt. A recorded success can always finish local recovery safely.
   const startedAt = snapshot.startedAt || mutation?.createdAt;
   if (mutation && !snapshot.remoteSubscription && startedAt &&
-      Date.now() - new Date(startedAt).getTime() >= 23 * 60 * 60 * 1000) {
+      subscriptionClock.now() - new Date(startedAt).getTime() >= 23 * 60 * 60 * 1000) {
     return Response(false,
       "This payment attempt needs reconciliation. Please contact support before starting another subscription.",
       { reconciliationRequired: true },
@@ -2334,7 +2335,7 @@ async function ListSubscriptions({
         $match: {
           subscription: { $in: subscriptionIds },
           status: { $in: ["scheduled", "generated"] },
-          scheduledDate: { $gte: startOfDay(new Date()) },
+          scheduledDate: { $gte: startOfDay(new Date(subscriptionClock.now())) },
         },
       },
       {
@@ -2398,7 +2399,7 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
     upcomingDeliveryDate || enriched.nextDeliveryDate,
     settings,
   );
-  const now = new Date();
+  const now = new Date(subscriptionClock.now());
   const isPastCutoff = cutoffAt ? now.getTime() >= cutoffAt.getTime() : false;
   const deliveryDayCutoffs = buildDeliveryDayCutoffs(
     enriched,
@@ -2693,11 +2694,11 @@ async function UpdateSubscription({
       const deliveryDateForDay = calculateNextDeliveryDate(
         day,
         targetFrequency,
-        new Date(Date.now()),
+        new Date(subscriptionClock.now()),
         [day],
       );
       const cutoffForDay = computeCutoffDate(deliveryDateForDay, settings);
-      return cutoffForDay ? Date.now() >= cutoffForDay.getTime() : false;
+      return cutoffForDay ? subscriptionClock.now() >= cutoffForDay.getTime() : false;
     };
 
     const currentLivePlans = toDayPlanArray(
@@ -2859,7 +2860,7 @@ async function UpdateSubscription({
       const effectiveFrom = lockedChangedDeliveryDays.length > 0
         ? calculateFirstSubscriptionDeliveryDate({ frequency: targetFrequency,
             preferredDeliveryDay: lockedChangedDeliveryDays[0], preferredDeliveryDays: lockedChangedDeliveryDays,
-            referenceDate: new Date(), settings })
+            referenceDate: new Date(subscriptionClock.now()), settings })
         : subscription.nextDeliveryDate
           ? addFrequencyDays(subscription.nextDeliveryDate, subscription.frequency, getEffectiveDeliveryDays(subscription)) : null;
       fields.pendingChanges = {
@@ -2954,7 +2955,7 @@ async function UpdateSubscription({
     resolvedDays.days.length < currentResolvedDays.days.length;
 
   if (removedDeliveryDays.length > 0 && isReducingDays) {
-    const now = new Date(Date.now());
+    const now = new Date(subscriptionClock.now());
     const refundableOrders = await Order.find({
       subscription: subscription._id,
       status: { $in: ["paid", "partially_refunded"] },
@@ -3025,7 +3026,7 @@ async function UpdateSubscription({
       order.status = "refunded";
       order.refund = {
         ...(order.refund || {}),
-        refundedAt: new Date(),
+        refundedAt: new Date(subscriptionClock.now()),
         reason: "Subscription delivery day removed before cut-off",
         stripeRefundId: removedDayStripeRefundId,
       };
@@ -3067,7 +3068,7 @@ async function UpdateSubscription({
           frequency: targetFrequency,
           preferredDeliveryDay: lockedChangedDeliveryDays[0],
           preferredDeliveryDays: lockedChangedDeliveryDays,
-          referenceDate: new Date(),
+          referenceDate: new Date(subscriptionClock.now()),
           settings,
         })
       : effectiveFromDate;
@@ -3138,7 +3139,7 @@ async function UpdateSubscription({
   }
 
   if (scheduleChangeRequested) {
-    const now = new Date();
+    const now = new Date(subscriptionClock.now());
     const nextDeliveryDate = calculateFirstSubscriptionDeliveryDate({
       frequency: subscription.frequency,
       preferredDeliveryDay: subscription.preferredDeliveryDay,
@@ -3367,7 +3368,7 @@ async function PauseSubscription({
       : "refund";
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
-  const now = new Date(Date.now());
+  const now = new Date(subscriptionClock.now());
   const resumeDate = new Date(pauseResume.resumeDate);
   const deliveriesToConsider = await SubscriptionDelivery.find({
     subscription: subscription._id,
@@ -3488,7 +3489,7 @@ async function PauseSubscription({
     order.status = "refunded";
     order.refund = {
       ...(order.refund || {}),
-      refundedAt: new Date(),
+      refundedAt: new Date(subscriptionClock.now()),
       reason: "Subscription paused before cut-off",
       stripeRefundId,
     };
@@ -3501,7 +3502,7 @@ async function PauseSubscription({
   }
 
   subscription.status = "paused";
-  subscription.pausedAt = new Date();
+  subscription.pausedAt = new Date(subscriptionClock.now());
   subscription.pausedUntil = pauseResume.resumeDate;
   subscription.pauseReason = "customer";
   await subscription.save();
@@ -3591,7 +3592,7 @@ async function CancelSubscription({
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
-  const now = new Date(Date.now());
+  const now = new Date(subscriptionClock.now());
   const dayKey = deliveryDateKey;
 
   const scheduledDeliveries = await SubscriptionDelivery.find({
@@ -3604,11 +3605,11 @@ async function CancelSubscription({
 
   const lockedDeliveries = scheduledDeliveries.filter((delivery) => {
     const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
-    return cutoffAt ? Date.now() >= cutoffAt.getTime() : false;
+    return cutoffAt ? subscriptionClock.now() >= cutoffAt.getTime() : false;
   });
   const openDeliveries = scheduledDeliveries.filter((delivery) => {
     const cutoffAt = computeCutoffDate(delivery.scheduledDate, settings);
-    return cutoffAt ? Date.now() < cutoffAt.getTime() : true;
+    return cutoffAt ? subscriptionClock.now() < cutoffAt.getTime() : true;
   });
 
   const lockedDeliveryKeys = new Set(
@@ -3649,7 +3650,7 @@ async function CancelSubscription({
     }
 
     const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
-    return cutoffAt ? Date.now() < cutoffAt.getTime() : true;
+    return cutoffAt ? subscriptionClock.now() < cutoffAt.getTime() : true;
   });
 
   // Refund each open (before cut-off) delivery order. Locked deliveries are
@@ -3720,7 +3721,7 @@ async function CancelSubscription({
       refundableOrder.status = "refunded";
       refundableOrder.refund = {
         ...(refundableOrder.refund || {}),
-        refundedAt: new Date(),
+        refundedAt: new Date(subscriptionClock.now()),
         reason: reason || "Subscription cancelled before cut-off",
         stripeRefundId,
       };
@@ -3805,7 +3806,7 @@ async function CancelSubscription({
       refundableOrder.status = "refunded";
       refundableOrder.refund = {
         ...(refundableOrder.refund || {}),
-        refundedAt: new Date(),
+        refundedAt: new Date(subscriptionClock.now()),
         reason: reason || "Subscription cancelled before cut-off",
         stripeRefundId,
       };
@@ -3841,7 +3842,7 @@ async function CancelSubscription({
   // When any delivery is past its own cut-off we keep the subscription active
   // and schedule cancellation after the latest locked delivery.
   subscription.status = hasLockedDeliveries ? "active" : "cancelled";
-  subscription.cancelledAt = hasLockedDeliveries ? null : new Date();
+  subscription.cancelledAt = hasLockedDeliveries ? null : new Date(subscriptionClock.now());
   subscription.cancelReason = reason || null;
   subscription.isCancellationScheduled = Boolean(scheduledCancellationDate);
   subscription.cancellationEffectiveAfter = scheduledCancellationDate
@@ -3947,7 +3948,7 @@ async function AddNextDeliveryAddOn({
     subscription: subscription._id,
     customer: customerId,
     status: { $in: ["scheduled", "generated"] },
-    scheduledDate: { $gte: startOfDay(new Date()) },
+    scheduledDate: { $gte: startOfDay(new Date(subscriptionClock.now())) },
   })
     .populate("order", "status deliveryStatus")
     .sort({ scheduledDate: 1 });
@@ -3966,7 +3967,7 @@ async function AddNextDeliveryAddOn({
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const cutoffAt = computeCutoffDate(nextDelivery.scheduledDate, settings);
-  if (!cutoffAt || Date.now() >= cutoffAt.getTime()) {
+  if (!cutoffAt || subscriptionClock.now() >= cutoffAt.getTime()) {
     return Response(
       false,
       "The cut-off for your next delivery has passed.",
@@ -4077,7 +4078,7 @@ async function AddNextDeliveryAddOn({
     items: addOnItems,
     amountMinor,
     stripePaymentIntentId: payment.paymentIntent.id,
-    paidAt: new Date(),
+    paidAt: new Date(subscriptionClock.now()),
   };
   let savedDelivery = await SubscriptionDelivery.findOneAndUpdate(
     {
@@ -4458,7 +4459,7 @@ async function GetSubscriptionDeliveries({
     .lean();
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
-  const nowMs = Date.now();
+  const nowMs = subscriptionClock.now();
   const normalizedDeliveries = deliveries.map((delivery) => {
     const orderStatus = String(delivery?.order?.status || "").toLowerCase();
     const normalized =
