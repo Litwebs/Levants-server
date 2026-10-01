@@ -38,6 +38,29 @@ const ZERO_DECIMAL_CURRENCIES = [
   "XPF",
 ];
 
+const SALES_CHANNELS = ["website", "subscription", "imported"];
+
+const SALES_CHANNEL_EXPRESSION = {
+  $switch: {
+    branches: [
+      {
+        case: { $eq: ["$metadata.manualImport", true] },
+        then: "imported",
+      },
+      {
+        case: {
+          $or: [
+            { $eq: ["$orderType", "subscription_generated"] },
+            { $ne: [{ $ifNull: ["$subscription", null] }, null] },
+          ],
+        },
+        then: "subscription",
+      },
+    ],
+    default: "website",
+  },
+};
+
 const EFFECTIVE_PAID_AT_EXPRESSION = {
   $ifNull: ["$paidAt", "$createdAt"],
 };
@@ -181,6 +204,8 @@ const buildLegacyRefundEventMatch = ({
 module.exports = {
   COLLECTED_ORDER_STATUSES,
   ZERO_DECIMAL_CURRENCIES,
+  SALES_CHANNELS,
+  SALES_CHANNEL_EXPRESSION,
   EFFECTIVE_PAID_AT_EXPRESSION,
   COLLECTED_AMOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
