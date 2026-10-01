@@ -6,19 +6,27 @@ const ProductVariant = require("../models/variant.model");
 const Review = require("../models/review.model");
 
 const {
+  DEFAULT_ANALYTICS_TIME_ZONE,
   parseDateRange,
-  clampToStartOfDay,
-  clampToEndOfDay,
   formatYmdInTimeZone,
 } = require("../utils/analyticsDate.util");
 
 const {
   ACTIVE_ORDER_MATCH,
   ANALYTICS_ORDER_STATUSES,
-  PAID_ORDER_MATCH,
   buildOrderSourceMatch,
   buildOrderMatch,
 } = require("../utils/analyticsFilter.util");
+
+const {
+  COLLECTED_ORDER_STATUSES,
+  EFFECTIVE_PAID_AT_EXPRESSION,
+  COLLECTED_AMOUNT_EXPRESSION,
+  REFUND_AMOUNT_EXPRESSION,
+  buildSalesOrderMatch,
+  buildRefundEventMatch,
+  buildLegacyRefundEventMatch,
+} = require("../utils/analyticsMetric.util");
 
 const {
   buildAnalyticsCounts,
@@ -39,19 +47,35 @@ const {
   buildRevenueSeriesStages,
 } = require("../utils/analyticsRevenueSeries.util");
 
-async function GetSummary({ range, from, to, orderSource } = {}) {
-  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
-  const { start } = parseDateRange({ range, from, to });
+async function GetSummary({
+  range,
+  from,
+  to,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  // Operational/status metrics follow order creation time. Financial metrics
+  // follow paidAt, with createdAt only as a legacy fallback.
+  const orderMatch = buildOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const { start } = parseDateRange({ range, from, to, timeZone });
 
-  const paidCreatedAtMatch = {
-    ...orderMatch,
-    status: "paid",
-    customer: { $ne: null },
-  };
-
+  const sourceMatch = buildOrderSourceMatch(orderSource);
   const customerAggPipeline = start
     ? [
-        { $match: paidCreatedAtMatch },
+        { $match: { ...salesMatch, customer: { $ne: null } } },
         { $group: { _id: "$customer" } },
         {
           $lookup: {
@@ -61,12 +85,14 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
               {
                 $match: {
                   ...ACTIVE_ORDER_MATCH,
-                  ...buildOrderSourceMatch(orderSource),
+                  ...sourceMatch,
+                  status: { $in: COLLECTED_ORDER_STATUSES },
                   $expr: {
                     $and: [
                       { $eq: ["$customer", "$$customerId"] },
-                      { $eq: ["$status", "paid"] },
-                      { $lt: ["$createdAt", start] },
+                      {
+                        $lt: [EFFECTIVE_PAID_AT_EXPRESSION, start],
+                      },
                     ],
                   },
                 },
@@ -74,12 +100,12 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
               { $limit: 1 },
               { $project: { _id: 1 } },
             ],
-            as: "previousPaid",
+            as: "previousCollected",
           },
         },
         {
           $project: {
-            isNew: { $eq: [{ $size: "$previousPaid" }, 0] },
+            isNew: { $eq: [{ $size: "$previousCollected" }, 0] },
           },
         },
         {
@@ -91,7 +117,7 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
         },
       ]
     : [
-        { $match: paidCreatedAtMatch },
+        { $match: { ...salesMatch, customer: { $ne: null } } },
         { $group: { _id: "$customer", orders: { $sum: 1 } } },
         {
           $group: {
@@ -104,30 +130,37 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
         },
       ];
 
+  const refundBaseMatch = {
+    ...ACTIVE_ORDER_MATCH,
+    ...sourceMatch,
+  };
+
   const [
-    totalOrders,
-    revenueAgg,
+    salesAgg,
     statusCounts,
     lowStockCountAgg,
     outOfStockCountAgg,
     unitsSoldAgg,
     customersAgg,
+    refundAgg,
+    legacyRefundAgg,
   ] = await Promise.all([
-    Order.countDocuments({
-      ...orderMatch,
-      ...PAID_ORDER_MATCH,
-    }),
-
     Order.aggregate([
-      { $match: { ...orderMatch, ...PAID_ORDER_MATCH } },
-      { $group: { _id: null, revenue: { $sum: "$total" } } },
+      { $match: salesMatch },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          grossRevenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+        },
+      },
     ]),
 
     Order.aggregate([
       {
         $match: {
           ...orderMatch,
-          ...PAID_ORDER_MATCH,
+          status: { $in: ANALYTICS_ORDER_STATUSES },
         },
       },
       { $group: { _id: "$status", count: { $sum: 1 } } },
@@ -147,18 +180,73 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
       { $count: "count" },
     ]),
 
-    // Total units sold (paid orders only)
     Order.aggregate([
-      { $match: { ...orderMatch, ...PAID_ORDER_MATCH } },
+      { $match: salesMatch },
       { $unwind: "$items" },
       { $group: { _id: null, unitsSold: { $sum: "$items.quantity" } } },
     ]),
 
-    // New vs repeat customers (paid orders only)
     Order.aggregate(customerAggPipeline),
+
+    Order.aggregate([
+      { $match: { ...refundBaseMatch, "refunds.status": "succeeded" } },
+      { $unwind: "$refunds" },
+      {
+        $match: buildRefundEventMatch({
+          range,
+          from,
+          to,
+          timeZone,
+        }),
+      },
+      {
+        $group: {
+          _id: null,
+          refundAmount: { $sum: REFUND_AMOUNT_EXPRESSION },
+        },
+      },
+    ]),
+
+    // Backward compatibility for old full refunds that predate the refunds[]
+    // ledger. Do not double count orders that already have a succeeded entry.
+    Order.aggregate([
+      {
+        $match: {
+          ...refundBaseMatch,
+          status: "refunded",
+          ...buildLegacyRefundEventMatch({ range, from, to, timeZone }),
+        },
+      },
+      {
+        $addFields: {
+          _analyticsSucceededRefundCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ["$refunds", []] },
+                as: "refund",
+                cond: { $eq: ["$$refund.status", "succeeded"] },
+              },
+            },
+          },
+        },
+      },
+      { $match: { _analyticsSucceededRefundCount: 0 } },
+      {
+        $group: {
+          _id: null,
+          refundAmount: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+        },
+      },
+    ]),
   ]);
 
-  const revenue = revenueAgg?.[0]?.revenue ?? 0;
+  const sales = salesAgg?.[0] || {};
+  const totalOrders = sales.totalOrders ?? 0;
+  const grossRevenue = sales.grossRevenue ?? 0;
+  const refundAmount =
+    (refundAgg?.[0]?.refundAmount ?? 0) +
+    (legacyRefundAgg?.[0]?.refundAmount ?? 0);
+  const netRevenue = grossRevenue - refundAmount;
   const unitsSold = unitsSoldAgg?.[0]?.unitsSold ?? 0;
 
   const customerStats = customersAgg?.[0] || {};
@@ -175,13 +263,20 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
     success: true,
     data: {
       totalOrders,
-      revenue,
+      // "revenue" remains the primary UI field, but now has a defined meaning:
+      // collected sales in the period less refunds issued in the period.
+      revenue: netRevenue,
+      grossRevenue,
+      refundAmount,
+      netRevenue,
+      averageOrderValue: totalOrders > 0 ? grossRevenue / totalOrders : 0,
       unitsSold,
       totalRefunds: summaryCounts.totalRefunds,
       newCustomers,
       repeatCustomers,
       pendingOrders: summaryCounts.pending,
       paidOrders: counts.paid,
+      partiallyPaidOrders: counts.partially_paid,
       failedOrders: counts.failed,
       cancelledOrders: counts.cancelled,
       refundPendingOrders: counts.refund_pending,
@@ -192,6 +287,7 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
       orderStatus: {
         Pending: summaryCounts.pending,
         Paid: counts.paid,
+        "Partially Paid": counts.partially_paid,
         Failed: counts.failed,
         Cancelled: counts.cancelled,
         "Refund Pending": counts.refund_pending,
@@ -208,94 +304,206 @@ async function GetRevenueSeries({
   to,
   interval = "week",
   orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
-  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
   if (typeof interval !== "string") interval = "week";
-  const { groupId, sortStage, projectStage } = buildRevenueSeriesStages(
-    interval,
-    range,
-  );
 
-  const series = await Order.aggregate([
-    { $match: { ...orderMatch, status: "paid" } },
-    {
-      $group: {
-        _id: groupId,
-        revenue: { $sum: "$total" },
-        orders: { $sum: 1 },
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const sourceMatch = buildOrderSourceMatch(orderSource);
+
+  const salesStages = buildRevenueSeriesStages(interval, range, {
+    dateExpression: EFFECTIVE_PAID_AT_EXPRESSION,
+    timeZone,
+  });
+  const refundDateExpression = {
+    $ifNull: ["$refunds.refundedAt", "$refunds.createdAt"],
+  };
+  const refundStages = buildRevenueSeriesStages(interval, range, {
+    dateExpression: refundDateExpression,
+    timeZone,
+  });
+  const legacyRefundStages = buildRevenueSeriesStages(interval, range, {
+    dateExpression: "$refund.refundedAt",
+    timeZone,
+  });
+
+  const [salesRows, refundRows, legacyRefundRows] = await Promise.all([
+    Order.aggregate([
+      { $match: salesMatch },
+      {
+        $group: {
+          _id: salesStages.groupId,
+          revenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+          orders: { $sum: 1 },
+        },
       },
-    },
-    { $sort: sortStage },
-    { $project: projectStage },
+      { $sort: salesStages.sortStage },
+      { $project: salesStages.projectStage },
+    ]),
+
+    Order.aggregate([
+      {
+        $match: {
+          ...ACTIVE_ORDER_MATCH,
+          ...sourceMatch,
+          "refunds.status": "succeeded",
+        },
+      },
+      { $unwind: "$refunds" },
+      {
+        $match: buildRefundEventMatch({
+          range,
+          from,
+          to,
+          timeZone,
+        }),
+      },
+      {
+        $group: {
+          _id: refundStages.groupId,
+          revenue: { $sum: REFUND_AMOUNT_EXPRESSION },
+          orders: { $sum: 0 },
+        },
+      },
+      { $sort: refundStages.sortStage },
+      { $project: refundStages.projectStage },
+    ]),
+
+    Order.aggregate([
+      {
+        $match: {
+          ...ACTIVE_ORDER_MATCH,
+          ...sourceMatch,
+          status: "refunded",
+          ...buildLegacyRefundEventMatch({ range, from, to, timeZone }),
+        },
+      },
+      {
+        $addFields: {
+          _analyticsSucceededRefundCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ["$refunds", []] },
+                as: "refund",
+                cond: { $eq: ["$$refund.status", "succeeded"] },
+              },
+            },
+          },
+        },
+      },
+      { $match: { _analyticsSucceededRefundCount: 0 } },
+      {
+        $group: {
+          _id: legacyRefundStages.groupId,
+          revenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+          orders: { $sum: 0 },
+        },
+      },
+      { $sort: legacyRefundStages.sortStage },
+      { $project: legacyRefundStages.projectStage },
+    ]),
   ]);
+
+  const byLabel = new Map();
+
+  for (const row of salesRows || []) {
+    byLabel.set(row.label, {
+      label: row.label,
+      grossRevenue: row.revenue || 0,
+      refunds: 0,
+      netRevenue: row.revenue || 0,
+      revenue: row.revenue || 0,
+      orders: row.orders || 0,
+    });
+  }
+
+  for (const row of [...(refundRows || []), ...(legacyRefundRows || [])]) {
+    const point = byLabel.get(row.label) || {
+      label: row.label,
+      grossRevenue: 0,
+      refunds: 0,
+      netRevenue: 0,
+      revenue: 0,
+      orders: 0,
+    };
+    point.refunds += row.revenue || 0;
+    point.netRevenue = point.grossRevenue - point.refunds;
+    point.revenue = point.netRevenue;
+    byLabel.set(row.label, point);
+  }
+
+  const points = Array.from(byLabel.values()).sort((a, b) =>
+    String(a.label).localeCompare(String(b.label)),
+  );
 
   return {
     success: true,
     data: {
       interval,
-      points: series,
+      points,
     },
   };
 }
 
 async function GetRevenueOverview({
   days = 7,
-  timeZone = "Europe/London",
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
   orderSource,
 } = {}) {
   const d = Math.max(7, Math.min(Number(days) || 7, 90));
-
   const now = new Date();
-  const end = clampToEndOfDay(now);
-  const start = new Date(end);
-  start.setDate(start.getDate() - (d - 1));
-  const startDay = clampToStartOfDay(start);
+  const todayKey = formatYmdInTimeZone(now, timeZone);
+  const [year, month, day] = todayKey.split("-").map(Number);
+  const startDate = new Date(Date.UTC(year, month - 1, day - (d - 1)));
+  const from = [
+    String(startDate.getUTCFullYear()).padStart(4, "0"),
+    String(startDate.getUTCMonth() + 1).padStart(2, "0"),
+    String(startDate.getUTCDate()).padStart(2, "0"),
+  ].join("-");
 
-  const rows = await Order.aggregate([
-    {
-      $match: {
-        ...ACTIVE_ORDER_MATCH,
-        ...buildOrderSourceMatch(orderSource),
-        status: "paid",
-        createdAt: { $gte: startDay, $lte: end },
-      },
-    },
-    {
-      $group: {
-        _id: {
-          $dateToString: {
-            format: "%Y-%m-%d",
-            date: "$createdAt",
-            timezone: timeZone,
-          },
-        },
-        revenue: { $sum: "$total" },
-        orders: { $sum: 1 },
-      },
-    },
-    { $sort: { _id: 1 } },
-  ]);
+  const series = await GetRevenueSeries({
+    from,
+    to: todayKey,
+    interval: "day",
+    orderSource,
+    timeZone,
+  });
 
-  const byDay = new Map();
-  for (const r of rows || []) {
-    byDay.set(r._id, { revenue: r.revenue || 0, orders: r.orders || 0 });
-  }
+  const byDay = new Map(
+    (series.data.points || []).map((point) => [point.label, point]),
+  );
 
   const points = [];
-  for (let i = 0; i < d; i++) {
-    const day = new Date(startDay);
-    day.setDate(day.getDate() + i);
-    const key = formatYmdInTimeZone(day, timeZone);
-    const v = byDay.get(key) || { revenue: 0, orders: 0 };
-
-    const isToday = key === formatYmdInTimeZone(now, timeZone);
+  for (let i = 0; i < d; i += 1) {
+    const date = new Date(
+      Date.UTC(
+        startDate.getUTCFullYear(),
+        startDate.getUTCMonth(),
+        startDate.getUTCDate() + i,
+      ),
+    );
+    const key = [
+      String(date.getUTCFullYear()).padStart(4, "0"),
+      String(date.getUTCMonth() + 1).padStart(2, "0"),
+      String(date.getUTCDate()).padStart(2, "0"),
+    ].join("-");
+    const value = byDay.get(key);
 
     points.push({
       date: key,
       label: key,
-      revenue: v.revenue,
-      orders: v.orders,
-      isToday,
+      grossRevenue: value?.grossRevenue || 0,
+      refunds: value?.refunds || 0,
+      netRevenue: value?.netRevenue || 0,
+      revenue: value?.revenue || 0,
+      orders: value?.orders || 0,
+      isToday: key === todayKey,
     });
   }
 
@@ -347,12 +555,17 @@ async function GetTopProducts({
   limit = 5,
   orderSource,
 } = {}) {
-  const orderMatch = buildOrderMatch({ range, from, to, orderSource });
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+  });
 
   const lim = Math.max(1, Math.min(Number(limit) || 5, 25));
 
   const rows = await Order.aggregate([
-    { $match: { ...orderMatch, status: "paid" } },
+    { $match: salesMatch },
     { $unwind: "$items" },
     {
       $group: {
