@@ -27,7 +27,7 @@ export const SimpleBarChart: React.FC<SimpleChartProps> = ({
 }) => {
   if (type === "line") {
     const values = data.map((point) => point.value);
-    let minValue = Math.min(0, ...(values.length ? values : [0]));
+    const minValue = Math.min(0, ...(values.length ? values : [0]));
     let maxValue = Math.max(0, ...(values.length ? values : [0]));
 
     if (minValue === maxValue) {
