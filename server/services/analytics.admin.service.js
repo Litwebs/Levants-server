@@ -451,7 +451,7 @@ async function GetSalesBreakdown({
               $map: {
                 input: { $ifNull: ["$items", []] },
                 as: "item",
-                in: { $ifNull: ["$item.quantity", 0] },
+                in: { $ifNull: ["$$item.quantity", 0] },
               },
             },
           },
