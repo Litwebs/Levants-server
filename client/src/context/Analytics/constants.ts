@@ -22,6 +22,10 @@ export type AnalyticsSummary = {
   totalOrders: number;
   revenue: number;
   grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
   refundAmount: number;
   netRevenue: number;
   averageOrderValue: number;
@@ -58,6 +62,8 @@ export type AnalyticsOverviewMetrics = {
   unitsSold: number;
   averageOrderValue: number;
   averageUnitsPerOrder: number;
+  averageDiscountPerDiscountedOrder: number;
+  discountRate: number;
 };
 
 export type AnalyticsMetricChange = {
@@ -111,18 +117,28 @@ export type SalesChannelMetrics = {
   key: SalesChannelKey;
   label: string;
   grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
   refundAmount: number;
   netRevenue: number;
   totalOrders: number;
   unitsSold: number;
   averageOrderValue: number;
   averageUnitsPerOrder: number;
+  averageDiscountPerDiscountedOrder: number;
+  discountRate: number;
   grossRevenueShare: number;
   orderShare: number;
 };
 
 export type SalesBreakdownTotals = {
   grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
   refundAmount: number;
   netRevenue: number;
   totalOrders: number;
@@ -134,6 +150,19 @@ export type SalesBreakdownTotals = {
 export type SalesBreakdown = {
   channels: SalesChannelMetrics[];
   totals: SalesBreakdownTotals;
+};
+
+export type RevenueComposition = {
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
+  averageDiscountPerDiscountedOrder: number;
+  discountRate: number;
+  preDiscountRevenue: number;
+  grossRevenue: number;
+  refundAmount: number;
+  netRevenue: number;
 };
 
 export type RevenuePoint = {
@@ -239,6 +268,7 @@ export type AnalyticsDashboard = {
   overview: AnalyticsOverview;
   summary: AnalyticsSummary;
   revenue: RevenueSeries;
+  revenueComposition: RevenueComposition;
   salesBreakdown: SalesBreakdown;
   topProducts: TopProductsResult;
   recentOrders: RecentOrdersResult;
