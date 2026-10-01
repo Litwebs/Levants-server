@@ -142,6 +142,22 @@ const validateAnalyticsQuery =
     }
 
     if (enforceSeriesBucketLimit) {
+      const isUnbounded =
+        !req.query.from &&
+        !req.query.to &&
+        (req.query.range === undefined || req.query.range === "all");
+
+      if (
+        isUnbounded &&
+        interval !== undefined &&
+        ["day", "week"].includes(interval)
+      ) {
+        return fail(
+          res,
+          "All-time analytics require a monthly or yearly time-series interval.",
+        );
+      }
+
       const bucketCount = estimateRevenueSeriesBucketCount({
         interval: interval || "week",
         range: req.query.range,
