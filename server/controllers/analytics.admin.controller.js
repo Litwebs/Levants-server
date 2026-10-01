@@ -37,6 +37,23 @@ const GetSummaryComparison = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetSalesBreakdown = async (req, res) => {
+  const result = await service.GetSalesBreakdown({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetRevenueSeries = async (req, res) => {
   const result = await service.GetRevenueSeries({
     range: req.query.range,
@@ -176,6 +193,7 @@ const GetDashboard = async (req, res) => {
 module.exports = {
   GetSummary,
   GetSummaryComparison,
+  GetSalesBreakdown,
   GetRevenueSeries,
   GetRevenueOverview,
   GetOrderStatusCounts,
