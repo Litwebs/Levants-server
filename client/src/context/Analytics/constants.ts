@@ -16,7 +16,7 @@ export type AnalyticsOrderSource =
   | "subscription"
   | "imported";
 
-export type RevenueInterval = "week" | "month" | "year";
+export type RevenueInterval = "day" | "week" | "month" | "year";
 
 export type AnalyticsSummary = {
   totalOrders: number;
@@ -104,13 +104,30 @@ export type AnalyticsOverview = {
 
 export type RevenuePoint = {
   label: string;
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
+  revenue: number;
+  orders: number;
+};
+
+export type RevenueSeriesTotals = {
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
   revenue: number;
   orders: number;
 };
 
 export type RevenueSeries = {
   interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
   points: RevenuePoint[];
+  totals: RevenueSeriesTotals;
 };
 
 export type RevenueOverviewPoint = {
@@ -221,7 +238,7 @@ export const initialAnalyticsState: AnalyticsState = {
   orderSource: "all",
   from: "",
   to: "",
-  interval: "week",
+  interval: "day",
 
   loading: false,
   error: null,
