@@ -11,6 +11,7 @@ export type {
   AnalyticsComparisonPeriod,
   RevenueInterval,
   RevenueSeries,
+  RevenueSeriesTotals,
   RevenuePoint,
   RevenueOverview,
   RevenueOverviewPoint,
