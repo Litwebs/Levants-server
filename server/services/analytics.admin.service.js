@@ -47,6 +47,130 @@ const {
   buildRevenueSeriesStages,
 } = require("../utils/analyticsRevenueSeries.util");
 
+const {
+  resolveComparisonPeriods,
+  compareMetrics,
+} = require("../utils/analyticsComparison.util");
+
+const PERFORMANCE_COMPARISON_METRICS = [
+  "grossRevenue",
+  "refundAmount",
+  "netRevenue",
+  "totalOrders",
+  "unitsSold",
+  "averageOrderValue",
+  "averageUnitsPerOrder",
+];
+
+async function GetPerformanceMetrics({
+  range,
+  from,
+  to,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const sourceMatch = buildOrderSourceMatch(orderSource);
+  const refundBaseMatch = {
+    ...ACTIVE_ORDER_MATCH,
+    ...sourceMatch,
+  };
+
+  const [salesAgg, unitsSoldAgg, refundAgg, legacyRefundAgg] = await Promise.all([
+    Order.aggregate([
+      { $match: salesMatch },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          grossRevenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+        },
+      },
+    ]),
+
+    Order.aggregate([
+      { $match: salesMatch },
+      { $unwind: "$items" },
+      { $group: { _id: null, unitsSold: { $sum: "$items.quantity" } } },
+    ]),
+
+    Order.aggregate([
+      { $match: { ...refundBaseMatch, "refunds.status": "succeeded" } },
+      { $unwind: "$refunds" },
+      {
+        $match: buildRefundEventMatch({
+          range,
+          from,
+          to,
+          timeZone,
+        }),
+      },
+      {
+        $group: {
+          _id: null,
+          refundAmount: { $sum: REFUND_AMOUNT_EXPRESSION },
+        },
+      },
+    ]),
+
+    Order.aggregate([
+      {
+        $match: {
+          ...refundBaseMatch,
+          status: "refunded",
+          ...buildLegacyRefundEventMatch({ range, from, to, timeZone }),
+        },
+      },
+      {
+        $addFields: {
+          _analyticsSucceededRefundCount: {
+            $size: {
+              $filter: {
+                input: { $ifNull: ["$refunds", []] },
+                as: "refund",
+                cond: { $eq: ["$refund.status", "succeeded"] },
+              },
+            },
+          },
+        },
+      },
+      { $match: { _analyticsSucceededRefundCount: 0 } },
+      {
+        $group: {
+          _id: null,
+          refundAmount: { $sum: COLLECTED_AMOUNT_EXPRESSION },
+        },
+      },
+    ]),
+  ]);
+
+  const sales = salesAgg?.[0] || {};
+  const totalOrders = sales.totalOrders ?? 0;
+  const grossRevenue = sales.grossRevenue ?? 0;
+  const refundAmount =
+    (refundAgg?.[0]?.refundAmount ?? 0) +
+    (legacyRefundAgg?.[0]?.refundAmount ?? 0);
+  const netRevenue = grossRevenue - refundAmount;
+  const unitsSold = unitsSoldAgg?.[0]?.unitsSold ?? 0;
+
+  return {
+    totalOrders,
+    grossRevenue,
+    refundAmount,
+    netRevenue,
+    revenue: netRevenue,
+    averageOrderValue: totalOrders > 0 ? grossRevenue / totalOrders : 0,
+    unitsSold,
+    averageUnitsPerOrder: totalOrders > 0 ? unitsSold / totalOrders : 0,
+  };
+}
+
 async function GetSummary({
   range,
   from,
@@ -130,31 +254,14 @@ async function GetSummary({
         },
       ];
 
-  const refundBaseMatch = {
-    ...ACTIVE_ORDER_MATCH,
-    ...sourceMatch,
-  };
-
   const [
-    salesAgg,
+    performance,
     statusCounts,
     lowStockCountAgg,
     outOfStockCountAgg,
-    unitsSoldAgg,
     customersAgg,
-    refundAgg,
-    legacyRefundAgg,
   ] = await Promise.all([
-    Order.aggregate([
-      { $match: salesMatch },
-      {
-        $group: {
-          _id: null,
-          totalOrders: { $sum: 1 },
-          grossRevenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
-        },
-      },
-    ]),
+    GetPerformanceMetrics({ range, from, to, orderSource, timeZone }),
 
     Order.aggregate([
       {
@@ -180,74 +287,19 @@ async function GetSummary({
       { $count: "count" },
     ]),
 
-    Order.aggregate([
-      { $match: salesMatch },
-      { $unwind: "$items" },
-      { $group: { _id: null, unitsSold: { $sum: "$items.quantity" } } },
-    ]),
-
     Order.aggregate(customerAggPipeline),
-
-    Order.aggregate([
-      { $match: { ...refundBaseMatch, "refunds.status": "succeeded" } },
-      { $unwind: "$refunds" },
-      {
-        $match: buildRefundEventMatch({
-          range,
-          from,
-          to,
-          timeZone,
-        }),
-      },
-      {
-        $group: {
-          _id: null,
-          refundAmount: { $sum: REFUND_AMOUNT_EXPRESSION },
-        },
-      },
-    ]),
-
-    // Backward compatibility for old full refunds that predate the refunds[]
-    // ledger. Do not double count orders that already have a succeeded entry.
-    Order.aggregate([
-      {
-        $match: {
-          ...refundBaseMatch,
-          status: "refunded",
-          ...buildLegacyRefundEventMatch({ range, from, to, timeZone }),
-        },
-      },
-      {
-        $addFields: {
-          _analyticsSucceededRefundCount: {
-            $size: {
-              $filter: {
-                input: { $ifNull: ["$refunds", []] },
-                as: "refund",
-                cond: { $eq: ["$$refund.status", "succeeded"] },
-              },
-            },
-          },
-        },
-      },
-      { $match: { _analyticsSucceededRefundCount: 0 } },
-      {
-        $group: {
-          _id: null,
-          refundAmount: { $sum: COLLECTED_AMOUNT_EXPRESSION },
-        },
-      },
-    ]),
   ]);
 
-  const sales = salesAgg?.[0] || {};
-  const totalOrders = sales.totalOrders ?? 0;
-  const grossRevenue = sales.grossRevenue ?? 0;
-  const refundAmount =
-    (refundAgg?.[0]?.refundAmount ?? 0) +
-    (legacyRefundAgg?.[0]?.refundAmount ?? 0);
-  const netRevenue = grossRevenue - refundAmount;
-  const unitsSold = unitsSoldAgg?.[0]?.unitsSold ?? 0;
+  const {
+    totalOrders,
+    grossRevenue,
+    refundAmount,
+    netRevenue,
+    revenue,
+    averageOrderValue,
+    unitsSold,
+    averageUnitsPerOrder,
+  } = performance;
 
   const customerStats = customersAgg?.[0] || {};
   const newCustomers = customerStats.newCustomers ?? 0;
@@ -265,12 +317,13 @@ async function GetSummary({
       totalOrders,
       // "revenue" remains the primary UI field, but now has a defined meaning:
       // collected sales in the period less refunds issued in the period.
-      revenue: netRevenue,
+      revenue,
       grossRevenue,
       refundAmount,
       netRevenue,
-      averageOrderValue: totalOrders > 0 ? grossRevenue / totalOrders : 0,
+      averageOrderValue,
       unitsSold,
+      averageUnitsPerOrder,
       totalRefunds: summaryCounts.totalRefunds,
       newCustomers,
       repeatCustomers,
@@ -294,6 +347,74 @@ async function GetSummary({
         Refunded: summaryCounts.refunded,
         "Refund Failed": counts.refund_failed,
       },
+    },
+  };
+}
+
+async function GetSummaryComparison({
+  range,
+  from,
+  to,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+  now = new Date(),
+} = {}) {
+  const periods = resolveComparisonPeriods({
+    range,
+    from,
+    to,
+    timeZone,
+    now,
+  });
+
+  if (!periods.available) {
+    return {
+      success: true,
+      data: {
+        available: false,
+        reason: periods.reason,
+        strategy: periods.strategy,
+        timeZone: periods.timeZone,
+        currentPeriod: periods.current,
+        previousPeriod: periods.previous,
+        current: null,
+        previous: null,
+        changes: null,
+      },
+    };
+  }
+
+  const [current, previous] = await Promise.all([
+    GetPerformanceMetrics({
+      from: periods.current.from,
+      to: periods.current.to,
+      orderSource,
+      timeZone: periods.timeZone,
+    }),
+    GetPerformanceMetrics({
+      from: periods.previous.from,
+      to: periods.previous.to,
+      orderSource,
+      timeZone: periods.timeZone,
+    }),
+  ]);
+
+  return {
+    success: true,
+    data: {
+      available: true,
+      reason: null,
+      strategy: periods.strategy,
+      timeZone: periods.timeZone,
+      currentPeriod: periods.current,
+      previousPeriod: periods.previous,
+      current,
+      previous,
+      changes: compareMetrics(
+        current,
+        previous,
+        PERFORMANCE_COMPARISON_METRICS,
+      ),
     },
   };
 }
@@ -743,6 +864,8 @@ async function GetDashboard({
 module.exports = {
   parseDateRange,
   GetSummary,
+  GetSummaryComparison,
+  GetPerformanceMetrics,
   GetRevenueSeries,
   GetRevenueOverview,
   GetOrderStatusCounts,
