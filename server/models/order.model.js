@@ -17,7 +17,7 @@ const orderItemSchema = new mongoose.Schema(
     productName: {
       type: String,
       trim: true,
-      default: null,
+      default: undefined,
     },
 
     variant: {

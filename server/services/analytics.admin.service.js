@@ -79,22 +79,32 @@ const PRODUCT_LINE_REVENUE_EXPRESSION = {
     vars: {
       lineSubtotal: { $ifNull: ["$items.subtotal", 0] },
       orderSubtotal: { $ifNull: ["$subtotal", 0] },
-      collectedFraction: COLLECTED_FRACTION_EXPRESSION,
+      collectedMerchandise: COLLECTED_MERCHANDISE_EXPRESSION,
       collectedDiscount: COLLECTED_DISCOUNT_EXPRESSION,
     },
     in: {
-      $max: [
-        0,
+      $cond: [
+        { $gt: ["$$orderSubtotal", 0] },
         {
-          $subtract: [
-            { $multiply: ["$lineSubtotal", "$collectedFraction"] },
+          $multiply: [
+            { $divide: ["$$lineSubtotal", "$$orderSubtotal"] },
             {
               $cond: [
-                { $gt: ["$orderSubtotal", 0] },
                 {
-                  $multiply: [
-                    { $divide: ["$lineSubtotal", "$orderSubtotal"] },
-                    "$collectedDiscount",
+                  $gt: [
+                    {
+                      $subtract: [
+                        "$$collectedMerchandise",
+                        "$$collectedDiscount",
+                      ],
+                    },
+                    0,
+                  ],
+                },
+                {
+                  $subtract: [
+                    "$$collectedMerchandise",
+                    "$$collectedDiscount",
                   ],
                 },
                 0,
@@ -102,6 +112,7 @@ const PRODUCT_LINE_REVENUE_EXPRESSION = {
             },
           ],
         },
+        0,
       ],
     },
   },
@@ -1281,15 +1292,17 @@ async function GetTopProducts({
         productNameSnapshot: { $first: "$items.productName" },
         variantNameSnapshot: { $first: "$items.name" },
         skuSnapshot: { $first: "$items.sku" },
+        latestPaidAt: { $first: "$_analyticsPaidAt" },
         revenue: { $sum: "$_analyticsLineRevenue" },
         quantity: { $sum: { $ifNull: ["$items.quantity", 0] } },
       },
     },
+    { $sort: { latestPaidAt: -1 } },
     {
       $group: {
         _id: "$_id.product",
         productId: { $first: "$_id.product" },
-        productNames: { $addToSet: "$productNameSnapshot" },
+        productNameSnapshot: { $first: "$productNameSnapshot" },
         totalRevenue: { $sum: "$revenue" },
         totalQuantity: { $sum: "$quantity" },
         variants: {
@@ -1319,28 +1332,18 @@ async function GetTopProducts({
       },
     },
     {
-      $addFields: {
-        _snapshotProductNames: {
-          $filter: {
-            input: "$productNames",
-            as: "productName",
-            cond: {
-              $and: [
-                { $ne: ["$$productName", null] },
-                { $ne: ["$$productName", ""] },
-              ],
-            },
-          },
-        },
-      },
-    },
-    {
       $project: {
         _id: 0,
         productId: 1,
         productName: {
-          $ifNull: [
-            { $arrayElemAt: ["$_snapshotProductNames", 0] },
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$productNameSnapshot", null] },
+                { $ne: ["$productNameSnapshot", ""] },
+              ],
+            },
+            "$productNameSnapshot",
             {
               $ifNull: [
                 { $arrayElemAt: ["$catalogProduct.name", 0] },

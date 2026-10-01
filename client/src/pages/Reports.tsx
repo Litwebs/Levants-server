@@ -204,31 +204,23 @@ const Reports = () => {
   const maxProductRevenue = productsByRevenue[0]?.totalRevenue || 1;
   const maxProductUnits = productsByUnits[0]?.totalQuantity || 1;
 
-  const productsByRevenueChart = useMemo(
-    () =>
-      productsByRevenue.map((product) => ({
-        productId: product.productId,
-        label: product.productName,
-        value: product.totalRevenue,
-        percentage: (product.totalRevenue / maxProductRevenue) * 100,
-        units: product.totalQuantity,
-        catalogStatus: product.catalogStatus,
-      })),
-    [productsByRevenue, maxProductRevenue],
-  );
+  const productsByRevenueChart = productsByRevenue.map((product) => ({
+    productId: product.productId,
+    label: product.productName,
+    value: product.totalRevenue,
+    percentage: (product.totalRevenue / maxProductRevenue) * 100,
+    units: product.totalQuantity,
+    catalogStatus: product.catalogStatus,
+  }));
 
-  const productsByUnitsChart = useMemo(
-    () =>
-      productsByUnits.map((product) => ({
-        productId: product.productId,
-        label: product.productName,
-        value: product.totalQuantity,
-        percentage: (product.totalQuantity / maxProductUnits) * 100,
-        revenue: product.totalRevenue,
-        catalogStatus: product.catalogStatus,
-      })),
-    [productsByUnits, maxProductUnits],
-  );
+  const productsByUnitsChart = productsByUnits.map((product) => ({
+    productId: product.productId,
+    label: product.productName,
+    value: product.totalQuantity,
+    percentage: (product.totalQuantity / maxProductUnits) * 100,
+    revenue: product.totalRevenue,
+    catalogStatus: product.catalogStatus,
+  }));
 
   const salesChannels = dashboard?.salesBreakdown?.channels ?? [];
   const salesTrendSeries = useMemo(
