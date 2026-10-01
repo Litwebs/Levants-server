@@ -73,6 +73,56 @@ const COLLECTED_AMOUNT_EXPRESSION = {
   ],
 };
 
+const COLLECTED_FRACTION_EXPRESSION = {
+  $cond: [
+    { $eq: ["$status", "partially_paid"] },
+    {
+      $cond: [
+        { $gt: [{ $ifNull: ["$total", 0] }, 0] },
+        {
+          $min: [
+            1,
+            {
+              $max: [
+                0,
+                {
+                  $divide: [
+                    { $ifNull: ["$amountPaid", 0] },
+                    "$total",
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        0,
+      ],
+    },
+    1,
+  ],
+};
+
+const COLLECTED_MERCHANDISE_EXPRESSION = {
+  $multiply: [
+    { $ifNull: ["$subtotal", 0] },
+    COLLECTED_FRACTION_EXPRESSION,
+  ],
+};
+
+const COLLECTED_DELIVERY_EXPRESSION = {
+  $multiply: [
+    { $ifNull: ["$deliveryFee", 0] },
+    COLLECTED_FRACTION_EXPRESSION,
+  ],
+};
+
+const COLLECTED_DISCOUNT_EXPRESSION = {
+  $multiply: [
+    { $ifNull: ["$discountAmount", 0] },
+    COLLECTED_FRACTION_EXPRESSION,
+  ],
+};
+
 const REFUND_AMOUNT_EXPRESSION = {
   $ifNull: [
     "$refunds.amount",
@@ -208,6 +258,10 @@ module.exports = {
   SALES_CHANNEL_EXPRESSION,
   EFFECTIVE_PAID_AT_EXPRESSION,
   COLLECTED_AMOUNT_EXPRESSION,
+  COLLECTED_FRACTION_EXPRESSION,
+  COLLECTED_MERCHANDISE_EXPRESSION,
+  COLLECTED_DELIVERY_EXPRESSION,
+  COLLECTED_DISCOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
   buildSalesOrderMatch,
   buildRefundLedgerPrefilter,
