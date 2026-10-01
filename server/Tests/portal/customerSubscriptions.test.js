@@ -4102,7 +4102,7 @@ describe("Portal Subscriptions", () => {
     expect(payment).toMatchObject({ amount: 5, status: "paid", order: null });
   });
 
-  it("adds the paid item to an already-generated order exactly once", async () => {
+  it.each(["single-day", "multi-day"])("preserves a paid add-on through recurring edits (%s)", async (mode) => {
     const sub = await createBasicSubscription();
     const deliveries = await prepareUpcomingDeliveries(sub._id);
     const storedSub = await Subscription.findById(sub._id).lean();
@@ -4182,6 +4182,44 @@ describe("Portal Subscriptions", () => {
       order: order._id,
     }).lean();
     expect(addOnPayment).toMatchObject({ amount: 2.5, status: "paid" });
+
+    const paidAddOns = updatedOrder.items.filter(item => item.isSubscriptionAddOn);
+    const allocation = updatedOrder.paymentAllocations.find(a => a.source === "delivery_add_on");
+    const day = deliveries[0].scheduledDate.getUTCDay();
+    const otherDay = (day + 3) % 7;
+    if (mode === "multi-day") {
+      await Subscription.findByIdAndUpdate(sub._id, {
+        preferredDeliveryDay: day, preferredDeliveryDays: [day, otherDay],
+        deliveryDayPlans: [day, otherDay].map(day => ({ day, items: storedSub.items })),
+        items: storedSub.items.map(item => ({ ...item, quantity: item.quantity * 2 })),
+      });
+    }
+    // Increase, decrease, then repeat a no-price-change edit. None may remove
+    // or recharge the independently purchased add-on.
+    for (const quantity of [2, 1, 1]) {
+      const mutation = mode === "single-day"
+        ? request(app).put(`/api/portal/subscriptions/${sub._id}/items`)
+        : request(app).patch(`/api/portal/subscriptions/${sub._id}`);
+      const body = mode === "single-day"
+        ? { items: [{ itemId: storedSub.items[0]._id, quantity }] }
+        : { changedDeliveryDays: [day], deliveryDayPlans: [
+            { day, items: [{ variantId, quantity }] },
+            { day: otherDay, items: [{ variantId, quantity: 1 }] },
+          ] };
+      const edited = await mutation.set("Authorization", `Bearer ${accessToken}`)
+        .send({ ...body, operationId: crypto.randomUUID(), refundMethod: "credit" });
+      expect(edited.status).toBe(200);
+      const fulfilled = await Order.findById(order._id).lean();
+      expect(fulfilled.items.filter(item => item.isSubscriptionAddOn)).toEqual(paidAddOns);
+      expect(fulfilled.items.filter(item => !item.isSubscriptionAddOn)[0].quantity).toBe(quantity);
+      expect(fulfilled.total).toBe(quantity * 2.5 + 2.5);
+      expect(fulfilled.paymentAllocations.filter(a => a.source === "delivery_add_on")).toEqual([allocation]);
+      const plan = await Subscription.findById(sub._id).lean();
+      expect(plan.items.some(item => String(item.variant) === String(addOnVariant._id))).toBe(false);
+    }
+    // One add-on purchase and one recurring increase; no extra add-on charge.
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(2);
+
   });
 
   it("rejects a next-delivery add-on after its cut-off without charging", async () => {

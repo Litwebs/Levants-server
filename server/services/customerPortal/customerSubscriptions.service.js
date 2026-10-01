@@ -30,6 +30,8 @@ const {
   sendSubscriptionUpdateEmail,
 } = require("./subscriptionEmailNotifications.service");
 
+const { replaceRecurringOrderItems } = require("../../utils/subscriptionOrderItems.util");
+
 const STRIPE_INTERVALS = {
   weekly: { interval: "week", interval_count: 1 },
   every_two_weeks: { interval: "week", interval_count: 2 },
@@ -1321,19 +1323,7 @@ async function updateUpcomingSubscriptionOrder(
 
   if (!order) return false;
 
-  order.items = nextItems.map((item) => ({
-    product: item.product,
-    variant: item.variant,
-    name: item.name,
-    sku: item.sku,
-    price: item.unitPrice,
-    quantity: item.quantity,
-    subtotal: item.unitPrice * item.quantity,
-  }));
-
-  const newTotal = order.items.reduce((sum, i) => sum + i.subtotal, 0);
-  order.subtotal = newTotal;
-  order.total = newTotal + (order.deliveryFee || 0);
+  replaceRecurringOrderItems(order, nextItems);
 
   if (!(order.paymentAllocations || []).length && order.stripePaymentIntentId) {
     const priorRefundMinor = (order.refunds || [])
@@ -1435,19 +1425,7 @@ async function updateUpcomingSubscriptionOrderForDay(
 
   if (!order) return false;
 
-  order.items = (dayItems || []).map((item) => ({
-    product: item.product,
-    variant: item.variant,
-    name: item.name,
-    sku: item.sku,
-    price: item.unitPrice,
-    quantity: item.quantity,
-    subtotal: item.unitPrice * item.quantity,
-  }));
-
-  const newTotal = order.items.reduce((sum, i) => sum + i.subtotal, 0);
-  order.subtotal = newTotal;
-  order.total = newTotal + (order.deliveryFee || 0);
+  replaceRecurringOrderItems(order, dayItems);
 
   const allocationKey = operationId
     ? `subscription:${subscription._id}:mutation:${operationId}:order:${order._id}`
