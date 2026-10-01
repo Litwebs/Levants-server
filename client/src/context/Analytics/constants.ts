@@ -102,6 +102,40 @@ export type AnalyticsOverview = {
   comparison: AnalyticsOverviewComparison;
 };
 
+export type SalesChannelKey =
+  | "website"
+  | "subscription"
+  | "imported";
+
+export type SalesChannelMetrics = {
+  key: SalesChannelKey;
+  label: string;
+  grossRevenue: number;
+  refundAmount: number;
+  netRevenue: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+  grossRevenueShare: number;
+  orderShare: number;
+};
+
+export type SalesBreakdownTotals = {
+  grossRevenue: number;
+  refundAmount: number;
+  netRevenue: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+};
+
+export type SalesBreakdown = {
+  channels: SalesChannelMetrics[];
+  totals: SalesBreakdownTotals;
+};
+
 export type RevenuePoint = {
   label: string;
   grossRevenue: number;
@@ -205,6 +239,7 @@ export type AnalyticsDashboard = {
   overview: AnalyticsOverview;
   summary: AnalyticsSummary;
   revenue: RevenueSeries;
+  salesBreakdown: SalesBreakdown;
   topProducts: TopProductsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
