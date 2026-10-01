@@ -82,6 +82,21 @@ const KpiTrend = ({ change }: { change?: AnalyticsMetricChange }) => {
   );
 };
 
+const defaultIntervalForRange = (
+  range: AnalyticsDateRange,
+): RevenueInterval => {
+  if (range === "today" || range === "yesterday" || range === "last7") {
+    return "day";
+  }
+  if (range === "last30" || range === "thisMonth" || range === "lastMonth") {
+    return "week";
+  }
+  if (range === "thisYear" || range === "lastYear" || range === "all") {
+    return "month";
+  }
+  return "day";
+};
+
 const Reports = () => {
   const {
     dashboard,
@@ -121,6 +136,7 @@ const Reports = () => {
   ];
 
   const intervalOptions: { value: RevenueInterval; label: string }[] = [
+    { value: "day", label: "Daily" },
     { value: "week", label: "Weekly" },
     { value: "month", label: "Monthly" },
     { value: "year", label: "Yearly" },
@@ -145,14 +161,22 @@ const Reports = () => {
   const revenuePoints = dashboard?.revenue?.points ?? [];
 
   const revenueChartData = useMemo(
-    () => revenuePoints.map((p) => ({ label: p.label, value: p.revenue })),
+    () => revenuePoints.map((p) => ({ label: p.label, value: p.netRevenue })),
     [revenuePoints],
   );
 
-  const totalRevenueInPeriod = useMemo(
-    () => revenuePoints.reduce((sum, p) => sum + (p.revenue || 0), 0),
+  const ordersChartData = useMemo(
+    () => revenuePoints.map((p) => ({ label: p.label, value: p.orders })),
     [revenuePoints],
   );
+
+  const seriesTotals = dashboard?.revenue?.totals;
+  const totalRevenueInPeriod =
+    seriesTotals?.netRevenue ??
+    revenuePoints.reduce((sum, p) => sum + (p.netRevenue || 0), 0);
+  const totalOrdersInPeriod =
+    seriesTotals?.orders ??
+    revenuePoints.reduce((sum, p) => sum + (p.orders || 0), 0);
 
   const orderStatusData = useMemo(() => {
     const counts = summary?.orderStatus;
@@ -203,7 +227,9 @@ const Reports = () => {
               setFilters({
                 range: value as AnalyticsDateRange,
                 orderSource,
-                interval,
+                interval: defaultIntervalForRange(
+                  value as AnalyticsDateRange,
+                ),
               })
             }
             options={dateRangeOptions}
@@ -378,7 +404,7 @@ const Reports = () => {
           <CardContent>
             <SimpleBarChart
               data={revenueChartData}
-              type="bar"
+              type="line"
               height={240}
               color="success"
               valueFormatter={(v) => formatCurrencyGBP(v, { compact: true })}
@@ -406,6 +432,26 @@ const Reports = () => {
           </CardContent>
         </Card>
       </div>
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Orders Trend</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SimpleBarChart
+            data={ordersChartData}
+            type="bar"
+            height={220}
+            color="info"
+            valueFormatter={(v) => formatCompactNumber(v)}
+          />
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Period Total: {formatCompactNumber(totalOrdersInPeriod)} orders
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className={styles.chartsGrid}>
         <Card className={styles.chartCard}>
