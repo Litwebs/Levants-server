@@ -18,6 +18,25 @@ const COLLECTED_ORDER_STATUSES = [
   "refund_failed",
 ];
 
+const ZERO_DECIMAL_CURRENCIES = [
+  "BIF",
+  "CLP",
+  "DJF",
+  "GNF",
+  "JPY",
+  "KMF",
+  "KRW",
+  "MGA",
+  "PYG",
+  "RWF",
+  "UGX",
+  "VND",
+  "VUV",
+  "XAF",
+  "XOF",
+  "XPF",
+];
+
 const EFFECTIVE_PAID_AT_EXPRESSION = {
   $ifNull: ["$paidAt", "$createdAt"],
 };
@@ -34,9 +53,34 @@ const REFUND_AMOUNT_EXPRESSION = {
   $ifNull: [
     "$refunds.amount",
     {
-      $divide: [{ $ifNull: ["$refunds.amountMinor", 0] }, 100],
+      $cond: [
+        {
+          $in: [
+            {
+              $toUpper: {
+                $ifNull: ["$refunds.currency", { $ifNull: ["$currency", "GBP"] }],
+              },
+            },
+            ZERO_DECIMAL_CURRENCIES,
+          ],
+        },
+        { $ifNull: ["$refunds.amountMinor", 0] },
+        {
+          $divide: [{ $ifNull: ["$refunds.amountMinor", 0] }, 100],
+        },
+      ],
     },
   ],
+};
+
+const compactAnd = (...parts) => {
+  const clauses = parts.filter(
+    (part) => part && typeof part === "object" && Object.keys(part).length > 0,
+  );
+
+  if (clauses.length === 0) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { $and: clauses };
 };
 
 const buildSalesOrderMatch = ({
@@ -46,20 +90,21 @@ const buildSalesOrderMatch = ({
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
   now,
-} = {}) => ({
-  ...ACTIVE_ORDER_MATCH,
-  ...buildOrderSourceMatch(orderSource),
-  status: { $in: COLLECTED_ORDER_STATUSES },
-  ...buildEventDateMatch({
-    range,
-    from,
-    to,
-    field: "paidAt",
-    fallbackField: "createdAt",
-    timeZone,
-    now,
-  }),
-});
+} = {}) =>
+  compactAnd(
+    ACTIVE_ORDER_MATCH,
+    buildOrderSourceMatch(orderSource),
+    { status: { $in: COLLECTED_ORDER_STATUSES } },
+    buildEventDateMatch({
+      range,
+      from,
+      to,
+      field: "paidAt",
+      fallbackField: "createdAt",
+      timeZone,
+      now,
+    }),
+  );
 
 const buildRefundEventMatch = ({
   range,
@@ -67,18 +112,19 @@ const buildRefundEventMatch = ({
   to,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
   now,
-} = {}) => ({
-  "refunds.status": "succeeded",
-  ...buildEventDateMatch({
-    range,
-    from,
-    to,
-    field: "refunds.refundedAt",
-    fallbackField: "refunds.createdAt",
-    timeZone,
-    now,
-  }),
-});
+} = {}) =>
+  compactAnd(
+    { "refunds.status": "succeeded" },
+    buildEventDateMatch({
+      range,
+      from,
+      to,
+      field: "refunds.refundedAt",
+      fallbackField: "refunds.createdAt",
+      timeZone,
+      now,
+    }),
+  );
 
 const buildLegacyRefundEventMatch = ({
   range,
@@ -98,6 +144,7 @@ const buildLegacyRefundEventMatch = ({
 
 module.exports = {
   COLLECTED_ORDER_STATUSES,
+  ZERO_DECIMAL_CURRENCIES,
   EFFECTIVE_PAID_AT_EXPRESSION,
   COLLECTED_AMOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
