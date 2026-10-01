@@ -1,19 +1,41 @@
-/**
- * Builds the $group, $sort, and $project pipeline stages for the
- * revenue time-series aggregation based on the requested interval and range.
- *
- * @param {string} interval  "year" | "month" | "week" (default)
- * @param {string} range     Named range string (e.g. "today", "last7") — used
- *                           to decide whether the "week" bucket should fall back
- *                           to daily grouping on short ranges.
- * @returns {{ groupId: object, sortStage: object, projectStage: object }}
- */
-const buildRevenueSeriesStages = (interval, range) => {
-  if (typeof interval !== "string") interval = "week";
+const {
+  DEFAULT_ANALYTICS_TIME_ZONE,
+  normalizeTimeZone,
+} = require("./analyticsDate.util");
 
-  if (interval === "year") {
+/**
+ * Builds the group/sort/project stages for a time-series aggregation.
+ *
+ * dateExpression may be a Mongo field path (for example "$createdAt") or an
+ * expression such as {$ifNull: ["$paidAt", "$createdAt"]}.
+ */
+const buildRevenueSeriesStages = (
+  interval,
+  range,
+  {
+    dateExpression = "$createdAt",
+    timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+  } = {},
+) => {
+  const tz = normalizeTimeZone(timeZone);
+  const normalizedInterval =
+    typeof interval === "string" ? interval.toLowerCase() : "week";
+
+  const dateToString = (format) => ({
+    $dateToString: {
+      format,
+      date: dateExpression,
+      timezone: tz,
+    },
+  });
+
+  const yearExpression = {
+    $year: { date: dateExpression, timezone: tz },
+  };
+
+  if (normalizedInterval === "year") {
     return {
-      groupId: { year: { $year: "$createdAt" } },
+      groupId: { year: yearExpression },
       sortStage: { "_id.year": 1 },
       projectStage: {
         _id: 0,
@@ -24,11 +46,11 @@ const buildRevenueSeriesStages = (interval, range) => {
     };
   }
 
-  if (interval === "month") {
+  if (normalizedInterval === "month") {
     return {
       groupId: {
-        year: { $year: "$createdAt" },
-        month: { $month: "$createdAt" },
+        year: yearExpression,
+        month: { $month: { date: dateExpression, timezone: tz } },
       },
       sortStage: { "_id.year": 1, "_id.month": 1 },
       projectStage: {
@@ -52,18 +74,15 @@ const buildRevenueSeriesStages = (interval, range) => {
     };
   }
 
-  // "week" interval on short ranges should still show multiple points.
-  // For today/yesterday/last7 we group by day.
-  const r = typeof range === "string" ? range : "all";
-  const useDaily = r === "today" || r === "yesterday" || r === "last7";
+  const normalizedRange = typeof range === "string" ? range : "all";
+  const useDaily =
+    normalizedInterval === "day" ||
+    (normalizedInterval === "week" &&
+      ["today", "yesterday", "last7"].includes(normalizedRange));
 
   if (useDaily) {
     return {
-      groupId: {
-        day: {
-          $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
-        },
-      },
+      groupId: { day: dateToString("%Y-%m-%d") },
       sortStage: { "_id.day": 1 },
       projectStage: {
         _id: 0,
@@ -74,18 +93,20 @@ const buildRevenueSeriesStages = (interval, range) => {
     };
   }
 
-  // week (ISO)
+  // ISO week labels include the ISO week-year so multi-year ranges do not
+  // collapse identical week numbers from different years.
   return {
     groupId: {
-      year: { $isoWeekYear: "$createdAt" },
-      week: { $isoWeek: "$createdAt" },
+      year: { $isoWeekYear: { date: dateExpression, timezone: tz } },
+      week: { $isoWeek: { date: dateExpression, timezone: tz } },
     },
     sortStage: { "_id.year": 1, "_id.week": 1 },
     projectStage: {
       _id: 0,
       label: {
         $concat: [
-          "Wk-",
+          { $toString: "$_id.year" },
+          "-W",
           {
             $cond: [
               { $lt: ["$_id.week", 10] },
