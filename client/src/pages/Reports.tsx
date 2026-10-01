@@ -210,6 +210,7 @@ const Reports = () => {
   );
 
   const salesChannels = dashboard?.salesBreakdown?.channels ?? [];
+  const revenueComposition = dashboard?.revenueComposition;
   const recentOrders = dashboard?.recentOrders?.orders ?? [];
   const lowStockItems = dashboard?.lowStock?.items ?? [];
 
@@ -508,6 +509,64 @@ const Reports = () => {
                 ) : null}
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Revenue Composition</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.compositionGrid}>
+            <div className={styles.compositionItem}>
+              <span className={styles.compositionLabel}>Merchandise</span>
+              <span className={styles.compositionValue}>
+                {formatCurrency(revenueComposition?.merchandiseRevenue ?? 0)}
+              </span>
+              <span className={styles.compositionMeta}>
+                Before discounts
+              </span>
+            </div>
+
+            <div className={styles.compositionItem}>
+              <span className={styles.compositionLabel}>Delivery Revenue</span>
+              <span className={styles.compositionValue}>
+                {formatCurrency(revenueComposition?.deliveryRevenue ?? 0)}
+              </span>
+              <span className={styles.compositionMeta}>
+                Collected allocation
+              </span>
+            </div>
+
+            <div className={styles.compositionItem}>
+              <span className={styles.compositionLabel}>Discounts</span>
+              <span className={styles.compositionValue}>
+                {formatCurrency(revenueComposition?.discountAmount ?? 0)}
+              </span>
+              <span className={styles.compositionMeta}>
+                {formatDecimal(revenueComposition?.discountRate ?? 0)}% ·{" "}
+                {formatCompactNumber(
+                  revenueComposition?.discountedOrders ?? 0,
+                )}{" "}
+                orders
+              </span>
+            </div>
+
+            <div className={styles.compositionItem}>
+              <span className={styles.compositionLabel}>Refunds</span>
+              <span className={styles.compositionValue}>
+                {formatCurrency(revenueComposition?.refundAmount ?? 0)}
+              </span>
+              <span className={styles.compositionMeta}>
+                Issued in selected period
+              </span>
+            </div>
+          </div>
+
+          <div className={styles.compositionNote}>
+            Partial payments are allocated proportionally across merchandise,
+            delivery and discounts.
           </div>
         </CardContent>
       </Card>
