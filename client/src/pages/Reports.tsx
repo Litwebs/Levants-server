@@ -14,7 +14,11 @@ import {
   Select,
   Badge,
 } from "../components/common";
-import { SimpleBarChart, DonutChart } from "../components/charts";
+import {
+  SimpleBarChart,
+  MultiLineChart,
+  DonutChart,
+} from "../components/charts";
 
 import {
   useAnalyticsApi,
@@ -210,6 +214,28 @@ const Reports = () => {
   );
 
   const salesChannels = dashboard?.salesBreakdown?.channels ?? [];
+  const salesTrendSeries = useMemo(
+    () =>
+      (dashboard?.salesTrends?.channels ?? [])
+        .filter(
+          (channel) =>
+            orderSource === "all" || channel.key === orderSource,
+        )
+        .map((channel) => ({
+          key: channel.key,
+          label: channel.label,
+          color: (channel.key === "website"
+            ? "primary"
+            : channel.key === "subscription"
+              ? "success"
+              : "info") as "primary" | "success" | "info",
+          data: channel.points.map((point) => ({
+            label: point.label,
+            value: point.netRevenue,
+          })),
+        })),
+    [dashboard?.salesTrends?.channels, orderSource],
+  );
   const revenueComposition = dashboard?.revenueComposition;
   const recentOrders = dashboard?.recentOrders?.orders ?? [];
   const lowStockItems = dashboard?.lowStock?.items ?? [];
@@ -509,6 +535,26 @@ const Reports = () => {
                 ) : null}
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Sales Channel Trend</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <MultiLineChart
+            series={salesTrendSeries}
+            height={260}
+            valueFormatter={(value) =>
+              formatCurrencyGBP(value, { compact: true })
+            }
+          />
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Net revenue by sales channel
+            </span>
           </div>
         </CardContent>
       </Card>

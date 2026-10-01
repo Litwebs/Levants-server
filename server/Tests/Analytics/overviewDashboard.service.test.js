@@ -83,6 +83,43 @@ describe("analytics overview dashboard dataset", () => {
       averageUnitsPerOrder: 3,
     });
 
+    expect(result.data.salesTrends).toEqual(
+      expect.objectContaining({
+        interval: "day",
+        channels: [
+          expect.objectContaining({
+            key: "website",
+            points: [
+              expect.objectContaining({
+                label: "2026-06-10",
+                netRevenue: 0,
+              }),
+              expect.objectContaining({
+                label: "2026-06-11",
+                grossRevenue: 120,
+                netRevenue: 120,
+                orders: 1,
+              }),
+              expect.objectContaining({
+                label: "2026-06-12",
+                refunds: 20,
+                netRevenue: -20,
+                orders: 0,
+              }),
+            ],
+            totals: expect.objectContaining({
+              grossRevenue: 120,
+              refunds: 20,
+              netRevenue: 100,
+              orders: 1,
+            }),
+          }),
+          expect.objectContaining({ key: "subscription" }),
+          expect.objectContaining({ key: "imported" }),
+        ],
+      }),
+    );
+
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,
       deliveryRevenue: 0,

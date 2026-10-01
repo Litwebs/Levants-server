@@ -50,6 +50,15 @@ router.get(
 );
 
 router.get(
+  "/sales-trends",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetSalesTrends),
+);
+
+router.get(
   "/revenue",
   validateAnalyticsQuery({
     allowInterval: true,

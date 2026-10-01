@@ -73,6 +73,12 @@ const PERFORMANCE_COMPARISON_METRICS = [
   "averageUnitsPerOrder",
 ];
 
+const SALES_CHANNEL_LABELS = {
+  website: "Website One-Time",
+  subscription: "Subscription",
+  imported: "Imported",
+};
+
 const roundPercentage = (value, total) =>
   total > 0
     ? Math.round(((value / total) * 100 + Number.EPSILON) * 100) / 100
@@ -615,12 +621,7 @@ async function GetSalesBreakdown({
       channel,
       {
         key: channel,
-        label:
-          channel === "website"
-            ? "Website One-Time"
-            : channel === "subscription"
-              ? "Subscription"
-              : "Imported",
+        label: SALES_CHANNEL_LABELS[channel] || channel,
         grossRevenue: 0,
         merchandiseRevenue: 0,
         deliveryRevenue: 0,
@@ -900,14 +901,27 @@ async function GetRevenueSeries({
     Order.aggregate([
       { $match: salesMatch },
       {
+        $addFields: {
+          _analyticsChannel: SALES_CHANNEL_EXPRESSION,
+        },
+      },
+      {
         $group: {
-          _id: salesStages.groupId,
+          _id: {
+            ...salesStages.groupId,
+            channel: "$_analyticsChannel",
+          },
           revenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
           orders: { $sum: 1 },
         },
       },
-      { $sort: salesStages.sortStage },
-      { $project: salesStages.projectStage },
+      { $sort: { ...salesStages.sortStage, "_id.channel": 1 } },
+      {
+        $project: {
+          ...salesStages.projectStage,
+          channel: "$_id.channel",
+        },
+      },
     ]),
 
     Order.aggregate([
@@ -916,6 +930,11 @@ async function GetRevenueSeries({
           ...ACTIVE_ORDER_MATCH,
           ...sourceMatch,
           ...buildRefundLedgerPrefilter({ range, from, to, timeZone }),
+        },
+      },
+      {
+        $addFields: {
+          _analyticsChannel: SALES_CHANNEL_EXPRESSION,
         },
       },
       { $unwind: "$refunds" },
@@ -929,13 +948,21 @@ async function GetRevenueSeries({
       },
       {
         $group: {
-          _id: refundStages.groupId,
+          _id: {
+            ...refundStages.groupId,
+            channel: "$_analyticsChannel",
+          },
           revenue: { $sum: REFUND_AMOUNT_EXPRESSION },
           orders: { $sum: 0 },
         },
       },
-      { $sort: refundStages.sortStage },
-      { $project: refundStages.projectStage },
+      { $sort: { ...refundStages.sortStage, "_id.channel": 1 } },
+      {
+        $project: {
+          ...refundStages.projectStage,
+          channel: "$_id.channel",
+        },
+      },
     ]),
 
     Order.aggregate([
@@ -958,47 +985,72 @@ async function GetRevenueSeries({
               },
             },
           },
+          _analyticsChannel: SALES_CHANNEL_EXPRESSION,
         },
       },
       { $match: { _analyticsSucceededRefundCount: 0 } },
       {
         $group: {
-          _id: legacyRefundStages.groupId,
+          _id: {
+            ...legacyRefundStages.groupId,
+            channel: "$_analyticsChannel",
+          },
           revenue: { $sum: COLLECTED_AMOUNT_EXPRESSION },
           orders: { $sum: 0 },
         },
       },
-      { $sort: legacyRefundStages.sortStage },
-      { $project: legacyRefundStages.projectStage },
+      { $sort: { ...legacyRefundStages.sortStage, "_id.channel": 1 } },
+      {
+        $project: {
+          ...legacyRefundStages.projectStage,
+          channel: "$_id.channel",
+        },
+      },
     ]),
   ]);
 
+  const emptyPoint = (label) => ({
+    label,
+    grossRevenue: 0,
+    refunds: 0,
+    netRevenue: 0,
+    revenue: 0,
+    orders: 0,
+  });
+
   const byLabel = new Map();
+  const byChannel = new Map(
+    SALES_CHANNELS.map((channel) => [channel, new Map()]),
+  );
+
+  const applySale = (target, row) => {
+    const point = target.get(row.label) || emptyPoint(row.label);
+    const revenue = Number(row.revenue) || 0;
+    point.grossRevenue += revenue;
+    point.netRevenue = point.grossRevenue - point.refunds;
+    point.revenue = point.netRevenue;
+    point.orders += Number(row.orders) || 0;
+    target.set(row.label, point);
+  };
+
+  const applyRefund = (target, row) => {
+    const point = target.get(row.label) || emptyPoint(row.label);
+    point.refunds += Number(row.revenue) || 0;
+    point.netRevenue = point.grossRevenue - point.refunds;
+    point.revenue = point.netRevenue;
+    target.set(row.label, point);
+  };
 
   for (const row of salesRows || []) {
-    byLabel.set(row.label, {
-      label: row.label,
-      grossRevenue: row.revenue || 0,
-      refunds: 0,
-      netRevenue: row.revenue || 0,
-      revenue: row.revenue || 0,
-      orders: row.orders || 0,
-    });
+    applySale(byLabel, row);
+    const channelMap = byChannel.get(row.channel);
+    if (channelMap) applySale(channelMap, row);
   }
 
   for (const row of [...(refundRows || []), ...(legacyRefundRows || [])]) {
-    const point = byLabel.get(row.label) || {
-      label: row.label,
-      grossRevenue: 0,
-      refunds: 0,
-      netRevenue: 0,
-      revenue: 0,
-      orders: 0,
-    };
-    point.refunds += row.revenue || 0;
-    point.netRevenue = point.grossRevenue - point.refunds;
-    point.revenue = point.netRevenue;
-    byLabel.set(row.label, point);
+    applyRefund(byLabel, row);
+    const channelMap = byChannel.get(row.channel);
+    if (channelMap) applyRefund(channelMap, row);
   }
 
   const sparsePoints = Array.from(byLabel.values()).sort((a, b) =>
@@ -1014,22 +1066,54 @@ async function GetRevenueSeries({
   });
   const totals = summarizeRevenueSeries(points);
   const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  const salesTrends = {
+    interval: normalizedInterval,
+    period,
+    channels: SALES_CHANNELS.map((key) => {
+      const channelMap = byChannel.get(key) || new Map();
+      const channelPoints = points.map((point) => ({
+        ...emptyPoint(point.label),
+        ...(channelMap.get(point.label) || {}),
+        label: point.label,
+      }));
+
+      return {
+        key,
+        label: SALES_CHANNEL_LABELS[key] || key,
+        points: channelPoints,
+        totals: summarizeRevenueSeries(channelPoints),
+      };
+    }),
+  };
 
   return {
     success: true,
     data: {
       interval: normalizedInterval,
-      period:
-        parsedPeriod.start && parsedPeriod.end
-          ? {
-              from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
-              to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
-              timeZone: parsedPeriod.timeZone,
-            }
-          : null,
+      period,
       points,
       totals,
+      salesTrends,
     },
+  };
+}
+
+async function GetSalesTrends(options = {}) {
+  const series = await GetRevenueSeries(options);
+  if (!series.success) return series;
+
+  return {
+    success: true,
+    data: series.data.salesTrends,
   };
 }
 
@@ -1418,6 +1502,7 @@ async function GetDashboard({
       // Kept for existing consumers while the analytics UI is migrated.
       summary: summary.data,
       revenue: revenue.data,
+      salesTrends: revenue.data.salesTrends,
       revenueComposition: buildRevenueComposition(summary.data),
       topProducts: topProducts.data,
       salesBreakdown: salesBreakdown.data,
@@ -1435,6 +1520,7 @@ module.exports = {
   GetPerformanceMetrics,
   GetRevenueComposition,
   GetSalesBreakdown,
+  GetSalesTrends,
   GetRevenueSeries,
   GetRevenueOverview,
   GetOrderStatusCounts,

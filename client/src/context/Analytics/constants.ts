@@ -152,6 +152,23 @@ export type SalesBreakdown = {
   totals: SalesBreakdownTotals;
 };
 
+export type SalesTrendChannel = {
+  key: SalesChannelKey;
+  label: string;
+  points: RevenuePoint[];
+  totals: RevenueSeriesTotals;
+};
+
+export type SalesTrends = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  channels: SalesTrendChannel[];
+};
+
 export type RevenueComposition = {
   merchandiseRevenue: number;
   deliveryRevenue: number;
@@ -268,6 +285,7 @@ export type AnalyticsDashboard = {
   overview: AnalyticsOverview;
   summary: AnalyticsSummary;
   revenue: RevenueSeries;
+  salesTrends: SalesTrends;
   revenueComposition: RevenueComposition;
   salesBreakdown: SalesBreakdown;
   topProducts: TopProductsResult;

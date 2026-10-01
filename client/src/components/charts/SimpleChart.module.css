@@ -154,6 +154,41 @@
   white-space: nowrap;
 }
 
+.multiLineLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.multiLineLegendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-gray-600);
+}
+
+.multiLineSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+}
+
+.multiLineSwatch.primary {
+  background: var(--color-primary);
+}
+
+.multiLineSwatch.success {
+  background: var(--color-success);
+}
+
+.multiLineSwatch.info {
+  background: var(--color-info);
+}
+
 /* Horizontal Bar Chart */
 .horizontalChart {
   display: flex;

@@ -13,6 +13,8 @@ export type {
   SalesChannelMetrics,
   SalesBreakdownTotals,
   SalesBreakdown,
+  SalesTrendChannel,
+  SalesTrends,
   RevenueComposition,
   RevenueInterval,
   RevenueSeries,

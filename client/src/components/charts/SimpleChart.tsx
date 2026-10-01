@@ -149,6 +149,132 @@ export const SimpleBarChart: React.FC<SimpleChartProps> = ({
   );
 };
 
+interface MultiLineSeries {
+  key: string;
+  label: string;
+  color: "primary" | "success" | "info";
+  data: DataPoint[];
+}
+
+interface MultiLineChartProps {
+  series: MultiLineSeries[];
+  height?: number;
+  showLabels?: boolean;
+  valueFormatter?: (value: number) => string;
+}
+
+export const MultiLineChart: React.FC<MultiLineChartProps> = ({
+  series,
+  height = 240,
+  showLabels = true,
+  valueFormatter,
+}) => {
+  const firstSeriesWithData = series.find((item) => item.data.length > 0);
+  const labels = firstSeriesWithData?.data.map((point) => point.label) ?? [];
+  const values = series.flatMap((item) => item.data.map((point) => point.value));
+
+  const minValue = Math.min(0, ...(values.length ? values : [0]));
+  let maxValue = Math.max(0, ...(values.length ? values : [0]));
+  if (minValue === maxValue) maxValue = minValue + 1;
+
+  const range = maxValue - minValue;
+  const plotTop = 8;
+  const plotBottom = 76;
+  const plotHeight = plotBottom - plotTop;
+  const xAt = (index: number) =>
+    labels.length <= 1 ? 50 : 4 + (index / (labels.length - 1)) * 92;
+  const yAt = (value: number) =>
+    plotTop + ((maxValue - value) / range) * plotHeight;
+  const zeroY = yAt(0);
+  const labelStep = Math.max(1, Math.ceil(labels.length / 10));
+
+  return (
+    <div className={styles.chartContainer} style={{ height }}>
+      <div className={styles.lineChart}>
+        <svg
+          className={styles.lineSvg}
+          viewBox="0 0 100 84"
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="Sales channel time series chart"
+        >
+          <line
+            x1="4"
+            x2="96"
+            y1={zeroY}
+            y2={zeroY}
+            className={styles.lineBaseline}
+          />
+
+          {series.map((item) => {
+            const points = item.data
+              .map((point, index) => `${xAt(index)},${yAt(point.value)}`)
+              .join(" ");
+
+            return (
+              <React.Fragment key={item.key}>
+                {item.data.length > 1 ? (
+                  <polyline
+                    points={points}
+                    className={`${styles.linePath} ${styles[item.color]}`}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+                {item.data.map((point, index) => (
+                  <circle
+                    key={`${item.key}-${point.label}-${index}`}
+                    cx={xAt(index)}
+                    cy={yAt(point.value)}
+                    r="1.2"
+                    className={`${styles.linePoint} ${styles[item.color]}`}
+                    vectorEffect="non-scaling-stroke"
+                  >
+                    <title>
+                      {`${item.label} · ${point.label}: ${
+                        valueFormatter
+                          ? valueFormatter(point.value)
+                          : point.value.toLocaleString("en-GB")
+                      }`}
+                    </title>
+                  </circle>
+                ))}
+              </React.Fragment>
+            );
+          })}
+        </svg>
+
+        {showLabels ? (
+          <div className={styles.lineLabels}>
+            {labels.map((label, index) => {
+              const visible =
+                index % labelStep === 0 || index === labels.length - 1;
+              return (
+                <span
+                  key={`${label}-multi-label-${index}`}
+                  className={styles.lineLabel}
+                >
+                  {visible ? label : ""}
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className={styles.multiLineLegend}>
+          {series.map((item) => (
+            <div key={item.key} className={styles.multiLineLegendItem}>
+              <span
+                className={`${styles.multiLineSwatch} ${styles[item.color]}`}
+              />
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface HorizontalBarProps {
   data: { label: string; value: number; percentage: number }[];
   height?: number;
