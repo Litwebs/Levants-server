@@ -212,4 +212,30 @@ describe("analytics revenue/orders time series", () => {
     expect(result.message).toContain("maximum is 1000");
   });
 
+  test("all-time service calls default to monthly buckets and reject explicit daily/weekly", async () => {
+    const defaultSeries = await analyticsService.GetRevenueSeries({
+      range: "all",
+      timeZone: "Europe/London",
+    });
+
+    expect(defaultSeries.success).toBe(true);
+    expect(defaultSeries.data.interval).toBe("month");
+
+    for (const interval of ["day", "week"]) {
+      const result = await analyticsService.GetRevenueSeries({
+        range: "all",
+        interval,
+        timeZone: "Europe/London",
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          success: false,
+          statusCode: 400,
+        }),
+      );
+      expect(result.message).toContain("monthly or yearly");
+    }
+  });
+
 });
