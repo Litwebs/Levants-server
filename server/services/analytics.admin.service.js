@@ -4555,7 +4555,7 @@ async function GetDashboard({
   to,
   interval,
   orderSource,
-  comparison = "previous_period",
+  comparison: comparisonMode = "previous_period",
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
   const currentSubscriptionSnapshotPromise = GetCurrentSubscriptionSnapshot();
@@ -4702,7 +4702,7 @@ async function GetDashboard({
       ...overviewMetrics,
       revenue: summary.data.revenue,
     },
-    comparison,
+    comparison: comparisonMode,
   });
 
   const [
