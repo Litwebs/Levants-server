@@ -1,5 +1,5 @@
 "use strict";
-jest.mock("../../models/order.model", () => ({ findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn(), exists: jest.fn() }));
+jest.mock("../../models/order.model", () => ({ init: async () => {}, findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn(), exists: jest.fn() }));
 jest.mock("../../utils/stripe.util", () => ({ paymentIntents: { retrieve: jest.fn() }, refunds: { create: jest.fn(), retrieve: jest.fn(), list: jest.fn() } }));
 const Order = require("../../models/order.model");
 const stripe = require("../../utils/stripe.util");
