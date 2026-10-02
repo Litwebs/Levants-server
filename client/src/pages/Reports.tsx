@@ -101,6 +101,8 @@ const defaultIntervalForRange = (
   return "day";
 };
 
+const PRODUCT_TREND_COLORS = ["primary", "success", "info"] as const;
+
 const Reports = () => {
   const {
     dashboard,
@@ -205,6 +207,43 @@ const Reports = () => {
     dashboard?.topProducts?.lowestByRevenue ?? [];
   const lowestProductsByUnits = dashboard?.topProducts?.lowestByUnits ?? [];
   const productTotals = dashboard?.topProducts?.totals;
+  const productTrendProducts = dashboard?.productTrends?.products;
+
+  const productRevenueTrendSeries = useMemo(
+    () =>
+      (productTrendProducts ?? []).map((product, index) => ({
+        key: String(product.productId),
+        label:
+          product.catalogStatus === "deleted"
+            ? `${product.productName} · Deleted`
+            : product.productName,
+        color:
+          PRODUCT_TREND_COLORS[index % PRODUCT_TREND_COLORS.length],
+        data: product.points.map((point) => ({
+          label: point.label,
+          value: point.revenue,
+        })),
+      })),
+    [productTrendProducts],
+  );
+
+  const productUnitsTrendSeries = useMemo(
+    () =>
+      (productTrendProducts ?? []).map((product, index) => ({
+        key: String(product.productId),
+        label:
+          product.catalogStatus === "deleted"
+            ? `${product.productName} · Deleted`
+            : product.productName,
+        color:
+          PRODUCT_TREND_COLORS[index % PRODUCT_TREND_COLORS.length],
+        data: product.points.map((point) => ({
+          label: point.label,
+          value: point.units,
+        })),
+      })),
+    [productTrendProducts],
+  );
 
   const productDisplay = (product: (typeof productsByRevenue)[number]) => ({
     productId: product.productId,
@@ -628,6 +667,46 @@ const Reports = () => {
           </div>
         </CardContent>
       </Card>
+
+      <div className={styles.chartsGrid}>
+        <Card className={styles.chartCard}>
+          <CardHeader>
+            <CardTitle>Product Revenue Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MultiLineChart
+              series={productRevenueTrendSeries}
+              height={250}
+              valueFormatter={(value) =>
+                formatCurrencyGBP(value, { compact: true })
+              }
+            />
+            <div className={styles.chartFooter}>
+              <span className={styles.chartTotal}>
+                Top products by collected merchandise revenue
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={styles.chartCard}>
+          <CardHeader>
+            <CardTitle>Product Units Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MultiLineChart
+              series={productUnitsTrendSeries}
+              height={250}
+              valueFormatter={(value) => formatCompactNumber(value)}
+            />
+            <div className={styles.chartFooter}>
+              <span className={styles.chartTotal}>
+                Historical units by product
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className={styles.chartsGrid}>
         <Card className={styles.chartCard}>

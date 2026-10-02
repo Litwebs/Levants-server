@@ -55,6 +55,7 @@ const {
   normalizeRevenueInterval,
   estimateRevenueSeriesBucketCount,
   buildRevenueSeriesStages,
+  buildExpectedSeriesLabels,
   fillRevenueSeriesPoints,
   summarizeRevenueSeries,
 } = require("../utils/analyticsRevenueSeries.util");
@@ -1520,6 +1521,252 @@ async function GetTopProducts({
   };
 }
 
+async function GetProductTrends({
+  range,
+  from,
+  to,
+  interval,
+  limit = 5,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const isUnbounded =
+    !from &&
+    !to &&
+    (range === undefined || range === "all");
+  const normalizedInterval = normalizeRevenueInterval(
+    interval || (isUnbounded ? "month" : "week"),
+  );
+
+  if (isUnbounded && ["day", "week"].includes(normalizedInterval)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "All-time analytics require a monthly or yearly time-series interval.",
+    };
+  }
+
+  const bucketCount = estimateRevenueSeriesBucketCount({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+
+  if (bucketCount > MAX_REVENUE_SERIES_BUCKETS) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `Requested time series contains ${bucketCount} buckets; maximum is ${MAX_REVENUE_SERIES_BUCKETS}. Use a coarser interval or a shorter date range.`,
+    };
+  }
+
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const lim = Math.max(1, Math.min(Number(limit) || 5, 10));
+  const seriesStages = buildRevenueSeriesStages(
+    normalizedInterval,
+    range,
+    {
+      dateExpression: EFFECTIVE_PAID_AT_EXPRESSION,
+      timeZone,
+    },
+  );
+
+  const rows = await Order.aggregate([
+    { $match: salesMatch },
+    { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+    { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+    { $unwind: "$items" },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
+    {
+      $group: {
+        _id: {
+          product: "$items.product",
+          ...seriesStages.groupId,
+        },
+        productNameSnapshot: { $first: "$items.productName" },
+        latestPaidAt: { $first: "$_analyticsPaidAt" },
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+        orderIds: { $addToSet: "$_id" },
+      },
+    },
+    {
+      $project: {
+        ...seriesStages.projectStage,
+        productId: "$_id.product",
+        productNameSnapshot: 1,
+        latestPaidAt: 1,
+        revenue: 1,
+        units: 1,
+        orders: { $size: "$orderIds" },
+      },
+    },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $group: {
+        _id: "$productId",
+        productId: { $first: "$productId" },
+        productNameSnapshot: { $first: "$productNameSnapshot" },
+        latestPaidAt: { $first: "$latestPaidAt" },
+        totalRevenue: { $sum: "$revenue" },
+        totalUnits: { $sum: "$units" },
+        totalOrders: { $sum: "$orders" },
+        points: {
+          $push: {
+            label: "$label",
+            revenue: "$revenue",
+            units: "$units",
+            orders: "$orders",
+          },
+        },
+      },
+    },
+    {
+      $sort: {
+        totalRevenue: -1,
+        totalUnits: -1,
+        latestPaidAt: -1,
+        productId: 1,
+      },
+    },
+    { $limit: lim },
+    {
+      $lookup: {
+        from: "products",
+        localField: "productId",
+        foreignField: "_id",
+        as: "catalogProduct",
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        productId: 1,
+        productName: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$productNameSnapshot", null] },
+                { $ne: ["$productNameSnapshot", ""] },
+              ],
+            },
+            "$productNameSnapshot",
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogProduct.name", 0] },
+                {
+                  $concat: [
+                    "Deleted product · ",
+                    {
+                      $substrBytes: [{ $toString: "$productId" }, 18, 6],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        catalogStatus: {
+          $ifNull: [{ $arrayElemAt: ["$catalogProduct.status", 0] }, "deleted"],
+        },
+        totalRevenue: 1,
+        totalUnits: 1,
+        totalOrders: 1,
+        points: 1,
+      },
+    },
+  ]);
+
+  const expectedLabels = buildExpectedSeriesLabels({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const labels =
+    expectedLabels.length > 0
+      ? expectedLabels
+      : Array.from(
+          new Set(
+            (rows || []).flatMap((row) =>
+              (row.points || []).map((point) => point.label),
+            ),
+          ),
+        ).sort((left, right) => String(left).localeCompare(String(right)));
+
+  const products = (rows || []).map((row) => {
+    const pointsByLabel = new Map(
+      (row.points || []).map((point) => [point.label, point]),
+    );
+    const points = labels.map((label) => {
+      const source = pointsByLabel.get(label) || {};
+      const revenue = Number(source.revenue) || 0;
+      const units = Number(source.units) || 0;
+      const orders = Number(source.orders) || 0;
+
+      return {
+        label,
+        revenue,
+        units,
+        orders,
+        averageSellingPrice: units > 0 ? revenue / units : 0,
+      };
+    });
+
+    const totalRevenue = Number(row.totalRevenue) || 0;
+    const totalUnits = Number(row.totalUnits) || 0;
+    const totalOrders = Number(row.totalOrders) || 0;
+
+    return {
+      productId: row.productId,
+      productName: row.productName,
+      catalogStatus: row.catalogStatus,
+      totalRevenue,
+      totalUnits,
+      totalOrders,
+      averageSellingPrice: totalUnits > 0 ? totalRevenue / totalUnits : 0,
+      points,
+    };
+  });
+
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  return {
+    success: true,
+    data: {
+      interval: normalizedInterval,
+      period,
+      products,
+      metricBasis: {
+        ranking:
+          "Products are selected by collected merchandise revenue in the selected period.",
+        revenue:
+          "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
+        units:
+          "Units on collected orders, including partially-paid orders.",
+      },
+    },
+  };
+}
+
 async function GetRecentOrders({
   range,
   from,
@@ -1649,6 +1896,15 @@ async function GetDashboard({
     orderSource,
     timeZone,
   });
+  const productTrendsPromise = GetProductTrends({
+    range,
+    from,
+    to,
+    interval,
+    limit: 3,
+    orderSource,
+    timeZone,
+  });
   const recentOrdersPromise = GetRecentOrders({
     range,
     from,
@@ -1685,6 +1941,7 @@ async function GetDashboard({
     comparison,
     revenue,
     topProducts,
+    productTrends,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -1692,6 +1949,7 @@ async function GetDashboard({
     comparisonPromise,
     revenuePromise,
     topProductsPromise,
+    productTrendsPromise,
     salesBreakdownPromise,
     recentOrdersPromise,
     stockSnapshotPromise,
@@ -1701,6 +1959,7 @@ async function GetDashboard({
     comparison,
     revenue,
     topProducts,
+    productTrends,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -1727,6 +1986,7 @@ async function GetDashboard({
       salesTrends: revenue.data.salesTrends,
       revenueComposition: buildRevenueComposition(summary.data),
       topProducts: topProducts.data,
+      productTrends: productTrends.data,
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
@@ -1747,6 +2007,7 @@ module.exports = {
   GetRevenueOverview,
   GetOrderStatusCounts,
   GetTopProducts,
+  GetProductTrends,
   GetRecentOrders,
   GetLowStock,
   GetOutOfStock,

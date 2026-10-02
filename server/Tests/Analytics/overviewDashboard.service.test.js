@@ -120,6 +120,40 @@ describe("analytics overview dashboard dataset", () => {
       }),
     );
 
+    expect(result.data.productTrends).toEqual(
+      expect.objectContaining({
+        interval: "day",
+        products: [
+          expect.objectContaining({
+            productId: product._id,
+            totalRevenue: 120,
+            totalUnits: 3,
+            totalOrders: 1,
+            points: [
+              expect.objectContaining({
+                label: "2026-06-10",
+                revenue: 0,
+                units: 0,
+                orders: 0,
+              }),
+              expect.objectContaining({
+                label: "2026-06-11",
+                revenue: 120,
+                units: 3,
+                orders: 1,
+              }),
+              expect.objectContaining({
+                label: "2026-06-12",
+                revenue: 0,
+                units: 0,
+                orders: 0,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
     expect(result.data.topProducts).toEqual(
       expect.objectContaining({
         byRevenue: [

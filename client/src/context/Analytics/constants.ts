@@ -271,6 +271,40 @@ export type TopProductsResult = {
   };
 };
 
+export type ProductTrendPoint = {
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  averageSellingPrice: number;
+};
+
+export type ProductTrendProduct = {
+  productId: string;
+  productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  averageSellingPrice: number;
+  points: ProductTrendPoint[];
+};
+
+export type ProductTrends = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  products: ProductTrendProduct[];
+  metricBasis: {
+    ranking: string;
+    revenue: string;
+    units: string;
+  };
+};
+
 export type RecentOrder = {
   _id: string;
   orderId: string;
@@ -317,6 +351,7 @@ export type AnalyticsDashboard = {
   revenueComposition: RevenueComposition;
   salesBreakdown: SalesBreakdown;
   topProducts: TopProductsResult;
+  productTrends: ProductTrends;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;
