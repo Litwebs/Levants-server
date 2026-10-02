@@ -34,6 +34,8 @@ export type {
   VariantSalesChannelMetric,
   VariantSalesMixRow,
   VariantSalesMixResult,
+  VariantContributionRow,
+  VariantContributionResult,
   ProductTrendPoint,
   ProductTrendProduct,
   ProductTrends,

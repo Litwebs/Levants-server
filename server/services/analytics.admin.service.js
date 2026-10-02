@@ -1868,10 +1868,28 @@ async function GetVariantUnits({
       averageUnitsPerOrder: Number(variant.averageUnitsPerOrder) || 0,
     };
   };
-  const byUnits = (result?.byUnits || []).map(normalizeVariant);
-  const byRevenue = (result?.byRevenue || []).map(normalizeVariant);
-  const bySalesMix = (result?.bySalesMix || []).map(normalizeVariant);
   const totalsRow = result?.totals?.[0] || {};
+  const contributionTotals = {
+    totalRevenue: Number(totalsRow.totalRevenue) || 0,
+    totalUnits: Number(totalsRow.totalUnits) || 0,
+  };
+  const normalizeWithContribution = (variant) => {
+    const normalized = normalizeVariant(variant);
+    return {
+      ...normalized,
+      revenueContributionPercent: roundPercentage(
+        normalized.totalRevenue,
+        contributionTotals.totalRevenue,
+      ),
+      unitContributionPercent: roundPercentage(
+        normalized.totalUnits,
+        contributionTotals.totalUnits,
+      ),
+    };
+  };
+  const byUnits = (result?.byUnits || []).map(normalizeWithContribution);
+  const byRevenue = (result?.byRevenue || []).map(normalizeWithContribution);
+  const bySalesMix = (result?.bySalesMix || []).map(normalizeWithContribution);
 
   return {
     success: true,
@@ -1908,6 +1926,8 @@ async function GetVariantUnits({
           "Difference is realised selling price minus current catalog price; percentage difference uses current catalog price as the denominator.",
         salesMix:
           "Website One-Time and Subscription are mutually exclusive channels. Imported/manual orders are excluded from the comparison and reported separately.",
+        contribution:
+          "Share of collected variant revenue or historical units across variants with at least one sold unit in the selected period.",
         units:
           "Units on collected orders, including partially-paid orders.",
         ranking:
@@ -2019,6 +2039,31 @@ async function GetVariantSalesMix(args = {}) {
       },
       metricBasis: {
         salesMix: result.data.metricBasis.salesMix,
+        revenue: result.data.metricBasis.revenue,
+        units: result.data.metricBasis.units,
+        identity: result.data.metricBasis.identity,
+      },
+    },
+  };
+}
+
+async function GetVariantContribution(args = {}) {
+  const result = await GetVariantUnits(args);
+  if (!result.success) return result;
+
+  return {
+    success: true,
+    data: {
+      variants: result.data.byRevenue,
+      byRevenue: result.data.byRevenue,
+      byUnits: result.data.byUnits,
+      totals: {
+        totalRevenue: result.data.totals.totalRevenue,
+        totalUnits: result.data.totals.totalUnits,
+        variantsSold: result.data.totals.variantsSold,
+      },
+      metricBasis: {
+        contribution: result.data.metricBasis.contribution,
         revenue: result.data.metricBasis.revenue,
         units: result.data.metricBasis.units,
         identity: result.data.metricBasis.identity,
@@ -2978,6 +3023,22 @@ async function GetDashboard({
           identity: variantUnits.data.metricBasis.identity,
         },
       },
+      variantContribution: {
+        variants: variantUnits.data.byRevenue,
+        byRevenue: variantUnits.data.byRevenue,
+        byUnits: variantUnits.data.byUnits,
+        totals: {
+          totalRevenue: variantUnits.data.totals.totalRevenue,
+          totalUnits: variantUnits.data.totals.totalUnits,
+          variantsSold: variantUnits.data.totals.variantsSold,
+        },
+        metricBasis: {
+          contribution: variantUnits.data.metricBasis.contribution,
+          revenue: variantUnits.data.metricBasis.revenue,
+          units: variantUnits.data.metricBasis.units,
+          identity: variantUnits.data.metricBasis.identity,
+        },
+      },
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
@@ -3003,6 +3064,7 @@ module.exports = {
   GetVariantRealisedPrice,
   GetVariantPriceComparison,
   GetVariantSalesMix,
+  GetVariantContribution,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,

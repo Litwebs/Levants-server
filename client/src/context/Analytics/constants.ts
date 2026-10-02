@@ -393,6 +393,28 @@ export type VariantSalesMixResult = {
   };
 };
 
+export type VariantContributionRow = VariantRevenueRow & {
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type VariantContributionResult = {
+  variants: VariantContributionRow[];
+  byRevenue: VariantContributionRow[];
+  byUnits: VariantContributionRow[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    contribution: string;
+    revenue: string;
+    units: string;
+    identity: string;
+  };
+};
+
 export type ProductTrendPoint = {
   label: string;
   revenue: number;
@@ -521,6 +543,7 @@ export type AnalyticsDashboard = {
   variantRealisedPrice: VariantRealisedPriceResult;
   variantPriceComparison: VariantPriceComparisonResult;
   variantSalesMix: VariantSalesMixResult;
+  variantContribution: VariantContributionResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

@@ -276,6 +276,7 @@ const Reports = () => {
   const variantRealisedPrice = dashboard?.variantRealisedPrice;
   const variantPriceComparison = dashboard?.variantPriceComparison;
   const variantSalesMix = dashboard?.variantSalesMix;
+  const variantContribution = dashboard?.variantContribution;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -1328,6 +1329,109 @@ const Reports = () => {
           <div className={styles.chartFooter}>
             <span className={styles.chartTotal}>
               Imported/manual orders are excluded from the one-time vs subscription comparison and shown separately above.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Variant Contribution</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.metricsGrid}>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(variantContribution?.totals.totalRevenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Variant Revenue Base</span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCompactNumber(variantContribution?.totals.totalUnits ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Variant Unit Base</span>
+            </div>
+          </div>
+
+          <div className={styles.productRankingSection}>
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Revenue Contribution</span>
+              <span className={styles.variantMeta}>Share of selected-period variant revenue</span>
+            </div>
+            <div className={styles.productRanking}>
+              {(variantContribution?.byRevenue ?? []).length === 0 && !loading ? (
+                <div className={styles.emptyState}>No variant contribution data</div>
+              ) : (
+                (variantContribution?.byRevenue ?? []).map((variant, index) => (
+                  <div key={variant.variantId} className={styles.rankItem}>
+                    <span className={styles.rankNumber}>#{index + 1}</span>
+                    <div className={styles.rankInfo}>
+                      <span className={styles.rankName}>
+                        {variant.variantName}
+                        {variant.catalogStatus === "deleted" ? " · Deleted" : ""}
+                      </span>
+                      <span className={styles.rankMeta}>
+                        {variant.productName} · {variant.sku} ·{" "}
+                        {formatCurrency(variant.totalRevenue)} ·{" "}
+                        {formatDecimal(variant.revenueContributionPercent)}% revenue
+                      </span>
+                    </div>
+                    <div className={styles.rankBar}>
+                      <div
+                        className={styles.rankFill}
+                        style={{
+                          width: `${Math.min(100, variant.revenueContributionPercent)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className={styles.productRankingSection}>
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Unit Contribution</span>
+              <span className={styles.variantMeta}>Share of selected-period variant units</span>
+            </div>
+            <div className={styles.productRanking}>
+              {(variantContribution?.byUnits ?? []).length === 0 && !loading ? (
+                <div className={styles.emptyState}>No variant contribution data</div>
+              ) : (
+                (variantContribution?.byUnits ?? []).map((variant, index) => (
+                  <div key={variant.variantId} className={styles.rankItem}>
+                    <span className={styles.rankNumber}>#{index + 1}</span>
+                    <div className={styles.rankInfo}>
+                      <span className={styles.rankName}>
+                        {variant.variantName}
+                        {variant.catalogStatus === "deleted" ? " · Deleted" : ""}
+                      </span>
+                      <span className={styles.rankMeta}>
+                        {variant.productName} · {variant.sku} ·{" "}
+                        {formatCompactNumber(variant.totalUnits)} units ·{" "}
+                        {formatDecimal(variant.unitContributionPercent)}% units
+                      </span>
+                    </div>
+                    <div className={styles.rankBar}>
+                      <div
+                        className={styles.rankFill}
+                        style={{
+                          width: `${Math.min(100, variant.unitContributionPercent)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Contribution uses all sold variants in the selected period as the denominator, even when the displayed ranking is limited.
             </span>
           </div>
         </CardContent>
