@@ -92,6 +92,16 @@ describe("analytics cancelled subscriptions", () => {
       isCancellationScheduled: true,
     });
 
+    // Legacy/malformed cancelled rows without an effective timestamp must not
+    // be invented into an all-time cancellation event count.
+    await createSubscription({
+      customer,
+      product,
+      variant,
+      status: "cancelled",
+      cancelledAt: null,
+    });
+
     const result = await analyticsService.GetCancelledSubscriptions({
       from: "2026-06-10",
       to: "2026-06-10",

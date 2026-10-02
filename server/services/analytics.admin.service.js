@@ -3606,7 +3606,9 @@ async function GetCancelledSubscriptions({
   });
   const cancelledSubscriptions = await Subscription.countDocuments({
     status: "cancelled",
-    ...cancelledAtMatch,
+    ...(Object.keys(cancelledAtMatch).length > 0
+      ? cancelledAtMatch
+      : { cancelledAt: { $ne: null } }),
   });
   const period =
     parsedPeriod.start && parsedPeriod.end
