@@ -2,6 +2,9 @@
 
 const { parseYmd } = require("../utils/analyticsDate.util");
 const {
+  ANALYTICS_COMPARISON_MODES,
+} = require("../utils/analyticsComparison.util");
+const {
   SUPPORTED_REVENUE_INTERVALS,
   MAX_REVENUE_SERIES_BUCKETS,
   estimateRevenueSeriesBucketCount,
@@ -85,18 +88,31 @@ const validateAnalyticsQuery =
     maxLimit = null,
     allowDays = false,
     enforceSeriesBucketLimit = false,
+    allowComparison = false,
   } = {}) =>
   (req, res, next) => {
     const dateError = validateDateSelection(req.query);
     if (dateError) return fail(res, dateError);
 
-    const { orderSource, interval, limit, days } = req.query;
+    const { orderSource, interval, limit, days, comparison } = req.query;
 
     if (
       orderSource !== undefined &&
       !ANALYTICS_ORDER_SOURCES.includes(orderSource)
     ) {
       return fail(res, "Invalid analytics order source.");
+    }
+
+    if (comparison !== undefined) {
+      if (!allowComparison) {
+        return fail(res, "This analytics endpoint does not accept comparison.");
+      }
+      if (!ANALYTICS_COMPARISON_MODES.includes(comparison)) {
+        return fail(
+          res,
+          "Analytics comparison must be previous_period, previous_year, or none.",
+        );
+      }
     }
 
     if (interval !== undefined) {
@@ -179,5 +195,6 @@ const validateAnalyticsQuery =
 module.exports = {
   ANALYTICS_RANGES,
   ANALYTICS_ORDER_SOURCES,
+  ANALYTICS_COMPARISON_MODES,
   validateAnalyticsQuery,
 };

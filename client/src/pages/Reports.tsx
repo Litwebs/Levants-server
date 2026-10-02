@@ -22,6 +22,7 @@ import {
 
 import {
   useAnalyticsApi,
+  type AnalyticsComparisonMode,
   type AnalyticsDateRange,
   type AnalyticsOrderSource,
   type AnalyticsMetricChange,
@@ -30,6 +31,7 @@ import {
   type RevenueInterval,
   analyticsDateRangeOptions,
   analyticsOrderSourceOptions,
+  analyticsComparisonOptions,
   analyticsIntervalOptions,
   defaultAnalyticsIntervalForRange,
 } from "../context/Analytics";
@@ -80,7 +82,13 @@ const formatDecimal = (value: unknown, maximumFractionDigits = 2) => {
   });
 };
 
-const KpiTrend = ({ change }: { change?: AnalyticsMetricChange }) => {
+const KpiTrend = ({
+  change,
+  comparisonMode,
+}: {
+  change?: AnalyticsMetricChange;
+  comparisonMode: AnalyticsComparisonMode;
+}) => {
   if (!change) return null;
 
   const value = change.percentChangeAvailable
@@ -100,7 +108,11 @@ const KpiTrend = ({ change }: { change?: AnalyticsMetricChange }) => {
   return (
     <span className={styles.kpiTrend}>
       <span className={trendClass}>{value}</span>
-      <span className={styles.trendLabel}>vs previous period</span>
+      <span className={styles.trendLabel}>
+        {comparisonMode === "previous_year"
+          ? "vs previous year"
+          : "vs previous period"}
+      </span>
     </span>
   );
 };
@@ -117,6 +129,7 @@ const Reports = () => {
     from,
     to,
     interval,
+    comparison,
     setFilters,
     getDashboard,
     getProductDetail,
@@ -151,9 +164,18 @@ const Reports = () => {
     void getDashboard({
       interval,
       orderSource,
+      comparison,
       ...(isCustom ? { from, to } : { range }),
     });
-  }, [range, orderSource, from, to, interval, getDashboard]);
+  }, [
+    range,
+    orderSource,
+    from,
+    to,
+    interval,
+    comparison,
+    getDashboard,
+  ]);
 
   useEffect(() => {
     if (!selectedProductId) {
@@ -472,6 +494,21 @@ const Reports = () => {
           />
 
           <Select
+            value={comparison}
+            onChange={(value) =>
+              setFilters({
+                range,
+                orderSource,
+                from,
+                to,
+                interval,
+                comparison: value as AnalyticsComparisonMode,
+              })
+            }
+            options={analyticsComparisonOptions}
+          />
+
+          <Select
             value={interval}
             onChange={(value) =>
               setFilters({
@@ -533,7 +570,10 @@ const Reports = () => {
               <span className={styles.kpiValue}>
                 {formatCurrency(overviewMetrics?.netRevenue ?? summary?.netRevenue ?? 0)}
               </span>
-              <KpiTrend change={overviewChanges?.netRevenue} />
+              <KpiTrend
+                change={overviewChanges?.netRevenue}
+                comparisonMode={comparison}
+              />
             </div>
           </div>
         </Card>
@@ -548,7 +588,10 @@ const Reports = () => {
               <span className={styles.kpiValue}>
                 {formatCurrency(overviewMetrics?.grossRevenue ?? summary?.grossRevenue ?? 0)}
               </span>
-              <KpiTrend change={overviewChanges?.grossRevenue} />
+              <KpiTrend
+                change={overviewChanges?.grossRevenue}
+                comparisonMode={comparison}
+              />
             </div>
           </div>
         </Card>
@@ -563,7 +606,10 @@ const Reports = () => {
               <span className={styles.kpiValue}>
                 {formatCompactNumber(overviewMetrics?.totalOrders ?? summary?.totalOrders ?? 0)}
               </span>
-              <KpiTrend change={overviewChanges?.totalOrders} />
+              <KpiTrend
+                change={overviewChanges?.totalOrders}
+                comparisonMode={comparison}
+              />
             </div>
           </div>
         </Card>
@@ -578,7 +624,10 @@ const Reports = () => {
               <span className={styles.kpiValue}>
                 {formatCompactNumber(overviewMetrics?.unitsSold ?? summary?.unitsSold ?? 0)}
               </span>
-              <KpiTrend change={overviewChanges?.unitsSold} />
+              <KpiTrend
+                change={overviewChanges?.unitsSold}
+                comparisonMode={comparison}
+              />
             </div>
           </div>
         </Card>
@@ -595,7 +644,10 @@ const Reports = () => {
                   overviewMetrics?.averageOrderValue ?? summary?.averageOrderValue ?? 0,
                 )}
               </span>
-              <KpiTrend change={overviewChanges?.averageOrderValue} />
+              <KpiTrend
+                change={overviewChanges?.averageOrderValue}
+                comparisonMode={comparison}
+              />
             </div>
           </div>
         </Card>
@@ -614,7 +666,10 @@ const Reports = () => {
                     0,
                 )}
               </span>
-              <KpiTrend change={overviewChanges?.averageUnitsPerOrder} />
+              <KpiTrend
+                change={overviewChanges?.averageUnitsPerOrder}
+                comparisonMode={comparison}
+              />
             </div>
           </div>
         </Card>

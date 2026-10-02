@@ -18,6 +18,11 @@ export type AnalyticsOrderSource =
 
 export type RevenueInterval = "day" | "week" | "month" | "year";
 
+export type AnalyticsComparisonMode =
+  | "previous_period"
+  | "previous_year"
+  | "none";
+
 export type AnalyticsSummary = {
   totalOrders: number;
   revenue: number;
@@ -845,6 +850,7 @@ export interface AnalyticsState {
   from: string;
   to: string;
   interval: RevenueInterval;
+  comparison: AnalyticsComparisonMode;
 
   loading: boolean;
   error: string | null;
@@ -863,6 +869,7 @@ export const initialAnalyticsState: AnalyticsState = {
   from: "",
   to: "",
   interval: "day",
+  comparison: "previous_period",
 
   loading: false,
   error: null,

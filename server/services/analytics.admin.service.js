@@ -1369,6 +1369,7 @@ async function GetSummaryComparison({
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
   now = new Date(),
   currentMetrics,
+  comparison = "previous_period",
 } = {}) {
   const periods = resolveComparisonPeriods({
     range,
@@ -1376,7 +1377,17 @@ async function GetSummaryComparison({
     to,
     timeZone,
     now,
+    comparisonMode: comparison,
   });
+
+  if (periods.reason === "invalid_comparison") {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "Analytics comparison must be previous_period, previous_year, or none.",
+    };
+  }
 
   if (!periods.available) {
     return {
@@ -4544,6 +4555,7 @@ async function GetDashboard({
   to,
   interval,
   orderSource,
+  comparison = "previous_period",
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
   const currentSubscriptionSnapshotPromise = GetCurrentSubscriptionSnapshot();
@@ -4690,6 +4702,7 @@ async function GetDashboard({
       ...overviewMetrics,
       revenue: summary.data.revenue,
     },
+    comparison,
   });
 
   const [

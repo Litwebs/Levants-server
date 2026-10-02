@@ -1,4 +1,5 @@
 import type {
+  AnalyticsComparisonMode,
   AnalyticsDateRange,
   AnalyticsOrderSource,
 } from "../../../context/Analytics";
@@ -12,9 +13,11 @@ type Props = {
   range: AnalyticsDateRange;
   orderSource: AnalyticsOrderSource;
   interval: any;
+  comparison: AnalyticsComparisonMode;
   setFilters: (next: any) => void;
   dateRangeOptions: { value: AnalyticsDateRange; label: string }[];
   orderSourceOptions: { value: AnalyticsOrderSource; label: string }[];
+  comparisonOptions: { value: AnalyticsComparisonMode; label: string }[];
   onViewOrders: () => void;
   onCreateProduct: () => void;
 };
@@ -23,9 +26,11 @@ const DashboardHeader: React.FC<Props> = ({
   range,
   orderSource,
   interval,
+  comparison,
   setFilters,
   dateRangeOptions,
   orderSourceOptions,
+  comparisonOptions,
   onViewOrders,
   onCreateProduct,
 }) => {
@@ -63,6 +68,19 @@ const DashboardHeader: React.FC<Props> = ({
               })
             }
             options={orderSourceOptions}
+          />
+
+          <Select
+            value={comparison}
+            onChange={(value) =>
+              setFilters({
+                range,
+                orderSource,
+                interval,
+                comparison: value as AnalyticsComparisonMode,
+              })
+            }
+            options={comparisonOptions}
           />
         </div>
       </div>

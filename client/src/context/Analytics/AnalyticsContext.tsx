@@ -20,6 +20,7 @@ import AnalyticsReducer, {
 } from "./AnalyticsReducer";
 
 import {
+  type AnalyticsComparisonMode,
   type AnalyticsDashboard,
   type AnalyticsDateRange,
   type AnalyticsOrderSource,
@@ -57,6 +58,7 @@ type AnalyticsContextType = {
   from: AnalyticsState["from"];
   to: AnalyticsState["to"];
   interval: AnalyticsState["interval"];
+  comparison: AnalyticsState["comparison"];
 
   loading: AnalyticsState["loading"];
   error: AnalyticsState["error"];
@@ -67,6 +69,7 @@ type AnalyticsContextType = {
     from?: string;
     to?: string;
     interval?: RevenueInterval;
+    comparison?: AnalyticsComparisonMode;
   }) => void;
 
   getDashboard: (params?: {
@@ -75,6 +78,7 @@ type AnalyticsContextType = {
     from?: string;
     to?: string;
     interval?: RevenueInterval;
+    comparison?: AnalyticsComparisonMode;
   }) => Promise<AnalyticsDashboard>;
 
   getRevenueOverview: (params?: {
@@ -117,6 +121,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       from?: string;
       to?: string;
       interval?: RevenueInterval;
+      comparison?: AnalyticsComparisonMode;
     }) => {
       dispatch({
         type: ANALYTICS_SET_FILTERS,
@@ -126,10 +131,17 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
           from: filters.from ?? state.from,
           to: filters.to ?? state.to,
           interval: filters.interval ?? state.interval,
+          comparison: filters.comparison ?? state.comparison,
         },
       });
     },
-    [state.orderSource, state.from, state.to, state.interval],
+    [
+      state.orderSource,
+      state.from,
+      state.to,
+      state.interval,
+      state.comparison,
+    ],
   );
 
   const getDashboard = useCallback(
@@ -139,6 +151,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       from?: string;
       to?: string;
       interval?: RevenueInterval;
+      comparison?: AnalyticsComparisonMode;
     }) => {
       dispatch({ type: ANALYTICS_REQUEST });
       try {
@@ -149,6 +162,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
             from: params?.from,
             to: params?.to,
             interval: params?.interval,
+            comparison: params?.comparison,
           },
         });
 
@@ -282,6 +296,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       from: state.from,
       to: state.to,
       interval: state.interval,
+      comparison: state.comparison,
 
       loading: state.loading,
       error: state.error,

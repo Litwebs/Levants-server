@@ -25,6 +25,7 @@ const GetSummaryComparison = async (req, res) => {
     from: req.query.from,
     to: req.query.to,
     orderSource: req.query.orderSource,
+    comparison: req.query.comparison,
   });
 
   if (!result.success) {
@@ -540,6 +541,7 @@ const GetDashboard = async (req, res) => {
     to: req.query.to,
     interval: req.query.interval,
     orderSource: req.query.orderSource,
+    comparison: req.query.comparison,
   });
 
   if (!result.success) {

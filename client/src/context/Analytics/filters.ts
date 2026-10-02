@@ -1,4 +1,5 @@
 import type {
+  AnalyticsComparisonMode,
   AnalyticsDateRange,
   AnalyticsOrderSource,
   RevenueInterval,
@@ -28,6 +29,15 @@ export const analyticsOrderSourceOptions: {
   { value: "website", label: "Website" },
   { value: "subscription", label: "Subscription" },
   { value: "imported", label: "Imported" },
+];
+
+export const analyticsComparisonOptions: {
+  value: AnalyticsComparisonMode;
+  label: string;
+}[] = [
+  { value: "previous_period", label: "Compare: Previous Period" },
+  { value: "previous_year", label: "Compare: Previous Year" },
+  { value: "none", label: "Compare: None" },
 ];
 
 export const analyticsIntervalOptions: {

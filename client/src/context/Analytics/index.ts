@@ -1,11 +1,13 @@
 export {
   analyticsDateRangeOptions,
   analyticsOrderSourceOptions,
+  analyticsComparisonOptions,
   analyticsIntervalOptions,
   defaultAnalyticsIntervalForRange,
 } from "./filters";
 export { AnalyticsProvider, useAnalyticsApi } from "./AnalyticsContext";
 export type {
+  AnalyticsComparisonMode,
   AnalyticsDashboard,
   AnalyticsDateRange,
   AnalyticsOrderSource,

@@ -8,6 +8,12 @@ const {
   formatYmdInTimeZone,
 } = require("./analyticsDate.util");
 
+const ANALYTICS_COMPARISON_MODES = [
+  "previous_period",
+  "previous_year",
+  "none",
+];
+
 const ymdFromParts = ({ year, month, day }) =>
   [
     String(year).padStart(4, "0"),
@@ -83,8 +89,21 @@ const resolveComparisonPeriods = ({
   to,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
   now = new Date(),
+  comparisonMode = "previous_period",
 } = {}) => {
   const tz = normalizeTimeZone(timeZone);
+
+  if (!ANALYTICS_COMPARISON_MODES.includes(comparisonMode)) {
+    return {
+      available: false,
+      reason: "invalid_comparison",
+      strategy: null,
+      timeZone: tz,
+      current: null,
+      previous: null,
+    };
+  }
+
   const normalizedRange =
     typeof range === "string" && range.trim() ? range.trim() : "all";
 
@@ -132,11 +151,26 @@ const resolveComparisonPeriods = ({
     };
   }
 
+  if (comparisonMode === "none") {
+    return {
+      available: false,
+      reason: "comparison_disabled",
+      strategy: "none",
+      timeZone: tz,
+      current: toPeriod(currentFrom, currentTo, tz),
+      previous: null,
+    };
+  }
+
   let previousFrom;
   let previousTo;
   let strategy = "previous_period";
 
-  if (normalizedRange === "thisMonth" && !from && !to) {
+  if (comparisonMode === "previous_year") {
+    strategy = "previous_year";
+    previousFrom = shiftYearsClamped(currentFrom, -1);
+    previousTo = shiftYearsClamped(currentTo, -1);
+  } else if (normalizedRange === "thisMonth" && !from && !to) {
     strategy = "previous_month_to_date";
     const previousMonthStart = addCalendarMonths(
       { year: currentFrom.year, month: currentFrom.month, day: 1 },
@@ -228,6 +262,7 @@ const compareMetrics = (current, previous, metricNames) =>
   );
 
 module.exports = {
+  ANALYTICS_COMPARISON_MODES,
   resolveComparisonPeriods,
   compareMetric,
   compareMetrics,

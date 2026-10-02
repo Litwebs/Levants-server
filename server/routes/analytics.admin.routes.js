@@ -23,6 +23,7 @@ router.get(
   validateAnalyticsQuery({
     allowInterval: true,
     enforceSeriesBucketLimit: true,
+    allowComparison: true,
   }),
   asyncHandler(controller.GetDashboard),
 );
@@ -34,7 +35,7 @@ router.get(
 );
 router.get(
   "/comparison",
-  validateAnalyticsQuery(),
+  validateAnalyticsQuery({ allowComparison: true }),
   asyncHandler(controller.GetSummaryComparison),
 );
 router.get(
