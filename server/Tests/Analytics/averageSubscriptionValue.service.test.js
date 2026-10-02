@@ -101,7 +101,7 @@ describe("analytics average subscription value", () => {
       activeSubscriptions: 2,
       metricBasis: {
         averageSubscriptionValue: expect.stringContaining(
-          "current average recurring charge per billing cycle",
+          "average recurring charge per billing cycle",
         ),
         scope: expect.stringContaining("Pending post-cutoff changes are excluded"),
       },
