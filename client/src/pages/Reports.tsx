@@ -26,6 +26,7 @@ import {
   type AnalyticsOrderSource,
   type AnalyticsMetricChange,
   type ProductDetail,
+  type VariantDetail,
   type RevenueInterval,
 } from "../context/Analytics";
 
@@ -117,6 +118,7 @@ const Reports = () => {
     setFilters,
     getDashboard,
     getProductDetail,
+    getVariantDetail,
   } = useAnalyticsApi();
 
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
@@ -127,6 +129,16 @@ const Reports = () => {
   );
   const [productDetailLoading, setProductDetailLoading] = useState(false);
   const [productDetailError, setProductDetailError] = useState<string | null>(
+    null,
+  );
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
+    null,
+  );
+  const [variantDetail, setVariantDetail] = useState<VariantDetail | null>(
+    null,
+  );
+  const [variantDetailLoading, setVariantDetailLoading] = useState(false);
+  const [variantDetailError, setVariantDetailError] = useState<string | null>(
     null,
   );
 
@@ -185,6 +197,52 @@ const Reports = () => {
     to,
     interval,
     getProductDetail,
+  ]);
+
+  useEffect(() => {
+    if (!selectedVariantId) {
+      setVariantDetail(null);
+      setVariantDetailError(null);
+      return;
+    }
+
+    const isCustom = range === "custom";
+    if (isCustom && (!from || !to)) return;
+
+    let cancelled = false;
+    setVariantDetailLoading(true);
+    setVariantDetailError(null);
+
+    void getVariantDetail(selectedVariantId, {
+      interval,
+      orderSource,
+      ...(isCustom ? { from, to } : { range }),
+    })
+      .then((detail) => {
+        if (!cancelled) setVariantDetail(detail);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setVariantDetail(null);
+        setVariantDetailError(
+          err?.response?.data?.message || "Failed to load variant detail",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setVariantDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedVariantId,
+    range,
+    orderSource,
+    from,
+    to,
+    interval,
+    getVariantDetail,
   ]);
 
   const dateRangeOptions: { value: AnalyticsDateRange; label: string }[] = [
@@ -1168,6 +1226,15 @@ const Reports = () => {
                         {formatCompactNumber(variant.orderCount)} orders ·{" "}
                         {formatDecimal(variant.averageUnitsPerOrder)} units/order
                       </span>
+                      <button
+                        type="button"
+                        className={styles.drilldownButton}
+                        onClick={() =>
+                          setSelectedVariantId(String(variant.variantId))
+                        }
+                      >
+                        View details
+                      </button>
                     </div>
                     <div className={styles.rankBar}>
                       <div
@@ -1243,6 +1310,15 @@ const Reports = () => {
                         {formatCurrency(variant.totalRevenue)} ·{" "}
                         {formatCompactNumber(variant.orderCount)} orders
                       </span>
+                      <button
+                        type="button"
+                        className={styles.drilldownButton}
+                        onClick={() =>
+                          setSelectedVariantId(String(variant.variantId))
+                        }
+                      >
+                        View details
+                      </button>
                     </div>
                     <div className={styles.rankBar}>
                       <div
@@ -1514,6 +1590,234 @@ const Reports = () => {
           </div>
         </CardContent>
       </Card>
+
+      {selectedVariantId ? (
+        <Card className={styles.fullWidthChart}>
+          <CardHeader>
+            <div className={styles.productDetailHeader}>
+              <div>
+                <CardTitle>
+                  {variantDetail?.variantName || "Variant Detail"}
+                  {variantDetail?.catalogStatus === "deleted"
+                    ? " · Deleted"
+                    : ""}
+                </CardTitle>
+                <div className={styles.productDetailSubheading}>
+                  {variantDetail
+                    ? `${variantDetail.productName} · ${variantDetail.sku}`
+                    : "Historical variant performance for the selected filters"}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={styles.drilldownButton}
+                onClick={() => setSelectedVariantId(null)}
+              >
+                Close
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {variantDetailLoading ? (
+              <div className={styles.emptyState}>Loading variant detail…</div>
+            ) : variantDetailError ? (
+              <div className={styles.errorBanner}>{variantDetailError}</div>
+            ) : variantDetail ? (
+              <>
+                <div className={styles.metricsGrid}>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCurrency(variantDetail.totalRevenue)}
+                    </span>
+                    <span className={styles.metricLabel}>Variant Revenue</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCompactNumber(variantDetail.totalUnits)}
+                    </span>
+                    <span className={styles.metricLabel}>Units</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCompactNumber(variantDetail.totalOrders)}
+                    </span>
+                    <span className={styles.metricLabel}>Unique Orders</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCurrency(variantDetail.realisedSellingPrice)}
+                    </span>
+                    <span className={styles.metricLabel}>Realised ASP</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {variantDetail.currentPrice === null
+                        ? "—"
+                        : formatCurrency(variantDetail.currentPrice)}
+                    </span>
+                    <span className={styles.metricLabel}>Current Price</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {variantDetail.priceDifference === null
+                        ? "—"
+                        : formatCurrency(variantDetail.priceDifference)}
+                    </span>
+                    <span className={styles.metricLabel}>
+                      Realised vs Current
+                    </span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatDecimal(variantDetail.revenueContributionPercent)}%
+                    </span>
+                    <span className={styles.metricLabel}>
+                      Revenue Contribution
+                    </span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatDecimal(variantDetail.unitContributionPercent)}%
+                    </span>
+                    <span className={styles.metricLabel}>Unit Contribution</span>
+                  </div>
+                </div>
+
+                <div className={styles.chartsGrid}>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>Revenue Trend</span>
+                      <span className={styles.variantMeta}>
+                        {variantDetail.trend.interval}
+                      </span>
+                    </div>
+                    <SimpleBarChart
+                      type="line"
+                      height={220}
+                      color="success"
+                      data={variantDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.revenue,
+                      }))}
+                      valueFormatter={(value) =>
+                        formatCurrencyGBP(value, { compact: true })
+                      }
+                    />
+                  </div>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>Units Trend</span>
+                      <span className={styles.variantMeta}>Historical units</span>
+                    </div>
+                    <SimpleBarChart
+                      type="bar"
+                      height={220}
+                      color="info"
+                      data={variantDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.units,
+                      }))}
+                      valueFormatter={(value) => formatCompactNumber(value)}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.chartsGrid}>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>Orders Trend</span>
+                      <span className={styles.variantMeta}>Unique orders</span>
+                    </div>
+                    <SimpleBarChart
+                      type="bar"
+                      height={200}
+                      color="primary"
+                      data={variantDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.orders,
+                      }))}
+                      valueFormatter={(value) => formatCompactNumber(value)}
+                    />
+                  </div>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>
+                        Realised ASP Trend
+                      </span>
+                      <span className={styles.variantMeta}>Revenue / units</span>
+                    </div>
+                    <SimpleBarChart
+                      type="line"
+                      height={200}
+                      color="primary"
+                      data={variantDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.realisedSellingPrice,
+                      }))}
+                      valueFormatter={(value) =>
+                        formatCurrencyGBP(value, { compact: true })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.productDetailSection}>
+                  <div className={styles.variantHeader}>
+                    <span className={styles.variantTitle}>Sales by Source</span>
+                    <span className={styles.variantMeta}>
+                      Mutually exclusive channels
+                    </span>
+                  </div>
+                  <div className={styles.salesMixGrid}>
+                    {variantDetail.sourceSplit.map((source) => (
+                      <div key={source.key} className={styles.salesMixCard}>
+                        <div className={styles.salesMixHeader}>
+                          <span className={styles.salesMixTitle}>
+                            {source.label}
+                          </span>
+                          <span className={styles.salesMixShare}>
+                            {formatDecimal(source.revenueContributionPercent)}%
+                            revenue
+                          </span>
+                        </div>
+                        <div className={styles.salesMixPrimary}>
+                          {formatCurrency(source.revenue)}
+                        </div>
+                        <div className={styles.salesMixStats}>
+                          <div>
+                            <span className={styles.salesMixStatValue}>
+                              {formatCompactNumber(source.units)}
+                            </span>
+                            <span className={styles.salesMixStatLabel}>Units</span>
+                          </div>
+                          <div>
+                            <span className={styles.salesMixStatValue}>
+                              {formatCompactNumber(source.orders)}
+                            </span>
+                            <span className={styles.salesMixStatLabel}>Orders</span>
+                          </div>
+                          <div>
+                            <span className={styles.salesMixStatValue}>
+                              {formatCurrency(source.realisedSellingPrice)}
+                            </span>
+                            <span className={styles.salesMixStatLabel}>ASP</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={styles.compositionNote}>
+                  {variantDetail.metricBasis.identity}
+                </div>
+              </>
+            ) : (
+              <div className={styles.emptyState}>No variant detail</div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {selectedProductId ? (
         <Card className={styles.fullWidthChart}>

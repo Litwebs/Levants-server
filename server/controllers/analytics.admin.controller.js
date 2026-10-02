@@ -320,6 +320,26 @@ const GetProductDetail = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetVariantDetail = async (req, res) => {
+  const result = await service.GetVariantDetail({
+    variantId: req.params.variantId,
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetRecentOrders = async (req, res) => {
   const result = await service.GetRecentOrders({
     range: req.query.range,
@@ -421,6 +441,7 @@ module.exports = {
   GetVariantTrends,
   GetProductTrends,
   GetProductDetail,
+  GetVariantDetail,
   GetRecentOrders,
   GetLowStock,
   GetDashboard,

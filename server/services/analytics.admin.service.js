@@ -3028,6 +3028,425 @@ async function GetProductDetail({
   };
 }
 
+async function GetVariantDetail({
+  variantId,
+  range,
+  from,
+  to,
+  interval,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  if (!mongoose.isValidObjectId(variantId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid variant id.",
+    };
+  }
+
+  const variantObjectId = new mongoose.Types.ObjectId(variantId);
+  const isUnbounded =
+    !from &&
+    !to &&
+    (range === undefined || range === "all");
+  const normalizedInterval = normalizeRevenueInterval(
+    interval || (isUnbounded ? "month" : "week"),
+  );
+
+  if (isUnbounded && ["day", "week"].includes(normalizedInterval)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "All-time analytics require a monthly or yearly time-series interval.",
+    };
+  }
+
+  const bucketCount = estimateRevenueSeriesBucketCount({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+
+  if (bucketCount > MAX_REVENUE_SERIES_BUCKETS) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `Requested time series contains ${bucketCount} buckets; maximum is ${MAX_REVENUE_SERIES_BUCKETS}. Use a coarser interval or a shorter date range.`,
+    };
+  }
+
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const seriesStages = buildRevenueSeriesStages(
+    normalizedInterval,
+    range,
+    {
+      dateExpression: EFFECTIVE_PAID_AT_EXPRESSION,
+      timeZone,
+    },
+  );
+
+  const detailPromise = Order.aggregate([
+    {
+      $match: {
+        ...salesMatch,
+        "items.variant": variantObjectId,
+      },
+    },
+    {
+      $addFields: {
+        _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION,
+        _analyticsChannel: SALES_CHANNEL_EXPRESSION,
+      },
+    },
+    { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+    { $unwind: "$items" },
+    { $match: { "items.variant": variantObjectId } },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
+    {
+      $group: {
+        _id: {
+          order: "$_id",
+          channel: "$_analyticsChannel",
+          ...seriesStages.groupId,
+        },
+        productIdSnapshot: { $first: "$items.product" },
+        productNameSnapshot: { $first: "$items.productName" },
+        variantNameSnapshot: { $first: "$items.name" },
+        skuSnapshot: { $first: "$items.sku" },
+        latestPaidAt: { $first: "$_analyticsPaidAt" },
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+      },
+    },
+    {
+      $project: {
+        ...seriesStages.projectStage,
+        orderId: "$_id.order",
+        channel: "$_id.channel",
+        productIdSnapshot: 1,
+        productNameSnapshot: 1,
+        variantNameSnapshot: 1,
+        skuSnapshot: 1,
+        latestPaidAt: 1,
+        revenue: 1,
+        units: 1,
+      },
+    },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              productIdSnapshot: { $first: "$productIdSnapshot" },
+              productNameSnapshot: { $first: "$productNameSnapshot" },
+              variantNameSnapshot: { $first: "$variantNameSnapshot" },
+              skuSnapshot: { $first: "$skuSnapshot" },
+              totalRevenue: { $sum: "$revenue" },
+              totalUnits: { $sum: "$units" },
+              orderIds: { $addToSet: "$orderId" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              productIdSnapshot: 1,
+              productNameSnapshot: 1,
+              variantNameSnapshot: 1,
+              skuSnapshot: 1,
+              totalRevenue: 1,
+              totalUnits: 1,
+              totalOrders: { $size: "$orderIds" },
+            },
+          },
+        ],
+        sources: [
+          {
+            $group: {
+              _id: "$channel",
+              revenue: { $sum: "$revenue" },
+              units: { $sum: "$units" },
+              orderIds: { $addToSet: "$orderId" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              key: "$_id",
+              revenue: 1,
+              units: 1,
+              orders: { $size: "$orderIds" },
+            },
+          },
+        ],
+        trends: [
+          {
+            $group: {
+              _id: "$label",
+              revenue: { $sum: "$revenue" },
+              units: { $sum: "$units" },
+              orderIds: { $addToSet: "$orderId" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              label: "$_id",
+              revenue: 1,
+              units: 1,
+              orders: { $size: "$orderIds" },
+            },
+          },
+          { $sort: { label: 1 } },
+        ],
+      },
+    },
+  ]);
+
+  const contributionTotalsPromise = Order.aggregate([
+    { $match: salesMatch },
+    { $unwind: "$items" },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
+    {
+      $group: {
+        _id: "$items.variant",
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+      },
+    },
+    { $match: { units: { $gt: 0 } } },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$revenue" },
+        totalUnits: { $sum: "$units" },
+      },
+    },
+  ]);
+
+  const [detailRows, contributionRows, catalogVariant, historicalOrder] =
+    await Promise.all([
+      detailPromise,
+      contributionTotalsPromise,
+      ProductVariant.findById(variantObjectId)
+        .select("product name sku status price")
+        .lean(),
+      Order.exists({ "items.variant": variantObjectId }),
+    ]);
+
+  if (!catalogVariant && !historicalOrder) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "Variant not found.",
+    };
+  }
+
+  const detail = detailRows?.[0] || {};
+  const summary = detail.summary?.[0] || {};
+  const contributionTotals = contributionRows?.[0] || {};
+  const totalRevenue = Number(summary.totalRevenue) || 0;
+  const totalUnits = Number(summary.totalUnits) || 0;
+  const totalOrders = Number(summary.totalOrders) || 0;
+  const allVariantRevenue = Number(contributionTotals.totalRevenue) || 0;
+  const allVariantUnits = Number(contributionTotals.totalUnits) || 0;
+
+  let historicalIdentity = {
+    productId: summary.productIdSnapshot,
+    productName: summary.productNameSnapshot,
+    variantName: summary.variantNameSnapshot,
+    sku: summary.skuSnapshot,
+  };
+
+  if (
+    (!historicalIdentity.variantName ||
+      !historicalIdentity.sku ||
+      !historicalIdentity.productId) &&
+    historicalOrder
+  ) {
+    const [identity] = await Order.aggregate([
+      { $match: { "items.variant": variantObjectId } },
+      { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+      { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+      { $unwind: "$items" },
+      { $match: { "items.variant": variantObjectId } },
+      {
+        $project: {
+          _id: 0,
+          productId: "$items.product",
+          productName: "$items.productName",
+          variantName: "$items.name",
+          sku: "$items.sku",
+        },
+      },
+      { $limit: 1 },
+    ]);
+
+    if (identity) historicalIdentity = { ...historicalIdentity, ...identity };
+  }
+
+  const productId =
+    historicalIdentity.productId || catalogVariant?.product || null;
+  const catalogProduct = productId
+    ? await Product.findById(productId).select("name status").lean()
+    : null;
+
+  const productName =
+    (typeof historicalIdentity.productName === "string" &&
+      historicalIdentity.productName.trim()) ||
+    catalogProduct?.name ||
+    (productId ? `Deleted product · ${String(productId).slice(-6)}` : "Unknown product");
+  const variantName =
+    (typeof historicalIdentity.variantName === "string" &&
+      historicalIdentity.variantName.trim()) ||
+    catalogVariant?.name ||
+    `Deleted variant · ${String(variantObjectId).slice(-6)}`;
+  const sku =
+    (typeof historicalIdentity.sku === "string" &&
+      historicalIdentity.sku.trim()) ||
+    catalogVariant?.sku ||
+    "Unknown SKU";
+
+  const currentPrice =
+    catalogVariant?.price === null || catalogVariant?.price === undefined
+      ? null
+      : Number(catalogVariant.price);
+  const realisedSellingPrice =
+    totalUnits > 0 ? totalRevenue / totalUnits : 0;
+  const priceDifference =
+    currentPrice === null || totalUnits <= 0
+      ? null
+      : realisedSellingPrice - currentPrice;
+  const priceDifferencePercent =
+    priceDifference !== null && currentPrice > 0
+      ? Math.round((priceDifference / currentPrice) * 10000) / 100
+      : null;
+
+  const sourceRows = new Map(
+    (detail.sources || []).map((source) => [source.key, source]),
+  );
+  const sourceSplit = SALES_CHANNELS.map((key) => {
+    const source = sourceRows.get(key) || {};
+    const revenue = Number(source.revenue) || 0;
+    const units = Number(source.units) || 0;
+    const orders = Number(source.orders) || 0;
+
+    return {
+      key,
+      label: SALES_CHANNEL_LABELS[key] || key,
+      revenue,
+      units,
+      orders,
+      realisedSellingPrice: units > 0 ? revenue / units : 0,
+      revenueContributionPercent: roundPercentage(revenue, totalRevenue),
+      unitContributionPercent: roundPercentage(units, totalUnits),
+    };
+  });
+
+  const expectedLabels = buildExpectedSeriesLabels({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const sparseTrend = new Map(
+    (detail.trends || []).map((point) => [point.label, point]),
+  );
+  const labels =
+    expectedLabels.length > 0
+      ? expectedLabels
+      : Array.from(sparseTrend.keys()).sort((left, right) =>
+          String(left).localeCompare(String(right)),
+        );
+
+  const points = labels.map((label) => {
+    const point = sparseTrend.get(label) || {};
+    const revenue = Number(point.revenue) || 0;
+    const units = Number(point.units) || 0;
+    const orders = Number(point.orders) || 0;
+
+    return {
+      label,
+      revenue,
+      units,
+      orders,
+      realisedSellingPrice: units > 0 ? revenue / units : 0,
+    };
+  });
+
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  return {
+    success: true,
+    data: {
+      productId,
+      variantId: variantObjectId,
+      productName,
+      variantName,
+      sku,
+      catalogStatus: catalogVariant?.status || "deleted",
+      currentPrice,
+      period,
+      totalRevenue,
+      totalUnits,
+      totalOrders,
+      realisedSellingPrice,
+      averageRevenuePerOrder:
+        totalOrders > 0 ? totalRevenue / totalOrders : 0,
+      averageUnitsPerOrder:
+        totalOrders > 0 ? totalUnits / totalOrders : 0,
+      revenueContributionPercent: roundPercentage(
+        totalRevenue,
+        allVariantRevenue,
+      ),
+      unitContributionPercent: roundPercentage(totalUnits, allVariantUnits),
+      priceDifference,
+      priceDifferencePercent,
+      sourceSplit,
+      trend: {
+        interval: normalizedInterval,
+        points,
+      },
+      metricBasis: {
+        revenue:
+          "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
+        units:
+          "Historical units on collected orders, including partially-paid orders.",
+        contribution:
+          "Share of collected variant revenue or historical units across variants with at least one sold unit in the selected period.",
+        realisedSellingPrice:
+          "Collected merchandise revenue divided by historical units sold.",
+        currentPrice:
+          "Current catalog variant price at request time; deleted variants have no current-price comparison.",
+        source:
+          "Source classification is mutually exclusive: Website One-Time, Subscription, or Imported.",
+        identity:
+          "Variant name and SKU come from immutable order-item snapshots, so deleted or renamed variants remain historically visible.",
+      },
+    },
+  };
+}
+
 async function GetRecentOrders({
   range,
   from,
@@ -3394,6 +3813,7 @@ module.exports = {
   GetVariantTrends,
   GetProductTrends,
   GetProductDetail,
+  GetVariantDetail,
   GetRecentOrders,
   GetLowStock,
   GetOutOfStock,

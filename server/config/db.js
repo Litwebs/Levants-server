@@ -32,6 +32,10 @@ const ANALYTICS_ORDER_INDEXES = [
     key: { "items.product": 1, status: 1, paidAt: 1 },
     name: "analytics_product_status_paidAt",
   },
+  {
+    key: { "items.variant": 1, status: 1, paidAt: 1 },
+    name: "analytics_variant_status_paidAt",
+  },
 ];
 
 const indexKeysEqual = (actual, expected) => {

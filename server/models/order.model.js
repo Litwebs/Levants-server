@@ -489,5 +489,9 @@ orderSchema.index(
   { "items.product": 1, status: 1, paidAt: 1 },
   { name: "analytics_product_status_paidAt" },
 );
+orderSchema.index(
+  { "items.variant": 1, status: 1, paidAt: 1 },
+  { name: "analytics_variant_status_paidAt" },
+);
 
 module.exports = mongoose.model("Order", orderSchema);

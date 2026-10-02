@@ -138,6 +138,14 @@ router.get(
   asyncHandler(controller.GetProductDetail),
 );
 router.get(
+  "/variants/:variantId",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetVariantDetail),
+);
+router.get(
   "/recent-orders",
   validateAnalyticsQuery({ maxLimit: 25 }),
   asyncHandler(controller.GetRecentOrders),

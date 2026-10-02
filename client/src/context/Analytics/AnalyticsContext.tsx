@@ -25,6 +25,7 @@ import {
   type AnalyticsOrderSource,
   type AnalyticsState,
   type ProductDetail,
+  type VariantDetail,
   type RevenueOverview,
   type RevenueInterval,
   initialAnalyticsState,
@@ -91,6 +92,17 @@ type AnalyticsContextType = {
       interval?: RevenueInterval;
     },
   ) => Promise<ProductDetail>;
+
+  getVariantDetail: (
+    variantId: string,
+    params?: {
+      range?: AnalyticsDateRange;
+      orderSource?: AnalyticsOrderSource;
+      from?: string;
+      to?: string;
+      interval?: RevenueInterval;
+    },
+  ) => Promise<VariantDetail>;
 };
 
 const AnalyticsContext = createContext<AnalyticsContextType | null>(null);
@@ -224,6 +236,39 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+  const getVariantDetail = useCallback(
+    async (
+      variantId: string,
+      params?: {
+        range?: AnalyticsDateRange;
+        orderSource?: AnalyticsOrderSource;
+        from?: string;
+        to?: string;
+        interval?: RevenueInterval;
+      },
+    ) => {
+      const res = await api.get(
+        `/admin/analytics/variants/${encodeURIComponent(variantId)}`,
+        {
+          params: {
+            range: params?.range,
+            orderSource: params?.orderSource,
+            from: params?.from,
+            to: params?.to,
+            interval: params?.interval,
+          },
+        },
+      );
+
+      const variantDetail = unwrapData<VariantDetail>(res.data);
+      if (!variantDetail?.variantId)
+        throw new Error("Failed to load variant analytics");
+
+      return variantDetail;
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       dashboard: state.dashboard,
@@ -245,8 +290,16 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       getDashboard,
       getRevenueOverview,
       getProductDetail,
+      getVariantDetail,
     }),
-    [state, setFilters, getDashboard, getRevenueOverview, getProductDetail],
+    [
+      state,
+      setFilters,
+      getDashboard,
+      getRevenueOverview,
+      getProductDetail,
+      getVariantDetail,
+    ],
   );
 
   return (

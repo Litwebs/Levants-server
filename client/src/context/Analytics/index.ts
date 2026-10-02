@@ -44,6 +44,8 @@ export type {
   ProductTrends,
   ProductDetailSource,
   ProductDetail,
+  VariantDetailSource,
+  VariantDetail,
   RecentOrder,
   RecentOrdersResult,
   LowStockItem,

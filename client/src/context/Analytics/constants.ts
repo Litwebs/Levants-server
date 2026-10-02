@@ -529,6 +529,56 @@ export type ProductDetail = {
   };
 };
 
+export type VariantDetailSource = {
+  key: SalesChannelKey;
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  realisedSellingPrice: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type VariantDetail = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  currentPrice: number | null;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  realisedSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+  priceDifference: number | null;
+  priceDifferencePercent: number | null;
+  sourceSplit: VariantDetailSource[];
+  trend: {
+    interval: RevenueInterval;
+    points: VariantTrendPoint[];
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    contribution: string;
+    realisedSellingPrice: string;
+    currentPrice: string;
+    source: string;
+    identity: string;
+  };
+};
+
 export type RecentOrder = {
   _id: string;
   orderId: string;
