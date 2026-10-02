@@ -10,6 +10,7 @@ const Customer = require("../../models/customer.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
+const PaymentMethod = require("../../models/paymentMethod.model");
 const stripe = require("../../utils/stripe.util");
 const { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure } = require("./subscriptionRefundSettlement.service");
 const { Response } = require("../../utils/response.util");
@@ -2051,8 +2052,12 @@ async function CreateSubscription({
 
   // Freeze local state and every Stripe parameter before the first remote write.
   const { interval, interval_count } = STRIPE_INTERVALS[frequency];
+  const savedDefaultCard = await PaymentMethod.findOne({ customer: customer._id,
+    provider: "stripe", providerReference: typeof defaultPmId === "string" ? defaultPmId : defaultPmId.id,
+  }).select("_id").lean();
   const subscription = new Subscription({
     ...(reservedSubscriptionId ? { _id: reservedSubscriptionId } : {}),
+    paymentMethod: savedDefaultCard?._id || null,
     customer: customer._id,
     frequency,
     preferredDeliveryDay: resolvedDays.primaryDay,
@@ -2088,7 +2093,7 @@ async function CreateSubscription({
     price: { currency: "gbp", unit_amount: totalMinor, recurring: { interval, interval_count } },
     stripeSubscription: {
       customer: customer.stripeCustomerId,
-      default_payment_method: defaultPmId,
+      // Inherit the customer default so future card changes apply to renewals.
       payment_behavior: "error_if_incomplete",
       expand: ["latest_invoice.payment_intent"],
       metadata: {
