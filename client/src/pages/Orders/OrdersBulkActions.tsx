@@ -13,12 +13,9 @@ import {
   TableRow,
 } from "../../components/common";
 import {
-  AlertTriangle,
   CalendarDays,
   Upload,
   ChevronDown,
-  ChevronUp,
-  Trash2,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
@@ -45,9 +42,6 @@ const getTodayInputValue = () => {
 interface Props {
   selectedOrders: string[];
   filteredOrders: Order[];
-  bulkDeleteOrders: (
-    orderIds: string[],
-  ) => Promise<{ matched: number; deleted: number } | null>;
   bulkUpdateStatus: (status: string) => void | Promise<void>;
   bulkAssignDeliveryDate: (dateInput: string) => void | Promise<void>;
   getOrdersStockRequirements: (params?: {
@@ -64,7 +58,6 @@ type StockSource = "delivery_date" | "selected_orders" | "file";
 const OrdersBulkActions = ({
   selectedOrders,
   filteredOrders,
-  bulkDeleteOrders,
   bulkUpdateStatus,
   bulkAssignDeliveryDate,
   getOrdersStockRequirements,
@@ -72,7 +65,6 @@ const OrdersBulkActions = ({
 }: Props) => {
   const { hasPermission } = usePermissions();
   const canUpdateOrders = hasPermission("orders.update");
-  const canDeleteOrders = hasPermission("orders.delete");
   const canReadDelivery = hasPermission("delivery.routes.read");
 
   const today = useMemo(getTodayInputValue, []);
@@ -94,10 +86,11 @@ const OrdersBulkActions = ({
   const [stockResult, setStockResult] =
     useState<OrdersStockRequirements | null>(null);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const selectedOrderIds = useMemo(() => new Set(selectedOrders), [selectedOrders]);
+  const selectedOrderIds = useMemo(
+    () => new Set(selectedOrders),
+    [selectedOrders],
+  );
   const furthestSelectedStatus = useMemo(() => {
     const indexes = filteredOrders
       .filter((order) => selectedOrderIds.has(order.id))
@@ -115,7 +108,7 @@ const OrdersBulkActions = ({
     }
   }, [selectedOrders.length, stockSource]);
 
-  if (!canUpdateOrders && !canReadDelivery && !canDeleteOrders) return null;
+  if (!canUpdateOrders && !canReadDelivery) return null;
   if (!selectedOrders.length && !canReadDelivery) return null;
 
   const hasSelectedOrders = selectedOrders.length > 0;
@@ -139,16 +132,20 @@ const OrdersBulkActions = ({
               <Button
                 variant="outline"
                 size="sm"
+                rightIcon={
+                  <ChevronDown
+                    size={16}
+                    className={`${styles.toolsChevron} ${
+                      isExpanded ? styles.toolsChevronOpen : ""
+                    }`}
+                    aria-hidden="true"
+                  />
+                }
                 aria-expanded={isExpanded}
                 aria-controls="orders-bulk-actions-panel"
                 onClick={() => setIsExpanded((expanded) => !expanded)}
               >
                 {isExpanded ? "Hide tools" : "Show tools"}
-                {isExpanded ? (
-                  <ChevronUp size={16} />
-                ) : (
-                  <ChevronDown size={16} />
-                )}
               </Button>
             ) : null}
             <div
@@ -157,19 +154,6 @@ const OrdersBulkActions = ({
               }`}
               aria-hidden={!hasSelectedOrders}
             >
-              {canDeleteOrders ? (
-                <Button
-                  variant="ghost"
-                  className={styles.bulkDeleteButton}
-                  size="sm"
-                  disabled={!hasSelectedOrders}
-                  tabIndex={hasSelectedOrders ? 0 : -1}
-                  onClick={() => setIsDeleteConfirmOpen(true)}
-                >
-                  <Trash2 size={16} />
-                  Delete
-                </Button>
-              ) : null}
               <Button
                 variant="ghost"
                 size="sm"
@@ -208,81 +192,80 @@ const OrdersBulkActions = ({
                     </h3>
 
                     <div className={styles.bulkSectionRow}>
-                <div className={styles.filterGroup}>
-                  <label
-                    htmlFor="bulk-delivery-date"
-                    className={styles.filterLabel}
-                  >
-                    Delivery date
-                  </label>
-                  <Input
-                    id="bulk-delivery-date"
-                    type="date"
-                    className={styles.filterGroup}
-                    fullWidth
-                    min={today}
-                    disabled={!hasSelectedOrders}
-                    value={deliveryDate}
-                    onChange={(e) => setDeliveryDate(e.target.value)}
-                  />
-                </div>
+                      <div className={styles.filterGroup}>
+                        <label
+                          htmlFor="bulk-delivery-date"
+                          className={styles.filterLabel}
+                        >
+                          Delivery date
+                        </label>
+                        <Input
+                          id="bulk-delivery-date"
+                          type="date"
+                          fullWidth
+                          min={today}
+                          disabled={!hasSelectedOrders}
+                          value={deliveryDate}
+                          onChange={(e) => setDeliveryDate(e.target.value)}
+                        />
+                      </div>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  isLoading={isAssigning}
-                  disabled={!hasSelectedOrders || !deliveryDate}
-                  onClick={async () => {
-                    if (!deliveryDate) return;
-                    setIsAssigning(true);
-                    try {
-                      await bulkAssignDeliveryDate(deliveryDate);
-                    } finally {
-                      setIsAssigning(false);
-                    }
-                  }}
-                >
-                  Set delivery date
-                </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        isLoading={isAssigning}
+                        disabled={!hasSelectedOrders || !deliveryDate}
+                        onClick={async () => {
+                          if (!deliveryDate) return;
+                          setIsAssigning(true);
+                          try {
+                            await bulkAssignDeliveryDate(deliveryDate);
+                          } finally {
+                            setIsAssigning(false);
+                          }
+                        }}
+                      >
+                        Set delivery date
+                      </Button>
                     </div>
 
                     <div className={styles.bulkSectionRow}>
-                <Select
-                  id="bulk-delivery-status"
-                  className={styles.filterGroup}
-                  label="Delivery status"
-                  placeholder="Choose a status…"
-                  fullWidth
-                  disabled={!hasSelectedOrders}
-                  value={deliveryStatus}
-                  onChange={setDeliveryStatus}
-                  options={DELIVERY_STATUSES.map((status, index) => ({
-                    value: status,
-                    label: `${status
-                      .replace(/_/g, " ")
-                      .replace(/\b\w/g, (character) =>
-                        character.toUpperCase(),
-                      )}${index <= furthestSelectedStatus ? " (unavailable)" : ""}`,
-                    disabled: index <= furthestSelectedStatus,
-                  }))}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!hasSelectedOrders || !deliveryStatus}
-                  isLoading={isUpdatingStatus}
-                  onClick={async () => {
-                    if (!deliveryStatus || isUpdatingStatus) return;
-                    setIsUpdatingStatus(true);
-                    try {
-                      await bulkUpdateStatus(deliveryStatus);
-                    } finally {
-                      setIsUpdatingStatus(false);
-                    }
-                  }}
-                >
-                  Update status
-                </Button>
+                      <Select
+                        id="bulk-delivery-status"
+                        className={styles.filterGroup}
+                        label="Delivery status"
+                        placeholder="Choose a status…"
+                        fullWidth
+                        disabled={!hasSelectedOrders}
+                        value={deliveryStatus}
+                        onChange={setDeliveryStatus}
+                        options={DELIVERY_STATUSES.map((status, index) => ({
+                          value: status,
+                          label: `${status
+                            .replace(/_/g, " ")
+                            .replace(/\b\w/g, (character) =>
+                              character.toUpperCase(),
+                            )}${index <= furthestSelectedStatus ? " (unavailable)" : ""}`,
+                          disabled: index <= furthestSelectedStatus,
+                        }))}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!hasSelectedOrders || !deliveryStatus}
+                        isLoading={isUpdatingStatus}
+                        onClick={async () => {
+                          if (!deliveryStatus || isUpdatingStatus) return;
+                          setIsUpdatingStatus(true);
+                          try {
+                            await bulkUpdateStatus(deliveryStatus);
+                          } finally {
+                            setIsUpdatingStatus(false);
+                          }
+                        }}
+                      >
+                        Update status
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -290,170 +273,177 @@ const OrdersBulkActions = ({
             )}
 
             {canReadDelivery && (
-            <div className={`${styles.bulkSection} ${styles.stockSection}`}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className={styles.bulkFileInput}
-                accept=".csv,.xlsx,.xls"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  const lowerName = file?.name.toLowerCase() || "";
-                  const isAccepted =
-                    !file || ACCEPTED_ORDER_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
-                  setOrdersFile(isAccepted ? file : null);
-                  setOrdersFileError(isAccepted ? "" : "Choose a CSV, XLS, or XLSX file.");
-                  if (!isAccepted) e.target.value = "";
-                }}
-              />
-
-              <div className={styles.bulkSectionRow}>
-                <Select
-                  id="stock-source"
-                  className={styles.filterGroup}
-                  label="Count orders from"
-                  fullWidth
-                  value={stockSource}
-                  onChange={(value) => setStockSource(value as StockSource)}
-                  options={[
-                    { value: "delivery_date", label: "Delivery date" },
-                    {
-                      value: "selected_orders",
-                      label: `Selected orders (${selectedOrders.length})`,
-                      disabled: !hasSelectedOrders,
-                    },
-                    { value: "file", label: "Uploaded file only" },
-                  ]}
+              <div className={`${styles.bulkSection} ${styles.stockSection}`}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className={styles.bulkFileInput}
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    const lowerName = file?.name.toLowerCase() || "";
+                    const isAccepted =
+                      !file ||
+                      ACCEPTED_ORDER_FILE_EXTENSIONS.some((extension) =>
+                        lowerName.endsWith(extension),
+                      );
+                    setOrdersFile(isAccepted ? file : null);
+                    setOrdersFileError(
+                      isAccepted ? "" : "Choose a CSV, XLS, or XLSX file.",
+                    );
+                    if (!isAccepted) e.target.value = "";
+                  }}
                 />
 
-                {stockSource === "delivery_date" ? (
-                  <Input
-                    id="stock-delivery-date"
-                    className={styles.filterGroup}
-                    label="Delivery date"
-                    type="date"
-                    fullWidth
-                    value={stockDeliveryDate}
-                    onChange={(event) =>
-                      setStockDeliveryDate(event.target.value)
-                    }
-                  />
-                ) : null}
-
-                {stockSource !== "file" ? (
+                <div className={styles.bulkSectionRow}>
                   <Select
-                    id="stock-order-type"
+                    id="stock-source"
                     className={styles.filterGroup}
-                    label="Include"
+                    label="Count orders from"
                     fullWidth
-                    value={stockOrderTypeScope}
-                    onChange={(value) =>
-                      setStockOrderTypeScope(
-                        value as "both" | "normal" | "subscription",
-                      )
-                    }
+                    value={stockSource}
+                    onChange={(value) => setStockSource(value as StockSource)}
                     options={[
-                      { value: "both", label: "All orders" },
-                      { value: "normal", label: "One-time orders" },
-                      { value: "subscription", label: "Subscriptions" },
+                      { value: "delivery_date", label: "Delivery date" },
+                      {
+                        value: "selected_orders",
+                        label: `Selected orders (${selectedOrders.length})`,
+                        disabled: !hasSelectedOrders,
+                      },
+                      { value: "file", label: "Uploaded file only" },
                     ]}
                   />
+
+                  {stockSource === "delivery_date" ? (
+                    <Input
+                      id="stock-delivery-date"
+                      className={styles.filterGroup}
+                      label="Delivery date"
+                      type="date"
+                      fullWidth
+                      value={stockDeliveryDate}
+                      onChange={(event) =>
+                        setStockDeliveryDate(event.target.value)
+                      }
+                    />
+                  ) : null}
+
+                  {stockSource !== "file" ? (
+                    <Select
+                      id="stock-order-type"
+                      className={styles.filterGroup}
+                      label="Include"
+                      fullWidth
+                      value={stockOrderTypeScope}
+                      onChange={(value) =>
+                        setStockOrderTypeScope(
+                          value as "both" | "normal" | "subscription",
+                        )
+                      }
+                      options={[
+                        { value: "both", label: "All orders" },
+                        { value: "normal", label: "One-time orders" },
+                        { value: "subscription", label: "Subscriptions" },
+                      ]}
+                    />
+                  ) : null}
+                </div>
+
+                <div className={styles.stockScopeNote} role="status">
+                  {stockSource === "delivery_date"
+                    ? "Counts this delivery date, not the table selection."
+                    : stockSource === "selected_orders"
+                      ? `Counts ${selectedOrders.length} selected orders, filtered by type.`
+                      : "Counts all order rows in your uploaded sheet."}
+                </div>
+                <div className={styles.stockActions}>
+                  <div className={styles.bulkUploadRow}>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={styles.bulkUploadButton}
+                        leftIcon={<Upload size={16} aria-hidden="true" />}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {ordersFile
+                          ? "Change file"
+                          : stockSource === "file"
+                            ? "Choose file"
+                            : "Add sheet (optional)"}
+                      </Button>
+
+                      {ordersFile ? (
+                        <>
+                          <span
+                            className={styles.bulkFileName}
+                            title={ordersFile.name}
+                          >
+                            {ordersFile.name}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setOrdersFile(null);
+                              setOrdersFileError("");
+                              if (fileInputRef.current)
+                                fileInputRef.current.value = "";
+                            }}
+                          >
+                            Clear file
+                          </Button>
+                        </>
+                      ) : null}
+                    </>
+                  </div>
+                  <div>
+                    <Button
+                      fullWidth
+                      variant="primary"
+                      size="sm"
+                      isLoading={isCalculatingStock}
+                      disabled={!canCalculateStock}
+                      onClick={async () => {
+                        if (isCalculatingStock || !canCalculateStock) return;
+                        setIsCalculatingStock(true);
+                        try {
+                          const data = await getOrdersStockRequirements({
+                            orderIds:
+                              stockSource === "selected_orders"
+                                ? selectedOrders
+                                : undefined,
+                            ordersFile: ordersFile || undefined,
+                            orderTypeScope: stockOrderTypeScope,
+                            deliveryDate:
+                              stockSource === "delivery_date"
+                                ? stockDeliveryDate
+                                : undefined,
+                          });
+                          setStockResult(data);
+                          if (data) setIsStockModalOpen(true);
+                        } finally {
+                          setIsCalculatingStock(false);
+                        }
+                      }}
+                    >
+                      Calculate stock needed
+                    </Button>
+                  </div>
+                </div>
+                {ordersFile && stockSource !== "file" && (
+                  <p className={styles.bulkSectionHelp}>
+                    All sheet rows are added. Only upload orders not already
+                    counted.
+                  </p>
+                )}
+                {ordersFileError ? (
+                  <p className={styles.bulkSectionError} role="alert">
+                    {ordersFileError}
+                  </p>
                 ) : null}
               </div>
-
-              <div className={styles.stockScopeNote} role="status">
-                {stockSource === "delivery_date"
-                  ? "Counts this delivery date, not the table selection."
-                  : stockSource === "selected_orders"
-                    ? `Counts ${selectedOrders.length} selected orders, filtered by type.`
-                    : "Counts all order rows in your uploaded sheet."}
-              </div>
-              <div className={styles.stockActions}>
-                <div className={styles.bulkUploadRow}>
-                <>
-                  <Button
-                    variant="outline"
-                    size="md"
-                    leftIcon={<Upload size={16} aria-hidden="true" />}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {ordersFile
-                      ? "Change file"
-                      : stockSource === "file"
-                        ? "Choose file"
-                        : "Add sheet (optional)"}
-                  </Button>
-
-                  {ordersFile ? (
-                    <>
-                      <span
-                        className={styles.bulkFileName}
-                        title={ordersFile.name}
-                      >
-                        {ordersFile.name}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setOrdersFile(null);
-                          setOrdersFileError("");
-                          if (fileInputRef.current)
-                            fileInputRef.current.value = "";
-                        }}
-                      >
-                        Clear file
-                      </Button>
-                    </>
-                  ) : null}
-                </>
-                </div>
-                <div className={styles.stockCalculateRow}>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  isLoading={isCalculatingStock}
-                  disabled={!canCalculateStock}
-                  onClick={async () => {
-                    if (isCalculatingStock || !canCalculateStock) return;
-                    setIsCalculatingStock(true);
-                    try {
-                      const data = await getOrdersStockRequirements({
-                        orderIds:
-                          stockSource === "selected_orders"
-                            ? selectedOrders
-                            : undefined,
-                        ordersFile: ordersFile || undefined,
-                        orderTypeScope: stockOrderTypeScope,
-                        deliveryDate:
-                          stockSource === "delivery_date"
-                            ? stockDeliveryDate
-                            : undefined,
-                      });
-                      setStockResult(data);
-                      if (data) setIsStockModalOpen(true);
-                    } finally {
-                      setIsCalculatingStock(false);
-                    }
-                  }}
-                >
-                  Calculate stock needed
-                </Button>
-                </div>
-              </div>
-              {ordersFile && stockSource !== "file" && (
-                <p className={styles.bulkSectionHelp}>
-                  All sheet rows are added. Only upload orders not already
-                  counted.
-                </p>
-              )}
-              {ordersFileError ? (
-                <p className={styles.bulkSectionError} role="alert">
-                  {ordersFileError}
-                </p>
-              ) : null}
-            </div>
-          )}
+            )}
           </div>
         </div>
       </Card>
@@ -517,60 +507,6 @@ const OrdersBulkActions = ({
         </Modal>
       )}
 
-      {canDeleteOrders ? (
-        <Modal
-          isOpen={isDeleteConfirmOpen}
-          onClose={() => {
-            if (!isDeleting) setIsDeleteConfirmOpen(false);
-          }}
-          title="Delete Selected Orders"
-          size="sm"
-        >
-          <div className={styles.deleteConfirmContent}>
-            <div className={styles.deleteConfirmIcon}>
-              <AlertTriangle size={20} />
-            </div>
-            <div>
-              <p className={styles.deleteConfirmTitle}>
-                Delete {selectedOrders.length} selected orders?
-              </p>
-              <p className={styles.deleteConfirmText}>
-                This will permanently delete the selected orders. This cannot be
-                undone.
-              </p>
-            </div>
-          </div>
-
-          <ModalFooter>
-            <Button
-              variant="outline"
-              disabled={isDeleting}
-              onClick={() => setIsDeleteConfirmOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              isLoading={isDeleting}
-              disabled={isDeleting || selectedOrders.length === 0}
-              onClick={async () => {
-                setIsDeleting(true);
-                try {
-                  const result = await bulkDeleteOrders(selectedOrders);
-                  if (result?.deleted) {
-                    setIsDeleteConfirmOpen(false);
-                  }
-                } finally {
-                  setIsDeleting(false);
-                }
-              }}
-            >
-              <Trash2 size={16} />
-              Delete Selected
-            </Button>
-          </ModalFooter>
-        </Modal>
-      ) : null}
     </>
   );
 };

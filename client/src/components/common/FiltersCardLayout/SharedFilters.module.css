@@ -81,6 +81,15 @@
   flex-shrink: 0;
 }
 
+.filtersChevron {
+  transform: rotate(0deg);
+  transition: transform 220ms ease;
+}
+
+.filtersChevronOpen {
+  transform: rotate(180deg);
+}
+
 .filtersRowWrap {
   display: grid;
   grid-template-rows: 0fr;
@@ -158,5 +167,11 @@
 
   .filterGroup {
     width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filtersChevron {
+    transition: none;
   }
 }

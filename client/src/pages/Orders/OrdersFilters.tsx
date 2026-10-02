@@ -1,4 +1,4 @@
-import { Search, Filter, X } from "lucide-react";
+import { ChevronDown, Search, Filter, X } from "lucide-react";
 import {
   Button,
   FiltersCardLayout,
@@ -153,6 +153,17 @@ const OrdersFilters = ({
           <Button
             variant="outline"
             leftIcon={<Filter size={16} />}
+            rightIcon={
+              <ChevronDown
+                size={16}
+                className={`${sharedFilterStyles.filtersChevron} ${
+                  showFilters ? sharedFilterStyles.filtersChevronOpen : ""
+                }`}
+                aria-hidden="true"
+              />
+            }
+            aria-expanded={showFilters}
+            aria-controls="orders-filters-panel"
             onClick={() => setShowFilters(!showFilters)}
             className={sharedFilterStyles.filtersToggleBtn}
           >
@@ -168,6 +179,7 @@ const OrdersFilters = ({
         </div>
       }
       isExpanded={showFilters}
+      expandedId="orders-filters-panel"
       expandedWrapClassName={sharedFilterStyles.filtersRowWrap}
       expandedOpenClassName={sharedFilterStyles.filtersRowOpen}
       expandedInnerClassName={sharedFilterStyles.filtersRowInner}

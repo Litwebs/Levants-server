@@ -425,6 +425,15 @@
   flex-wrap: wrap;
 }
 
+.toolsChevron {
+  transform: rotate(0deg);
+  transition: transform 220ms ease;
+}
+
+.toolsChevronOpen {
+  transform: rotate(180deg);
+}
+
 .selectionActions {
   display: flex;
   align-items: center;
@@ -510,7 +519,8 @@
 @media (prefers-reduced-motion: reduce) {
   .bulkSections,
   .selectionActions,
-  .selectionTools {
+  .selectionTools,
+  .toolsChevron {
     transition: none;
   }
 }
@@ -541,10 +551,26 @@
 }
 
 .updateDeliverySection .bulkSectionTitle {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   align-self: auto;
   height: auto;
   margin-bottom: var(--space-1);
+}
+
+.updateDeliverySection {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  align-items: end;
+  align-content: start;
+  justify-content: start;
+  gap: var(--space-3);
+}
+
+.updateDeliverySection .bulkSectionRow {
+  display: grid;
+  grid-template-columns: 170px max-content;
+  align-items: end;
+  width: auto;
 }
 
 .bulkSection .filterLabel {
@@ -598,9 +624,15 @@
 
 .bulkUploadRow {
   display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+
+.bulkUploadButton {
+  width: auto;
 }
 
 .stockCalculateRow {
@@ -620,6 +652,8 @@
 .stockSection .bulkSectionRow {
   grid-column: 1;
   grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 170px);
 }
 
 .stockSection .stockScopeNote {
@@ -643,24 +677,32 @@
   grid-row: 4;
 }
 
-.bulkDeleteButton {
-  color: var(--color-gray-600);
-}
-
-.bulkDeleteButton:hover:not(:disabled) {
-  color: var(--color-error);
-  background-color: var(--color-error-bg);
-}
-
 @media (max-width: 600px) {
-  .bulkSection { --bulk-control-height: 44px; }
+  .bulkSection { --bulk-control-height: 32px; }
   .bulkSection .filterGroup select {
     height: var(--bulk-control-height);
     min-height: var(--bulk-control-height);
   }
   .bulkSectionTitle { flex-basis: 100%; }
   .bulkSectionRow { width: 100%; }
-  .bulkSection .filterGroup { flex: 1 1 140px; }
+  .updateDeliverySection {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .updateDeliverySection .bulkSectionTitle {
+    grid-column: 1;
+  }
+  .updateDeliverySection .bulkSectionRow {
+    grid-template-columns: 170px;
+    width: 100%;
+  }
+  .stockSection .bulkSectionRow {
+    grid-template-columns: 170px;
+    justify-content: start;
+  }
+  .bulkSection .filterGroup {
+    width: 170px;
+    flex: 0 0 170px;
+  }
   .stockScopeNote { margin-left: 0; }
   .stockSection {
     grid-template-columns: 1fr;
@@ -679,6 +721,9 @@
   }
   .bulkUploadRow,
   .stockCalculateRow {
+    width: 100%;
+  }
+  .bulkUploadButton {
     width: 100%;
   }
   .bulkSectionRow > button,
@@ -876,6 +921,7 @@
   color: var(--color-gray-700);
   border-bottom: 1px solid var(--color-gray-100);
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .table tbody tr {
@@ -896,10 +942,16 @@
   text-align: center !important;
 }
 
-.orderInfoCol,
-.customerInfoCol,
+.orderInfoCol {
+  min-width: 220px;
+}
+
+.customerInfoCol {
+  min-width: 260px;
+}
+
 .deliveryInfoCol {
-  min-width: 0;
+  min-width: 150px;
 }
 
 .orderCell {
@@ -921,9 +973,10 @@
 .orderInstructions {
   font-size: var(--text-xs);
   color: var(--color-gray-500);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  display: block;
+  max-width: 220px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
 }
 
@@ -941,6 +994,7 @@
 .customerEmail {
   font-size: var(--text-xs);
   color: var(--color-gray-500);
+  white-space: nowrap;
 }
 
 .itemCount {

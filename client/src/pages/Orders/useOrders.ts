@@ -340,7 +340,6 @@ export const useOrders = () => {
     loading: apiLoading,
     error,
     listOrders,
-    bulkDeleteOrders: bulkDeleteOrdersApi,
     bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
     bulkAssignDeliveryDate: bulkAssignDeliveryDateApi,
     getOrdersStockRequirements: getOrdersStockRequirementsApi,
@@ -703,26 +702,6 @@ const refresh = useCallback(
     });
   };
 
-  const bulkDeleteOrders = async (orderIds: string[]) => {
-    if (!orderIds.length) return null;
-    try {
-      const result = await bulkDeleteOrdersApi(orderIds);
-      setSelectedOrders([]);
-      showToast({
-        title: `${result.deleted} orders deleted`,
-        type: "success",
-      });
-      await refresh();
-      return result;
-    } catch (error: unknown) {
-      showToast({
-        title: getErrorMessage(error, "Failed to delete orders"),
-        type: "error",
-      });
-      return null;
-    }
-  };
-
 const bulkUpdateStatus = async (deliveryStatus: string) => {
   if (!selectedOrders.length) return;
 
@@ -867,7 +846,6 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
 
     toggleOrderSelection,
     toggleSelectAll,
-    bulkDeleteOrders,
     bulkUpdateStatus,
     bulkAssignDeliveryDate,
     getOrdersStockRequirements,
