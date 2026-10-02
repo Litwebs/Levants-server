@@ -121,6 +121,15 @@ function getEffectiveDeliveryDays(subscription) {
   return resolved.ok ? resolved.days : [2];
 }
 
+// Aggregate item edits cannot identify which delivery day should change.
+// Include staged plans so an old endpoint cannot overwrite a future day plan.
+function requiresPerDayItemEdit(subscription) {
+  return getEffectiveDeliveryDays(subscription).length > 1 ||
+    (subscription.deliveryDayPlans || []).length > 1 ||
+    (subscription.pendingChanges?.deliveryDayPlans || []).length > 1 ||
+    (subscription.pendingChanges?.preferredDeliveryDays || []).length > 1;
+}
+
 async function getUpcomingDeliveryDate(
   subscriptionId,
   referenceDate = new Date(subscriptionClock.now()),
@@ -4142,6 +4151,10 @@ async function AddSubscriptionItem({
       null,
     );
   }
+  if (requiresPerDayItemEdit(subscription)) {
+    return Response(false, "Please edit products for each delivery day separately.", null);
+  }
+
 
   const variant = await ProductVariant.findById(variantId).populate(
     "product",
@@ -4219,15 +4232,11 @@ async function ReplaceSubscriptionItems({
       null,
     );
   }
-
-  if (
-    getEffectiveDeliveryDays(subscription).length > 1 ||
-    (subscription.deliveryDayPlans || []).length > 1 ||
-    (subscription.pendingChanges?.deliveryDayPlans || []).length > 1 ||
-    (subscription.pendingChanges?.preferredDeliveryDays || []).length > 1
-  ) {
+  if (requiresPerDayItemEdit(subscription)) {
     return Response(false, "Please edit products for each delivery day separately.", null);
   }
+
+
 
   const baseline = subscription.pendingChanges?.items?.length
     ? itemsToPlain(subscription.pendingChanges.items)
@@ -4319,6 +4328,10 @@ async function UpdateSubscriptionItem({
       null,
     );
   }
+  if (requiresPerDayItemEdit(subscription)) {
+    return Response(false, "Please edit products for each delivery day separately.", null);
+  }
+
 
   const item = subscription.items.id(itemId);
   if (!item) return Response(false, "Item not found", null);
@@ -4366,6 +4379,10 @@ async function RemoveSubscriptionItem({
       null,
     );
   }
+  if (requiresPerDayItemEdit(subscription)) {
+    return Response(false, "Please edit products for each delivery day separately.", null);
+  }
+
 
   const item = subscription.items.id(itemId);
   if (!item) return Response(false, "Item not found", null);
