@@ -43,6 +43,10 @@ const ANALYTICS_SUBSCRIPTION_INDEXES = [
     key: { status: 1, isCancellationScheduled: 1 },
     name: "analytics_subscription_status_scheduledCancellation",
   },
+  {
+    key: { createdAt: 1 },
+    name: "analytics_subscription_createdAt",
+  },
 ];
 
 const indexKeysEqual = (actual, expected) => {

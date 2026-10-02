@@ -333,6 +333,18 @@ describe("analytics overview dashboard dataset", () => {
         scope: expect.stringContaining("Point-in-time current state"),
       },
     });
+    expect(result.data.newSubscriptions).toEqual({
+      newSubscriptions: 0,
+      period: {
+        from: "2026-06-10",
+        to: "2026-06-12",
+        timeZone: "Europe/London",
+      },
+      metricBasis: {
+        newSubscriptions: expect.any(String),
+        source: expect.stringContaining("Order-source filters do not apply"),
+      },
+    });
 
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,

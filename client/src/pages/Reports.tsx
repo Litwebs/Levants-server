@@ -350,6 +350,7 @@ const Reports = () => {
   const variantSalesMix = dashboard?.variantSalesMix;
   const variantContribution = dashboard?.variantContribution;
   const activeSubscriptions = dashboard?.activeSubscriptions;
+  const newSubscriptions = dashboard?.newSubscriptions;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -667,12 +668,18 @@ const Reports = () => {
               </span>
               <span className={styles.metricLabel}>Active Subscriptions</span>
             </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCompactNumber(newSubscriptions?.newSubscriptions ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>New Subscriptions</span>
+            </div>
           </div>
           <div className={styles.chartFooter}>
             <span className={styles.chartTotal}>
-              Current recurring subscriptions only. Paused, cancelled, and
-              scheduled-cancellation subscriptions are excluded; historical
-              date and order-source filters do not apply.
+              Active is current recurring state and ignores historical filters.
+              New subscriptions use the selected date range. Order-source
+              filters do not apply to either lifecycle metric.
             </span>
           </div>
         </CardContent>

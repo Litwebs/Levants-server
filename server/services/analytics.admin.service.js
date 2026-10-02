@@ -9,6 +9,7 @@ const Review = require("../models/review.model");
 const {
   DEFAULT_ANALYTICS_TIME_ZONE,
   parseDateRange,
+  buildCreatedAtMatch,
   formatYmdInTimeZone,
 } = require("../utils/analyticsDate.util");
 
@@ -3525,6 +3526,52 @@ async function GetOutOfStock({ limit = 50 } = {}) {
   };
 }
 
+async function GetNewSubscriptions({
+  range,
+  from,
+  to,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  if (parsedPeriod.invalid) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid analytics date range.",
+    };
+  }
+
+  const createdAtMatch = buildCreatedAtMatch({
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const newSubscriptions = await Subscription.countDocuments(createdAtMatch);
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  return {
+    success: true,
+    data: {
+      newSubscriptions,
+      period,
+      metricBasis: {
+        newSubscriptions:
+          "Subscriptions whose immutable creation timestamp falls inside the selected analytics date range, regardless of their current lifecycle status.",
+        source:
+          "Order-source filters do not apply because subscription creation is lifecycle data, not an order sales channel.",
+      },
+    },
+  };
+}
+
 async function GetActiveSubscriptions() {
   const activeSubscriptions = await Subscription.countDocuments({
     status: "active",
@@ -3554,6 +3601,12 @@ async function GetDashboard({
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
   const activeSubscriptionsPromise = GetActiveSubscriptions();
+  const newSubscriptionsPromise = GetNewSubscriptions({
+    range,
+    from,
+    to,
+    timeZone,
+  });
   const stockSnapshotPromise = GetDashboardStockSnapshot({ limit: 50 });
   const stockCountsPromise = stockSnapshotPromise.then(
     (snapshot) => snapshot.data.counts,
@@ -3664,6 +3717,7 @@ async function GetDashboard({
     variantTrends,
     variantUnits,
     activeSubscriptions,
+    newSubscriptions,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -3675,6 +3729,7 @@ async function GetDashboard({
     variantTrendsPromise,
     variantUnitsPromise,
     activeSubscriptionsPromise,
+    newSubscriptionsPromise,
     salesBreakdownPromise,
     recentOrdersPromise,
     stockSnapshotPromise,
@@ -3688,6 +3743,7 @@ async function GetDashboard({
     variantTrends,
     variantUnits,
     activeSubscriptions,
+    newSubscriptions,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -3794,6 +3850,7 @@ async function GetDashboard({
         },
       },
       activeSubscriptions: activeSubscriptions.data,
+      newSubscriptions: newSubscriptions.data,
       variantContribution: {
         variants: variantUnits.data.byRevenue,
         byRevenue: variantUnits.data.byRevenue,
@@ -3841,6 +3898,7 @@ module.exports = {
   GetProductDetail,
   GetVariantDetail,
   GetActiveSubscriptions,
+  GetNewSubscriptions,
   GetRecentOrders,
   GetLowStock,
   GetOutOfStock,

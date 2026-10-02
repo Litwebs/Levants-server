@@ -325,6 +325,10 @@ subscriptionSchema.index(
   { status: 1, isCancellationScheduled: 1 },
   { name: "analytics_subscription_status_scheduledCancellation" },
 );
+subscriptionSchema.index(
+  { createdAt: 1 },
+  { name: "analytics_subscription_createdAt" },
+);
 
 subscriptionSchema.method("toJSON", function () {
   const obj = this.toObject();

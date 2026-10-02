@@ -340,6 +340,23 @@ const GetVariantDetail = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetNewSubscriptions = async (req, res) => {
+  const result = await service.GetNewSubscriptions({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetActiveSubscriptions = async (req, res) => {
   const result = await service.GetActiveSubscriptions();
 
@@ -456,6 +473,7 @@ module.exports = {
   GetProductDetail,
   GetVariantDetail,
   GetActiveSubscriptions,
+  GetNewSubscriptions,
   GetRecentOrders,
   GetLowStock,
   GetDashboard,
