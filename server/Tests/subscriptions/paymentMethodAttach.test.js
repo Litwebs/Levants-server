@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Customer = require("../../models/customer.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const stripe = require("../../utils/stripe.util");
@@ -80,7 +81,9 @@ describe("customer payment method attachment", () => {
       customer: customer._id, frequency: "weekly", preferredDeliveryDay: 0,
       startDate: new Date(), nextDeliveryDate: new Date(), status,
       deliveryAddress: { line1: "1 Street", city: "London", postcode: "SW1A 1AA", country: "UK" },
-      paymentMethod: null, items: [],
+      paymentMethod: null,
+      items: [{ product: new mongoose.Types.ObjectId(), variant: new mongoose.Types.ObjectId(),
+        name: "Test milk", sku: "TEST-MILK", quantity: 1, unitPrice: 2.5 }],
     });
     stripe.paymentMethods.retrieve.mockResolvedValueOnce({ id: "pm_next", type: "card", customer: "cus_existing" });
     expect((await paymentService.SetDefaultPaymentMethod({ customerId: customer._id, paymentMethodId: next._id })).success).toBe(true);
