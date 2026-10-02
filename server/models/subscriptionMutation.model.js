@@ -41,6 +41,7 @@ const subscriptionMutationSchema = new mongoose.Schema(
       index: true,
     },
     itemIncreaseSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
+    addOnSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
     creationSnapshot: { type: mongoose.Schema.Types.Mixed, default: null },
     response: {
       type: mongoose.Schema.Types.Mixed,

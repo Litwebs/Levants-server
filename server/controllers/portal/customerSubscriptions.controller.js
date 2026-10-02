@@ -238,14 +238,18 @@ const AddSubscriptionItem = async (req, res) => {
 };
 
 const AddNextDeliveryAddOn = async (req, res) => {
-  const result = await service.AddNextDeliveryAddOn({
-    customerId: req.customer._id,
+  const result = await runMutation(req, {
+    mutationType: "add_next_delivery_add_on",
     subscriptionId: req.params.subscriptionId,
-    operationId: req.body.operationId,
-    items: req.body.items,
+    payload: mutationPayload(req),
+    execute: () => service.AddNextDeliveryAddOn({
+      customerId: req.customer._id,
+      subscriptionId: req.params.subscriptionId,
+      operationId: req.body.operationId,
+      items: req.body.items,
+    }),
   });
-  if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
+  if (!result.success) return sendMutationError(res, result);
   return sendOk(res, result.data, { message: result.message });
 };
 

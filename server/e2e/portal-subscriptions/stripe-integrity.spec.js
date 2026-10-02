@@ -212,7 +212,7 @@ test("one-time add-on charges once and changes only the upcoming delivery", asyn
     timeout: 60_000,
   });
   const retryBody = await expectSuccessfulResponse(retryResponse);
-  expect(retryBody.message).toMatch(/already paid/i);
+  expect(retryBody).toEqual(body);
 
   const after = await getState(request, fixture.subscriptionId);
   expect(subscriptionMutationSnapshot(after.subscription)).toEqual(
@@ -334,17 +334,14 @@ test("separate add-on purchases accumulate on one delivery and charge each opera
     data: secondPayload,
     timeout: 60_000,
   });
-  expect((await expectSuccessfulResponse(second)).data.chargedMinor).toBe(
-    secondChargeMinor,
-  );
+  const secondBody = await expectSuccessfulResponse(second);
+  expect(secondBody.data.chargedMinor).toBe(secondChargeMinor);
   const secondRetry = await request.post(endpoint, {
     headers: portalHeaders(token),
     data: secondPayload,
     timeout: 60_000,
   });
-  expect((await expectSuccessfulResponse(secondRetry)).message).toMatch(
-    /already paid/i,
-  );
+  expect(await expectSuccessfulResponse(secondRetry)).toEqual(secondBody);
 
   const after = await getState(request, fixture.subscriptionId);
   expect(subscriptionMutationSnapshot(after.subscription)).toEqual(

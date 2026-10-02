@@ -14,6 +14,7 @@ const PaymentMethod = require("../../models/paymentMethod.model");
 const stripe = require("../../utils/stripe.util");
 const { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure } = require("./subscriptionRefundSettlement.service");
 const { Response } = require("../../utils/response.util");
+const { recoverAddOnPayment } = require("./subscriptionAddOnPayment.service");
 const { locateDeliveryAddress, saveSubscriptionDeliveryAddress } = require("./subscriptionDeliveryAddress.service");
 const {
   addCalendarMonthPreservingWeekdayOccurrence,
@@ -3916,6 +3917,25 @@ async function AddNextDeliveryAddOn({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
+  const mutation = operationId && await SubscriptionMutation.findOne({
+    customer: customerId, subscription: subscriptionId, operationId,
+  });
+  if (!mutation) return Response(false, "A durable operation ID is required for an add-on", null);
+  const paidDelivery = await SubscriptionDelivery.findOne({
+    subscription: subscriptionId, customer: customerId, "addOns.operationId": operationId,
+  });
+  if (paidDelivery) {
+    const existingAddOn = paidDelivery.addOns.find(addOn => addOn.operationId === operationId);
+    return finishDeliveryAddOn({ subscription, nextDelivery: paidDelivery, mutation,
+      snapshot: { items: existingAddOn.items, amountMinor: existingAddOn.amountMinor },
+      paymentIntent: { id: existingAddOn.stripePaymentIntentId, status: "succeeded" } });
+  }
+  if (mutation.addOnSnapshot) {
+    const originalDelivery = await SubscriptionDelivery.findOne({
+      _id: mutation.addOnSnapshot.deliveryId, subscription: subscriptionId, customer: customerId,
+    }).populate("order", "status deliveryStatus");
+    return resumeDeliveryAddOn({ subscription, nextDelivery: originalDelivery, mutation });
+  }
   if (subscription.status !== "active") {
     return Response(
       false,
@@ -3957,22 +3977,6 @@ async function AddNextDeliveryAddOn({
       "The cut-off for your next delivery has passed.",
       null,
     );
-  }
-
-  const existingAddOn = (nextDelivery.addOns || []).find(
-    (addOn) => addOn.operationId === operationId,
-  );
-  if (existingAddOn) {
-    const order = await attachDeliveryAddOnToOrder({
-      delivery: nextDelivery,
-      subscription,
-      addOn: existingAddOn,
-    });
-    return Response(true, "This add-on was already paid and saved.", {
-      delivery: nextDelivery,
-      order,
-      chargedMinor: existingAddOn.amountMinor,
-    });
   }
 
   const requestedByVariant = new Map();
@@ -4030,41 +4034,56 @@ async function AddNextDeliveryAddOn({
   }
 
   const customer = await Customer.findById(customerId);
-  const payment = await chargeDeltaNow(
-    subscription,
-    customer,
-    amountMinor,
-    `One-time add-on for ${deliveryDateKey(nextDelivery.scheduledDate)} – ${subscription.subscriptionNumber}`,
-    `subscription:${subscription._id}:delivery-add-on:${nextDelivery._id}:${operationId}`,
-    {
-      metadataType: "delivery_add_on",
-      metadata: {
-        subscriptionDeliveryId: String(nextDelivery._id),
-        operationId,
-        deliveryDate: deliveryDateKey(nextDelivery.scheduledDate),
-      },
+  if (!customer?.stripeCustomerId) return Response(false, "No payment method on file", null);
+  const remote = await stripe.customers.retrieve(customer.stripeCustomerId);
+  const paymentMethod = remote?.invoice_settings?.default_payment_method;
+  if (!paymentMethod) return Response(false, "Please add a default card first", null);
+  mutation.addOnSnapshot = {
+    deliveryId: String(nextDelivery._id), items: addOnItems, amountMinor,
+    startedAt: new Date(subscriptionClock.now()),
+    idempotencyKey: `subscription:${subscription._id}:delivery-add-on:${nextDelivery._id}:${operationId}`,
+    chargeParams: {
+      amount: amountMinor, currency: "gbp", customer: customer.stripeCustomerId,
+      payment_method: typeof paymentMethod === "string" ? paymentMethod : paymentMethod.id,
+      off_session: true, confirm: true,
+      description: `One-time add-on for ${deliveryDateKey(nextDelivery.scheduledDate)} – ${subscription.subscriptionNumber}`,
+      metadata: { subscriptionId: String(subscription._id), subscriptionNumber: subscription.subscriptionNumber,
+        type: "delivery_add_on", subscriptionDeliveryId: String(nextDelivery._id), operationId,
+        deliveryDate: deliveryDateKey(nextDelivery.scheduledDate) },
     },
-  );
-  if (
-    !payment.ok ||
-    !payment.paymentIntent ||
-    payment.paymentIntent.status !== "succeeded"
-  ) {
-    return Response(
-      false,
-      payment.message || "We couldn't charge your card for this add-on",
-      null,
-    );
-  }
+  };
+  await mutation.save();
+  return resumeDeliveryAddOn({ subscription, nextDelivery, mutation });
+}
 
+async function resumeDeliveryAddOn({ subscription, nextDelivery, mutation }) {
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  const cutoffAt = nextDelivery && computeCutoffDate(nextDelivery.scheduledDate, settings);
+  const editable = nextDelivery && (nextDelivery.status === "scheduled" ||
+    (nextDelivery.status === "generated" && nextDelivery.order?.deliveryStatus === "ordered" &&
+      ["paid", "partially_paid", "partially_refunded"].includes(nextDelivery.order?.status)));
+  if (subscription.status !== "active" || !editable || !cutoffAt || subscriptionClock.now() >= cutoffAt.getTime()) {
+    return Response(false, "The original add-on delivery is no longer editable. Please contact support to reconcile this payment; it will not move to another delivery.", { reconciliationRequired: true });
+  }
+  const payment = await recoverAddOnPayment(mutation);
+  if (!payment.ok) return Response(false, payment.message, { reconciliationRequired: true });
+  return finishDeliveryAddOn({ subscription, nextDelivery, mutation,
+    snapshot: mutation.addOnSnapshot, paymentIntent: payment.paymentIntent });
+}
+
+async function finishDeliveryAddOn({ subscription, nextDelivery, mutation, snapshot, paymentIntent }) {
+  const customerId = subscription.customer;
+  const operationId = mutation.operationId;
+  const amountMinor = snapshot.amountMinor;
   const addOn = {
     operationId,
-    items: addOnItems,
+    items: snapshot.items,
     amountMinor,
-    stripePaymentIntentId: payment.paymentIntent.id,
+    stripePaymentIntentId: paymentIntent.id,
     paidAt: new Date(subscriptionClock.now()),
   };
-  let savedDelivery = await SubscriptionDelivery.findOneAndUpdate(
+  let savedDelivery = (nextDelivery.addOns || []).some(addOn => addOn.operationId === operationId)
+    ? nextDelivery : await SubscriptionDelivery.findOneAndUpdate(
     {
       _id: nextDelivery._id,
       "addOns.operationId": { $ne: operationId },

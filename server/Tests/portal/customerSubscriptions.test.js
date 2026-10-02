@@ -4072,6 +4072,51 @@ describe("Portal Subscriptions", () => {
     expect(stored.pendingChanges).toBeTruthy();
   });
 
+  it("replays a paid add-on after its delivery closes and rejects changed retry contents", async () => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const operationId = crypto.randomUUID();
+    const payload = { operationId, items: [{ variantId, quantity: 1 }] };
+    const send = body => request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`).send(body);
+    stripe.paymentIntents.create.mockClear();
+    const first = await send(payload);
+    expect(first.status).toBe(200);
+    await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, {
+      scheduledDate: new Date(Date.now() - 86400000),
+    });
+    const retry = await send(payload);
+    expect(retry.status).toBe(200);
+    expect(retry.body).toEqual(first.body);
+    const conflict = await send({ ...payload, items: [{ variantId, quantity: 2 }] });
+    expect(conflict.status).toBe(409);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    const later = await SubscriptionDelivery.findById(deliveries[1]._id).lean();
+    expect(later.addOns).toHaveLength(0);
+  });
+
+  it("keeps an ambiguous add-on payment bound to its original delivery after cutoff", async () => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const payload = { operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] };
+    const send = () => request(app)
+      .post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    stripe.paymentIntents.create.mockClear();
+    stripe.paymentIntents.create.mockRejectedValueOnce(new Error("response lost"));
+    expect((await send()).status).toBe(400);
+    await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, {
+      scheduledDate: new Date(Date.now() - 86400000),
+    });
+    const retry = await send();
+    expect(retry.status).toBe(400);
+    expect(retry.body.message).toMatch(/original add-on delivery/);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    const later = await SubscriptionDelivery.findById(deliveries[1]._id).lean();
+    expect(later.addOns).toHaveLength(0);
+  });
+
   it("charges a one-time item for only the next scheduled delivery", async () => {
     const sub = await createBasicSubscription();
     const deliveries = await prepareUpcomingDeliveries(sub._id);
