@@ -4460,6 +4460,72 @@ describe("Portal Subscriptions", () => {
     expect(stripe.refunds.create).toHaveBeenCalledTimes(3);
   });
 
+  it.each([false, true])("changes paid-order addresses atomically (write failure: %s)", async failWrite => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const oldAddress = sub.deliveryAddress.line1;
+    if (failWrite) await Subscription.findByIdAndUpdate(sub._id, { pendingChanges: {
+      deliveryAddress: { ...sub.deliveryAddress, line1: "Stale pending address" },
+      effectiveFrom: new Date(Date.now() + 20 * 86400000),
+    } });
+    const orders = [];
+    for (let i = 0; i < 4; i += 1) {
+      const order = await createPaidOrderFor(sub);
+      order.deliveryDate = new Date(new Date(deliveries[0].scheduledDate).getTime() + i * 86400000);
+      if (i === 2) order.deliveryStatus = "dispatched";
+      if (i === 3) order.deliveryDate = new Date(Date.now() - 86400000);
+      await order.save(); orders.push(order);
+    }
+    const customerDoc = await Customer.findById(customer._id);
+    customerDoc.addresses.push({ label: "New home", fullName: "Test Customer", line1: "22 New Street",
+      city: "Cambridge", postcode: "CB1 1AA", country: "UK", deliveryInstructions: "Use side door" });
+    await customerDoc.save();
+    const newAddressId = String(customerDoc.addresses.at(-1)._id);
+    const payload = { operationId: crypto.randomUUID(), deliveryAddressId: newAddressId };
+    const send = () => request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    if (failWrite) {
+      const save = jest.spyOn(Order.prototype, "save").mockRejectedValueOnce(new Error("order unavailable"));
+      expect((await send()).status).toBe(500);
+      save.mockRestore();
+      expect((await Subscription.findById(sub._id)).deliveryAddress.line1).toBe(oldAddress);
+      expect((await Order.findById(orders[0]._id)).deliveryAddress.line1).toBe(oldAddress);
+    }
+    require("../../Integration/google.geocode").geocodeAddress.mockResolvedValueOnce({ lat: 52.2, lng: 0.12 });
+    const result = await send();
+    expect(result.status).toBe(200);
+    expect((await Subscription.findById(sub._id)).deliveryAddress.line1).toBe("22 New Street");
+    expect((await Subscription.findById(sub._id)).pendingChanges?.deliveryAddress?.line1).toBeUndefined();
+    for (let i = 0; i < orders.length; i += 1) {
+      const saved = await Order.findById(orders[i]._id);
+      expect(saved.deliveryAddress.line1).toBe(i < 2 ? "22 New Street" : oldAddress);
+      if (i < 2) {
+        expect(saved.location.lat).toBe(52.2);
+        expect(saved.location.lng).toBe(0.12);
+        expect(saved.customerInstructions).toBe("Use side door");
+      }
+      expect(saved.total).toBe(orders[i].total);
+      expect(saved.amountPaid).toBe(orders[i].amountPaid);
+    }
+  });
+
+  it("rejects unlocatable address changes before modifying the subscription or its order", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    const order = await createPaidOrderFor(sub);
+    const customerDoc = await Customer.findById(customer._id);
+    customerDoc.addresses.push({ label: "New", fullName: "Test", line1: "Unknown street",
+      city: "London", postcode: "SW1A 1AA", country: "UK" });
+    await customerDoc.save();
+    require("../../Integration/google.geocode").geocodeAddress.mockRejectedValueOnce(new Error("Maps unavailable"));
+    const response = await request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ deliveryAddressId: String(customerDoc.addresses.at(-1)._id) });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/locate this delivery address/);
+    expect((await Subscription.findById(sub._id)).deliveryAddress.line1).toBe(sub.deliveryAddress.line1);
+    expect((await Order.findById(order._id)).deliveryAddress.line1).toBe(sub.deliveryAddress.line1);
+  });
+
   it.each([false, true])("updates equal-price fulfillment atomically (inject failure: %s)", async (fail) => {
     const { variant: second } = await createTestProduct();
     const created = await request(app).post("/api/portal/subscriptions")

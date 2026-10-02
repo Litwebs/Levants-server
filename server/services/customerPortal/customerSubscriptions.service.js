@@ -14,6 +14,7 @@ const PaymentMethod = require("../../models/paymentMethod.model");
 const stripe = require("../../utils/stripe.util");
 const { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure } = require("./subscriptionRefundSettlement.service");
 const { Response } = require("../../utils/response.util");
+const { locateDeliveryAddress, saveSubscriptionDeliveryAddress } = require("./subscriptionDeliveryAddress.service");
 const {
   addCalendarMonthPreservingWeekdayOccurrence,
 } = require("../../utils/subscriptionCadence.util");
@@ -2381,6 +2382,23 @@ async function UpdateSubscription({
   }
   const settings = await subscriptionSettingsService.getOrCreateSettings();
 
+  // Validate and geocode before any settlement or schedule side effects.
+  let addressChange = null;
+  if (deliveryAddressId !== undefined) {
+    const customer = await Customer.findById(customerId);
+    const selected = customer?.addresses.id(deliveryAddressId);
+    if (!selected) return Response(false, "Address not found", null);
+    const address = { line1: selected.line1, line2: selected.line2 || null,
+      city: selected.city, postcode: selected.postcode, country: selected.country,
+      deliveryInstructions: selected.deliveryInstructions || null };
+    const unchanged = Object.entries(address).every(([key, value]) =>
+      (subscription.deliveryAddress?.[key] || null) === (value || null));
+    if (!unchanged || subscription.pendingChanges?.deliveryAddress) {
+      try { addressChange = { address, location: await locateDeliveryAddress(address) }; }
+      catch { return Response(false, "We couldn't locate this delivery address. Please check it and try again.", null); }
+    }
+  }
+
   const targetFrequency = frequency ?? subscription.frequency;
   const targetDayValue =
     preferredDeliveryDay ?? subscription.preferredDeliveryDay;
@@ -3050,19 +3068,8 @@ async function UpdateSubscription({
 
   if (notes !== undefined) subscription.notes = notes || null;
 
-  if (deliveryAddressId !== undefined) {
-    const customer = await Customer.findById(customerId);
-    const address = customer && customer.addresses.id(deliveryAddressId);
-    if (!address) return Response(false, "Address not found", null);
-    const newAddress = {
-      line1: address.line1,
-      line2: address.line2 || null,
-      city: address.city,
-      postcode: address.postcode,
-      country: address.country,
-      deliveryInstructions: address.deliveryInstructions || null,
-    };
-
+  if (addressChange) {
+    const newAddress = addressChange.address;
     if (effectiveIsPastCutoff) {
       // Cut-off passed for the upcoming delivery → apply from the next one.
       subscription.pendingChanges = {
@@ -3075,6 +3082,11 @@ async function UpdateSubscription({
       };
     } else {
       subscription.deliveryAddress = newAddress;
+      // A newer immediate address replaces any older staged address without
+      // discarding separately scheduled product changes.
+      if (subscription.pendingChanges?.deliveryAddress) {
+        subscription.pendingChanges.deliveryAddress = undefined;
+      }
     }
   }
 
@@ -3167,7 +3179,13 @@ async function UpdateSubscription({
     }
   }
 
-  await subscription.save();
+  if (addressChange) {
+    await saveSubscriptionDeliveryAddress({ subscription, ...addressChange, settings,
+      effectiveFrom: effectiveIsPastCutoff && effectiveFromDate ? effectiveFromDate : new Date(subscriptionClock.now()),
+    });
+  } else {
+    await subscription.save();
+  }
   if (dayPlanChangeRequested && shouldStageFutureDayPlan) {
     await syncStripeSubscriptionPrice(subscription, resolvedSubscriptionItems);
   } else if (shouldSyncStripePrice) {
