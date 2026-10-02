@@ -9,6 +9,7 @@ const Review = require("../models/review.model");
 const {
   DEFAULT_ANALYTICS_TIME_ZONE,
   parseDateRange,
+  buildEventDateMatch,
   buildCreatedAtMatch,
   formatYmdInTimeZone,
 } = require("../utils/analyticsDate.util");
@@ -3526,6 +3527,56 @@ async function GetOutOfStock({ limit = 50 } = {}) {
   };
 }
 
+async function GetCancelledSubscriptions({
+  range,
+  from,
+  to,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  if (parsedPeriod.invalid) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid analytics date range.",
+    };
+  }
+
+  const cancelledAtMatch = buildEventDateMatch({
+    range,
+    from,
+    to,
+    field: "cancelledAt",
+    timeZone,
+  });
+  const cancelledSubscriptions = await Subscription.countDocuments({
+    status: "cancelled",
+    ...cancelledAtMatch,
+  });
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  return {
+    success: true,
+    data: {
+      cancelledSubscriptions,
+      period,
+      metricBasis: {
+        cancelledSubscriptions:
+          "Effective subscription cancellations whose cancelledAt timestamp falls inside the selected analytics date range. Scheduled cancellations are excluded until they become effective.",
+        source:
+          "Order-source filters do not apply because cancellation is subscription lifecycle data, not an order sales channel.",
+      },
+    },
+  };
+}
+
 async function GetNewSubscriptions({
   range,
   from,
@@ -3601,6 +3652,12 @@ async function GetDashboard({
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
   const activeSubscriptionsPromise = GetActiveSubscriptions();
+  const cancelledSubscriptionsPromise = GetCancelledSubscriptions({
+    range,
+    from,
+    to,
+    timeZone,
+  });
   const newSubscriptionsPromise = GetNewSubscriptions({
     range,
     from,
@@ -3718,6 +3775,7 @@ async function GetDashboard({
     variantUnits,
     activeSubscriptions,
     newSubscriptions,
+    cancelledSubscriptions,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -3730,6 +3788,7 @@ async function GetDashboard({
     variantUnitsPromise,
     activeSubscriptionsPromise,
     newSubscriptionsPromise,
+    cancelledSubscriptionsPromise,
     salesBreakdownPromise,
     recentOrdersPromise,
     stockSnapshotPromise,
@@ -3744,6 +3803,7 @@ async function GetDashboard({
     variantUnits,
     activeSubscriptions,
     newSubscriptions,
+    cancelledSubscriptions,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -3851,6 +3911,7 @@ async function GetDashboard({
       },
       activeSubscriptions: activeSubscriptions.data,
       newSubscriptions: newSubscriptions.data,
+      cancelledSubscriptions: cancelledSubscriptions.data,
       variantContribution: {
         variants: variantUnits.data.byRevenue,
         byRevenue: variantUnits.data.byRevenue,
@@ -3899,6 +3960,7 @@ module.exports = {
   GetVariantDetail,
   GetActiveSubscriptions,
   GetNewSubscriptions,
+  GetCancelledSubscriptions,
   GetRecentOrders,
   GetLowStock,
   GetOutOfStock,

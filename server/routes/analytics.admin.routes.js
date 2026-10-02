@@ -155,6 +155,11 @@ router.get(
   asyncHandler(controller.GetNewSubscriptions),
 );
 router.get(
+  "/cancelled-subscriptions",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetCancelledSubscriptions),
+);
+router.get(
   "/recent-orders",
   validateAnalyticsQuery({ maxLimit: 25 }),
   asyncHandler(controller.GetRecentOrders),

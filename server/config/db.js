@@ -47,6 +47,10 @@ const ANALYTICS_SUBSCRIPTION_INDEXES = [
     key: { createdAt: 1 },
     name: "analytics_subscription_createdAt",
   },
+  {
+    key: { status: 1, cancelledAt: 1 },
+    name: "analytics_subscription_status_cancelledAt",
+  },
 ];
 
 const indexKeysEqual = (actual, expected) => {

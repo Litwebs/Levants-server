@@ -340,6 +340,23 @@ const GetVariantDetail = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetCancelledSubscriptions = async (req, res) => {
+  const result = await service.GetCancelledSubscriptions({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetNewSubscriptions = async (req, res) => {
   const result = await service.GetNewSubscriptions({
     range: req.query.range,
@@ -474,6 +491,7 @@ module.exports = {
   GetVariantDetail,
   GetActiveSubscriptions,
   GetNewSubscriptions,
+  GetCancelledSubscriptions,
   GetRecentOrders,
   GetLowStock,
   GetDashboard,

@@ -329,6 +329,10 @@ subscriptionSchema.index(
   { createdAt: 1 },
   { name: "analytics_subscription_createdAt" },
 );
+subscriptionSchema.index(
+  { status: 1, cancelledAt: 1 },
+  { name: "analytics_subscription_status_cancelledAt" },
+);
 
 subscriptionSchema.method("toJSON", function () {
   const obj = this.toObject();

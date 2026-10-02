@@ -48,6 +48,7 @@ export type {
   VariantDetail,
   ActiveSubscriptionsResult,
   NewSubscriptionsResult,
+  CancelledSubscriptionsResult,
   RecentOrder,
   RecentOrdersResult,
   LowStockItem,

@@ -617,6 +617,19 @@ export type LowStockResult = {
   items: LowStockItem[];
 };
 
+export type CancelledSubscriptionsResult = {
+  cancelledSubscriptions: number;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  metricBasis: {
+    cancelledSubscriptions: string;
+    source: string;
+  };
+};
+
 export type NewSubscriptionsResult = {
   newSubscriptions: number;
   period: {
@@ -656,6 +669,7 @@ export type AnalyticsDashboard = {
   variantContribution: VariantContributionResult;
   activeSubscriptions: ActiveSubscriptionsResult;
   newSubscriptions: NewSubscriptionsResult;
+  cancelledSubscriptions: CancelledSubscriptionsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

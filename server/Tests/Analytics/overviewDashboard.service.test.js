@@ -345,6 +345,18 @@ describe("analytics overview dashboard dataset", () => {
         source: expect.stringContaining("Order-source filters do not apply"),
       },
     });
+    expect(result.data.cancelledSubscriptions).toEqual({
+      cancelledSubscriptions: 0,
+      period: {
+        from: "2026-06-10",
+        to: "2026-06-12",
+        timeZone: "Europe/London",
+      },
+      metricBasis: {
+        cancelledSubscriptions: expect.any(String),
+        source: expect.stringContaining("Order-source filters do not apply"),
+      },
+    });
 
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,
