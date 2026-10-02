@@ -792,3 +792,79 @@
   color: var(--color-gray-500);
   padding: var(--space-8);
 }
+
+
+.analyticsContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.statePanel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.statePanel_error {
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 7%, var(--card));
+}
+
+.statePanel_loading {
+  align-items: stretch;
+}
+
+.statePanel_empty {
+  background: color-mix(in srgb, var(--muted) 45%, var(--card));
+}
+
+.stateSkeletons {
+  width: min(18rem, 35%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.stateCopy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.stateTitle {
+  font-size: var(--text-sm);
+  color: var(--foreground);
+}
+
+.stateMessage {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.refreshStatus {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 700px) {
+  .statePanel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .stateSkeletons {
+    width: 100%;
+  }
+}

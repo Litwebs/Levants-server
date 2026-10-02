@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   DollarSign,
   ShoppingCart,
@@ -13,6 +13,8 @@ import {
   CardContent,
   Select,
   Badge,
+  Button,
+  Skeleton,
 } from "../components/common";
 import {
   SimpleBarChart,
@@ -119,6 +121,40 @@ const KpiTrend = ({
 
 const PRODUCT_TREND_COLORS = ["primary", "success", "info"] as const;
 
+const AnalyticsStatePanel = ({
+  title,
+  message,
+  kind = "empty",
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  kind?: "loading" | "error" | "empty";
+  onRetry?: () => void;
+}) => (
+  <div
+    className={`${styles.statePanel} ${styles[`statePanel_${kind}`]}`}
+    role={kind === "error" ? "alert" : "status"}
+    aria-live="polite"
+  >
+    {kind === "loading" ? (
+      <div className={styles.stateSkeletons} aria-hidden="true">
+        <Skeleton width="42%" height={18} />
+        <Skeleton width="72%" height={14} />
+      </div>
+    ) : null}
+    <div className={styles.stateCopy}>
+      <strong className={styles.stateTitle}>{title}</strong>
+      <span className={styles.stateMessage}>{message}</span>
+    </div>
+    {onRetry ? (
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+        Retry
+      </Button>
+    ) : null}
+  </div>
+);
+
 const Reports = () => {
   const {
     dashboard,
@@ -156,6 +192,8 @@ const Reports = () => {
   const [variantDetailError, setVariantDetailError] = useState<string | null>(
     null,
   );
+  const [productDetailRetryKey, setProductDetailRetryKey] = useState(0);
+  const [variantDetailRetryKey, setVariantDetailRetryKey] = useState(0);
 
   const openProductDetail = (productId: unknown) => {
     setSelectedVariantId(null);
@@ -184,16 +222,16 @@ const Reports = () => {
     return () => window.cancelAnimationFrame(frame);
   }, [selectedProductId, selectedVariantId]);
 
-  useEffect(() => {
+  const requestDashboard = useCallback(() => {
     const isCustom = range === "custom";
-    if (isCustom && (!from || !to)) return;
+    if (isCustom && (!from || !to)) return Promise.resolve();
 
-    void getDashboard({
+    return getDashboard({
       interval,
       orderSource,
       comparison,
       ...(isCustom ? { from, to } : { range }),
-    });
+    }).then(() => undefined);
   }, [
     range,
     orderSource,
@@ -203,6 +241,10 @@ const Reports = () => {
     comparison,
     getDashboard,
   ]);
+
+  useEffect(() => {
+    void requestDashboard();
+  }, [requestDashboard]);
 
   useEffect(() => {
     if (!selectedProductId) {
@@ -247,6 +289,7 @@ const Reports = () => {
     from,
     to,
     interval,
+    productDetailRetryKey,
     getProductDetail,
   ]);
 
@@ -293,6 +336,7 @@ const Reports = () => {
     from,
     to,
     interval,
+    variantDetailRetryKey,
     getVariantDetail,
   ]);
 
@@ -485,6 +529,19 @@ const Reports = () => {
   const recentOrders = dashboard?.recentOrders?.orders ?? [];
   const lowStockItems = dashboard?.lowStock?.items ?? [];
 
+  const customRangeIncomplete = range === "custom" && (!from || !to);
+  const initialLoading = loading && !dashboard && !customRangeIncomplete;
+  const fatalError = Boolean(error && !dashboard && !customRangeIncomplete);
+  const refreshing = Boolean(loading && dashboard && !customRangeIncomplete);
+  const canShowDashboard = Boolean(dashboard) && !customRangeIncomplete;
+  const hasSelectedPeriodActivity =
+    Number(overviewMetrics?.totalOrders ?? 0) > 0 ||
+    Number(overviewMetrics?.unitsSold ?? 0) > 0 ||
+    Number(overviewMetrics?.grossRevenue ?? 0) !== 0 ||
+    Number(overviewMetrics?.refundAmount ?? 0) !== 0 ||
+    Number(newSubscriptions?.newSubscriptions ?? 0) > 0 ||
+    Number(cancelledSubscriptions?.cancelledSubscriptions ?? 0) > 0;
+
   return (
     <div className={styles.reports}>
       <div className={styles.header}>
@@ -584,8 +641,54 @@ const Reports = () => {
         </div>
       </div>
 
-      {error ? <div className={styles.errorBanner}>{error}</div> : null}
+      {customRangeIncomplete ? (
+        <AnalyticsStatePanel
+          title="Choose a complete custom date range"
+          message="Select both a start date and an end date before analytics are loaded."
+        />
+      ) : null}
 
+      {initialLoading ? (
+        <AnalyticsStatePanel
+          kind="loading"
+          title="Loading analytics"
+          message="Calculating sales, product, variant, subscription, and inventory metrics."
+        />
+      ) : null}
+
+      {fatalError ? (
+        <AnalyticsStatePanel
+          kind="error"
+          title="Analytics could not be loaded"
+          message={error || "The analytics request failed."}
+          onRetry={() => void requestDashboard()}
+        />
+      ) : null}
+
+      {refreshing ? (
+        <div className={styles.refreshStatus} role="status" aria-live="polite">
+          Refreshing analytics for the selected filters…
+        </div>
+      ) : null}
+
+      {error && dashboard && !customRangeIncomplete ? (
+        <AnalyticsStatePanel
+          kind="error"
+          title="Analytics could not be refreshed"
+          message={error}
+          onRetry={() => void requestDashboard()}
+        />
+      ) : null}
+
+      {canShowDashboard && !loading && !error && !hasSelectedPeriodActivity ? (
+        <AnalyticsStatePanel
+          title="No activity for these filters"
+          message="No sales or subscription lifecycle activity matched this period. Current-state subscription and stock metrics may still appear below."
+        />
+      ) : null}
+
+      {canShowDashboard ? (
+        <div className={styles.analyticsContent} aria-busy={loading}>
       <div className={styles.kpiGrid}>
         <Card className={styles.kpiCard}>
           <div className={styles.kpiContent}>
@@ -1240,7 +1343,7 @@ const Reports = () => {
               </div>
               <div className={styles.productRanking}>
                 {productsByRevenueChart.length === 0 && !loading ? (
-                  <div className={styles.emptyState}>No data</div>
+                  <div className={styles.emptyState}>No product sales in this period</div>
                 ) : (
                   productsByRevenueChart.map((product, index) => (
                     <div key={product.productId} className={styles.rankItem}>
@@ -1290,7 +1393,7 @@ const Reports = () => {
               </div>
               <div className={styles.productRanking}>
                 {productsByUnitsChart.length === 0 && !loading ? (
-                  <div className={styles.emptyState}>No data</div>
+                  <div className={styles.emptyState}>No product sales in this period</div>
                 ) : (
                   productsByUnitsChart.map((product, index) => (
                     <div key={product.productId} className={styles.rankItem}>
@@ -1340,7 +1443,7 @@ const Reports = () => {
               </div>
               <div className={styles.productRanking}>
                 {lowestByRevenueChart.length === 0 && !loading ? (
-                  <div className={styles.emptyState}>No data</div>
+                  <div className={styles.emptyState}>No product sales in this period</div>
                 ) : (
                   lowestByRevenueChart.map((product, index) => (
                     <div key={product.productId} className={styles.rankItem}>
@@ -1389,7 +1492,7 @@ const Reports = () => {
               </div>
               <div className={styles.productRanking}>
                 {lowestByUnitsChart.length === 0 && !loading ? (
-                  <div className={styles.emptyState}>No data</div>
+                  <div className={styles.emptyState}>No product sales in this period</div>
                 ) : (
                   lowestByUnitsChart.map((product, index) => (
                     <div key={product.productId} className={styles.rankItem}>
@@ -1945,7 +2048,14 @@ const Reports = () => {
             {variantDetailLoading ? (
               <div className={styles.emptyState}>Loading variant detail…</div>
             ) : variantDetailError ? (
-              <div className={styles.errorBanner}>{variantDetailError}</div>
+              <AnalyticsStatePanel
+                kind="error"
+                title="Variant detail could not be loaded"
+                message={variantDetailError}
+                onRetry={() =>
+                  setVariantDetailRetryKey((current) => current + 1)
+                }
+              />
             ) : variantDetail ? (
               <>
                 <div className={styles.metricsGrid}>
@@ -2174,7 +2284,14 @@ const Reports = () => {
             {productDetailLoading ? (
               <div className={styles.emptyState}>Loading product detail…</div>
             ) : productDetailError ? (
-              <div className={styles.errorBanner}>{productDetailError}</div>
+              <AnalyticsStatePanel
+                kind="error"
+                title="Product detail could not be loaded"
+                message={productDetailError}
+                onRetry={() =>
+                  setProductDetailRetryKey((current) => current + 1)
+                }
+              />
             ) : productDetail ? (
               <>
                 <div className={styles.metricsGrid}>
@@ -2471,11 +2588,15 @@ const Reports = () => {
             ))}
           </div>
 
-          {loading && !dashboard ? (
-            <div className={styles.emptyState}>Loading…</div>
+          {lowStockItems.length === 0 && !loading ? (
+            <div className={styles.emptyState}>
+              No variants are currently below their low-stock threshold
+            </div>
           ) : null}
         </CardContent>
       </Card>
+        </div>
+      ) : null}
     </div>
   );
 };
