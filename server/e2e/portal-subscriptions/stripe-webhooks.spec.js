@@ -433,5 +433,14 @@ test.describe("real Stripe-signed subscription invoice webhooks", () => {
         retryOrderStatus: "paid",
         retryOrderDeliveryDate: new Date(retry.deliveryDate).toISOString(),
       });
+
+    // Replay the historical failure snapshot after this real invoice is paid.
+    await deliverSignedInvoiceEvent(request, fixture.subscriptionId,
+      "invoice.payment_failed", retry.invoiceId);
+    const afterLateFailure = await getState(request, fixture.subscriptionId);
+    expect(afterLateFailure.subscription.status).toBe("active");
+    expect(afterLateFailure.subscription.pauseReason).toBeNull();
+    expect(afterLateFailure.stripe.remoteSubscription.pauseCollection).toBeNull();
+    expect(afterLateFailure.orders).toHaveLength(before.orders.length + 1);
   });
 });

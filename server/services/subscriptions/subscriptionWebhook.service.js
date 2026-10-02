@@ -507,7 +507,8 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
   // A successful retry settles the debt that caused this specific pause. Clear
   // Stripe's future-invoice pause and reactivate locally. Deliberate customer
   // pauses are left untouched even if an outstanding invoice is later paid.
-  if (isPaymentFailurePause(subscription)) {
+  if (isPaymentFailurePause(subscription) &&
+      (!subscription.paymentFailureInvoiceId || subscription.paymentFailureInvoiceId === invoice.id)) {
     if (subscription.stripeSubscriptionId) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         pause_collection: "",
@@ -517,6 +518,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     subscription.pausedAt = null;
     subscription.pausedUntil = null;
     subscription.pauseReason = null;
+    subscription.paymentFailureInvoiceId = null;
     logger.info(
       `[SubscriptionWebhook] Reactivated subscription ${subscription.subscriptionNumber} after invoice ${invoice.id} recovered`,
     );
@@ -569,7 +571,11 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
  * Stripe couldn't charge the subscription. Pause it immediately and notify the customer.
  */
 async function HandleSubscriptionInvoiceFailed(eventInvoice) {
-  const invoice = await resolveLegacyInvoice(eventInvoice);
+  // Event payloads are historical snapshots, including the legacy shape.
+  // Fail closed if Stripe is unavailable so it retries instead of applying stale state.
+  const invoice = await stripe.invoices.retrieve(eventInvoice.id);
+  if (invoice.paid || ["paid", "void", "uncollectible"].includes(invoice.status)) return;
+  if (invoice.status !== "open") return;
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
   if (!stripeSubscriptionId) return;
 
@@ -580,21 +586,21 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
     );
   }
 
+  // A recorded paid order also proves this failure event is obsolete. This
+  // catches a paid handler winning the race with the Stripe retrieval above.
+  if (await Order.exists({ subscription: subscription._id, stripeInvoiceId: invoice.id })) return;
+  if (subscription.status !== "active" || subscription.isCancellationScheduled) return;
+
   // Pause Stripe billing to stop future charges while the customer fixes their payment.
   if (subscription.stripeSubscriptionId && subscription.status === "active") {
-    try {
-      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        pause_collection: { behavior: "void" },
-      });
-    } catch (err) {
-      logger.error(
-        `[SubscriptionWebhook] Failed to pause Stripe subscription ${subscription.stripeSubscriptionId} after payment failure: ${err.message}`,
-      );
-    }
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+      pause_collection: { behavior: "void" },
+    });
 
     subscription.status = "paused";
     subscription.pausedAt = subscription.pausedAt || new Date();
     subscription.pauseReason = "payment_failed";
+    subscription.paymentFailureInvoiceId = invoice.id;
     await subscription.save();
   }
 
@@ -634,11 +640,13 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
  * This is a safety net — status changes should already be applied
  * by our API before Stripe reflects them, but this ensures consistency.
  */
-async function HandleStripeSubscriptionUpdated(stripeSub) {
+async function HandleStripeSubscriptionUpdated(eventSubscription) {
+  // Always use the current provider state, never a delayed event snapshot.
+  const stripeSub = await stripe.subscriptions.retrieve(eventSubscription.id);
   const subscription = await Subscription.findOne({
     stripeSubscriptionId: stripeSub.id,
   });
-  if (!subscription) return;
+  if (!subscription || subscription.status === "cancelled") return;
 
   let changed = false;
 
@@ -660,7 +668,9 @@ async function HandleStripeSubscriptionUpdated(stripeSub) {
       changed = true;
     }
   } else if (stripeSub.status === "active" || stripeSub.status === "trialing") {
-    if (subscription.status === "paused") {
+    // Customer pauses belong to the portal; payment-failure pauses belong to
+    // the matching paid invoice. Only a Stripe-originated pause is synced here.
+    if (subscription.status === "paused" && subscription.pauseReason === "stripe") {
       subscription.status = "active";
       subscription.pausedAt = null;
       subscription.pausedUntil = null;

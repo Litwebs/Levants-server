@@ -198,6 +198,9 @@ const subscriptionSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Prevent an older, unrelated successful invoice from clearing a newer debt.
+    paymentFailureInvoiceId: { type: String, default: null },
+
     cancelledAt: {
       type: Date,
       default: null,

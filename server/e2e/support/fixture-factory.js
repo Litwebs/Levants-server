@@ -821,10 +821,23 @@ async function preparePaymentRetry(subscriptionId) {
   subscription.nextDeliveryDate = delivery.scheduledDate;
   await subscription.save();
 
-  return {
-    invoiceId: `in_e2e_retry_${fixture.scenarioId.replace(/[^a-z0-9]/gi, "")}`,
-    deliveryDate: delivery.scheduledDate,
-  };
+  const invoice = await stripe.invoices.create({
+    customer: fixture.stripeCustomerId, subscription: fixture.stripeSubscriptionId,
+    auto_advance: false, collection_method: "send_invoice", days_until_due: 7,
+  });
+  await stripe.invoiceItems.create({ customer: fixture.stripeCustomerId, invoice: invoice.id,
+    currency: "gbp", amount: Math.round((subscription.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity, 0) + 1) * 100),
+  });
+  await stripe.invoices.finalizeInvoice(invoice.id, { auto_advance: false });
+  const decliningMethod = await attachMethod(fixture.stripeCustomerId, DECLINING_METHOD);
+  try {
+    await stripe.invoices.pay(invoice.id, { payment_method: decliningMethod });
+    throw new Error("Expected retry fixture payment to decline");
+  } catch (error) {
+    if (error.type !== "StripeCardError") throw error;
+  }
+  return { invoiceId: invoice.id, deliveryDate: delivery.scheduledDate };
 }
 
 async function deliverSignedInvoiceEvent(subscriptionId, type, invoiceId) {
@@ -834,24 +847,16 @@ async function deliverSignedInvoiceEvent(subscriptionId, type, invoiceId) {
     throw new Error(`Unsupported E2E invoice event ${type}`);
   }
 
+  if (type === "invoice.payment_succeeded") {
+    const method = await attachMethod(fixture.stripeCustomerId, SUCCESS_METHOD);
+    const current = await stripe.invoices.retrieve(invoiceId);
+    if (!current.paid) await stripe.invoices.pay(invoiceId, { payment_method: method });
+  }
+  const invoice = await stripe.invoices.retrieve(invoiceId);
   const payload = JSON.stringify({
     id: `evt_e2e_${crypto.randomUUID().replace(/-/g, "")}`,
-    object: "event",
-    type,
-    data: {
-      object: {
-        id: invoiceId,
-        object: "invoice",
-        subscription: fixture.stripeSubscriptionId,
-        currency: "gbp",
-        ...(type === "invoice.payment_succeeded"
-          ? {
-              payment_intent: `pi_e2e_retry_${fixture.scenarioId.replace(/[^a-z0-9]/gi, "")}`,
-              status_transitions: { paid_at: Math.floor(Date.now() / 1000) },
-            }
-          : {}),
-      },
-    },
+    object: "event", type, data: { object: type === "invoice.payment_failed"
+      ? { ...invoice, status: "open", paid: false } : invoice },
   });
   const signature = stripe.webhooks.generateTestHeaderString({
     payload,

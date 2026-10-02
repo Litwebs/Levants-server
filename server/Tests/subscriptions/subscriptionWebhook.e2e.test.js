@@ -117,6 +117,9 @@ async function createSubscriptionFixture({
 }
 
 describe("Subscription Stripe webhook E2E", () => {
+  beforeEach(() => {
+    stripe.subscriptions.retrieve = jest.fn(async id => ({ id, status: "active", pause_collection: null }));
+  });
   it("detects an enabled Stripe endpoint that omits subscription events", async () => {
     stripe.webhookEndpoints.list.mockResolvedValueOnce({
       data: [
@@ -624,6 +627,8 @@ describe("Subscription Stripe webhook E2E", () => {
       items: [buildSubscriptionItem(product, variant, 1)],
     });
 
+    stripe.invoices.retrieve.mockResolvedValueOnce({ id: "in_test_payment_failed_1",
+      subscription: subscription.stripeSubscriptionId, status: "open", paid: false });
     const res = await postStripeEvent({
       type: "invoice.payment_failed",
       data: {
@@ -666,6 +671,8 @@ describe("Subscription Stripe webhook E2E", () => {
       status: "scheduled",
     });
 
+    stripe.invoices.retrieve.mockResolvedValueOnce({ id: "in_test_retry_1",
+      subscription: subscription.stripeSubscriptionId, status: "open", paid: false });
     const failed = await postStripeEvent({
       type: "invoice.payment_failed",
       data: {
@@ -680,6 +687,14 @@ describe("Subscription Stripe webhook E2E", () => {
     const paused = await Subscription.findById(subscription._id).lean();
     expect(paused.status).toBe("paused");
     expect(paused.pauseReason).toBe("payment_failed");
+
+    expect(paused.paymentFailureInvoiceId).toBe("in_test_retry_1");
+    const olderPaid = await postStripeEvent({ type: "invoice.payment_succeeded", data: { object: {
+      id: "in_older_paid", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_older_paid", status_transitions: { paid_at: 1786870700 },
+    } } });
+    expect(olderPaid.status).toBe(200);
+    expect((await Subscription.findById(subscription._id)).status).toBe("paused");
 
     // If Stripe fires invoice.payment_succeeded (e.g. manual payment capture), an
     // order is still created so the delivery is fulfilled.
@@ -707,6 +722,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(recovered.pausedAt).toBeNull();
     expect(recovered.pausedUntil).toBeNull();
     expect(recovered.pauseReason).toBeNull();
+    expect(recovered.paymentFailureInvoiceId).toBeNull();
     expect(stripe.subscriptions.update).toHaveBeenLastCalledWith(
       "sub_test_webhook_retry_success_1",
       { pause_collection: "" },
@@ -837,6 +853,8 @@ describe("Subscription Stripe webhook E2E", () => {
       status: "active",
     });
 
+    stripe.subscriptions.retrieve.mockResolvedValueOnce({ id: subscription.stripeSubscriptionId,
+      status: "active", pause_collection: { behavior: "void" } });
     const paused = await postStripeEvent({
       type: "customer.subscription.updated",
       data: {
@@ -867,6 +885,8 @@ describe("Subscription Stripe webhook E2E", () => {
     const afterResumed = await Subscription.findById(subscription._id).lean();
     expect(afterResumed.status).toBe("active");
 
+    stripe.subscriptions.retrieve.mockResolvedValueOnce({ id: subscription.stripeSubscriptionId,
+      status: "canceled", pause_collection: null });
     const cancelled = await postStripeEvent({
       type: "customer.subscription.updated",
       data: {
