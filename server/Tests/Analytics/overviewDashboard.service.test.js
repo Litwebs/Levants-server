@@ -326,6 +326,14 @@ describe("analytics overview dashboard dataset", () => {
       }),
     );
 
+    expect(result.data.activeSubscriptions).toEqual({
+      activeSubscriptions: 0,
+      metricBasis: {
+        activeSubscriptions: expect.any(String),
+        scope: expect.stringContaining("Point-in-time current state"),
+      },
+    });
+
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,
       deliveryRevenue: 0,

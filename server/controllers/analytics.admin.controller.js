@@ -340,6 +340,19 @@ const GetVariantDetail = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetActiveSubscriptions = async (req, res) => {
+  const result = await service.GetActiveSubscriptions();
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetRecentOrders = async (req, res) => {
   const result = await service.GetRecentOrders({
     range: req.query.range,
@@ -442,6 +455,7 @@ module.exports = {
   GetProductTrends,
   GetProductDetail,
   GetVariantDetail,
+  GetActiveSubscriptions,
   GetRecentOrders,
   GetLowStock,
   GetDashboard,

@@ -46,6 +46,7 @@ export type {
   ProductDetail,
   VariantDetailSource,
   VariantDetail,
+  ActiveSubscriptionsResult,
   RecentOrder,
   RecentOrdersResult,
   LowStockItem,

@@ -146,6 +146,10 @@ router.get(
   asyncHandler(controller.GetVariantDetail),
 );
 router.get(
+  "/active-subscriptions",
+  asyncHandler(controller.GetActiveSubscriptions),
+);
+router.get(
   "/recent-orders",
   validateAnalyticsQuery({ maxLimit: 25 }),
   asyncHandler(controller.GetRecentOrders),

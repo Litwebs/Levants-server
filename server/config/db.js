@@ -38,6 +38,13 @@ const ANALYTICS_ORDER_INDEXES = [
   },
 ];
 
+const ANALYTICS_SUBSCRIPTION_INDEXES = [
+  {
+    key: { status: 1, isCancellationScheduled: 1 },
+    name: "analytics_subscription_status_scheduledCancellation",
+  },
+];
+
 const indexKeysEqual = (actual, expected) => {
   const actualEntries = Object.entries(actual || {});
   const expectedEntries = Object.entries(expected || {});
@@ -69,6 +76,12 @@ async function ensureAnalyticsOrderIndexes() {
   const collection = mongoose.connection?.db?.collection("orders");
   if (!collection) return;
   await ensureIndexesByKey(collection, ANALYTICS_ORDER_INDEXES);
+}
+
+async function ensureAnalyticsSubscriptionIndexes() {
+  const collection = mongoose.connection?.db?.collection("subscriptions");
+  if (!collection) return;
+  await ensureIndexesByKey(collection, ANALYTICS_SUBSCRIPTION_INDEXES);
 }
 
 async function ensureDiscountCodeIndex() {
@@ -186,6 +199,7 @@ const connectDb = async () => {
     await ensureSubscriptionDeliveryUniqueIndex();
     await ensureSubscriptionOrderInvoiceUniqueIndex();
     await ensureAnalyticsOrderIndexes();
+    await ensureAnalyticsSubscriptionIndexes();
 
     if (env !== "test") {
       logger.db("MongoDB connected");
@@ -199,7 +213,9 @@ const connectDb = async () => {
 module.exports = {
   connectDb,
   ANALYTICS_ORDER_INDEXES,
+  ANALYTICS_SUBSCRIPTION_INDEXES,
   indexKeysEqual,
   ensureIndexesByKey,
   ensureAnalyticsOrderIndexes,
+  ensureAnalyticsSubscriptionIndexes,
 };

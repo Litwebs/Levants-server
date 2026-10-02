@@ -617,6 +617,14 @@ export type LowStockResult = {
   items: LowStockItem[];
 };
 
+export type ActiveSubscriptionsResult = {
+  activeSubscriptions: number;
+  metricBasis: {
+    activeSubscriptions: string;
+    scope: string;
+  };
+};
+
 export type AnalyticsDashboard = {
   overview: AnalyticsOverview;
   summary: AnalyticsSummary;
@@ -633,6 +641,7 @@ export type AnalyticsDashboard = {
   variantPriceComparison: VariantPriceComparisonResult;
   variantSalesMix: VariantSalesMixResult;
   variantContribution: VariantContributionResult;
+  activeSubscriptions: ActiveSubscriptionsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

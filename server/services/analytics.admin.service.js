@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Order = require("../models/order.model");
 const Product = require("../models/product.model");
 const ProductVariant = require("../models/variant.model");
+const Subscription = require("../models/subscription.model");
 const Review = require("../models/review.model");
 
 const {
@@ -3524,6 +3525,26 @@ async function GetOutOfStock({ limit = 50 } = {}) {
   };
 }
 
+async function GetActiveSubscriptions() {
+  const activeSubscriptions = await Subscription.countDocuments({
+    status: "active",
+    isCancellationScheduled: { $ne: true },
+  });
+
+  return {
+    success: true,
+    data: {
+      activeSubscriptions,
+      metricBasis: {
+        activeSubscriptions:
+          "Current subscriptions eligible to continue recurring service: status is active and cancellation is not scheduled. Paused, cancelled, and scheduled-cancellation subscriptions are excluded.",
+        scope:
+          "Point-in-time current state at request time; historical date and order-source filters do not apply because subscription status history is not stored as snapshots.",
+      },
+    },
+  };
+}
+
 async function GetDashboard({
   range,
   from,
@@ -3532,6 +3553,7 @@ async function GetDashboard({
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
+  const activeSubscriptionsPromise = GetActiveSubscriptions();
   const stockSnapshotPromise = GetDashboardStockSnapshot({ limit: 50 });
   const stockCountsPromise = stockSnapshotPromise.then(
     (snapshot) => snapshot.data.counts,
@@ -3641,6 +3663,7 @@ async function GetDashboard({
     productTrends,
     variantTrends,
     variantUnits,
+    activeSubscriptions,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -3651,6 +3674,7 @@ async function GetDashboard({
     productTrendsPromise,
     variantTrendsPromise,
     variantUnitsPromise,
+    activeSubscriptionsPromise,
     salesBreakdownPromise,
     recentOrdersPromise,
     stockSnapshotPromise,
@@ -3663,6 +3687,7 @@ async function GetDashboard({
     productTrends,
     variantTrends,
     variantUnits,
+    activeSubscriptions,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -3768,6 +3793,7 @@ async function GetDashboard({
           identity: variantUnits.data.metricBasis.identity,
         },
       },
+      activeSubscriptions: activeSubscriptions.data,
       variantContribution: {
         variants: variantUnits.data.byRevenue,
         byRevenue: variantUnits.data.byRevenue,
@@ -3814,6 +3840,7 @@ module.exports = {
   GetProductTrends,
   GetProductDetail,
   GetVariantDetail,
+  GetActiveSubscriptions,
   GetRecentOrders,
   GetLowStock,
   GetOutOfStock,

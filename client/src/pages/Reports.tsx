@@ -349,6 +349,7 @@ const Reports = () => {
   const variantPriceComparison = dashboard?.variantPriceComparison;
   const variantSalesMix = dashboard?.variantSalesMix;
   const variantContribution = dashboard?.variantContribution;
+  const activeSubscriptions = dashboard?.activeSubscriptions;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -651,6 +652,31 @@ const Reports = () => {
           </div>
         </Card>
       </div>
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Subscription Analytics</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.metricsGrid}>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCompactNumber(
+                  activeSubscriptions?.activeSubscriptions ?? 0,
+                )}
+              </span>
+              <span className={styles.metricLabel}>Active Subscriptions</span>
+            </div>
+          </div>
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Current recurring subscriptions only. Paused, cancelled, and
+              scheduled-cancellation subscriptions are excluded; historical
+              date and order-source filters do not apply.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className={styles.chartsGrid}>
         <Card className={styles.chartCard}>
