@@ -82,6 +82,11 @@ router.get(
   asyncHandler(controller.GetTopProducts),
 );
 router.get(
+  "/variant-units",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantUnits),
+);
+router.get(
   "/product-trends",
   validateAnalyticsQuery({
     allowInterval: true,

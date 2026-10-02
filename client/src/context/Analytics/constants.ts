@@ -271,6 +271,32 @@ export type TopProductsResult = {
   };
 };
 
+export type VariantUnitsRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalUnits: number;
+  orderCount: number;
+  averageUnitsPerOrder: number;
+};
+
+export type VariantUnitsResult = {
+  variants: VariantUnitsRow[];
+  byUnits: VariantUnitsRow[];
+  totals: {
+    totalUnits: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    units: string;
+    ranking: string;
+    identity: string;
+  };
+};
+
 export type ProductTrendPoint = {
   label: string;
   revenue: number;
@@ -394,6 +420,7 @@ export type AnalyticsDashboard = {
   salesBreakdown: SalesBreakdown;
   topProducts: TopProductsResult;
   productTrends: ProductTrends;
+  variantUnits: VariantUnitsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

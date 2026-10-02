@@ -267,6 +267,9 @@ const Reports = () => {
   const lowestProductsByUnits = dashboard?.topProducts?.lowestByUnits ?? [];
   const productTotals = dashboard?.topProducts?.totals;
   const productTrendProducts = dashboard?.productTrends?.products;
+  const variantsByUnits = dashboard?.variantUnits?.byUnits ?? [];
+  const variantUnitTotals = dashboard?.variantUnits?.totals;
+  const maxVariantUnits = variantsByUnits[0]?.totalUnits ?? 0;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -1033,6 +1036,82 @@ const Reports = () => {
         </Card>
       </div>
 
+
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Variant Units</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.metricsGrid}>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCompactNumber(variantUnitTotals?.variantsSold ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Variants Sold</span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCompactNumber(variantUnitTotals?.totalUnits ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Variant Units</span>
+            </div>
+          </div>
+
+          <div className={styles.productRankingSection}>
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Top Variants by Units</span>
+              <span className={styles.variantMeta}>
+                Historical order-item snapshots
+              </span>
+            </div>
+            <div className={styles.productRanking}>
+              {variantsByUnits.length === 0 && !loading ? (
+                <div className={styles.emptyState}>No variant sales</div>
+              ) : (
+                variantsByUnits.map((variant, index) => (
+                  <div key={variant.variantId} className={styles.rankItem}>
+                    <span className={styles.rankNumber}>#{index + 1}</span>
+                    <div className={styles.rankInfo}>
+                      <span className={styles.rankName}>
+                        {variant.variantName}
+                        {variant.catalogStatus === "deleted" ? " · Deleted" : ""}
+                      </span>
+                      <span className={styles.rankMeta}>
+                        {variant.productName} · {variant.sku} ·{" "}
+                        {formatCompactNumber(variant.totalUnits)} units ·{" "}
+                        {formatCompactNumber(variant.orderCount)} orders ·{" "}
+                        {formatDecimal(variant.averageUnitsPerOrder)} units/order
+                      </span>
+                    </div>
+                    <div className={styles.rankBar}>
+                      <div
+                        className={styles.rankFill}
+                        style={{
+                          width:
+                            maxVariantUnits > 0
+                              ? `${Math.min(
+                                  100,
+                                  (variant.totalUnits / maxVariantUnits) * 100,
+                                )}%`
+                              : "0%",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Units are counted from collected orders, including partially-paid
+              orders. Deleted variants remain visible from order snapshots.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
       {selectedProductId ? (
         <Card className={styles.fullWidthChart}>

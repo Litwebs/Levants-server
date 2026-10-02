@@ -25,6 +25,8 @@ export type {
   TopProduct,
   TopProductVariant,
   TopProductsResult,
+  VariantUnitsRow,
+  VariantUnitsResult,
   ProductTrendPoint,
   ProductTrendProduct,
   ProductTrends,

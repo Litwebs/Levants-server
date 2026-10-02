@@ -171,6 +171,25 @@ describe("analytics overview dashboard dataset", () => {
       }),
     );
 
+    expect(result.data.variantUnits).toEqual(
+      expect.objectContaining({
+        byUnits: [
+          expect.objectContaining({
+            variantId: variant._id,
+            variantName: variant.name,
+            sku: variant.sku,
+            totalUnits: 3,
+            orderCount: 1,
+            averageUnitsPerOrder: 3,
+          }),
+        ],
+        totals: {
+          totalUnits: 3,
+          variantsSold: 1,
+        },
+      }),
+    );
+
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,
       deliveryRevenue: 0,

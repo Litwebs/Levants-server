@@ -1521,6 +1521,216 @@ async function GetTopProducts({
   };
 }
 
+async function GetVariantUnits({
+  range,
+  from,
+  to,
+  limit = 10,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const lim = Math.max(1, Math.min(Number(limit) || 10, 25));
+
+  const [result] = await Order.aggregate([
+    { $match: salesMatch },
+    { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+    { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+    { $unwind: "$items" },
+    {
+      $group: {
+        _id: {
+          product: "$items.product",
+          variant: "$items.variant",
+          order: "$_id",
+        },
+        productNameSnapshot: { $first: "$items.productName" },
+        variantNameSnapshot: { $first: "$items.name" },
+        skuSnapshot: { $first: "$items.sku" },
+        latestPaidAt: { $first: "$_analyticsPaidAt" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+      },
+    },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $group: {
+        _id: {
+          product: "$_id.product",
+          variant: "$_id.variant",
+        },
+        productId: { $first: "$_id.product" },
+        variantId: { $first: "$_id.variant" },
+        productNameSnapshot: { $first: "$productNameSnapshot" },
+        variantNameSnapshot: { $first: "$variantNameSnapshot" },
+        skuSnapshot: { $first: "$skuSnapshot" },
+        latestPaidAt: { $first: "$latestPaidAt" },
+        totalUnits: { $sum: "$units" },
+        orderIds: { $addToSet: "$_id.order" },
+      },
+    },
+    { $addFields: { orderCount: { $size: "$orderIds" } } },
+    { $match: { totalUnits: { $gt: 0 } } },
+    {
+      $lookup: {
+        from: "products",
+        localField: "productId",
+        foreignField: "_id",
+        as: "catalogProduct",
+      },
+    },
+    {
+      $lookup: {
+        from: "productvariants",
+        localField: "variantId",
+        foreignField: "_id",
+        as: "catalogVariant",
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        productId: 1,
+        variantId: 1,
+        productName: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$productNameSnapshot", null] },
+                { $ne: ["$productNameSnapshot", ""] },
+              ],
+            },
+            "$productNameSnapshot",
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogProduct.name", 0] },
+                {
+                  $concat: [
+                    "Deleted product · ",
+                    { $substrBytes: [{ $toString: "$productId" }, 18, 6] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        variantName: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$variantNameSnapshot", null] },
+                { $ne: ["$variantNameSnapshot", ""] },
+              ],
+            },
+            "$variantNameSnapshot",
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogVariant.name", 0] },
+                {
+                  $concat: [
+                    "Deleted variant · ",
+                    { $substrBytes: [{ $toString: "$variantId" }, 18, 6] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sku: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$skuSnapshot", null] },
+                { $ne: ["$skuSnapshot", ""] },
+              ],
+            },
+            "$skuSnapshot",
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogVariant.sku", 0] },
+                "Unknown SKU",
+              ],
+            },
+          ],
+        },
+        catalogStatus: {
+          $ifNull: [
+            { $arrayElemAt: ["$catalogVariant.status", 0] },
+            "deleted",
+          ],
+        },
+        totalUnits: 1,
+        orderCount: 1,
+        averageUnitsPerOrder: {
+          $cond: [
+            { $gt: ["$orderCount", 0] },
+            { $divide: ["$totalUnits", "$orderCount"] },
+            0,
+          ],
+        },
+      },
+    },
+    {
+      $facet: {
+        byUnits: [
+          {
+            $sort: {
+              totalUnits: -1,
+              orderCount: -1,
+              productName: 1,
+              variantName: 1,
+              sku: 1,
+            },
+          },
+          { $limit: lim },
+        ],
+        totals: [
+          {
+            $group: {
+              _id: null,
+              totalUnits: { $sum: "$totalUnits" },
+              variantsSold: { $sum: 1 },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  const byUnits = (result?.byUnits || []).map((variant) => ({
+    ...variant,
+    totalUnits: Number(variant.totalUnits) || 0,
+    orderCount: Number(variant.orderCount) || 0,
+    averageUnitsPerOrder: Number(variant.averageUnitsPerOrder) || 0,
+  }));
+  const totalsRow = result?.totals?.[0] || {};
+
+  return {
+    success: true,
+    data: {
+      variants: byUnits,
+      byUnits,
+      totals: {
+        totalUnits: Number(totalsRow.totalUnits) || 0,
+        variantsSold: Number(totalsRow.variantsSold) || 0,
+      },
+      metricBasis: {
+        units:
+          "Units on collected orders, including partially-paid orders.",
+        ranking:
+          "Variants are ranked by historical units sold in the selected period; repeated lines are combined and order counts are de-duplicated.",
+        identity:
+          "Variant name and SKU come from immutable order-item snapshots, so deleted or renamed variants remain historically visible.",
+      },
+    },
+  };
+}
+
 async function GetProductTrends({
   range,
   from,
@@ -2302,6 +2512,14 @@ async function GetDashboard({
     orderSource,
     timeZone,
   });
+  const variantUnitsPromise = GetVariantUnits({
+    range,
+    from,
+    to,
+    limit: 5,
+    orderSource,
+    timeZone,
+  });
   const recentOrdersPromise = GetRecentOrders({
     range,
     from,
@@ -2339,6 +2557,7 @@ async function GetDashboard({
     revenue,
     topProducts,
     productTrends,
+    variantUnits,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -2347,6 +2566,7 @@ async function GetDashboard({
     revenuePromise,
     topProductsPromise,
     productTrendsPromise,
+    variantUnitsPromise,
     salesBreakdownPromise,
     recentOrdersPromise,
     stockSnapshotPromise,
@@ -2357,6 +2577,7 @@ async function GetDashboard({
     revenue,
     topProducts,
     productTrends,
+    variantUnits,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -2384,6 +2605,7 @@ async function GetDashboard({
       revenueComposition: buildRevenueComposition(summary.data),
       topProducts: topProducts.data,
       productTrends: productTrends.data,
+      variantUnits: variantUnits.data,
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
@@ -2404,6 +2626,7 @@ module.exports = {
   GetRevenueOverview,
   GetOrderStatusCounts,
   GetTopProducts,
+  GetVariantUnits,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,
