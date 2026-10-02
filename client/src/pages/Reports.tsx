@@ -352,6 +352,7 @@ const Reports = () => {
   const activeSubscriptions = dashboard?.activeSubscriptions;
   const newSubscriptions = dashboard?.newSubscriptions;
   const cancelledSubscriptions = dashboard?.cancelledSubscriptions;
+  const subscriptionRevenue = dashboard?.subscriptionRevenue;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -683,13 +684,32 @@ const Reports = () => {
               </span>
               <span className={styles.metricLabel}>Cancelled Subscriptions</span>
             </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(subscriptionRevenue?.subscriptionRevenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Subscription Revenue</span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(subscriptionRevenue?.grossRevenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Gross Subscription Sales</span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(subscriptionRevenue?.refundAmount ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Subscription Refunds</span>
+            </div>
           </div>
           <div className={styles.chartFooter}>
             <span className={styles.chartTotal}>
               Active is current recurring state. New and cancelled subscriptions
               use the selected date range; scheduled cancellations count only
               after becoming effective. Order-source filters do not apply to
-              lifecycle metrics.
+              lifecycle metrics. Subscription revenue uses the selected date
+              range and is always scoped to the Subscription sales channel.
             </span>
           </div>
         </CardContent>

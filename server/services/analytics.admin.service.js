@@ -133,6 +133,40 @@ const roundPercentage = (value, total) =>
     ? Math.round(((value / total) * 100 + Number.EPSILON) * 100) / 100
     : 0;
 
+const buildSubscriptionRevenueData = (salesBreakdown = {}) => {
+  const subscription = (salesBreakdown.channels || []).find(
+    (channel) => channel.key === "subscription",
+  ) || {
+    grossRevenue: 0,
+    merchandiseRevenue: 0,
+    deliveryRevenue: 0,
+    discountAmount: 0,
+    refundAmount: 0,
+    netRevenue: 0,
+    totalOrders: 0,
+    unitsSold: 0,
+  };
+
+  return {
+    subscriptionRevenue: Number(subscription.netRevenue) || 0,
+    grossRevenue: Number(subscription.grossRevenue) || 0,
+    merchandiseRevenue: Number(subscription.merchandiseRevenue) || 0,
+    deliveryRevenue: Number(subscription.deliveryRevenue) || 0,
+    discountAmount: Number(subscription.discountAmount) || 0,
+    refundAmount: Number(subscription.refundAmount) || 0,
+    totalOrders: Number(subscription.totalOrders) || 0,
+    unitsSold: Number(subscription.unitsSold) || 0,
+    metricBasis: {
+      subscriptionRevenue:
+        "Net collected Subscription-channel revenue in the selected period: collected gross subscription sales minus subscription refunds issued in the period.",
+      channel:
+        "Uses the existing mutually exclusive sales-channel classifier. Imported/manual orders take precedence and are never counted as Subscription revenue.",
+      source:
+        "This metric is inherently scoped to the Subscription channel, so the global order-source filter does not alter it.",
+    },
+  };
+};
+
 const buildRevenueComposition = (metrics = {}) => {
   const merchandiseRevenue = Number(metrics.merchandiseRevenue) || 0;
   const deliveryRevenue = Number(metrics.deliveryRevenue) || 0;
@@ -785,6 +819,27 @@ async function GetSalesBreakdown({
       channels,
       totals,
     },
+  };
+}
+
+async function GetSubscriptionRevenue({
+  range,
+  from,
+  to,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const breakdown = await GetSalesBreakdown({
+    range,
+    from,
+    to,
+    orderSource: "subscription",
+    timeZone,
+  });
+  if (!breakdown.success) return breakdown;
+
+  return {
+    success: true,
+    data: buildSubscriptionRevenueData(breakdown.data),
   };
 }
 
@@ -3912,6 +3967,7 @@ async function GetDashboard({
       activeSubscriptions: activeSubscriptions.data,
       newSubscriptions: newSubscriptions.data,
       cancelledSubscriptions: cancelledSubscriptions.data,
+      subscriptionRevenue: buildSubscriptionRevenueData(salesBreakdown.data),
       variantContribution: {
         variants: variantUnits.data.byRevenue,
         byRevenue: variantUnits.data.byRevenue,
@@ -3943,6 +3999,7 @@ module.exports = {
   GetPerformanceMetrics,
   GetRevenueComposition,
   GetSalesBreakdown,
+  GetSubscriptionRevenue,
   GetSalesTrends,
   GetRevenueSeries,
   GetRevenueOverview,

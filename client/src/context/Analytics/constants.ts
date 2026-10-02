@@ -617,6 +617,22 @@ export type LowStockResult = {
   items: LowStockItem[];
 };
 
+export type SubscriptionRevenueResult = {
+  subscriptionRevenue: number;
+  grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  refundAmount: number;
+  totalOrders: number;
+  unitsSold: number;
+  metricBasis: {
+    subscriptionRevenue: string;
+    channel: string;
+    source: string;
+  };
+};
+
 export type CancelledSubscriptionsResult = {
   cancelledSubscriptions: number;
   period: {
@@ -670,6 +686,7 @@ export type AnalyticsDashboard = {
   activeSubscriptions: ActiveSubscriptionsResult;
   newSubscriptions: NewSubscriptionsResult;
   cancelledSubscriptions: CancelledSubscriptionsResult;
+  subscriptionRevenue: SubscriptionRevenueResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

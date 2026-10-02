@@ -42,6 +42,11 @@ router.get(
   validateAnalyticsQuery(),
   asyncHandler(controller.GetRevenueComposition),
 );
+router.get(
+  "/subscription-revenue",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetSubscriptionRevenue),
+);
 
 router.get(
   "/sales-breakdown",

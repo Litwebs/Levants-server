@@ -49,6 +49,7 @@ export type {
   ActiveSubscriptionsResult,
   NewSubscriptionsResult,
   CancelledSubscriptionsResult,
+  SubscriptionRevenueResult,
   RecentOrder,
   RecentOrdersResult,
   LowStockItem,

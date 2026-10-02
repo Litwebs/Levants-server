@@ -357,6 +357,21 @@ describe("analytics overview dashboard dataset", () => {
         source: expect.stringContaining("Order-source filters do not apply"),
       },
     });
+    expect(result.data.subscriptionRevenue).toEqual({
+      subscriptionRevenue: 0,
+      grossRevenue: 0,
+      merchandiseRevenue: 0,
+      deliveryRevenue: 0,
+      discountAmount: 0,
+      refundAmount: 0,
+      totalOrders: 0,
+      unitsSold: 0,
+      metricBasis: {
+        subscriptionRevenue: expect.any(String),
+        channel: expect.stringContaining("mutually exclusive"),
+        source: expect.stringContaining("Subscription channel"),
+      },
+    });
 
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,
