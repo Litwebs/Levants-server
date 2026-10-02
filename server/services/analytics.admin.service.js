@@ -843,6 +843,399 @@ async function GetSubscriptionRevenue({
   };
 }
 
+async function GetTopSubscriptionProductsVariants({
+  range,
+  from,
+  to,
+  limit = 5,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource: "subscription",
+    timeZone,
+  });
+  const lim = Math.max(1, Math.min(Number(limit) || 5, 25));
+
+  const [result] = await Order.aggregate([
+    { $match: salesMatch },
+    { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+    { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+    { $unwind: "$items" },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
+    {
+      $group: {
+        _id: {
+          product: "$items.product",
+          variant: "$items.variant",
+          order: "$_id",
+        },
+        productNameSnapshot: { $first: "$items.productName" },
+        variantNameSnapshot: { $first: "$items.name" },
+        skuSnapshot: { $first: "$items.sku" },
+        latestPaidAt: { $first: "$_analyticsPaidAt" },
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+      },
+    },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $group: {
+        _id: {
+          product: "$_id.product",
+          variant: "$_id.variant",
+        },
+        productId: { $first: "$_id.product" },
+        variantId: { $first: "$_id.variant" },
+        productNameSnapshot: { $first: "$productNameSnapshot" },
+        variantNameSnapshot: { $first: "$variantNameSnapshot" },
+        skuSnapshot: { $first: "$skuSnapshot" },
+        latestPaidAt: { $first: "$latestPaidAt" },
+        totalRevenue: { $sum: "$revenue" },
+        totalUnits: { $sum: "$units" },
+        orderIds: { $addToSet: "$_id.order" },
+      },
+    },
+    { $addFields: { orderCount: { $size: "$orderIds" } } },
+    { $match: { totalUnits: { $gt: 0 } } },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $facet: {
+        products: [
+          {
+            $group: {
+              _id: "$productId",
+              productId: { $first: "$productId" },
+              productNameSnapshot: { $first: "$productNameSnapshot" },
+              totalRevenue: { $sum: "$totalRevenue" },
+              totalUnits: { $sum: "$totalUnits" },
+              orderIdSets: { $push: "$orderIds" },
+            },
+          },
+          {
+            $addFields: {
+              orderCount: {
+                $size: {
+                  $reduce: {
+                    input: "$orderIdSets",
+                    initialValue: [],
+                    in: { $setUnion: ["$value", "$this"] },
+                  },
+                },
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: "products",
+              localField: "productId",
+              foreignField: "_id",
+              as: "catalogProduct",
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              productId: 1,
+              productName: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$productNameSnapshot", null] },
+                      { $ne: ["$productNameSnapshot", ""] },
+                    ],
+                  },
+                  "$productNameSnapshot",
+                  {
+                    $ifNull: [
+                      { $arrayElemAt: ["$catalogProduct.name", 0] },
+                      {
+                        $concat: [
+                          "Deleted product · ",
+                          {
+                            $substrBytes: [
+                              { $toString: "$productId" },
+                              18,
+                              6,
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              catalogStatus: {
+                $ifNull: [
+                  { $arrayElemAt: ["$catalogProduct.status", 0] },
+                  "deleted",
+                ],
+              },
+              totalRevenue: 1,
+              totalUnits: 1,
+              orderCount: 1,
+            },
+          },
+          {
+            $facet: {
+              byRevenue: [
+                {
+                  $sort: {
+                    totalRevenue: -1,
+                    totalUnits: -1,
+                    productName: 1,
+                  },
+                },
+                { $limit: lim },
+              ],
+              byUnits: [
+                {
+                  $sort: {
+                    totalUnits: -1,
+                    totalRevenue: -1,
+                    productName: 1,
+                  },
+                },
+                { $limit: lim },
+              ],
+              totals: [
+                {
+                  $group: {
+                    _id: null,
+                    totalRevenue: { $sum: "$totalRevenue" },
+                    totalUnits: { $sum: "$totalUnits" },
+                    productsSold: { $sum: 1 },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+        variants: [
+          {
+            $lookup: {
+              from: "products",
+              localField: "productId",
+              foreignField: "_id",
+              as: "catalogProduct",
+            },
+          },
+          {
+            $lookup: {
+              from: "productvariants",
+              localField: "variantId",
+              foreignField: "_id",
+              as: "catalogVariant",
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              productId: 1,
+              variantId: 1,
+              productName: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$productNameSnapshot", null] },
+                      { $ne: ["$productNameSnapshot", ""] },
+                    ],
+                  },
+                  "$productNameSnapshot",
+                  {
+                    $ifNull: [
+                      { $arrayElemAt: ["$catalogProduct.name", 0] },
+                      {
+                        $concat: [
+                          "Deleted product · ",
+                          {
+                            $substrBytes: [
+                              { $toString: "$productId" },
+                              18,
+                              6,
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              variantName: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$variantNameSnapshot", null] },
+                      { $ne: ["$variantNameSnapshot", ""] },
+                    ],
+                  },
+                  "$variantNameSnapshot",
+                  {
+                    $ifNull: [
+                      { $arrayElemAt: ["$catalogVariant.name", 0] },
+                      {
+                        $concat: [
+                          "Deleted variant · ",
+                          {
+                            $substrBytes: [
+                              { $toString: "$variantId" },
+                              18,
+                              6,
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              sku: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: ["$skuSnapshot", null] },
+                      { $ne: ["$skuSnapshot", ""] },
+                    ],
+                  },
+                  "$skuSnapshot",
+                  {
+                    $ifNull: [
+                      { $arrayElemAt: ["$catalogVariant.sku", 0] },
+                      "Unknown SKU",
+                    ],
+                  },
+                ],
+              },
+              catalogStatus: {
+                $ifNull: [
+                  { $arrayElemAt: ["$catalogVariant.status", 0] },
+                  "deleted",
+                ],
+              },
+              totalRevenue: 1,
+              totalUnits: 1,
+              orderCount: 1,
+            },
+          },
+          {
+            $facet: {
+              byRevenue: [
+                {
+                  $sort: {
+                    totalRevenue: -1,
+                    totalUnits: -1,
+                    productName: 1,
+                    variantName: 1,
+                    sku: 1,
+                  },
+                },
+                { $limit: lim },
+              ],
+              byUnits: [
+                {
+                  $sort: {
+                    totalUnits: -1,
+                    totalRevenue: -1,
+                    productName: 1,
+                    variantName: 1,
+                    sku: 1,
+                  },
+                },
+                { $limit: lim },
+              ],
+              totals: [
+                {
+                  $group: {
+                    _id: null,
+                    totalRevenue: { $sum: "$totalRevenue" },
+                    totalUnits: { $sum: "$totalUnits" },
+                    variantsSold: { $sum: 1 },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ]);
+
+  const productFacet = result?.products?.[0] || {};
+  const variantFacet = result?.variants?.[0] || {};
+  const productTotalsRow = productFacet.totals?.[0] || {};
+  const variantTotalsRow = variantFacet.totals?.[0] || {};
+
+  const productTotals = {
+    totalRevenue: Number(productTotalsRow.totalRevenue) || 0,
+    totalUnits: Number(productTotalsRow.totalUnits) || 0,
+    productsSold: Number(productTotalsRow.productsSold) || 0,
+  };
+  const variantTotals = {
+    totalRevenue: Number(variantTotalsRow.totalRevenue) || 0,
+    totalUnits: Number(variantTotalsRow.totalUnits) || 0,
+    variantsSold: Number(variantTotalsRow.variantsSold) || 0,
+  };
+
+  const normalizeProduct = (row) => ({
+    ...row,
+    totalRevenue: Number(row.totalRevenue) || 0,
+    totalUnits: Number(row.totalUnits) || 0,
+    orderCount: Number(row.orderCount) || 0,
+    revenueContributionPercent: roundPercentage(
+      Number(row.totalRevenue) || 0,
+      productTotals.totalRevenue,
+    ),
+    unitContributionPercent: roundPercentage(
+      Number(row.totalUnits) || 0,
+      productTotals.totalUnits,
+    ),
+  });
+  const normalizeVariant = (row) => ({
+    ...row,
+    totalRevenue: Number(row.totalRevenue) || 0,
+    totalUnits: Number(row.totalUnits) || 0,
+    orderCount: Number(row.orderCount) || 0,
+    revenueContributionPercent: roundPercentage(
+      Number(row.totalRevenue) || 0,
+      variantTotals.totalRevenue,
+    ),
+    unitContributionPercent: roundPercentage(
+      Number(row.totalUnits) || 0,
+      variantTotals.totalUnits,
+    ),
+  });
+
+  return {
+    success: true,
+    data: {
+      products: {
+        byRevenue: (productFacet.byRevenue || []).map(normalizeProduct),
+        byUnits: (productFacet.byUnits || []).map(normalizeProduct),
+        totals: productTotals,
+      },
+      variants: {
+        byRevenue: (variantFacet.byRevenue || []).map(normalizeVariant),
+        byUnits: (variantFacet.byUnits || []).map(normalizeVariant),
+        totals: variantTotals,
+      },
+      metricBasis: {
+        revenue:
+          "Collected merchandise revenue from mutually exclusive Subscription-channel orders after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
+        units:
+          "Historical units from collected Subscription-channel orders, including partially-paid orders.",
+        ranking:
+          "Products and variants are ranked from immutable order-item snapshots. Contribution denominators include all subscription-sold rows in the selected period before the display limit.",
+        identity:
+          "Historical product, variant and SKU snapshots are retained so renamed or deleted catalog entities remain visible.",
+        source:
+          "Imported/manual orders take classification precedence and are never included in Subscription product or variant rankings.",
+      },
+    },
+  };
+}
+
 async function GetRevenueComposition({
   range,
   from,
@@ -3912,6 +4305,14 @@ async function GetDashboard({
     orderSource,
     timeZone,
   });
+  const topSubscriptionProductsVariantsPromise =
+    GetTopSubscriptionProductsVariants({
+      range,
+      from,
+      to,
+      limit: 5,
+      timeZone,
+    });
   const recentOrdersPromise = GetRecentOrders({
     range,
     from,
@@ -3951,6 +4352,7 @@ async function GetDashboard({
     productTrends,
     variantTrends,
     variantUnits,
+    topSubscriptionProductsVariants,
     activeSubscriptions,
     averageSubscriptionValue,
     newSubscriptions,
@@ -3965,6 +4367,7 @@ async function GetDashboard({
     productTrendsPromise,
     variantTrendsPromise,
     variantUnitsPromise,
+    topSubscriptionProductsVariantsPromise,
     activeSubscriptionsPromise,
     averageSubscriptionValuePromise,
     newSubscriptionsPromise,
@@ -4095,6 +4498,7 @@ async function GetDashboard({
       newSubscriptions: newSubscriptions.data,
       cancelledSubscriptions: cancelledSubscriptions.data,
       subscriptionRevenue: buildSubscriptionRevenueData(salesBreakdown.data),
+      topSubscriptionProductsVariants: topSubscriptionProductsVariants.data,
       variantContribution: {
         variants: variantUnits.data.byRevenue,
         byRevenue: variantUnits.data.byRevenue,
@@ -4127,6 +4531,7 @@ module.exports = {
   GetRevenueComposition,
   GetSalesBreakdown,
   GetSubscriptionRevenue,
+  GetTopSubscriptionProductsVariants,
   GetSalesTrends,
   GetRevenueSeries,
   GetRevenueOverview,

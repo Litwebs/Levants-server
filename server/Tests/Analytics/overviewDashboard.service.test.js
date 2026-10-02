@@ -383,6 +383,33 @@ describe("analytics overview dashboard dataset", () => {
         source: expect.stringContaining("Subscription channel"),
       },
     });
+    expect(result.data.topSubscriptionProductsVariants).toEqual({
+      products: {
+        byRevenue: [],
+        byUnits: [],
+        totals: {
+          totalRevenue: 0,
+          totalUnits: 0,
+          productsSold: 0,
+        },
+      },
+      variants: {
+        byRevenue: [],
+        byUnits: [],
+        totals: {
+          totalRevenue: 0,
+          totalUnits: 0,
+          variantsSold: 0,
+        },
+      },
+      metricBasis: {
+        revenue: expect.any(String),
+        units: expect.any(String),
+        ranking: expect.any(String),
+        identity: expect.any(String),
+        source: expect.any(String),
+      },
+    });
 
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,

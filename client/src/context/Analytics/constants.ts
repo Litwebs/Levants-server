@@ -617,6 +617,59 @@ export type LowStockResult = {
   items: LowStockItem[];
 };
 
+export type TopSubscriptionProductRow = {
+  productId: string;
+  productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  orderCount: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type TopSubscriptionVariantRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  orderCount: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type TopSubscriptionProductsVariantsResult = {
+  products: {
+    byRevenue: TopSubscriptionProductRow[];
+    byUnits: TopSubscriptionProductRow[];
+    totals: {
+      totalRevenue: number;
+      totalUnits: number;
+      productsSold: number;
+    };
+  };
+  variants: {
+    byRevenue: TopSubscriptionVariantRow[];
+    byUnits: TopSubscriptionVariantRow[];
+    totals: {
+      totalRevenue: number;
+      totalUnits: number;
+      variantsSold: number;
+    };
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    ranking: string;
+    identity: string;
+    source: string;
+  };
+};
+
 export type SubscriptionRevenueResult = {
   subscriptionRevenue: number;
   grossRevenue: number;
@@ -700,6 +753,7 @@ export type AnalyticsDashboard = {
   newSubscriptions: NewSubscriptionsResult;
   cancelledSubscriptions: CancelledSubscriptionsResult;
   subscriptionRevenue: SubscriptionRevenueResult;
+  topSubscriptionProductsVariants: TopSubscriptionProductsVariantsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

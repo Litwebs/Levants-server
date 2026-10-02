@@ -354,6 +354,8 @@ const Reports = () => {
   const newSubscriptions = dashboard?.newSubscriptions;
   const cancelledSubscriptions = dashboard?.cancelledSubscriptions;
   const subscriptionRevenue = dashboard?.subscriptionRevenue;
+  const topSubscriptionProductsVariants =
+    dashboard?.topSubscriptionProductsVariants;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -714,6 +716,74 @@ const Reports = () => {
               <span className={styles.metricLabel}>Subscription Refunds</span>
             </div>
           </div>
+          <div className={styles.chartsGrid}>
+            <div className={styles.productRankingSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>
+                  Top Subscription Products
+                </span>
+                <span className={styles.variantMeta}>
+                  Collected merchandise revenue
+                </span>
+              </div>
+              <div className={styles.productRanking}>
+                {(topSubscriptionProductsVariants?.products.byRevenue ?? []).map(
+                  (product, index) => (
+                    <div key={product.productId} className={styles.rankItem}>
+                      <span className={styles.rankNumber}>#{index + 1}</span>
+                      <div className={styles.rankInfo}>
+                        <span className={styles.rankName}>
+                          {product.productName}
+                          {product.catalogStatus === "deleted"
+                            ? " · Deleted"
+                            : ""}
+                        </span>
+                        <span className={styles.rankMeta}>
+                          {formatCurrency(product.totalRevenue)} ·{" "}
+                          {formatCompactNumber(product.totalUnits)} units ·{" "}
+                          {formatDecimal(product.revenueContributionPercent)}%
+                        </span>
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+
+            <div className={styles.productRankingSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>
+                  Top Subscription Variants
+                </span>
+                <span className={styles.variantMeta}>
+                  Collected merchandise revenue
+                </span>
+              </div>
+              <div className={styles.productRanking}>
+                {(topSubscriptionProductsVariants?.variants.byRevenue ?? []).map(
+                  (variant, index) => (
+                    <div key={variant.variantId} className={styles.rankItem}>
+                      <span className={styles.rankNumber}>#{index + 1}</span>
+                      <div className={styles.rankInfo}>
+                        <span className={styles.rankName}>
+                          {variant.variantName}
+                          {variant.catalogStatus === "deleted"
+                            ? " · Deleted"
+                            : ""}
+                        </span>
+                        <span className={styles.rankMeta}>
+                          {variant.productName} · {variant.sku} ·{" "}
+                          {formatCurrency(variant.totalRevenue)} ·{" "}
+                          {formatCompactNumber(variant.totalUnits)} units
+                        </span>
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className={styles.chartFooter}>
             <span className={styles.chartTotal}>
               Active is current recurring state. New and cancelled subscriptions

@@ -47,6 +47,11 @@ router.get(
   validateAnalyticsQuery(),
   asyncHandler(controller.GetSubscriptionRevenue),
 );
+router.get(
+  "/top-subscription-products-variants",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetTopSubscriptionProductsVariants),
+);
 
 router.get(
   "/sales-breakdown",
