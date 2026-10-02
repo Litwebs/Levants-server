@@ -49,7 +49,7 @@ const DashboardHeader: React.FC<Props> = ({
                 orderSource,
                 interval: defaultAnalyticsIntervalForRange(nextRange),
               });
-            }
+            }}
             options={dateRangeOptions}
           />
 
