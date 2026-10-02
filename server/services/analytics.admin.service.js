@@ -3680,23 +3680,133 @@ async function GetNewSubscriptions({
   };
 }
 
+const SUBSCRIPTION_DELIVERY_FEE = 1;
+
+async function GetCurrentSubscriptionSnapshot() {
+  const [row = {}] = await Subscription.aggregate([
+    {
+      $match: {
+        status: "active",
+        isCancellationScheduled: { $ne: true },
+      },
+    },
+    {
+      $addFields: {
+        _analyticsMerchandiseValue: {
+          $sum: {
+            $map: {
+              input: { $ifNull: ["$items", []] },
+              as: "item",
+              in: {
+                $multiply: [
+                  { $ifNull: ["$item.unitPrice", 0] },
+                  { $ifNull: ["$item.quantity", 0] },
+                ],
+              },
+            },
+          },
+        },
+        _analyticsDeliveryCount: {
+          $cond: [
+            { $eq: ["$frequency", "weekly"] },
+            {
+              $max: [
+                1,
+                { $size: { $ifNull: ["$preferredDeliveryDays", []] } },
+              ],
+            },
+            1,
+          ],
+        },
+      },
+    },
+    {
+      $addFields: {
+        _analyticsDeliveryFeeValue: {
+          $multiply: [
+            "$_analyticsDeliveryCount",
+            SUBSCRIPTION_DELIVERY_FEE,
+          ],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        activeSubscriptions: { $sum: 1 },
+        totalMerchandiseValue: { $sum: "$_analyticsMerchandiseValue" },
+        totalDeliveryFeeValue: { $sum: "$_analyticsDeliveryFeeValue" },
+        totalRecurringCharge: {
+          $sum: {
+            $add: [
+              "$_analyticsMerchandiseValue",
+              "$_analyticsDeliveryFeeValue",
+            ],
+          },
+        },
+      },
+    },
+  ]);
+
+  return {
+    activeSubscriptions: Number(row.activeSubscriptions) || 0,
+    totalMerchandiseValue: Number(row.totalMerchandiseValue) || 0,
+    totalDeliveryFeeValue: Number(row.totalDeliveryFeeValue) || 0,
+    totalRecurringCharge: Number(row.totalRecurringCharge) || 0,
+  };
+}
+
+const buildActiveSubscriptionsData = (snapshot = {}) => ({
+  activeSubscriptions: Number(snapshot.activeSubscriptions) || 0,
+  metricBasis: {
+    activeSubscriptions:
+      "Current subscriptions eligible to continue recurring service: status is active and cancellation is not scheduled. Paused, cancelled, and scheduled-cancellation subscriptions are excluded.",
+    scope:
+      "Point-in-time current state at request time; historical date and order-source filters do not apply because subscription status history is not stored as snapshots.",
+  },
+});
+
+const buildAverageSubscriptionValueData = (snapshot = {}) => {
+  const activeSubscriptions = Number(snapshot.activeSubscriptions) || 0;
+  const totalRecurringCharge = Number(snapshot.totalRecurringCharge) || 0;
+  const totalMerchandiseValue = Number(snapshot.totalMerchandiseValue) || 0;
+  const totalDeliveryFeeValue = Number(snapshot.totalDeliveryFeeValue) || 0;
+
+  return {
+    averageSubscriptionValue:
+      activeSubscriptions > 0 ? totalRecurringCharge / activeSubscriptions : 0,
+    averageMerchandiseValue:
+      activeSubscriptions > 0 ? totalMerchandiseValue / activeSubscriptions : 0,
+    averageDeliveryFeeValue:
+      activeSubscriptions > 0
+        ? totalDeliveryFeeValue / activeSubscriptions
+        : 0,
+    totalRecurringCharge,
+    activeSubscriptions,
+    metricBasis: {
+      averageSubscriptionValue:
+        "Current average recurring charge per billing cycle across subscriptions eligible to continue recurring service. It uses each subscription's effective item price snapshots plus the same £1-per-delivery fee structure used by recurring billing.",
+      scope:
+        "Point-in-time current subscription state. Pending post-cutoff changes are excluded until they become effective; historical date and order-source filters do not apply.",
+    },
+  };
+};
+
 async function GetActiveSubscriptions() {
-  const activeSubscriptions = await Subscription.countDocuments({
-    status: "active",
-    isCancellationScheduled: { $ne: true },
-  });
+  const snapshot = await GetCurrentSubscriptionSnapshot();
 
   return {
     success: true,
-    data: {
-      activeSubscriptions,
-      metricBasis: {
-        activeSubscriptions:
-          "Current subscriptions eligible to continue recurring service: status is active and cancellation is not scheduled. Paused, cancelled, and scheduled-cancellation subscriptions are excluded.",
-        scope:
-          "Point-in-time current state at request time; historical date and order-source filters do not apply because subscription status history is not stored as snapshots.",
-      },
-    },
+    data: buildActiveSubscriptionsData(snapshot),
+  };
+}
+
+async function GetAverageSubscriptionValue() {
+  const snapshot = await GetCurrentSubscriptionSnapshot();
+
+  return {
+    success: true,
+    data: buildAverageSubscriptionValueData(snapshot),
   };
 }
 
@@ -3708,7 +3818,18 @@ async function GetDashboard({
   orderSource,
   timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
 } = {}) {
-  const activeSubscriptionsPromise = GetActiveSubscriptions();
+  const currentSubscriptionSnapshotPromise = GetCurrentSubscriptionSnapshot();
+  const activeSubscriptionsPromise = currentSubscriptionSnapshotPromise.then(
+    (snapshot) => ({
+      success: true,
+      data: buildActiveSubscriptionsData(snapshot),
+    }),
+  );
+  const averageSubscriptionValuePromise =
+    currentSubscriptionSnapshotPromise.then((snapshot) => ({
+      success: true,
+      data: buildAverageSubscriptionValueData(snapshot),
+    }));
   const cancelledSubscriptionsPromise = GetCancelledSubscriptions({
     range,
     from,
@@ -3831,6 +3952,7 @@ async function GetDashboard({
     variantTrends,
     variantUnits,
     activeSubscriptions,
+    averageSubscriptionValue,
     newSubscriptions,
     cancelledSubscriptions,
     salesBreakdown,
@@ -3844,6 +3966,7 @@ async function GetDashboard({
     variantTrendsPromise,
     variantUnitsPromise,
     activeSubscriptionsPromise,
+    averageSubscriptionValuePromise,
     newSubscriptionsPromise,
     cancelledSubscriptionsPromise,
     salesBreakdownPromise,
@@ -3859,6 +3982,7 @@ async function GetDashboard({
     variantTrends,
     variantUnits,
     activeSubscriptions,
+    averageSubscriptionValue,
     newSubscriptions,
     cancelledSubscriptions,
     salesBreakdown,
@@ -3967,6 +4091,7 @@ async function GetDashboard({
         },
       },
       activeSubscriptions: activeSubscriptions.data,
+      averageSubscriptionValue: averageSubscriptionValue.data,
       newSubscriptions: newSubscriptions.data,
       cancelledSubscriptions: cancelledSubscriptions.data,
       subscriptionRevenue: buildSubscriptionRevenueData(salesBreakdown.data),
@@ -4018,6 +4143,7 @@ module.exports = {
   GetProductDetail,
   GetVariantDetail,
   GetActiveSubscriptions,
+  GetAverageSubscriptionValue,
   GetNewSubscriptions,
   GetCancelledSubscriptions,
   GetRecentOrders,

@@ -391,6 +391,19 @@ const GetNewSubscriptions = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetAverageSubscriptionValue = async (req, res) => {
+  const result = await service.GetAverageSubscriptionValue();
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetActiveSubscriptions = async (req, res) => {
   const result = await service.GetActiveSubscriptions();
 
@@ -508,6 +521,7 @@ module.exports = {
   GetProductDetail,
   GetVariantDetail,
   GetActiveSubscriptions,
+  GetAverageSubscriptionValue,
   GetNewSubscriptions,
   GetCancelledSubscriptions,
   GetRecentOrders,

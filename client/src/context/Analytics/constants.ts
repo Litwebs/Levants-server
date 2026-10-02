@@ -659,6 +659,18 @@ export type NewSubscriptionsResult = {
   };
 };
 
+export type AverageSubscriptionValueResult = {
+  averageSubscriptionValue: number;
+  averageMerchandiseValue: number;
+  averageDeliveryFeeValue: number;
+  totalRecurringCharge: number;
+  activeSubscriptions: number;
+  metricBasis: {
+    averageSubscriptionValue: string;
+    scope: string;
+  };
+};
+
 export type ActiveSubscriptionsResult = {
   activeSubscriptions: number;
   metricBasis: {
@@ -684,6 +696,7 @@ export type AnalyticsDashboard = {
   variantSalesMix: VariantSalesMixResult;
   variantContribution: VariantContributionResult;
   activeSubscriptions: ActiveSubscriptionsResult;
+  averageSubscriptionValue: AverageSubscriptionValueResult;
   newSubscriptions: NewSubscriptionsResult;
   cancelledSubscriptions: CancelledSubscriptionsResult;
   subscriptionRevenue: SubscriptionRevenueResult;

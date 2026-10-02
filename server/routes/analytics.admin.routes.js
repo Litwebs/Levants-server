@@ -155,6 +155,10 @@ router.get(
   asyncHandler(controller.GetActiveSubscriptions),
 );
 router.get(
+  "/average-subscription-value",
+  asyncHandler(controller.GetAverageSubscriptionValue),
+);
+router.get(
   "/new-subscriptions",
   validateAnalyticsQuery(),
   asyncHandler(controller.GetNewSubscriptions),

@@ -47,6 +47,7 @@ export type {
   VariantDetailSource,
   VariantDetail,
   ActiveSubscriptionsResult,
+  AverageSubscriptionValueResult,
   NewSubscriptionsResult,
   CancelledSubscriptionsResult,
   SubscriptionRevenueResult,

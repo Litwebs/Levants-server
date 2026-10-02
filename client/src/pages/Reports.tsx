@@ -350,6 +350,7 @@ const Reports = () => {
   const variantSalesMix = dashboard?.variantSalesMix;
   const variantContribution = dashboard?.variantContribution;
   const activeSubscriptions = dashboard?.activeSubscriptions;
+  const averageSubscriptionValue = dashboard?.averageSubscriptionValue;
   const newSubscriptions = dashboard?.newSubscriptions;
   const cancelledSubscriptions = dashboard?.cancelledSubscriptions;
   const subscriptionRevenue = dashboard?.subscriptionRevenue;
@@ -672,6 +673,16 @@ const Reports = () => {
             </div>
             <div className={styles.metricItem}>
               <span className={styles.metricValue}>
+                {formatCurrency(
+                  averageSubscriptionValue?.averageSubscriptionValue ?? 0,
+                )}
+              </span>
+              <span className={styles.metricLabel}>
+                Avg Subscription Value
+              </span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
                 {formatCompactNumber(newSubscriptions?.newSubscriptions ?? 0)}
               </span>
               <span className={styles.metricLabel}>New Subscriptions</span>
@@ -708,8 +719,10 @@ const Reports = () => {
               Active is current recurring state. New and cancelled subscriptions
               use the selected date range; scheduled cancellations count only
               after becoming effective. Order-source filters do not apply to
-              lifecycle metrics. Subscription revenue uses the selected date
-              range and is always scoped to the Subscription sales channel.
+              lifecycle metrics. Average subscription value is the current
+              recurring charge per billing cycle for recurring-active
+              subscriptions. Subscription revenue uses the selected date range
+              and is always scoped to the Subscription sales channel.
             </span>
           </div>
         </CardContent>

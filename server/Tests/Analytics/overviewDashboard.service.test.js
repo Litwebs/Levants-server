@@ -333,6 +333,17 @@ describe("analytics overview dashboard dataset", () => {
         scope: expect.stringContaining("Point-in-time current state"),
       },
     });
+    expect(result.data.averageSubscriptionValue).toEqual({
+      averageSubscriptionValue: 0,
+      averageMerchandiseValue: 0,
+      averageDeliveryFeeValue: 0,
+      totalRecurringCharge: 0,
+      activeSubscriptions: 0,
+      metricBasis: {
+        averageSubscriptionValue: expect.any(String),
+        scope: expect.stringContaining("Point-in-time current subscription state"),
+      },
+    });
     expect(result.data.newSubscriptions).toEqual({
       newSubscriptions: 0,
       period: {
