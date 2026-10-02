@@ -273,6 +273,7 @@ const Reports = () => {
   const variantsByRevenue = dashboard?.variantRevenue?.byRevenue ?? [];
   const variantRevenueTotals = dashboard?.variantRevenue?.totals;
   const maxVariantRevenue = variantsByRevenue[0]?.totalRevenue ?? 0;
+  const variantRealisedPrice = dashboard?.variantRealisedPrice;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -1186,6 +1187,54 @@ const Reports = () => {
             <span className={styles.chartTotal}>
               Revenue is collected merchandise after proportional order
               discounts. Delivery and item-unattributed refunds are excluded.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader><CardTitle>Variant Realised Selling Price</CardTitle></CardHeader>
+        <CardContent>
+          <div className={styles.metricsGrid}>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(variantRealisedPrice?.totals.realisedSellingPrice ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Overall Realised ASP</span>
+            </div>
+          </div>
+          <div className={styles.productRankingSection}>
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Realised Price by Variant</span>
+              <span className={styles.variantMeta}>Collected revenue ÷ historical units</span>
+            </div>
+            <div className={styles.productRanking}>
+              {(variantRealisedPrice?.variants ?? []).length === 0 && !loading ? (
+                <div className={styles.emptyState}>No realised price data</div>
+              ) : (
+                (variantRealisedPrice?.variants ?? []).map((variant, index) => (
+                  <div key={variant.variantId} className={styles.rankItem}>
+                    <span className={styles.rankNumber}>#{index + 1}</span>
+                    <div className={styles.rankInfo}>
+                      <span className={styles.rankName}>
+                        {variant.variantName}
+                        {variant.catalogStatus === "deleted" ? " · Deleted" : ""}
+                      </span>
+                      <span className={styles.rankMeta}>
+                        {variant.productName} · {variant.sku} ·{" "}
+                        {formatCurrency(variant.realisedSellingPrice)} / unit ·{" "}
+                        {formatCompactNumber(variant.totalUnits)} units
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Realised price reflects discounts and partial payments. Current/base price comparison is intentionally handled in the next variant task.
             </span>
           </div>
         </CardContent>

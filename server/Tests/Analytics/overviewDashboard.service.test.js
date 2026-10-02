@@ -209,6 +209,23 @@ describe("analytics overview dashboard dataset", () => {
       }),
     );
 
+    expect(result.data.variantRealisedPrice).toEqual(
+      expect.objectContaining({
+        variants: [expect.objectContaining({
+          variantId: variant._id,
+          totalRevenue: 120,
+          totalUnits: 3,
+          realisedSellingPrice: 40,
+        })],
+        totals: {
+          totalRevenue: 120,
+          totalUnits: 3,
+          realisedSellingPrice: 40,
+          variantsSold: 1,
+        },
+      }),
+    );
+
     expect(result.data.revenueComposition).toEqual({
       merchandiseRevenue: 120,
       deliveryRevenue: 0,

@@ -92,6 +92,11 @@ router.get(
   asyncHandler(controller.GetVariantRevenue),
 );
 router.get(
+  "/variant-realised-price",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantRealisedPrice),
+);
+router.get(
   "/product-trends",
   validateAnalyticsQuery({
     allowInterval: true,

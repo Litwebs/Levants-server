@@ -308,7 +308,9 @@ export type VariantRevenueRow = {
   sku: string;
   catalogStatus: "active" | "inactive" | "archived" | "deleted";
   totalRevenue: number;
+  totalUnits: number;
   orderCount: number;
+  realisedSellingPrice: number;
 };
 
 export type VariantRevenueResult = {
@@ -321,6 +323,20 @@ export type VariantRevenueResult = {
   metricBasis: {
     revenue: string;
     ranking: string;
+    identity: string;
+  };
+};
+
+export type VariantRealisedPriceResult = {
+  variants: VariantRevenueRow[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    realisedSellingPrice: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    realisedSellingPrice: string;
     identity: string;
   };
 };
@@ -450,6 +466,7 @@ export type AnalyticsDashboard = {
   productTrends: ProductTrends;
   variantUnits: VariantUnitsResult;
   variantRevenue: VariantRevenueResult;
+  variantRealisedPrice: VariantRealisedPriceResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

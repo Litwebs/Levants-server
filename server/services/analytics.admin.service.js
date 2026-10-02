@@ -1670,6 +1670,13 @@ async function GetVariantUnits({
         totalRevenue: 1,
         totalUnits: 1,
         orderCount: 1,
+        realisedSellingPrice: {
+          $cond: [
+            { $gt: ["$totalUnits", 0] },
+            { $divide: ["$totalRevenue", "$totalUnits"] },
+            0,
+          ],
+        },
         averageUnitsPerOrder: {
           $cond: [
             { $gt: ["$orderCount", 0] },
@@ -1724,6 +1731,7 @@ async function GetVariantUnits({
     totalRevenue: Number(variant.totalRevenue) || 0,
     totalUnits: Number(variant.totalUnits) || 0,
     orderCount: Number(variant.orderCount) || 0,
+    realisedSellingPrice: Number(variant.realisedSellingPrice) || 0,
     averageUnitsPerOrder: Number(variant.averageUnitsPerOrder) || 0,
   });
   const byUnits = (result?.byUnits || []).map(normalizeVariant);
@@ -1744,6 +1752,8 @@ async function GetVariantUnits({
       metricBasis: {
         revenue:
           "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
+        realisedSellingPrice:
+          "Collected merchandise revenue divided by historical units sold, so discounts and partial payments reduce the realised per-unit price.",
         units:
           "Units on collected orders, including partially-paid orders.",
         ranking:
@@ -1772,6 +1782,31 @@ async function GetVariantRevenue(args = {}) {
         revenue: result.data.metricBasis.revenue,
         ranking:
           "Variants are ranked by collected merchandise revenue in the selected period.",
+        identity: result.data.metricBasis.identity,
+      },
+    },
+  };
+}
+
+async function GetVariantRealisedPrice(args = {}) {
+  const result = await GetVariantUnits(args);
+  if (!result.success) return result;
+
+  return {
+    success: true,
+    data: {
+      variants: result.data.byRevenue,
+      totals: {
+        totalRevenue: result.data.totals.totalRevenue,
+        totalUnits: result.data.totals.totalUnits,
+        realisedSellingPrice:
+          result.data.totals.totalUnits > 0
+            ? result.data.totals.totalRevenue / result.data.totals.totalUnits
+            : 0,
+        variantsSold: result.data.totals.variantsSold,
+      },
+      metricBasis: {
+        realisedSellingPrice: result.data.metricBasis.realisedSellingPrice,
         identity: result.data.metricBasis.identity,
       },
     },
@@ -2667,6 +2702,24 @@ async function GetDashboard({
           identity: variantUnits.data.metricBasis.identity,
         },
       },
+      variantRealisedPrice: {
+        variants: variantUnits.data.byRevenue,
+        totals: {
+          totalRevenue: variantUnits.data.totals.totalRevenue,
+          totalUnits: variantUnits.data.totals.totalUnits,
+          realisedSellingPrice:
+            variantUnits.data.totals.totalUnits > 0
+              ? variantUnits.data.totals.totalRevenue /
+                variantUnits.data.totals.totalUnits
+              : 0,
+          variantsSold: variantUnits.data.totals.variantsSold,
+        },
+        metricBasis: {
+          realisedSellingPrice:
+            variantUnits.data.metricBasis.realisedSellingPrice,
+          identity: variantUnits.data.metricBasis.identity,
+        },
+      },
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
@@ -2689,6 +2742,7 @@ module.exports = {
   GetTopProducts,
   GetVariantUnits,
   GetVariantRevenue,
+  GetVariantRealisedPrice,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,

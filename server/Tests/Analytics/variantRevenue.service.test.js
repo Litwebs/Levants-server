@@ -101,7 +101,9 @@ describe("analytics variant revenue", () => {
         sku: "REV-S-HIST",
         catalogStatus: "active",
         totalRevenue: 58,
+        totalUnits: 8,
         orderCount: 2,
+        realisedSellingPrice: 7.25,
       }),
     );
     expect(result.data.byRevenue[1]).toEqual(
@@ -110,7 +112,9 @@ describe("analytics variant revenue", () => {
         sku: "REV-L-HIST",
         catalogStatus: "deleted",
         totalRevenue: 32,
+        totalUnits: 2,
         orderCount: 1,
+        realisedSellingPrice: 16,
       }),
     );
     expect(result.data.variants).toEqual(result.data.byRevenue);
@@ -183,4 +187,36 @@ describe("analytics variant revenue", () => {
       variantsSold: 0,
     });
   });
+  test("returns realised selling price without current catalog-price comparison", async () => {
+    const customer = await createCustomer();
+    const product = await createProduct({ name: "ASP Product" });
+    const variant = await createVariant({ product, price: 99, stock: 100 });
+    await createOrder({
+      customer,
+      status: "partially_paid",
+      items: [{
+        product: product._id, productName: "ASP Product", variant: variant._id,
+        name: "Historical Variant", sku: "ASP-HIST", price: 20, quantity: 4, subtotal: 80,
+      }],
+      overrides: {
+        subtotal: 80, discountAmount: 20, total: 60, amountPaid: 30,
+        paidAt: new Date("2026-06-11T12:00:00.000Z"),
+      },
+    });
+    const result = await analyticsService.GetVariantRealisedPrice({
+      from: "2026-06-10", to: "2026-06-12", timeZone: "Europe/London",
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.totals).toEqual({
+      totalRevenue: 30, totalUnits: 4, realisedSellingPrice: 7.5, variantsSold: 1,
+    });
+    expect(result.data.variants[0]).toEqual(expect.objectContaining({
+      variantId: variant._id,
+      totalRevenue: 30,
+      totalUnits: 4,
+      realisedSellingPrice: 7.5,
+    }));
+    expect(result.data.variants[0]).not.toHaveProperty("currentPrice");
+  });
+
 });
