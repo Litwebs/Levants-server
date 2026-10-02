@@ -3632,10 +3632,12 @@ describe("Portal Subscriptions", () => {
       { singletonKey: "subscription-settings" },
       { cutoffDaysBefore: 2, cutoffTime: "22:00" },
     );
+    // These are separate user actions. Reusing the legacy payload-derived key
+    // would replay the no-op after the saved customer address is edited.
     const unchangedRes = await request(app)
       .patch(`/api/portal/subscriptions/${sub._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ deliveryAddressId: knownAddressId });
+      .send({ deliveryAddressId: knownAddressId, operationId: crypto.randomUUID() });
     expect(unchangedRes.status).toBe(200);
     const unchangedStored = await Subscription.findById(sub._id).lean();
     expect(unchangedStored.pendingChanges?.deliveryAddress).toBeFalsy();
@@ -3647,7 +3649,7 @@ describe("Portal Subscriptions", () => {
     const afterRes = await request(app)
       .patch(`/api/portal/subscriptions/${sub._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ deliveryAddressId: knownAddressId });
+      .send({ deliveryAddressId: knownAddressId, operationId: crypto.randomUUID() });
     expect(afterRes.status).toBe(200);
     const afterStored = await Subscription.findById(sub._id).lean();
     expect(afterStored.deliveryAddress.line1).toBe(sub.deliveryAddress.line1);
