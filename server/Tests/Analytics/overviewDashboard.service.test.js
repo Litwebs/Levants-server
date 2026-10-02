@@ -150,6 +150,39 @@ describe("analytics overview dashboard dataset", () => {
       netRevenue: 100,
     });
 
+    expect(result.data.topProducts).toEqual(
+      expect.objectContaining({
+        byRevenue: [
+          expect.objectContaining({
+            productId: product._id,
+            totalRevenue: 120,
+            totalQuantity: 3,
+            orderCount: 1,
+            revenueContributionPercent: 100,
+            unitContributionPercent: 100,
+          }),
+        ],
+        byUnits: [
+          expect.objectContaining({
+            productId: product._id,
+            totalRevenue: 120,
+            totalQuantity: 3,
+          }),
+        ],
+        lowestByRevenue: [
+          expect.objectContaining({ productId: product._id }),
+        ],
+        lowestByUnits: [
+          expect.objectContaining({ productId: product._id }),
+        ],
+        totals: {
+          totalRevenue: 120,
+          totalUnits: 3,
+          productsSold: 1,
+        },
+      }),
+    );
+
     expect(result.data.salesBreakdown).toEqual(
       expect.objectContaining({
         channels: [

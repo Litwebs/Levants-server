@@ -45,9 +45,18 @@ describe("GET /api/admin/analytics/top-products", () => {
         products: [],
         byRevenue: [],
         byUnits: [],
+        lowestByRevenue: [],
+        lowestByUnits: [],
+        totals: {
+          totalRevenue: 0,
+          totalUnits: 0,
+          productsSold: 0,
+        },
         metricBasis: expect.objectContaining({
           revenue: expect.any(String),
           units: expect.any(String),
+          contribution: expect.any(String),
+          lowest: expect.any(String),
         }),
       }),
     );

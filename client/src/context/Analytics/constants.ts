@@ -229,7 +229,12 @@ export type TopProductVariant = {
   sku: string;
   revenue: number;
   quantity: number;
+  orderCount: number;
   averageSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
 };
 
 export type TopProduct = {
@@ -238,7 +243,12 @@ export type TopProduct = {
   catalogStatus: "draft" | "active" | "archived" | "deleted";
   totalRevenue: number;
   totalQuantity: number;
+  orderCount: number;
   averageSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
   variants: TopProductVariant[];
 };
 
@@ -246,9 +256,18 @@ export type TopProductsResult = {
   products: TopProduct[];
   byRevenue: TopProduct[];
   byUnits: TopProduct[];
+  lowestByRevenue: TopProduct[];
+  lowestByUnits: TopProduct[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    productsSold: number;
+  };
   metricBasis: {
     revenue: string;
     units: string;
+    contribution: string;
+    lowest: string;
   };
 };
 

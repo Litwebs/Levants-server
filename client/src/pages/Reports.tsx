@@ -201,26 +201,29 @@ const Reports = () => {
   const productsByRevenue =
     dashboard?.topProducts?.byRevenue ?? dashboard?.topProducts?.products ?? [];
   const productsByUnits = dashboard?.topProducts?.byUnits ?? [];
-  const maxProductRevenue = productsByRevenue[0]?.totalRevenue || 1;
-  const maxProductUnits = productsByUnits[0]?.totalQuantity || 1;
+  const lowestProductsByRevenue =
+    dashboard?.topProducts?.lowestByRevenue ?? [];
+  const lowestProductsByUnits = dashboard?.topProducts?.lowestByUnits ?? [];
+  const productTotals = dashboard?.topProducts?.totals;
 
-  const productsByRevenueChart = productsByRevenue.map((product) => ({
+  const productDisplay = (product: (typeof productsByRevenue)[number]) => ({
     productId: product.productId,
     label: product.productName,
-    value: product.totalRevenue,
-    percentage: (product.totalRevenue / maxProductRevenue) * 100,
-    units: product.totalQuantity,
-    catalogStatus: product.catalogStatus,
-  }));
-
-  const productsByUnitsChart = productsByUnits.map((product) => ({
-    productId: product.productId,
-    label: product.productName,
-    value: product.totalQuantity,
-    percentage: (product.totalQuantity / maxProductUnits) * 100,
     revenue: product.totalRevenue,
+    units: product.totalQuantity,
+    orders: product.orderCount,
+    averageSellingPrice: product.averageSellingPrice,
+    averageRevenuePerOrder: product.averageRevenuePerOrder,
+    averageUnitsPerOrder: product.averageUnitsPerOrder,
+    revenueContributionPercent: product.revenueContributionPercent,
+    unitContributionPercent: product.unitContributionPercent,
     catalogStatus: product.catalogStatus,
-  }));
+  });
+
+  const productsByRevenueChart = productsByRevenue.map(productDisplay);
+  const productsByUnitsChart = productsByUnits.map(productDisplay);
+  const lowestByRevenueChart = lowestProductsByRevenue.map(productDisplay);
+  const lowestByUnitsChart = lowestProductsByUnits.map(productDisplay);
 
   const salesChannels = dashboard?.salesBreakdown?.channels ?? [];
   const salesTrendSeries = useMemo(
@@ -629,76 +632,195 @@ const Reports = () => {
       <div className={styles.chartsGrid}>
         <Card className={styles.chartCard}>
           <CardHeader>
-            <CardTitle>Product Rankings</CardTitle>
+            <CardTitle>Product Performance</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={styles.variantHeader}>
-              <span className={styles.variantTitle}>Top by Revenue</span>
-              <span className={styles.variantMeta}>Collected merchandise</span>
-            </div>
-            <div className={styles.productRanking}>
-              {productsByRevenueChart.length === 0 && !loading ? (
-                <div className={styles.emptyState}>No data</div>
-              ) : (
-                productsByRevenueChart.map((product, index) => (
-                  <div key={product.productId} className={styles.rankItem}>
-                    <span className={styles.rankNumber}>#{index + 1}</span>
-                    <div className={styles.rankInfo}>
-                      <span className={styles.rankName}>
-                        {product.label}
-                        {product.catalogStatus === "deleted" ? " · Deleted" : ""}
-                      </span>
-                      <span className={styles.rankMeta}>
-                        {formatCurrency(product.value)} ·{" "}
-                        {formatCompactNumber(product.units)} units
-                      </span>
-                    </div>
-                    <div className={styles.rankBar}>
-                      <div
-                        className={styles.rankFill}
-                        style={{ width: `${product.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className={styles.metricsGrid}>
+              <div className={styles.metricItem}>
+                <span className={styles.metricValue}>
+                  {formatCompactNumber(productTotals?.productsSold ?? 0)}
+                </span>
+                <span className={styles.metricLabel}>Products Sold</span>
+              </div>
+              <div className={styles.metricItem}>
+                <span className={styles.metricValue}>
+                  {formatCurrency(productTotals?.totalRevenue ?? 0)}
+                </span>
+                <span className={styles.metricLabel}>Product Revenue</span>
+              </div>
+              <div className={styles.metricItem}>
+                <span className={styles.metricValue}>
+                  {formatCompactNumber(productTotals?.totalUnits ?? 0)}
+                </span>
+                <span className={styles.metricLabel}>Product Units</span>
+              </div>
             </div>
 
-            <div className={styles.variantHeader}>
-              <span className={styles.variantTitle}>Top by Units</span>
-              <span className={styles.variantMeta}>Historical units sold</span>
+            <div className={styles.productRankingSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>Top by Revenue</span>
+                <span className={styles.variantMeta}>Collected merchandise</span>
+              </div>
+              <div className={styles.productRanking}>
+                {productsByRevenueChart.length === 0 && !loading ? (
+                  <div className={styles.emptyState}>No data</div>
+                ) : (
+                  productsByRevenueChart.map((product, index) => (
+                    <div key={product.productId} className={styles.rankItem}>
+                      <span className={styles.rankNumber}>#{index + 1}</span>
+                      <div className={styles.rankInfo}>
+                        <span className={styles.rankName}>
+                          {product.label}
+                          {product.catalogStatus === "deleted" ? " · Deleted" : ""}
+                        </span>
+                        <span className={styles.rankMeta}>
+                          {formatCurrency(product.revenue)} ·{" "}
+                          {formatDecimal(product.revenueContributionPercent)}% revenue ·{" "}
+                          {formatCompactNumber(product.orders)} orders · ASP{" "}
+                          {formatCurrency(product.averageSellingPrice)}
+                        </span>
+                      </div>
+                      <div className={styles.rankBar}>
+                        <div
+                          className={styles.rankFill}
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              product.revenueContributionPercent,
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-            <div className={styles.productRanking}>
-              {productsByUnitsChart.length === 0 && !loading ? (
-                <div className={styles.emptyState}>No data</div>
-              ) : (
-                productsByUnitsChart.map((product, index) => (
-                  <div key={product.productId} className={styles.rankItem}>
-                    <span className={styles.rankNumber}>#{index + 1}</span>
-                    <div className={styles.rankInfo}>
-                      <span className={styles.rankName}>
-                        {product.label}
-                        {product.catalogStatus === "deleted" ? " · Deleted" : ""}
-                      </span>
-                      <span className={styles.rankMeta}>
-                        {formatCompactNumber(product.value)} units ·{" "}
-                        {formatCurrency(product.revenue)}
-                      </span>
+
+            <div className={styles.productRankingSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>Top by Units</span>
+                <span className={styles.variantMeta}>Historical units sold</span>
+              </div>
+              <div className={styles.productRanking}>
+                {productsByUnitsChart.length === 0 && !loading ? (
+                  <div className={styles.emptyState}>No data</div>
+                ) : (
+                  productsByUnitsChart.map((product, index) => (
+                    <div key={product.productId} className={styles.rankItem}>
+                      <span className={styles.rankNumber}>#{index + 1}</span>
+                      <div className={styles.rankInfo}>
+                        <span className={styles.rankName}>
+                          {product.label}
+                          {product.catalogStatus === "deleted" ? " · Deleted" : ""}
+                        </span>
+                        <span className={styles.rankMeta}>
+                          {formatCompactNumber(product.units)} units ·{" "}
+                          {formatDecimal(product.unitContributionPercent)}% units ·{" "}
+                          {formatCurrency(product.revenue)} ·{" "}
+                          {formatDecimal(product.averageUnitsPerOrder)} units/order
+                        </span>
+                      </div>
+                      <div className={styles.rankBar}>
+                        <div
+                          className={styles.rankFill}
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              product.unitContributionPercent,
+                            )}%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className={styles.rankBar}>
-                      <div
-                        className={styles.rankFill}
-                        style={{ width: `${product.percentage}%` }}
-                      />
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className={styles.productRankingSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>Lowest by Revenue</span>
+                <span className={styles.variantMeta}>Sold products only</span>
+              </div>
+              <div className={styles.productRanking}>
+                {lowestByRevenueChart.length === 0 && !loading ? (
+                  <div className={styles.emptyState}>No data</div>
+                ) : (
+                  lowestByRevenueChart.map((product, index) => (
+                    <div key={product.productId} className={styles.rankItem}>
+                      <span className={styles.rankNumber}>#{index + 1}</span>
+                      <div className={styles.rankInfo}>
+                        <span className={styles.rankName}>
+                          {product.label}
+                          {product.catalogStatus === "deleted" ? " · Deleted" : ""}
+                        </span>
+                        <span className={styles.rankMeta}>
+                          {formatCurrency(product.revenue)} ·{" "}
+                          {formatDecimal(product.revenueContributionPercent)}% revenue ·{" "}
+                          {formatCompactNumber(product.orders)} orders
+                        </span>
+                      </div>
+                      <div className={styles.rankBar}>
+                        <div
+                          className={styles.rankFill}
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              product.revenueContributionPercent,
+                            )}%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className={styles.productRankingSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>Lowest by Units</span>
+                <span className={styles.variantMeta}>Sold products only</span>
+              </div>
+              <div className={styles.productRanking}>
+                {lowestByUnitsChart.length === 0 && !loading ? (
+                  <div className={styles.emptyState}>No data</div>
+                ) : (
+                  lowestByUnitsChart.map((product, index) => (
+                    <div key={product.productId} className={styles.rankItem}>
+                      <span className={styles.rankNumber}>#{index + 1}</span>
+                      <div className={styles.rankInfo}>
+                        <span className={styles.rankName}>
+                          {product.label}
+                          {product.catalogStatus === "deleted" ? " · Deleted" : ""}
+                        </span>
+                        <span className={styles.rankMeta}>
+                          {formatCompactNumber(product.units)} units ·{" "}
+                          {formatDecimal(product.unitContributionPercent)}% units ·{" "}
+                          {formatCurrency(product.revenue)}
+                        </span>
+                      </div>
+                      <div className={styles.rankBar}>
+                        <div
+                          className={styles.rankFill}
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              product.unitContributionPercent,
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
             <div className={styles.chartFooter}>
               <span className={styles.chartTotal}>
-                Product revenue excludes delivery fees and item-unattributed refunds.
+                Contribution is measured against sold products in the selected period.
               </span>
             </div>
           </CardContent>

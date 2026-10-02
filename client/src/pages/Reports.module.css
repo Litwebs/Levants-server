@@ -493,6 +493,10 @@
   }
 }
 
+.productRankingSection + .productRankingSection {
+  margin-top: var(--space-5);
+}
+
 /* Product/Customer Ranking */
 .productRanking,
 .customerRanking {

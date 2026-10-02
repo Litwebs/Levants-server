@@ -1288,6 +1288,7 @@ async function GetTopProducts({
         _id: {
           product: "$items.product",
           variant: "$items.variant",
+          order: "$_id",
         },
         productNameSnapshot: { $first: "$items.productName" },
         variantNameSnapshot: { $first: "$items.name" },
@@ -1300,11 +1301,28 @@ async function GetTopProducts({
     { $sort: { latestPaidAt: -1 } },
     {
       $group: {
+        _id: {
+          product: "$_id.product",
+          variant: "$_id.variant",
+        },
+        productNameSnapshot: { $first: "$productNameSnapshot" },
+        variantNameSnapshot: { $first: "$variantNameSnapshot" },
+        skuSnapshot: { $first: "$skuSnapshot" },
+        latestPaidAt: { $first: "$latestPaidAt" },
+        revenue: { $sum: "$revenue" },
+        quantity: { $sum: "$quantity" },
+        orderIds: { $addToSet: "$_id.order" },
+      },
+    },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $group: {
         _id: "$_id.product",
         productId: { $first: "$_id.product" },
         productNameSnapshot: { $first: "$productNameSnapshot" },
         totalRevenue: { $sum: "$revenue" },
         totalQuantity: { $sum: "$quantity" },
+        orderIdSets: { $push: "$orderIds" },
         variants: {
           $push: {
             variantId: "$_id.variant",
@@ -1312,12 +1330,19 @@ async function GetTopProducts({
             sku: "$skuSnapshot",
             revenue: "$revenue",
             quantity: "$quantity",
-            averageSellingPrice: {
-              $cond: [
-                { $gt: ["$quantity", 0] },
-                { $divide: ["$revenue", "$quantity"] },
-                0,
-              ],
+            orderCount: { $size: "$orderIds" },
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        orderCount: {
+          $size: {
+            $reduce: {
+              input: "$orderIdSets",
+              initialValue: [],
+              in: { $setUnion: ["$$value", "$$this"] },
             },
           },
         },
@@ -1351,11 +1376,7 @@ async function GetTopProducts({
                   $concat: [
                     "Deleted product · ",
                     {
-                      $substrBytes: [
-                        { $toString: "$productId" },
-                        18,
-                        6,
-                      ],
+                      $substrBytes: [{ $toString: "$productId" }, 18, 6],
                     },
                   ],
                 },
@@ -1364,13 +1385,11 @@ async function GetTopProducts({
           ],
         },
         catalogStatus: {
-          $ifNull: [
-            { $arrayElemAt: ["$catalogProduct.status", 0] },
-            "deleted",
-          ],
+          $ifNull: [{ $arrayElemAt: ["$catalogProduct.status", 0] }, "deleted"],
         },
         totalRevenue: 1,
         totalQuantity: 1,
+        orderCount: 1,
         averageSellingPrice: {
           $cond: [
             { $gt: ["$totalQuantity", 0] },
@@ -1381,6 +1400,7 @@ async function GetTopProducts({
         variants: 1,
       },
     },
+    { $match: { totalQuantity: { $gt: 0 } } },
     {
       $facet: {
         byRevenue: [
@@ -1391,21 +1411,91 @@ async function GetTopProducts({
           { $sort: { totalQuantity: -1, totalRevenue: -1, productName: 1 } },
           { $limit: lim },
         ],
+        lowestByRevenue: [
+          { $sort: { totalRevenue: 1, totalQuantity: 1, productName: 1 } },
+          { $limit: lim },
+        ],
+        lowestByUnits: [
+          { $sort: { totalQuantity: 1, totalRevenue: 1, productName: 1 } },
+          { $limit: lim },
+        ],
+        totals: [
+          {
+            $group: {
+              _id: null,
+              totalRevenue: { $sum: "$totalRevenue" },
+              totalUnits: { $sum: "$totalQuantity" },
+              productsSold: { $sum: 1 },
+            },
+          },
+        ],
       },
     },
   ]);
 
-  const normalizeProduct = (product) => ({
-    ...product,
-    variants: [...(product?.variants || [])].sort(
-      (left, right) =>
-        (right.revenue || 0) - (left.revenue || 0) ||
-        (right.quantity || 0) - (left.quantity || 0),
-    ),
-  });
+  const totalsRow = result?.totals?.[0] || {};
+  const totals = {
+    totalRevenue: Number(totalsRow.totalRevenue) || 0,
+    totalUnits: Number(totalsRow.totalUnits) || 0,
+    productsSold: Number(totalsRow.productsSold) || 0,
+  };
+
+  const normalizeProduct = (product) => {
+    const totalRevenue = Number(product?.totalRevenue) || 0;
+    const totalQuantity = Number(product?.totalQuantity) || 0;
+    const orderCount = Number(product?.orderCount) || 0;
+
+    const variants = [...(product?.variants || [])]
+      .map((variant) => {
+        const revenue = Number(variant?.revenue) || 0;
+        const quantity = Number(variant?.quantity) || 0;
+        const variantOrderCount = Number(variant?.orderCount) || 0;
+
+        return {
+          ...variant,
+          revenue,
+          quantity,
+          orderCount: variantOrderCount,
+          averageSellingPrice: quantity > 0 ? revenue / quantity : 0,
+          averageRevenuePerOrder:
+            variantOrderCount > 0 ? revenue / variantOrderCount : 0,
+          averageUnitsPerOrder:
+            variantOrderCount > 0 ? quantity / variantOrderCount : 0,
+          revenueContributionPercent: roundPercentage(revenue, totalRevenue),
+          unitContributionPercent: roundPercentage(quantity, totalQuantity),
+        };
+      })
+      .sort(
+        (left, right) =>
+          (right.revenue || 0) - (left.revenue || 0) ||
+          (right.quantity || 0) - (left.quantity || 0),
+      );
+
+    return {
+      ...product,
+      totalRevenue,
+      totalQuantity,
+      orderCount,
+      averageSellingPrice: totalQuantity > 0 ? totalRevenue / totalQuantity : 0,
+      averageRevenuePerOrder:
+        orderCount > 0 ? totalRevenue / orderCount : 0,
+      averageUnitsPerOrder: orderCount > 0 ? totalQuantity / orderCount : 0,
+      revenueContributionPercent: roundPercentage(
+        totalRevenue,
+        totals.totalRevenue,
+      ),
+      unitContributionPercent: roundPercentage(
+        totalQuantity,
+        totals.totalUnits,
+      ),
+      variants,
+    };
+  };
 
   const byRevenue = (result?.byRevenue || []).map(normalizeProduct);
   const byUnits = (result?.byUnits || []).map(normalizeProduct);
+  const lowestByRevenue = (result?.lowestByRevenue || []).map(normalizeProduct);
+  const lowestByUnits = (result?.lowestByUnits || []).map(normalizeProduct);
 
   return {
     success: true,
@@ -1413,11 +1503,18 @@ async function GetTopProducts({
       products: byRevenue,
       byRevenue,
       byUnits,
+      lowestByRevenue,
+      lowestByUnits,
+      totals,
       metricBasis: {
         revenue:
           "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
         units:
           "Units on collected orders, including partially-paid orders.",
+        contribution:
+          "Share of collected product revenue or units across products with at least one sold unit in the selected period.",
+        lowest:
+          "Lowest-performing products among products with at least one sold unit in the selected period; unsold catalog products are excluded.",
       },
     },
   };
@@ -1550,6 +1647,7 @@ async function GetDashboard({
     to,
     limit: 5,
     orderSource,
+    timeZone,
   });
   const recentOrdersPromise = GetRecentOrders({
     range,
