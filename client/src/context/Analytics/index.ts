@@ -28,6 +28,8 @@ export type {
   ProductTrendPoint,
   ProductTrendProduct,
   ProductTrends,
+  ProductDetailSource,
+  ProductDetail,
   RecentOrder,
   RecentOrdersResult,
   LowStockItem,

@@ -485,5 +485,9 @@ orderSchema.index(
   { "refunds.status": 1, "refunds.refundedAt": 1 },
   { name: "analytics_refund_status_refundedAt" },
 );
+orderSchema.index(
+  { "items.product": 1, status: 1, paidAt: 1 },
+  { name: "analytics_product_status_paidAt" },
+);
 
 module.exports = mongoose.model("Order", orderSchema);

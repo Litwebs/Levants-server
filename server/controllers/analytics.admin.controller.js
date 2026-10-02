@@ -166,6 +166,26 @@ const GetProductTrends = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetProductDetail = async (req, res) => {
+  const result = await service.GetProductDetail({
+    productId: req.params.productId,
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetRecentOrders = async (req, res) => {
   const result = await service.GetRecentOrders({
     range: req.query.range,
@@ -259,6 +279,7 @@ module.exports = {
   GetOrderStatusCounts,
   GetTopProducts,
   GetProductTrends,
+  GetProductDetail,
   GetRecentOrders,
   GetLowStock,
   GetDashboard,

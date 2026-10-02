@@ -1767,6 +1767,403 @@ async function GetProductTrends({
   };
 }
 
+async function GetProductDetail({
+  productId,
+  range,
+  from,
+  to,
+  interval,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  if (!mongoose.isValidObjectId(productId)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid product id.",
+    };
+  }
+
+  const productObjectId = new mongoose.Types.ObjectId(productId);
+  const isUnbounded =
+    !from &&
+    !to &&
+    (range === undefined || range === "all");
+  const normalizedInterval = normalizeRevenueInterval(
+    interval || (isUnbounded ? "month" : "week"),
+  );
+
+  if (isUnbounded && ["day", "week"].includes(normalizedInterval)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "All-time analytics require a monthly or yearly time-series interval.",
+    };
+  }
+
+  const bucketCount = estimateRevenueSeriesBucketCount({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+
+  if (bucketCount > MAX_REVENUE_SERIES_BUCKETS) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `Requested time series contains ${bucketCount} buckets; maximum is ${MAX_REVENUE_SERIES_BUCKETS}. Use a coarser interval or a shorter date range.`,
+    };
+  }
+
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const seriesStages = buildRevenueSeriesStages(
+    normalizedInterval,
+    range,
+    {
+      dateExpression: EFFECTIVE_PAID_AT_EXPRESSION,
+      timeZone,
+    },
+  );
+
+  const detailPromise = Order.aggregate([
+    {
+      $match: {
+        ...salesMatch,
+        "items.product": productObjectId,
+      },
+    },
+    {
+      $addFields: {
+        _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION,
+        _analyticsChannel: SALES_CHANNEL_EXPRESSION,
+      },
+    },
+    { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+    { $unwind: "$items" },
+    { $match: { "items.product": productObjectId } },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
+    {
+      $group: {
+        _id: {
+          order: "$_id",
+          variant: "$items.variant",
+          channel: "$_analyticsChannel",
+          ...seriesStages.groupId,
+        },
+        productNameSnapshot: { $first: "$items.productName" },
+        variantNameSnapshot: { $first: "$items.name" },
+        skuSnapshot: { $first: "$items.sku" },
+        latestPaidAt: { $first: "$_analyticsPaidAt" },
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+      },
+    },
+    {
+      $project: {
+        ...seriesStages.projectStage,
+        orderId: "$_id.order",
+        variantId: "$_id.variant",
+        channel: "$_id.channel",
+        productNameSnapshot: 1,
+        variantNameSnapshot: 1,
+        skuSnapshot: 1,
+        latestPaidAt: 1,
+        revenue: 1,
+        units: 1,
+      },
+    },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $facet: {
+        summary: [
+          {
+            $group: {
+              _id: null,
+              productNameSnapshot: { $first: "$productNameSnapshot" },
+              totalRevenue: { $sum: "$revenue" },
+              totalUnits: { $sum: "$units" },
+              orderIds: { $addToSet: "$orderId" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              productNameSnapshot: 1,
+              totalRevenue: 1,
+              totalUnits: 1,
+              totalOrders: { $size: "$orderIds" },
+            },
+          },
+        ],
+        variants: [
+          {
+            $group: {
+              _id: "$variantId",
+              name: { $first: "$variantNameSnapshot" },
+              sku: { $first: "$skuSnapshot" },
+              revenue: { $sum: "$revenue" },
+              quantity: { $sum: "$units" },
+              orderIds: { $addToSet: "$orderId" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              variantId: "$_id",
+              name: 1,
+              sku: 1,
+              revenue: 1,
+              quantity: 1,
+              orderCount: { $size: "$orderIds" },
+            },
+          },
+          { $sort: { revenue: -1, quantity: -1, name: 1 } },
+        ],
+        sources: [
+          {
+            $group: {
+              _id: "$channel",
+              revenue: { $sum: "$revenue" },
+              units: { $sum: "$units" },
+              orderIds: { $addToSet: "$orderId" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              key: "$_id",
+              revenue: 1,
+              units: 1,
+              orders: { $size: "$orderIds" },
+            },
+          },
+        ],
+        trends: [
+          {
+            $group: {
+              _id: "$label",
+              revenue: { $sum: "$revenue" },
+              units: { $sum: "$units" },
+              orderIds: { $addToSet: "$orderId" },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              label: "$_id",
+              revenue: 1,
+              units: 1,
+              orders: { $size: "$orderIds" },
+            },
+          },
+          { $sort: { label: 1 } },
+        ],
+      },
+    },
+  ]);
+
+  const contributionTotalsPromise = Order.aggregate([
+    { $match: salesMatch },
+    { $unwind: "$items" },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
+    {
+      $group: {
+        _id: "$items.product",
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+      },
+    },
+    { $match: { units: { $gt: 0 } } },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$revenue" },
+        totalUnits: { $sum: "$units" },
+      },
+    },
+  ]);
+
+  const [detailRows, contributionRows, catalogProduct, historicalOrder] =
+    await Promise.all([
+      detailPromise,
+      contributionTotalsPromise,
+      Product.findById(productObjectId).select("name status").lean(),
+      Order.exists({ "items.product": productObjectId }),
+    ]);
+
+  if (!catalogProduct && !historicalOrder) {
+    return {
+      success: false,
+      statusCode: 404,
+      message: "Product not found.",
+    };
+  }
+
+  const detail = detailRows?.[0] || {};
+  const summary = detail.summary?.[0] || {};
+  const contributionTotals = contributionRows?.[0] || {};
+  const totalRevenue = Number(summary.totalRevenue) || 0;
+  const totalUnits = Number(summary.totalUnits) || 0;
+  const totalOrders = Number(summary.totalOrders) || 0;
+  const allProductRevenue = Number(contributionTotals.totalRevenue) || 0;
+  const allProductUnits = Number(contributionTotals.totalUnits) || 0;
+
+  let historicalName = summary.productNameSnapshot;
+  if (
+    (!historicalName || typeof historicalName !== "string") &&
+    !catalogProduct &&
+    historicalOrder
+  ) {
+    const [identity] = await Order.aggregate([
+      { $match: { "items.product": productObjectId } },
+      { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+      { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+      { $unwind: "$items" },
+      { $match: { "items.product": productObjectId } },
+      {
+        $project: {
+          _id: 0,
+          productNameSnapshot: "$items.productName",
+        },
+      },
+      { $limit: 1 },
+    ]);
+    historicalName = identity?.productNameSnapshot;
+  }
+
+  const productName =
+    (typeof historicalName === "string" && historicalName.trim()) ||
+    catalogProduct?.name ||
+    `Deleted product · ${String(productObjectId).slice(-6)}`;
+
+  const variants = (detail.variants || []).map((variant) => {
+    const revenue = Number(variant.revenue) || 0;
+    const quantity = Number(variant.quantity) || 0;
+    const orderCount = Number(variant.orderCount) || 0;
+
+    return {
+      ...variant,
+      revenue,
+      quantity,
+      orderCount,
+      averageSellingPrice: quantity > 0 ? revenue / quantity : 0,
+      averageRevenuePerOrder: orderCount > 0 ? revenue / orderCount : 0,
+      averageUnitsPerOrder: orderCount > 0 ? quantity / orderCount : 0,
+      revenueContributionPercent: roundPercentage(revenue, totalRevenue),
+      unitContributionPercent: roundPercentage(quantity, totalUnits),
+    };
+  });
+
+  const sourceRows = new Map(
+    (detail.sources || []).map((source) => [source.key, source]),
+  );
+  const sourceSplit = SALES_CHANNELS.map((key) => {
+    const source = sourceRows.get(key) || {};
+    const revenue = Number(source.revenue) || 0;
+    const units = Number(source.units) || 0;
+    const orders = Number(source.orders) || 0;
+
+    return {
+      key,
+      label: SALES_CHANNEL_LABELS[key] || key,
+      revenue,
+      units,
+      orders,
+      averageSellingPrice: units > 0 ? revenue / units : 0,
+      revenueContributionPercent: roundPercentage(revenue, totalRevenue),
+      unitContributionPercent: roundPercentage(units, totalUnits),
+    };
+  });
+
+  const expectedLabels = buildExpectedSeriesLabels({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const sparseTrend = new Map(
+    (detail.trends || []).map((point) => [point.label, point]),
+  );
+  const labels =
+    expectedLabels.length > 0
+      ? expectedLabels
+      : Array.from(sparseTrend.keys()).sort((left, right) =>
+          String(left).localeCompare(String(right)),
+        );
+
+  const points = labels.map((label) => {
+    const point = sparseTrend.get(label) || {};
+    const revenue = Number(point.revenue) || 0;
+    const units = Number(point.units) || 0;
+    const orders = Number(point.orders) || 0;
+
+    return {
+      label,
+      revenue,
+      units,
+      orders,
+      averageSellingPrice: units > 0 ? revenue / units : 0,
+    };
+  });
+
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  return {
+    success: true,
+    data: {
+      productId: productObjectId,
+      productName,
+      catalogStatus: catalogProduct?.status || "deleted",
+      period,
+      totalRevenue,
+      totalUnits,
+      totalOrders,
+      averageSellingPrice: totalUnits > 0 ? totalRevenue / totalUnits : 0,
+      averageRevenuePerOrder: totalOrders > 0 ? totalRevenue / totalOrders : 0,
+      averageUnitsPerOrder: totalOrders > 0 ? totalUnits / totalOrders : 0,
+      revenueContributionPercent: roundPercentage(
+        totalRevenue,
+        allProductRevenue,
+      ),
+      unitContributionPercent: roundPercentage(totalUnits, allProductUnits),
+      variants,
+      sourceSplit,
+      trend: {
+        interval: normalizedInterval,
+        points,
+      },
+      metricBasis: {
+        revenue:
+          "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
+        units:
+          "Units on collected orders, including partially-paid orders.",
+        contribution:
+          "Share of collected product revenue or units across products with at least one sold unit in the selected period.",
+        source:
+          "Source classification is mutually exclusive: Website One-Time, Subscription, or Imported.",
+      },
+    },
+  };
+}
+
 async function GetRecentOrders({
   range,
   from,
@@ -2008,6 +2405,7 @@ module.exports = {
   GetOrderStatusCounts,
   GetTopProducts,
   GetProductTrends,
+  GetProductDetail,
   GetRecentOrders,
   GetLowStock,
   GetOutOfStock,

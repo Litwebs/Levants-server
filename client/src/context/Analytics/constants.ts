@@ -305,6 +305,48 @@ export type ProductTrends = {
   };
 };
 
+export type ProductDetailSource = {
+  key: SalesChannelKey;
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  averageSellingPrice: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type ProductDetail = {
+  productId: string;
+  productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  averageSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+  variants: TopProductVariant[];
+  sourceSplit: ProductDetailSource[];
+  trend: {
+    interval: RevenueInterval;
+    points: ProductTrendPoint[];
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    contribution: string;
+    source: string;
+  };
+};
+
 export type RecentOrder = {
   _id: string;
   orderId: string;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DollarSign,
   ShoppingCart,
@@ -25,6 +25,7 @@ import {
   type AnalyticsDateRange,
   type AnalyticsOrderSource,
   type AnalyticsMetricChange,
+  type ProductDetail,
   type RevenueInterval,
 } from "../context/Analytics";
 
@@ -115,7 +116,19 @@ const Reports = () => {
     interval,
     setFilters,
     getDashboard,
+    getProductDetail,
   } = useAnalyticsApi();
+
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(
+    null,
+  );
+  const [productDetail, setProductDetail] = useState<ProductDetail | null>(
+    null,
+  );
+  const [productDetailLoading, setProductDetailLoading] = useState(false);
+  const [productDetailError, setProductDetailError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     const isCustom = range === "custom";
@@ -127,6 +140,52 @@ const Reports = () => {
       ...(isCustom ? { from, to } : { range }),
     });
   }, [range, orderSource, from, to, interval, getDashboard]);
+
+  useEffect(() => {
+    if (!selectedProductId) {
+      setProductDetail(null);
+      setProductDetailError(null);
+      return;
+    }
+
+    const isCustom = range === "custom";
+    if (isCustom && (!from || !to)) return;
+
+    let cancelled = false;
+    setProductDetailLoading(true);
+    setProductDetailError(null);
+
+    void getProductDetail(selectedProductId, {
+      interval,
+      orderSource,
+      ...(isCustom ? { from, to } : { range }),
+    })
+      .then((detail) => {
+        if (!cancelled) setProductDetail(detail);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setProductDetail(null);
+        setProductDetailError(
+          err?.response?.data?.message || "Failed to load product detail",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setProductDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedProductId,
+    range,
+    orderSource,
+    from,
+    to,
+    interval,
+    getProductDetail,
+  ]);
 
   const dateRangeOptions: { value: AnalyticsDateRange; label: string }[] = [
     { value: "today", label: "Today" },
@@ -758,6 +817,15 @@ const Reports = () => {
                           {formatCompactNumber(product.orders)} orders · ASP{" "}
                           {formatCurrency(product.averageSellingPrice)}
                         </span>
+                        <button
+                          type="button"
+                          className={styles.drilldownButton}
+                          onClick={() =>
+                            setSelectedProductId(String(product.productId))
+                          }
+                        >
+                          View details
+                        </button>
                       </div>
                       <div className={styles.rankBar}>
                         <div
@@ -799,6 +867,15 @@ const Reports = () => {
                           {formatCurrency(product.revenue)} ·{" "}
                           {formatDecimal(product.averageUnitsPerOrder)} units/order
                         </span>
+                        <button
+                          type="button"
+                          className={styles.drilldownButton}
+                          onClick={() =>
+                            setSelectedProductId(String(product.productId))
+                          }
+                        >
+                          View details
+                        </button>
                       </div>
                       <div className={styles.rankBar}>
                         <div
@@ -839,6 +916,15 @@ const Reports = () => {
                           {formatDecimal(product.revenueContributionPercent)}% revenue ·{" "}
                           {formatCompactNumber(product.orders)} orders
                         </span>
+                        <button
+                          type="button"
+                          className={styles.drilldownButton}
+                          onClick={() =>
+                            setSelectedProductId(String(product.productId))
+                          }
+                        >
+                          View details
+                        </button>
                       </div>
                       <div className={styles.rankBar}>
                         <div
@@ -879,6 +965,15 @@ const Reports = () => {
                           {formatDecimal(product.unitContributionPercent)}% units ·{" "}
                           {formatCurrency(product.revenue)}
                         </span>
+                        <button
+                          type="button"
+                          className={styles.drilldownButton}
+                          onClick={() =>
+                            setSelectedProductId(String(product.productId))
+                          }
+                        >
+                          View details
+                        </button>
                       </div>
                       <div className={styles.rankBar}>
                         <div
@@ -937,6 +1032,294 @@ const Reports = () => {
           </CardContent>
         </Card>
       </div>
+
+
+      {selectedProductId ? (
+        <Card className={styles.fullWidthChart}>
+          <CardHeader>
+            <div className={styles.productDetailHeader}>
+              <div>
+                <CardTitle>
+                  {productDetail?.productName || "Product Detail"}
+                  {productDetail?.catalogStatus === "deleted"
+                    ? " · Deleted"
+                    : ""}
+                </CardTitle>
+                <div className={styles.productDetailSubheading}>
+                  Historical product performance for the selected filters
+                </div>
+              </div>
+              <button
+                type="button"
+                className={styles.drilldownButton}
+                onClick={() => setSelectedProductId(null)}
+              >
+                Close
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {productDetailLoading ? (
+              <div className={styles.emptyState}>Loading product detail…</div>
+            ) : productDetailError ? (
+              <div className={styles.errorBanner}>{productDetailError}</div>
+            ) : productDetail ? (
+              <>
+                <div className={styles.metricsGrid}>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCurrency(productDetail.totalRevenue)}
+                    </span>
+                    <span className={styles.metricLabel}>Product Revenue</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCompactNumber(productDetail.totalUnits)}
+                    </span>
+                    <span className={styles.metricLabel}>Units</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCompactNumber(productDetail.totalOrders)}
+                    </span>
+                    <span className={styles.metricLabel}>Unique Orders</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCurrency(productDetail.averageSellingPrice)}
+                    </span>
+                    <span className={styles.metricLabel}>Realised ASP</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatCurrency(productDetail.averageRevenuePerOrder)}
+                    </span>
+                    <span className={styles.metricLabel}>Avg Revenue / Order</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatDecimal(productDetail.averageUnitsPerOrder)}
+                    </span>
+                    <span className={styles.metricLabel}>Avg Units / Order</span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatDecimal(productDetail.revenueContributionPercent)}%
+                    </span>
+                    <span className={styles.metricLabel}>
+                      Revenue Contribution
+                    </span>
+                  </div>
+                  <div className={styles.metricItem}>
+                    <span className={styles.metricValue}>
+                      {formatDecimal(productDetail.unitContributionPercent)}%
+                    </span>
+                    <span className={styles.metricLabel}>Unit Contribution</span>
+                  </div>
+                </div>
+
+                <div className={styles.chartsGrid}>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>Revenue Trend</span>
+                      <span className={styles.variantMeta}>
+                        {productDetail.trend.interval}
+                      </span>
+                    </div>
+                    <SimpleBarChart
+                      type="line"
+                      height={220}
+                      color="success"
+                      data={productDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.revenue,
+                      }))}
+                      valueFormatter={(value) =>
+                        formatCurrencyGBP(value, { compact: true })
+                      }
+                    />
+                  </div>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>Units Trend</span>
+                      <span className={styles.variantMeta}>Historical units</span>
+                    </div>
+                    <SimpleBarChart
+                      type="bar"
+                      height={220}
+                      color="info"
+                      data={productDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.units,
+                      }))}
+                      valueFormatter={(value) => formatCompactNumber(value)}
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.chartsGrid}>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>Orders Trend</span>
+                      <span className={styles.variantMeta}>Unique orders</span>
+                    </div>
+                    <SimpleBarChart
+                      type="bar"
+                      height={200}
+                      color="primary"
+                      data={productDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.orders,
+                      }))}
+                      valueFormatter={(value) => formatCompactNumber(value)}
+                    />
+                  </div>
+                  <div className={styles.productDetailSection}>
+                    <div className={styles.variantHeader}>
+                      <span className={styles.variantTitle}>Realised ASP Trend</span>
+                      <span className={styles.variantMeta}>Revenue / units</span>
+                    </div>
+                    <SimpleBarChart
+                      type="line"
+                      height={200}
+                      color="primary"
+                      data={productDetail.trend.points.map((point) => ({
+                        label: point.label,
+                        value: point.averageSellingPrice,
+                      }))}
+                      valueFormatter={(value) =>
+                        formatCurrencyGBP(value, { compact: true })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.productDetailSection}>
+                  <div className={styles.variantHeader}>
+                    <span className={styles.variantTitle}>Sales by Source</span>
+                    <span className={styles.variantMeta}>
+                      Mutually exclusive channels
+                    </span>
+                  </div>
+                  <div className={styles.salesMixGrid}>
+                    {productDetail.sourceSplit.map((source) => (
+                      <div key={source.key} className={styles.salesMixCard}>
+                        <div className={styles.salesMixHeader}>
+                          <span className={styles.salesMixTitle}>
+                            {source.label}
+                          </span>
+                          <span className={styles.salesMixShare}>
+                            {formatDecimal(source.revenueContributionPercent)}% revenue
+                          </span>
+                        </div>
+                        <div className={styles.salesMixPrimary}>
+                          {formatCurrency(source.revenue)}
+                        </div>
+                        <div className={styles.salesMixStats}>
+                          <div>
+                            <span className={styles.salesMixStatValue}>
+                              {formatCompactNumber(source.units)}
+                            </span>
+                            <span className={styles.salesMixStatLabel}>Units</span>
+                          </div>
+                          <div>
+                            <span className={styles.salesMixStatValue}>
+                              {formatCompactNumber(source.orders)}
+                            </span>
+                            <span className={styles.salesMixStatLabel}>Orders</span>
+                          </div>
+                          <div>
+                            <span className={styles.salesMixStatValue}>
+                              {formatCurrency(source.averageSellingPrice)}
+                            </span>
+                            <span className={styles.salesMixStatLabel}>ASP</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={styles.productDetailSection}>
+                  <div className={styles.variantHeader}>
+                    <span className={styles.variantTitle}>Variants</span>
+                    <span className={styles.variantMeta}>
+                      Historical order snapshots
+                    </span>
+                  </div>
+                  {productDetail.variants.length === 0 ? (
+                    <div className={styles.emptyState}>
+                      No product sales in this period
+                    </div>
+                  ) : (
+                    <div className={styles.variantBlock}>
+                      {productDetail.variants.map((variant) => (
+                        <div
+                          key={String(variant.variantId)}
+                          className={styles.variantCard}
+                        >
+                          <div className={styles.variantHeader}>
+                            <span className={styles.variantTitle}>
+                              {variant.name || "Historical variant"}
+                            </span>
+                            <span className={styles.variantMeta}>
+                              {variant.sku || "No SKU"}
+                            </span>
+                          </div>
+                          <div className={styles.variantList}>
+                            <div className={styles.variantItem}>
+                              <span>Revenue</span>
+                              <span className={styles.variantRevenue}>
+                                {formatCurrency(variant.revenue)}
+                              </span>
+                            </div>
+                            <div className={styles.variantItem}>
+                              <span>Units</span>
+                              <span className={styles.variantQty}>
+                                {formatCompactNumber(variant.quantity)}
+                              </span>
+                            </div>
+                            <div className={styles.variantItem}>
+                              <span>Orders</span>
+                              <span className={styles.variantQty}>
+                                {formatCompactNumber(variant.orderCount)}
+                              </span>
+                            </div>
+                            <div className={styles.variantItem}>
+                              <span>Realised ASP</span>
+                              <span className={styles.variantRevenue}>
+                                {formatCurrency(variant.averageSellingPrice)}
+                              </span>
+                            </div>
+                            <div className={styles.variantItem}>
+                              <span>Revenue Contribution</span>
+                              <span className={styles.variantQty}>
+                                {formatDecimal(variant.revenueContributionPercent)}%
+                              </span>
+                            </div>
+                            <div className={styles.variantItem}>
+                              <span>Unit Contribution</span>
+                              <span className={styles.variantQty}>
+                                {formatDecimal(variant.unitContributionPercent)}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className={styles.compositionNote}>
+                  {productDetail.metricBasis.revenue}
+                </div>
+              </>
+            ) : (
+              <div className={styles.emptyState}>No product detail</div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

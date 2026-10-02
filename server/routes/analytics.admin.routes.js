@@ -91,6 +91,14 @@ router.get(
   asyncHandler(controller.GetProductTrends),
 );
 router.get(
+  "/products/:productId",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetProductDetail),
+);
+router.get(
   "/recent-orders",
   validateAnalyticsQuery({ maxLimit: 25 }),
   asyncHandler(controller.GetRecentOrders),

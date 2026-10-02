@@ -28,6 +28,10 @@ const ANALYTICS_ORDER_INDEXES = [
     key: { "refunds.status": 1, "refunds.refundedAt": 1 },
     name: "analytics_refund_status_refundedAt",
   },
+  {
+    key: { "items.product": 1, status: 1, paidAt: 1 },
+    name: "analytics_product_status_paidAt",
+  },
 ];
 
 const indexKeysEqual = (actual, expected) => {

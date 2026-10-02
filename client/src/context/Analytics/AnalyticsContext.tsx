@@ -24,6 +24,7 @@ import {
   type AnalyticsDateRange,
   type AnalyticsOrderSource,
   type AnalyticsState,
+  type ProductDetail,
   type RevenueOverview,
   type RevenueInterval,
   initialAnalyticsState,
@@ -79,6 +80,17 @@ type AnalyticsContextType = {
     days?: number;
     orderSource?: AnalyticsOrderSource;
   }) => Promise<RevenueOverview>;
+
+  getProductDetail: (
+    productId: string,
+    params?: {
+      range?: AnalyticsDateRange;
+      orderSource?: AnalyticsOrderSource;
+      from?: string;
+      to?: string;
+      interval?: RevenueInterval;
+    },
+  ) => Promise<ProductDetail>;
 };
 
 const AnalyticsContext = createContext<AnalyticsContextType | null>(null);
@@ -178,6 +190,40 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+
+  const getProductDetail = useCallback(
+    async (
+      productId: string,
+      params?: {
+        range?: AnalyticsDateRange;
+        orderSource?: AnalyticsOrderSource;
+        from?: string;
+        to?: string;
+        interval?: RevenueInterval;
+      },
+    ) => {
+      const res = await api.get(
+        `/admin/analytics/products/${encodeURIComponent(productId)}`,
+        {
+          params: {
+            range: params?.range,
+            orderSource: params?.orderSource,
+            from: params?.from,
+            to: params?.to,
+            interval: params?.interval,
+          },
+        },
+      );
+
+      const productDetail = unwrapData<ProductDetail>(res.data);
+      if (!productDetail?.productId)
+        throw new Error("Failed to load product analytics");
+
+      return productDetail;
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       dashboard: state.dashboard,
@@ -198,8 +244,9 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       setFilters,
       getDashboard,
       getRevenueOverview,
+      getProductDetail,
     }),
-    [state, setFilters, getDashboard, getRevenueOverview],
+    [state, setFilters, getDashboard, getRevenueOverview, getProductDetail],
   );
 
   return (
