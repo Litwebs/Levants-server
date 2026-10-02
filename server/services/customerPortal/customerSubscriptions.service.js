@@ -2880,7 +2880,10 @@ async function UpdateSubscription({
     const now = new Date(subscriptionClock.now());
     const refundableOrders = await Order.find({
       subscription: subscription._id,
-      status: { $in: ["paid", "partially_refunded"] },
+      $or: [
+        { status: { $in: ["paid", "partially_refunded"] } },
+        { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+      ],
       deliveryStatus: "ordered",
       deliveryDate: { $gte: startOfDay(now) },
     })
@@ -2922,14 +2925,14 @@ async function UpdateSubscription({
         let refunds;
         try {
           refunds = await refundAcrossSubscriptionPayments(
-          subscription,
-          customer,
-          order.stripePaymentIntentId,
-          amountMinor,
-          "subscription_schedule_change_refund",
-          `subscription:${subscription._id}:remove-day:${deliveryDateKey(order.deliveryDate)}:${order._id}`,
-          order._id,
-        );
+            subscription,
+            customer,
+            order.stripePaymentIntentId,
+            amountMinor,
+            "subscription_schedule_change_refund",
+            `subscription:${subscription._id}:remove-day:${deliveryDateKey(order.deliveryDate)}:${order._id}`,
+            order._id,
+          );
         } catch (error) {
           return refundFailure(error);
         }
@@ -3324,7 +3327,10 @@ async function PauseSubscription({
   );
   const refundableOrders = await Order.find({
     subscription: subscription._id,
-    status: { $in: ["paid", "partially_refunded"] },
+    $or: [
+      { status: { $in: ["paid", "partially_refunded"] } },
+      { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+    ],
     deliveryStatus: "ordered",
     deliveryDate: { $gte: startOfDay(now), $lt: resumeDate },
   })
@@ -3571,7 +3577,10 @@ async function CancelSubscription({
 
   const candidateOrders = await Order.find({
     subscription: subscription._id,
-    status: { $in: ["paid", "partially_refunded"] },
+    $or: [
+      { status: { $in: ["paid", "partially_refunded"] } },
+      { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+    ],
     deliveryStatus: "ordered",
   })
     .sort({ deliveryDate: 1, createdAt: 1 })
@@ -3671,7 +3680,10 @@ async function CancelSubscription({
   } else if (!hasLockedDeliveries) {
     const refundableOrder = await Order.findOne({
       subscription: subscription._id,
-      status: { $in: ["paid", "partially_refunded"] },
+      $or: [
+        { status: { $in: ["paid", "partially_refunded"] } },
+        { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+      ],
       deliveryStatus: "ordered",
       ...(settlementMethod === "refund"
         ? { stripePaymentIntentId: { $ne: null } }

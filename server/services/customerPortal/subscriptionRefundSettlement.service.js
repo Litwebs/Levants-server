@@ -21,7 +21,7 @@ async function listRefunds(paymentIntentId) {
 
 async function hasUnfinishedCardRefund(subscriptionId, eligibleOrderIds) {
   return Boolean(await Order.exists({ subscription: subscriptionId,
-    status: { $in: ["paid", "partially_refunded"] },
+    status: { $in: ["paid", "partially_refunded", "refund_pending"] },
     subscriptionRefundPlan: { $ne: null },
     ...(eligibleOrderIds ? { _id: { $nin: eligibleOrderIds } } : {}),
   }));
@@ -29,6 +29,9 @@ async function hasUnfinishedCardRefund(subscriptionId, eligibleOrderIds) {
 
 function refundFailure(error) {
   const refundedMinor = Number(error.confirmedRefundedMinor || 0);
+  if (!error.refundPlanSaved) {
+    return { success: false, message: "We couldn't prepare the card refund. No new refund was started; please try again or contact support.", data: null };
+  }
   return {
     success: false,
     message: `The card refund is incomplete (£${(refundedMinor / 100).toFixed(2)} confirmed returned). Retry the card refund to finish it. Store credit is blocked while this refund needs reconciliation.`,
@@ -137,6 +140,7 @@ async function refundAcrossSubscriptionPayments(subscription, customer, primaryI
     }
     return completed;
   } catch (error) {
+    error.refundPlanSaved = Boolean(plan);
     error.confirmedRefundedMinor = confirmedMinor;
     error.remainingMinor = Math.max(0, Number(plan?.amountMinor ?? amountMinor) - confirmedMinor);
     throw error;

@@ -107,7 +107,7 @@ async function RefundOrder({
   restock,
 } = {}) {
   try {
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId).select("+subscriptionRefundPlan");
 
     if (!order) {
       return { success: false, statusCode: 404, message: "Order not found" };
@@ -119,6 +119,11 @@ async function RefundOrder({
         statusCode: 409,
         message: "Order is already fully refunded",
       };
+    }
+
+    if (order.subscriptionRefundPlan) {
+      return { success: false, statusCode: 409,
+        message: "A subscription card refund is unfinished. Resume that settlement before starting another refund." };
     }
 
     if (order.status === "refund_pending") {

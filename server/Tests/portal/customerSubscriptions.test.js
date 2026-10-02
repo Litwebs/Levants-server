@@ -4424,6 +4424,9 @@ describe("Portal Subscriptions", () => {
     expect(failed.body.data).toMatchObject({ refundPending: true, refundedMinor: 500, remainingMinor: 300 });
     expect(failed.body.message).toContain("£5.00");
     const failedRequest = stripe.refunds.create.mock.calls[1];
+    const adminRefund = await refundService.RefundOrder({ orderId: order._id });
+    expect(adminRefund.statusCode).toBe(409);
+    expect(adminRefund.message).toMatch(/unfinished/);
     const pendingOrder = await Order.findById(order._id).select("+subscriptionRefundPlan").lean();
     expect(pendingOrder.refunds).toHaveLength(1);
     expect(pendingOrder.subscriptionRefundPlan.steps.map(step => step.params.amount)).toEqual([500, 300]);
@@ -4435,6 +4438,8 @@ describe("Portal Subscriptions", () => {
       .send({ operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] });
     expect(addOn.status).toBe(400);
     expect(addOn.body.message).toMatch(/refund is unfinished/);
+    // A late webhook may derive this status while another refund is pending.
+    await Order.findByIdAndUpdate(order._id, { status: "refund_pending" });
     stripe.refunds.create.mockResolvedValueOnce({ id: "re_split_second", amount: 300, status: "succeeded" });
     const retry = await send(payload);
     expect(retry.status).toBe(200);
