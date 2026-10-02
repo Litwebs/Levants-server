@@ -30,6 +30,7 @@ export type {
   VariantRevenueRow,
   VariantRevenueResult,
   VariantRealisedPriceResult,
+  VariantPriceComparisonResult,
   ProductTrendPoint,
   ProductTrendProduct,
   ProductTrends,

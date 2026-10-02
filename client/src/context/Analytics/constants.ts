@@ -311,6 +311,9 @@ export type VariantRevenueRow = {
   totalUnits: number;
   orderCount: number;
   realisedSellingPrice: number;
+  currentPrice: number | null;
+  priceDifference: number | null;
+  priceDifferencePercent: number | null;
 };
 
 export type VariantRevenueResult = {
@@ -337,6 +340,22 @@ export type VariantRealisedPriceResult = {
   };
   metricBasis: {
     realisedSellingPrice: string;
+    identity: string;
+  };
+};
+
+export type VariantPriceComparisonResult = {
+  variants: VariantRevenueRow[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    realisedSellingPrice: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    realisedSellingPrice: string;
+    currentPrice: string;
+    priceComparison: string;
     identity: string;
   };
 };
@@ -467,6 +486,7 @@ export type AnalyticsDashboard = {
   variantUnits: VariantUnitsResult;
   variantRevenue: VariantRevenueResult;
   variantRealisedPrice: VariantRealisedPriceResult;
+  variantPriceComparison: VariantPriceComparisonResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

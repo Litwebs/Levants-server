@@ -274,6 +274,7 @@ const Reports = () => {
   const variantRevenueTotals = dashboard?.variantRevenue?.totals;
   const maxVariantRevenue = variantsByRevenue[0]?.totalRevenue ?? 0;
   const variantRealisedPrice = dashboard?.variantRealisedPrice;
+  const variantPriceComparison = dashboard?.variantPriceComparison;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -1210,10 +1211,10 @@ const Reports = () => {
               <span className={styles.variantMeta}>Collected revenue ÷ historical units</span>
             </div>
             <div className={styles.productRanking}>
-              {(variantRealisedPrice?.variants ?? []).length === 0 && !loading ? (
+              {(variantPriceComparison?.variants ?? []).length === 0 && !loading ? (
                 <div className={styles.emptyState}>No realised price data</div>
               ) : (
-                (variantRealisedPrice?.variants ?? []).map((variant, index) => (
+                (variantPriceComparison?.variants ?? []).map((variant, index) => (
                   <div key={variant.variantId} className={styles.rankItem}>
                     <span className={styles.rankNumber}>#{index + 1}</span>
                     <div className={styles.rankInfo}>
@@ -1223,8 +1224,17 @@ const Reports = () => {
                       </span>
                       <span className={styles.rankMeta}>
                         {variant.productName} · {variant.sku} ·{" "}
-                        {formatCurrency(variant.realisedSellingPrice)} / unit ·{" "}
-                        {formatCompactNumber(variant.totalUnits)} units
+                        Realised {formatCurrency(variant.realisedSellingPrice)} / unit ·{" "}
+                        {variant.currentPrice === null ? (
+                          <>Current price unavailable</>
+                        ) : (
+                          <>
+                            Current {formatCurrency(variant.currentPrice)} ·{" "}
+                            Difference {formatCurrency(variant.priceDifference ?? 0)}{" "}
+                            ({formatDecimal(variant.priceDifferencePercent ?? 0)}%)
+                          </>
+                        )}{" "}
+                        · {formatCompactNumber(variant.totalUnits)} units
                       </span>
                     </div>
                   </div>
@@ -1234,7 +1244,7 @@ const Reports = () => {
           </div>
           <div className={styles.chartFooter}>
             <span className={styles.chartTotal}>
-              Realised price reflects discounts and partial payments. Current/base price comparison is intentionally handled in the next variant task.
+              Realised price reflects discounts and partial payments. Current price is the live catalog price at request time; deleted variants remain historically visible with comparison unavailable.
             </span>
           </div>
         </CardContent>

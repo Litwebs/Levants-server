@@ -1667,6 +1667,7 @@ async function GetVariantUnits({
             "deleted",
           ],
         },
+        currentPrice: { $arrayElemAt: ["$catalogVariant.price", 0] },
         totalRevenue: 1,
         totalUnits: 1,
         orderCount: 1,
@@ -1726,14 +1727,33 @@ async function GetVariantUnits({
     },
   ]);
 
-  const normalizeVariant = (variant) => ({
-    ...variant,
-    totalRevenue: Number(variant.totalRevenue) || 0,
-    totalUnits: Number(variant.totalUnits) || 0,
-    orderCount: Number(variant.orderCount) || 0,
-    realisedSellingPrice: Number(variant.realisedSellingPrice) || 0,
-    averageUnitsPerOrder: Number(variant.averageUnitsPerOrder) || 0,
-  });
+  const normalizeVariant = (variant) => {
+    const totalRevenue = Number(variant.totalRevenue) || 0;
+    const totalUnits = Number(variant.totalUnits) || 0;
+    const realisedSellingPrice = Number(variant.realisedSellingPrice) || 0;
+    const currentPrice =
+      variant.currentPrice === null || variant.currentPrice === undefined
+        ? null
+        : Number(variant.currentPrice);
+    const priceDifference =
+      currentPrice === null ? null : realisedSellingPrice - currentPrice;
+    const priceDifferencePercent =
+      currentPrice !== null && currentPrice > 0
+        ? Math.round((priceDifference / currentPrice) * 10000) / 100
+        : null;
+
+    return {
+      ...variant,
+      totalRevenue,
+      totalUnits,
+      orderCount: Number(variant.orderCount) || 0,
+      realisedSellingPrice,
+      currentPrice,
+      priceDifference,
+      priceDifferencePercent,
+      averageUnitsPerOrder: Number(variant.averageUnitsPerOrder) || 0,
+    };
+  };
   const byUnits = (result?.byUnits || []).map(normalizeVariant);
   const byRevenue = (result?.byRevenue || []).map(normalizeVariant);
   const totalsRow = result?.totals?.[0] || {};
@@ -1754,6 +1774,10 @@ async function GetVariantUnits({
           "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
         realisedSellingPrice:
           "Collected merchandise revenue divided by historical units sold, so discounts and partial payments reduce the realised per-unit price.",
+        currentPrice:
+          "Current catalog variant price at request time; deleted variants have no current-price comparison.",
+        priceComparison:
+          "Difference is realised selling price minus current catalog price; percentage difference uses current catalog price as the denominator.",
         units:
           "Units on collected orders, including partially-paid orders.",
         ranking:
@@ -1807,6 +1831,33 @@ async function GetVariantRealisedPrice(args = {}) {
       },
       metricBasis: {
         realisedSellingPrice: result.data.metricBasis.realisedSellingPrice,
+        identity: result.data.metricBasis.identity,
+      },
+    },
+  };
+}
+
+async function GetVariantPriceComparison(args = {}) {
+  const result = await GetVariantUnits(args);
+  if (!result.success) return result;
+
+  return {
+    success: true,
+    data: {
+      variants: result.data.byRevenue,
+      totals: {
+        totalRevenue: result.data.totals.totalRevenue,
+        totalUnits: result.data.totals.totalUnits,
+        realisedSellingPrice:
+          result.data.totals.totalUnits > 0
+            ? result.data.totals.totalRevenue / result.data.totals.totalUnits
+            : 0,
+        variantsSold: result.data.totals.variantsSold,
+      },
+      metricBasis: {
+        realisedSellingPrice: result.data.metricBasis.realisedSellingPrice,
+        currentPrice: result.data.metricBasis.currentPrice,
+        priceComparison: result.data.metricBasis.priceComparison,
         identity: result.data.metricBasis.identity,
       },
     },
@@ -2720,6 +2771,26 @@ async function GetDashboard({
           identity: variantUnits.data.metricBasis.identity,
         },
       },
+      variantPriceComparison: {
+        variants: variantUnits.data.byRevenue,
+        totals: {
+          totalRevenue: variantUnits.data.totals.totalRevenue,
+          totalUnits: variantUnits.data.totals.totalUnits,
+          realisedSellingPrice:
+            variantUnits.data.totals.totalUnits > 0
+              ? variantUnits.data.totals.totalRevenue /
+                variantUnits.data.totals.totalUnits
+              : 0,
+          variantsSold: variantUnits.data.totals.variantsSold,
+        },
+        metricBasis: {
+          realisedSellingPrice:
+            variantUnits.data.metricBasis.realisedSellingPrice,
+          currentPrice: variantUnits.data.metricBasis.currentPrice,
+          priceComparison: variantUnits.data.metricBasis.priceComparison,
+          identity: variantUnits.data.metricBasis.identity,
+        },
+      },
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
@@ -2743,6 +2814,7 @@ module.exports = {
   GetVariantUnits,
   GetVariantRevenue,
   GetVariantRealisedPrice,
+  GetVariantPriceComparison,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,

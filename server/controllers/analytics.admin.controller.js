@@ -203,6 +203,25 @@ const GetVariantRealisedPrice = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetVariantPriceComparison = async (req, res) => {
+  const result = await service.GetVariantPriceComparison({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetProductTrends = async (req, res) => {
   const result = await service.GetProductTrends({
     range: req.query.range,
@@ -338,6 +357,7 @@ module.exports = {
   GetVariantUnits,
   GetVariantRevenue,
   GetVariantRealisedPrice,
+  GetVariantPriceComparison,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,

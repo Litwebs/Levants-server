@@ -187,7 +187,7 @@ describe("analytics variant revenue", () => {
       variantsSold: 0,
     });
   });
-  test("returns realised selling price without current catalog-price comparison", async () => {
+  test("returns realised selling price with discount and partial-payment semantics", async () => {
     const customer = await createCustomer();
     const product = await createProduct({ name: "ASP Product" });
     const variant = await createVariant({ product, price: 99, stock: 100 });
@@ -216,7 +216,11 @@ describe("analytics variant revenue", () => {
       totalUnits: 4,
       realisedSellingPrice: 7.5,
     }));
-    expect(result.data.variants[0]).not.toHaveProperty("currentPrice");
+    expect(result.data.variants[0]).toEqual(expect.objectContaining({
+      currentPrice: 99,
+      priceDifference: -91.5,
+      priceDifferencePercent: -92.42,
+    }));
   });
 
 });
