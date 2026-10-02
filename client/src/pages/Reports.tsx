@@ -159,12 +159,12 @@ const Reports = () => {
 
   const openProductDetail = (productId: unknown) => {
     setSelectedVariantId(null);
-    openProductDetail(productId);
+    setSelectedProductId(String(productId));
   };
 
   const openVariantDetail = (variantId: unknown) => {
     setSelectedProductId(null);
-    openVariantDetail(variantId);
+    setSelectedVariantId(String(variantId));
   };
 
   useEffect(() => {
