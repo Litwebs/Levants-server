@@ -921,7 +921,7 @@ async function GetTopSubscriptionProductsVariants({
                   $reduce: {
                     input: "$orderIdSets",
                     initialValue: [],
-                    in: { $setUnion: ["$value", "$this"] },
+                    in: { $setUnion: ["\u0024\u0024value", "\u0024\u0024this"] },
                   },
                 },
               },
@@ -4092,8 +4092,8 @@ async function GetCurrentSubscriptionSnapshot() {
               as: "item",
               in: {
                 $multiply: [
-                  { $ifNull: ["$item.unitPrice", 0] },
-                  { $ifNull: ["$item.quantity", 0] },
+                  { $ifNull: ["\u0024\u0024item.unitPrice", 0] },
+                  { $ifNull: ["\u0024\u0024item.quantity", 0] },
                 ],
               },
             },
@@ -4384,6 +4384,7 @@ async function GetDashboard({
     productTrends,
     variantTrends,
     variantUnits,
+    topSubscriptionProductsVariants,
     activeSubscriptions,
     averageSubscriptionValue,
     newSubscriptions,
