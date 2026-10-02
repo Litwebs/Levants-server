@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Orders.module.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OrdersStockRequirements } from "../../context/Orders";
 import type { Order } from "./useOrders";
 
@@ -33,6 +33,14 @@ const DELIVERY_STATUSES = [
   "delivered",
   "returned",
 ] as const;
+
+const ACCEPTED_ORDER_FILE_EXTENSIONS = [".csv", ".xlsx", ".xls"];
+
+const getTodayInputValue = () => {
+  const date = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
 
 interface Props {
   selectedOrders: string[];
@@ -67,11 +75,7 @@ const OrdersBulkActions = ({
   const canDeleteOrders = hasPermission("orders.delete");
   const canReadDelivery = hasPermission("delivery.routes.read");
 
-  const today = (() => {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  })();
+  const today = useMemo(getTodayInputValue, []);
 
   const [deliveryDate, setDeliveryDate] = useState(today);
   const [isAssigning, setIsAssigning] = useState(false);
@@ -80,6 +84,7 @@ const OrdersBulkActions = ({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
+  const [ordersFileError, setOrdersFileError] = useState("");
   const [isCalculatingStock, setIsCalculatingStock] = useState(false);
   const [stockSource, setStockSource] = useState<StockSource>("delivery_date");
   const [stockDeliveryDate, setStockDeliveryDate] = useState(today);
@@ -92,16 +97,17 @@ const OrdersBulkActions = ({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const selectedStatusIndexes = filteredOrders
-    .filter((order) => selectedOrders.includes(order.id))
-    .map((order) =>
-      DELIVERY_STATUSES.indexOf(
-        order.deliveryStatus as (typeof DELIVERY_STATUSES)[number],
-      ),
-    );
-  const furthestSelectedStatus = selectedStatusIndexes.length
-    ? Math.max(...selectedStatusIndexes)
-    : -1;
+  const selectedOrderIds = useMemo(() => new Set(selectedOrders), [selectedOrders]);
+  const furthestSelectedStatus = useMemo(() => {
+    const indexes = filteredOrders
+      .filter((order) => selectedOrderIds.has(order.id))
+      .map((order) =>
+        DELIVERY_STATUSES.indexOf(
+          order.deliveryStatus as (typeof DELIVERY_STATUSES)[number],
+        ),
+      );
+    return indexes.length ? Math.max(...indexes) : -1;
+  }, [filteredOrders, selectedOrderIds]);
 
   useEffect(() => {
     if (selectedOrders.length === 0 && stockSource === "selected_orders") {
@@ -209,10 +215,11 @@ const OrdersBulkActions = ({
                   >
                     Delivery date
                   </label>
-                  <input
+                  <Input
                     id="bulk-delivery-date"
                     type="date"
-                    className={styles.filterInput}
+                    className={styles.filterGroup}
+                    fullWidth
                     min={today}
                     disabled={!hasSelectedOrders}
                     value={deliveryDate}
@@ -291,7 +298,12 @@ const OrdersBulkActions = ({
                 accept=".csv,.xlsx,.xls"
                 onChange={(e) => {
                   const file = e.target.files?.[0] || null;
-                  setOrdersFile(file);
+                  const lowerName = file?.name.toLowerCase() || "";
+                  const isAccepted =
+                    !file || ACCEPTED_ORDER_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+                  setOrdersFile(isAccepted ? file : null);
+                  setOrdersFileError(isAccepted ? "" : "Choose a CSV, XLS, or XLSX file.");
+                  if (!isAccepted) e.target.value = "";
                 }}
               />
 
@@ -385,6 +397,7 @@ const OrdersBulkActions = ({
                         size="sm"
                         onClick={() => {
                           setOrdersFile(null);
+                          setOrdersFileError("");
                           if (fileInputRef.current)
                             fileInputRef.current.value = "";
                         }}
@@ -434,6 +447,11 @@ const OrdersBulkActions = ({
                   counted.
                 </p>
               )}
+              {ordersFileError ? (
+                <p className={styles.bulkSectionError} role="alert">
+                  {ordersFileError}
+                </p>
+              ) : null}
             </div>
           )}
           </div>

@@ -129,7 +129,7 @@ export function DataTableCardStory() {
   return (
     <CatalogStory
       title="DataTableCard"
-      description="Production table shell combining Card, loading overlay and controlled pagination."
+      description="Production table shell combining Card, column-aligned skeleton rows and controlled pagination."
       moduleName="DataTableCard"
       code={`<DataTableCard
   loading={${loading}}

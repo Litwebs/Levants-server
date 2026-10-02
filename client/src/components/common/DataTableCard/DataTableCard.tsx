@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Card, CardFooter } from "../Card";
 import { Button } from "../Button";
 import { Select } from "../Select";
-import { LoadingScreen } from "../LoadingScreen";
+import { DataTableLoadingContext } from "./DataTableLoadingContext";
 import styles from "./DataTableCard.module.css";
 
 interface PaginationOption {
@@ -34,6 +34,7 @@ interface DataTableCardProps {
   tableWrapperClassName?: string;
   loading?: boolean;
   loadingText?: string;
+  skeletonRows?: number;
   pagination?: PaginationConfig;
   children: React.ReactNode;
 }
@@ -44,24 +45,29 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
   tableWrapperClassName,
   loading = false,
   loadingText = "Loading...",
+  skeletonRows = 8,
   pagination,
   children,
 }) => {
   const cx = (...classes: Array<string | undefined>) =>
     classes.filter(Boolean).join(" ");
 
+  const isLoading = loading || Boolean(pagination?.loading);
+
   return (
     <Card className={className}>
       <div className={cx(styles.tableArea, tableAreaClassName)}>
         <div className={cx(styles.tableWrapper, tableWrapperClassName)}>
-          {children}
+          <DataTableLoadingContext.Provider
+            value={{
+              loading: isLoading,
+              label: loadingText,
+              rowCount: Math.max(1, skeletonRows),
+            }}
+          >
+            {children}
+          </DataTableLoadingContext.Provider>
         </div>
-        <LoadingScreen
-          active={loading}
-          label={loadingText}
-          minimumVisibleMs={450}
-          variant="contained"
-        />
       </div>
 
       {pagination ? (

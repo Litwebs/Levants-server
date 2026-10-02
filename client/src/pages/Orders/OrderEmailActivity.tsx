@@ -13,6 +13,48 @@ const titleFor = (template: string) => ({
   refundConfirmation: "Refund confirmation",
 }[template] || template.replace(/([a-z])([A-Z])/g, "$1 $2"));
 
+const sanitizeEmailPreview = (html: string, deliveryProofUrl?: string) => {
+  const document = new DOMParser().parseFromString(html, "text/html");
+  document
+    .querySelectorAll("script, object, embed, form, base, link, meta[http-equiv], style")
+    .forEach((element) => element.remove());
+
+  document.querySelectorAll<HTMLElement>("*").forEach((element) => {
+    [...element.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim().toLowerCase();
+      if (
+        name.startsWith("on") ||
+        name === "srcset" ||
+        (name === "style" && /url\s*\(/i.test(attribute.value)) ||
+        ((name === "href" || name === "src") && value.startsWith("javascript:"))
+      ) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
+    const isDeliveryProof = image.alt?.toLowerCase() === "delivery proof";
+    if (isDeliveryProof && deliveryProofUrl) {
+      image.src = deliveryProofUrl;
+      image.referrerPolicy = "no-referrer";
+      image.loading = "lazy";
+      return;
+    }
+    image.removeAttribute("src");
+    image.removeAttribute("srcset");
+    image.alt = image.alt || "Remote image hidden for privacy";
+  });
+
+  document.querySelectorAll<HTMLAnchorElement>("a").forEach((anchor) => {
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+  });
+
+  return `<!doctype html>${document.documentElement.outerHTML}`;
+};
+
 export default function OrderEmailActivity({
   emails,
   deliveryProofUrl,
@@ -30,12 +72,7 @@ export default function OrderEmailActivity({
   const previewProvider = previewEmail?.provider;
   const previewHtml = useMemo(() => {
     const html = previewProvider?.html;
-    if (!html || !deliveryProofUrl) return html;
-
-    return html.replace(/<img\b[^>]*>/gi, (tag) => {
-      if (!/alt=(['"])Delivery proof\1/i.test(tag)) return tag;
-      return tag.replace(/\bsrc=(['"])[^'"]*\1/i, `src="${deliveryProofUrl}"`);
-    });
+    return html ? sanitizeEmailPreview(html, deliveryProofUrl) : html;
   }, [deliveryProofUrl, previewProvider?.html]);
 
   return (
@@ -96,19 +133,10 @@ export default function OrderEmailActivity({
             <div className={styles.emailCustomerCanvas}>
               <iframe
                 title={`${titleFor(previewEmail.template)} customer email`}
-                sandbox="allow-same-origin"
+                sandbox=""
                 srcDoc={previewHtml}
-                scrolling="no"
-                onLoad={(event) => {
-                  const frame = event.currentTarget;
-                  const document = frame.contentDocument;
-                  if (!document) return;
-                  const height = Math.max(
-                    document.body?.scrollHeight || 0,
-                    document.documentElement?.scrollHeight || 0,
-                  );
-                  if (height > 0) frame.style.height = `${height}px`;
-                }}
+                referrerPolicy="no-referrer"
+                scrolling="auto"
               />
             </div>
           </div>

@@ -115,6 +115,7 @@ export type AdminOrder = {
 
   customerInstructions?: string;
   driverNote?: string | null;
+  deliveryAddress?: Partial<OrderCustomerAddress> | null;
   statusAudit?: Array<{
     _id?: string;
     from?: string | null;

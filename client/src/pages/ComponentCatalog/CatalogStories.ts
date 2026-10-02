@@ -2,6 +2,7 @@ import type { CatalogEntry } from "./CatalogUI";
 import { ButtonStory } from "./stories/ActionsStories";
 import {
   CreateSearchStory,
+  CheckboxStory,
   InputStory,
   SelectStory,
   ToggleStory,
@@ -38,6 +39,15 @@ export const catalogEntries: CatalogEntry[] = [
     moduleName: "Input",
     keywords: ["form", "field", "text", "validation"],
     component: InputStory,
+  },
+  {
+    id: "checkbox",
+    title: "Checkbox",
+    category: "Forms",
+    description: "Accessible checkbox with checked and indeterminate states.",
+    moduleName: "Checkbox",
+    keywords: ["form", "selection", "boolean", "indeterminate"],
+    component: CheckboxStory,
   },
   {
     id: "select",
@@ -151,7 +161,7 @@ export const catalogEntries: CatalogEntry[] = [
     id: "data-table-card",
     title: "DataTableCard",
     category: "Data",
-    description: "Table card shell with loading overlay and pagination.",
+    description: "Table card shell with shared skeleton rows and pagination.",
     moduleName: "DataTableCard",
     keywords: ["data", "pagination", "loading", "table"],
     component: DataTableCardStory,

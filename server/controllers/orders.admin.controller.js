@@ -15,6 +15,7 @@ const ListOrders = async (req, res) => {
   const allowedSortBy = new Set([
     "createdAt",
     "updatedAt",
+    "deliveryDate",
     "total",
     "subtotal",
     "paidAt",

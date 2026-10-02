@@ -1,4 +1,16 @@
-import { DataTableCard, Table } from "../../components/common";
+import { useMemo, type Dispatch, type SetStateAction } from "react";
+import {
+  Checkbox,
+  DataTableCard,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/common";
+import type { OrdersListMeta } from "../../context/Orders";
+import type { Order } from "./useOrders";
 import {
   getStatusBadge,
   getPaymentBadge,
@@ -8,41 +20,67 @@ import styles from "./Orders.module.css";
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
 import { Link } from "react-router-dom";
 
+const PAGE_SIZE_OPTIONS = [
+  { value: "50", label: "50 / page" },
+  { value: "100", label: "100 / page" },
+  { value: "200", label: "200 / page" },
+];
+
+interface OrdersTableProps {
+  filteredOrders: Order[];
+  selectedOrders: string[];
+  toggleOrderSelection: (id: string) => void;
+  toggleSelectAll: () => void;
+  loading: boolean;
+  page: number;
+  setPage: Dispatch<SetStateAction<number>>;
+  pageSize: number;
+  setPageSize: (size: number) => void;
+  meta: OrdersListMeta | null;
+}
+
+const formatOrderCreatedAt = (value: string) => {
+  const date = new Date(value);
+  return `${date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+  })}, ${date.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+};
+
+const formatDeliveryDate = (value: string) =>
+  new Date(value).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
 const OrdersTable = ({
   filteredOrders,
   selectedOrders,
   toggleOrderSelection,
   toggleSelectAll,
-  setSelectedOrder,
-  openOrderDetails,
   loading,
   page,
   setPage,
   pageSize,
   setPageSize,
   meta,
-}: any) => {
+}: OrdersTableProps) => {
   const total = meta?.total ?? filteredOrders?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
-
-  const formatOrderCreatedAt = (value: string) => {
-    const date = new Date(value);
-    return `${date.toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-    })}, ${date.toLocaleTimeString("en-GB", {
-      hour: "2-digit",
-      minute: "2-digit",
-    })}`;
-  };
-
-  const formatDeliveryDate = (value: string) => {
-    return new Date(value).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
+  const selectedIds = useMemo(() => new Set(selectedOrders), [selectedOrders]);
+  const visibleIds = useMemo(
+    () => filteredOrders.map((order) => order.id),
+    [filteredOrders],
+  );
+  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+  const allVisibleSelected =
+    visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
+  const someVisibleSelected =
+    selectedVisibleCount > 0 && !allVisibleSelected;
 
   return (
     <DataTableCard
@@ -56,72 +94,58 @@ const OrdersTable = ({
         totalPages,
         setPage,
         setPageSize,
-        pageSizeOptions: [
-          { value: "50", label: "50 - page" },
-          { value: "100", label: "100 - page" },
-          { value: "200", label: "200 - page" },
-        ],
+        pageSizeOptions: PAGE_SIZE_OPTIONS,
         loading,
       }}
     >
       <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
-        <thead>
-          <tr>
-            <th>
-              <input
-                type="checkbox"
-                className={styles.checkbox}
+        <TableHeader>
+          <TableRow>
+            <TableHead>
+              <Checkbox
                 aria-label="Select all orders"
-                checked={
-                  selectedOrders.length === filteredOrders.length &&
-                  filteredOrders.length > 0
-                }
+                checked={allVisibleSelected}
+                indeterminate={someVisibleSelected}
                 onChange={toggleSelectAll}
                 onClick={(e) => e.stopPropagation()}
               />
-            </th>
-            <th>Order</th>
-            <th>Customer</th>
-            <th>Items</th>
-            <th>Source</th>
-            <th>Total</th>
-            <th>Delivery Status</th>
-            <th>Payment</th>
-            <th>Delivery Date</th>
-          </tr>
-        </thead>
+            </TableHead>
+            <TableHead>Order</TableHead>
+            <TableHead>Customer</TableHead>
+            <TableHead>Items</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Total</TableHead>
+            <TableHead>Delivery Status</TableHead>
+            <TableHead>Payment</TableHead>
+            <TableHead>Delivery Date</TableHead>
+          </TableRow>
+        </TableHeader>
 
-        <tbody>
+        <TableBody>
           {(filteredOrders?.length ?? 0) === 0 ? (
-            <tr className={sharedTableStyles.emptyStateRow}>
-              <td className={sharedTableStyles.emptyTableCell} colSpan={9}>
-                {loading ? "Loading orders…" : "No orders found."}
-              </td>
-            </tr>
+            <TableRow className={sharedTableStyles.emptyStateRow}>
+              <TableCell className={sharedTableStyles.emptyTableCell} colSpan={9}>
+                No orders found.
+              </TableCell>
+            </TableRow>
           ) : (
-            filteredOrders.map((order: any) => (
-              <tr
+            filteredOrders.map((order) => (
+              <TableRow
                 key={order.id}
                 className={
-                  selectedOrders.includes(order.id)
+                  selectedIds.has(order.id)
                     ? styles.selectedRow
                     : undefined
                 }
-                onClick={() => {
-                  setSelectedOrder(order);
-                  openOrderDetails?.(order.id);
-                }}
               >
-                <td className={styles.checkboxCol} data-label="Select">
-                  <input
-                    type="checkbox"
+                <TableCell className={styles.checkboxCol} data-label="Select">
+                  <Checkbox
                     aria-label={`Select order ${order.orderNumber}`}
-                    checked={selectedOrders.includes(order.id)}
+                    checked={selectedIds.has(order.id)}
                     onChange={() => toggleOrderSelection(order.id)}
                     onClick={(e) => e.stopPropagation()}
-                    className={styles.checkbox}
                   />
-                </td>
+                </TableCell>
 
                 <td className={styles.orderInfoCol} data-label="Order">
                   <div className={styles.orderCell}>
@@ -153,13 +177,8 @@ const OrdersTable = ({
 
                 <td data-label="Items">
                   <div className={styles.itemsCell}>
-                    <span className={styles.itemCount}>
-                      {order.items.reduce(
-                        (sum: number, item: any) => sum + item.quantity,
-                        0,
-                      )}
-                    </span>
-                    <span>items</span>
+                    <span className={styles.itemCount}>{order.itemCount}</span>
+                    <span>{order.itemCount === 1 ? "item" : "items"}</span>
                   </div>
                 </td>
                 <td data-label="Source">
@@ -198,10 +217,10 @@ const OrdersTable = ({
                   </div>
                 </td>
 
-              </tr>
+              </TableRow>
             ))
           )}
-        </tbody>
+        </TableBody>
       </Table>
 
     </DataTableCard>

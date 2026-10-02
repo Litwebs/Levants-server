@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { ChevronDown } from 'lucide-react';
 import styles from './Select.module.css';
 
-interface SelectOption {
+export interface SelectOption {
   value: string;
   label: string;
   disabled?: boolean;
@@ -29,7 +29,8 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(({
   value,
   ...props
 }, ref) => {
-  const selectId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
+  const generatedId = useId();
+  const selectId = id || `select-${generatedId}`;
   
   const containerClasses = [
     styles.container,

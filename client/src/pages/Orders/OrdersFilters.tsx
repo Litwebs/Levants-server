@@ -7,7 +7,79 @@ import {
   Toggle,
 } from "../../components/common";
 import styles from "./Orders.module.css";
+import type { OrdersPageState } from "./useOrders";
 import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
+
+type OrdersFiltersProps = Pick<
+  OrdersPageState,
+  | "searchQuery"
+  | "setSearchQuery"
+  | "showFilters"
+  | "setShowFilters"
+  | "deliveryStatusFilter"
+  | "setDeliveryStatusFilter"
+  | "paymentStatusFilter"
+  | "setPaymentStatusFilter"
+  | "orderSourceFilter"
+  | "setOrderSourceFilter"
+  | "dateFilter"
+  | "setDateFilter"
+  | "sortBy"
+  | "setSortBy"
+  | "minTotal"
+  | "setMinTotal"
+  | "maxTotal"
+  | "setMaxTotal"
+  | "dateFrom"
+  | "setDateFrom"
+  | "dateTo"
+  | "setDateTo"
+  | "refundedOnly"
+  | "setRefundedOnly"
+  | "setExpiredOnly"
+>;
+
+const SORT_OPTIONS = [
+  { value: "newest", label: "Newest First" },
+  { value: "oldest", label: "Oldest First" },
+  { value: "total-high", label: "Total High → Low" },
+  { value: "total-low", label: "Total Low → High" },
+  { value: "delivery", label: "Delivery Date" },
+];
+
+const DELIVERY_STATUS_OPTIONS = [
+  { value: "all", label: "All Delivery Statuses" },
+  { value: "ordered", label: "Ordered" },
+  { value: "dispatched", label: "Dispatched" },
+  { value: "in_transit", label: "In Transit" },
+  { value: "delivered", label: "Delivered" },
+  { value: "returned", label: "Returned" },
+];
+
+const PAYMENT_STATUS_OPTIONS = [
+  { value: "all", label: "All Payment Statuses" },
+  { value: "unpaid", label: "Unpaid" },
+  { value: "paid", label: "Paid" },
+  { value: "partially_paid", label: "Partially Paid" },
+  { value: "refund_pending", label: "Refund Pending" },
+  { value: "partially_refunded", label: "Partially Refunded" },
+  { value: "refunded", label: "Refunded" },
+];
+
+const SOURCE_OPTIONS = [
+  { value: "all", label: "All Sources" },
+  { value: "website", label: "Website" },
+  { value: "subscription", label: "Subscriptions" },
+  { value: "imported", label: "Imported" },
+];
+
+const DATE_RANGE_OPTIONS = [
+  { value: "all", label: "All Time" },
+  { value: "today", label: "Today" },
+  { value: "week", label: "Last 7 Days" },
+  { value: "month", label: "Last 30 Days" },
+  { value: "custom", label: "Custom Range" },
+];
 
 const OrdersFilters = ({
   searchQuery,
@@ -35,7 +107,22 @@ const OrdersFilters = ({
   refundedOnly,
   setRefundedOnly,
   setExpiredOnly,
-}: any) => {
+}: OrdersFiltersProps) => {
+  const minimum = minTotal === "" ? null : Number(minTotal);
+  const maximum = maxTotal === "" ? null : Number(maxTotal);
+  const minimumError =
+    minimum !== null && (!Number.isFinite(minimum) || minimum < 0)
+      ? "Enter zero or more"
+      : minimum !== null && maximum !== null && minimum > maximum
+        ? "Must not exceed maximum"
+        : undefined;
+  const maximumError =
+    maximum !== null && (!Number.isFinite(maximum) || maximum < 0)
+      ? "Enter zero or more"
+      : minimum !== null && maximum !== null && minimum > maximum
+        ? "Must be at least minimum"
+        : undefined;
+  const dateRangeInvalid = Boolean(dateFrom && dateTo && dateFrom > dateTo);
   return (
     <FiltersCardLayout
       className={sharedFilterStyles.filtersCard}
@@ -46,6 +133,7 @@ const OrdersFilters = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search orders..."
+              aria-label="Search orders"
               className={sharedFilterStyles.searchControl}
               leftIcon={<Search size={18} />}
               fullWidth
@@ -55,6 +143,7 @@ const OrdersFilters = ({
                 type="button"
                 className={sharedFilterStyles.clearSearch}
                 onClick={() => setSearchQuery("")}
+                aria-label="Clear order search"
               >
                 <X size={16} />
               </button>
@@ -74,13 +163,7 @@ const OrdersFilters = ({
             value={sortBy}
             onChange={setSortBy}
             className={sharedFilterStyles.sortSelect}
-            options={[
-              { value: "newest", label: "Newest First" },
-              { value: "oldest", label: "Oldest First" },
-              { value: "total-high", label: "Total High → Low" },
-              { value: "total-low", label: "Total Low → High" },
-              { value: "delivery", label: "Delivery Date" },
-            ]}
+            options={SORT_OPTIONS}
           />
         </div>
       }
@@ -100,14 +183,7 @@ const OrdersFilters = ({
                 <Select
                   value={deliveryStatusFilter}
                   onChange={setDeliveryStatusFilter}
-                  options={[
-                    { value: "all", label: "All Delivery Statuses" },
-                    { value: "ordered", label: "Ordered" },
-                    { value: "dispatched", label: "Dispatched" },
-                    { value: "in_transit", label: "In Transit" },
-                    { value: "delivered", label: "Delivered" },
-                    { value: "returned", label: "Returned" },
-                  ]}
+                  options={DELIVERY_STATUS_OPTIONS}
                 />
               </div>
 
@@ -118,18 +194,7 @@ const OrdersFilters = ({
                 <Select
                   value={paymentStatusFilter}
                   onChange={setPaymentStatusFilter}
-                  options={[
-                    { value: "all", label: "All Payment Statuses" },
-                    { value: "unpaid", label: "Unpaid" },
-                    { value: "paid", label: "Paid" },
-                    { value: "partially_paid", label: "Partially Paid" },
-                    { value: "refund_pending", label: "Refund Pending" },
-                    {
-                      value: "partially_refunded",
-                      label: "Partially Refunded",
-                    },
-                    { value: "refunded", label: "Refunded" },
-                  ]}
+                  options={PAYMENT_STATUS_OPTIONS}
                 />
               </div>
 
@@ -140,12 +205,7 @@ const OrdersFilters = ({
                 <Select
                   value={orderSourceFilter}
                   onChange={setOrderSourceFilter}
-                  options={[
-                    { value: "all", label: "All Sources" },
-                    { value: "website", label: "Website" },
-                    { value: "subscription", label: "Subscriptions" },
-                    { value: "imported", label: "Imported" },
-                  ]}
+                  options={SOURCE_OPTIONS}
                 />
               </div>
             </div>
@@ -159,13 +219,7 @@ const OrdersFilters = ({
                 <Select
                   value={dateFilter}
                   onChange={setDateFilter}
-                  options={[
-                    { value: "all", label: "All Time" },
-                    { value: "today", label: "Today" },
-                    { value: "week", label: "Last 7 Days" },
-                    { value: "month", label: "Last 30 Days" },
-                    { value: "custom", label: "Custom Range" },
-                  ]}
+                  options={DATE_RANGE_OPTIONS}
                 />
               </div>
 
@@ -173,6 +227,7 @@ const OrdersFilters = ({
                 className={sharedFilterStyles.filterGroup}
                 label="From"
                 type="date"
+                error={dateRangeInvalid ? "Must be before To" : undefined}
                 value={dateFrom}
                 onChange={(e) => {
                   setDateFrom(e.target.value);
@@ -184,6 +239,7 @@ const OrdersFilters = ({
                 className={sharedFilterStyles.filterGroup}
                 label="To"
                 type="date"
+                error={dateRangeInvalid ? "Must be after From" : undefined}
                 value={dateTo}
                 onChange={(e) => {
                   setDateTo(e.target.value);
@@ -201,6 +257,9 @@ const OrdersFilters = ({
                 label="Minimum total"
                 type="number"
                 inputMode="decimal"
+                min="0"
+                step="0.01"
+                error={minimumError}
                 placeholder="0.00"
                 value={minTotal}
                 onChange={(e) => setMinTotal(e.target.value)}
@@ -211,6 +270,9 @@ const OrdersFilters = ({
                 label="Maximum total"
                 type="number"
                 inputMode="decimal"
+                min="0"
+                step="0.01"
+                error={maximumError}
                 placeholder="0.00"
                 value={maxTotal}
                 onChange={(e) => setMaxTotal(e.target.value)}

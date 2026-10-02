@@ -8,6 +8,7 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
+  Checkbox,
   CreateSearch,
   DataTableCard,
   FiltersCardLayout,
@@ -57,6 +58,36 @@ import {
   TextControl,
 } from "../CatalogUI";
 import styles from "../ComponentCatalog.module.css";
+
+export function CheckboxStory() {
+  const [checked, setChecked] = useState(true);
+  const [disabled, setDisabled] = useState(false);
+  const [indeterminate, setIndeterminate] = useState(false);
+
+  return (
+    <CatalogStory
+      title="Checkbox"
+      description="Theme-native checkbox with checked, indeterminate, disabled, and accessible-label support."
+      moduleName="Checkbox"
+      code={`<Checkbox aria-label="Select row" checked={${checked}}${indeterminate ? " indeterminate" : ""}${disabled ? " disabled" : ""} />`}
+      controls={
+        <ControlGroup label="State">
+          <BooleanControl label="checked" checked={checked} onChange={setChecked} />
+          <BooleanControl label="indeterminate" checked={indeterminate} onChange={setIndeterminate} />
+          <BooleanControl label="disabled" checked={disabled} onChange={setDisabled} />
+        </ControlGroup>
+      }
+    >
+      <Checkbox
+        aria-label="Select example row"
+        checked={checked}
+        indeterminate={indeterminate}
+        disabled={disabled}
+        onChange={(event) => setChecked(event.target.checked)}
+      />
+    </CatalogStory>
+  );
+}
 
 export function ToggleStory() {
   const [checked, setChecked] = useState(true);

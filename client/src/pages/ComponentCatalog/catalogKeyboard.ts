@@ -35,6 +35,17 @@ const profiles: Record<string, KeyboardProfile> = {
       "Keyboard behaviour otherwise follows the native <input> element.",
     ],
   },
+  Checkbox: {
+    title: "Native checkbox keyboard behaviour",
+    checks: [
+      { keys: ["Tab"], expected: "Moves focus to the checkbox." },
+      { keys: ["Space"], expected: "Toggles the checkbox using native input semantics." },
+    ],
+    observations: [
+      "The visual control preserves a native checkbox input and visible focus ring.",
+      "Indeterminate state is announced through the native input property.",
+    ],
+  },
   Select: {
     title: "Native select keyboard behaviour",
     checks: [

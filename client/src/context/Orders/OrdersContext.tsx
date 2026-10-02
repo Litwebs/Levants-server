@@ -3,6 +3,7 @@ import {
   useCallback,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from "react";
 
@@ -41,6 +42,22 @@ const unwrapData = <T,>(payload: unknown): T | null => {
   return payload as T;
 };
 
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const response = error.response;
+    if (typeof response === "object" && response !== null && "data" in response) {
+      const data = response.data;
+      if (typeof data === "object" && data !== null && "message" in data && typeof data.message === "string") {
+        return data.message;
+      }
+    }
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+};
+
+const isCanceledRequest = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "ERR_CANCELED";
+
 type OrdersContextType = {
   orders: OrdersState["orders"];
   meta: OrdersState["meta"];
@@ -67,7 +84,7 @@ type OrdersContextType = {
     // sorting
     sortBy?: string;
     sortOrder?: "asc" | "desc";
-  }) => Promise<ListOrdersResult>;
+  }, options?: { signal?: AbortSignal }) => Promise<ListOrdersResult>;
 
   getOrderById: (orderId: string) => Promise<AdminOrder>;
   getOrderEmailAudit: (orderId: string) => Promise<OrderEmailAudit[]>;
@@ -137,6 +154,7 @@ const OrdersContext = createContext<OrdersContextType | null>(null);
 
 export const OrdersProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(OrdersReducer, initialOrdersState);
+  const latestListRequestRef = useRef(0);
 
   const listOrders = useCallback(
     async (params?: {
@@ -156,10 +174,12 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
 
       sortBy?: string;
       sortOrder?: "asc" | "desc";
-    }) => {
+    }, options?: { signal?: AbortSignal }) => {
+      const requestId = ++latestListRequestRef.current;
       dispatch({ type: ORDERS_REQUEST });
       try {
         const res = await api.get("/admin/orders", {
+          signal: options?.signal,
           params: {
             page: params?.page,
             pageSize: params?.pageSize,
@@ -187,11 +207,16 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         const orders = data?.orders ?? [];
         const meta = data?.meta ?? null;
 
-        dispatch({ type: ORDERS_LIST_SUCCESS, payload: { orders, meta } });
+        if (latestListRequestRef.current === requestId) {
+          dispatch({ type: ORDERS_LIST_SUCCESS, payload: { orders, meta } });
+        }
         return { orders, meta };
-      } catch (err: any) {
-        const msg = err?.response?.data?.message || "Failed to load orders";
-        dispatch({ type: ORDERS_FAILURE, payload: msg });
+      } catch (err: unknown) {
+        if (isCanceledRequest(err)) throw err;
+        const msg = getApiErrorMessage(err, "Failed to load orders");
+        if (latestListRequestRef.current === requestId) {
+          dispatch({ type: ORDERS_FAILURE, payload: msg });
+        }
         throw err;
       }
     },
@@ -207,8 +232,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
 
       dispatch({ type: ORDERS_SET_CURRENT, payload: { order } });
       return order;
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to load order";
+    } catch (err: unknown) {
+      const msg = getApiErrorMessage(err, "Failed to load order");
       dispatch({ type: ORDERS_FAILURE, payload: msg });
       throw err;
     }
@@ -234,13 +259,6 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
     ) => {
       dispatch({ type: ORDERS_REQUEST });
       try {
-        console.log(
-          "Updating order",
-          orderId,
-          "to deliveryStatus",
-          deliveryStatus,
-        );
-
         const url = `/admin/orders/${orderId}/status`;
         const cleanedNote =
           typeof deliveryNote === "string" ? deliveryNote.trim() : "";
@@ -262,9 +280,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
 
         dispatch({ type: ORDERS_UPDATE_SUCCESS, payload: { order } });
         return order;
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.message || "Failed to update order status";
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "Failed to update order status");
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -286,9 +303,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
 
         dispatch({ type: ORDERS_UPDATE_SUCCESS, payload: { order } });
         return order;
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.message || "Failed to update payment status";
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "Failed to update payment status");
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -322,9 +338,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
 
         dispatch({ type: ORDERS_UPDATE_SUCCESS, payload: { order } });
         return order;
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.message || "Failed to update order items";
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "Failed to update order items");
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -352,8 +367,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       const data = unwrapData<{ deleted: true; orderId: string }>(res.data);
       if (!data?.deleted) throw new Error("Failed to delete order");
       return data;
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to delete order";
+    } catch (err: unknown) {
+      const msg = getApiErrorMessage(err, "Failed to delete order");
       dispatch({ type: ORDERS_FAILURE, payload: msg });
       throw err;
     }
@@ -370,8 +385,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         throw new Error("Failed to delete orders");
       }
       return data;
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || "Failed to delete orders";
+    } catch (err: unknown) {
+      const msg = getApiErrorMessage(err, "Failed to delete orders");
       dispatch({ type: ORDERS_FAILURE, payload: msg });
       throw err;
     }
@@ -410,8 +425,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         });
 
         return data;
-      } catch (err: any) {
-        const msg = err?.response?.data?.message || "Bulk update failed";
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "Bulk update failed");
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -443,9 +458,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         });
 
         return data;
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.message || "Bulk assign delivery date failed";
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "Bulk assign delivery date failed");
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -483,8 +497,8 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
         }
 
         return data;
-      } catch (err: any) {
-        const msg = err?.response?.data?.message || "Failed to refund order";
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "Failed to refund order");
         dispatch({ type: ORDERS_FAILURE, payload: msg });
         throw err;
       }
@@ -528,14 +542,12 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
             });
 
         const data = unwrapData<OrdersStockRequirements>(res.data);
-        if (!data || !Array.isArray((data as any).items)) {
+        if (!data || !Array.isArray(data.items)) {
           throw new Error("Invalid stock requirements response");
         }
         return data;
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.message ||
-          "Failed to calculate stock requirements";
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "Failed to calculate stock requirements");
         throw new Error(msg);
       }
     },
@@ -570,8 +582,6 @@ export const OrdersProvider = ({ children }: { children: ReactNode }) => {
       getOrderEmailAudit,
       updateOrderStatus,
       updateOrderPaymentStatus,
-      updateOrderItems,
-      updateDriverNote,
       updateOrderItems,
       updateDriverNote,
       deleteOrder,

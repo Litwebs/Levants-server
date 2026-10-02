@@ -9,6 +9,7 @@ export * from './Toast';
 export * from './Skeleton';
 export * from './Tabs';
 export * from './Toggle';
+export * from './Checkbox';
 export * from './FormGrid';
 export * from './PageToolbar';
 export * from './PageContainer';

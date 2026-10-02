@@ -1,14 +1,19 @@
-import { Download, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "../../components/common";
+import type { OrdersPageState } from "./useOrders";
 import styles from "./Orders.module.css";
+
+type OrdersHeaderProps = Pick<
+  OrdersPageState,
+  "filteredOrders" | "meta" | "refresh" | "loading"
+>;
 
 const OrdersHeader = ({
   filteredOrders,
   meta,
-  exportToCSV,
   refresh,
   loading,
-}: any) => {
+}: OrdersHeaderProps) => {
   const totalOrders = meta?.total ?? filteredOrders.length;
 
   return (
@@ -19,17 +24,10 @@ const OrdersHeader = ({
       </div>
 
       <div className={styles.headerActions}>
-        {/* <Button
-          variant="outline"
-          leftIcon={<Download size={16} />}
-          onClick={exportToCSV}
-        >
-          Export CSV
-        </Button> */}
         <Button
           variant="outline"
           leftIcon={<RefreshCw size={16} />}
-          onClick={refresh}
+          onClick={() => void refresh()}
           disabled={loading}
         >
           Refresh

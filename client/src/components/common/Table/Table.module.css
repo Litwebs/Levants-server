@@ -76,6 +76,18 @@
   background-color: var(--color-primary-bg);
 }
 
+.skeletonRow {
+  pointer-events: none;
+}
+
+.skeletonRow:hover {
+  background-color: transparent;
+}
+
+.skeletonRow .td {
+  height: 64px;
+}
+
 .td {
   padding: var(--space-3) var(--space-4);
   color: var(--color-gray-700);
