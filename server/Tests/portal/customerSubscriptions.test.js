@@ -75,13 +75,16 @@ jest.mock("../../utils/stripe.util", () => {
       })),
     },
     paymentIntents: {
+      retrieve: jest.fn(async id => ({ id, status: "succeeded", amount_received: 100000 })),
       create: jest.fn(async () => ({
         id: `pi_test_${++paymentIntentCounter}`,
         status: "succeeded",
       })),
     },
     refunds: {
-      create: jest.fn(async () => ({ id: `re_test_${++refundCounter}` })),
+      list: jest.fn(async () => ({ data: [], has_more: false })),
+      retrieve: jest.fn(async id => ({ id, status: "succeeded" })),
+      create: jest.fn(async params => ({ id: `re_test_${++refundCounter}`, status: "succeeded", amount: params.amount })),
     },
     testHelpers: {
       testClocks: {
@@ -4380,6 +4383,71 @@ describe("Portal Subscriptions", () => {
       stripePaymentIntentId: `pi_${crypto.randomUUID()}`, paidAt: new Date(),
     });
   }
+
+  it.each(["pause", "cancel", "remove-day"])("recovers a split card refund without duplicate money (%s)", async action => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const order = await createPaidOrderFor(sub);
+    order.deliveryDate = deliveries[0].scheduledDate;
+    order.total = order.amountPaid = 8;
+    order.paymentAllocations = [
+      { paymentIntentId: order.stripePaymentIntentId, amountMinor: 500, source: "subscription_invoice" },
+      { paymentIntentId: "pi_supplemental", amountMinor: 500, source: "modification" },
+    ];
+    await order.save();
+    await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, { order: order._id, status: "generated" });
+    const payload = { operationId: crypto.randomUUID(), refundMethod: "refund" };
+    let send;
+    if (action === "remove-day") {
+      const day = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
+      const otherDay = (day + 3) % 7;
+      await Subscription.findByIdAndUpdate(sub._id, {
+        preferredDeliveryDay: day, preferredDeliveryDays: [day, otherDay],
+        deliveryDayPlans: [day, otherDay].map(day => ({ day, items: sub.items })),
+        items: sub.items.map(item => ({ ...item, quantity: item.quantity * 2 })),
+      });
+      Object.assign(payload, { preferredDeliveryDay: otherDay, preferredDeliveryDays: [otherDay] });
+      send = body => request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+        .set("Authorization", `Bearer ${accessToken}`).send(body);
+    } else {
+      if (action === "pause") payload.resumeOn = new Date(Date.now() + 21 * 86400000).toISOString();
+      send = body => request(app).post(`/api/portal/subscriptions/${sub._id}/${action}`)
+        .set("Authorization", `Bearer ${accessToken}`).send(body);
+    }
+    stripe.paymentIntents.retrieve.mockResolvedValueOnce({ status: "succeeded", amount_received: 500 })
+      .mockResolvedValueOnce({ status: "succeeded", amount_received: 500 });
+    stripe.refunds.create.mockClear();
+    stripe.refunds.create.mockResolvedValueOnce({ id: "re_split_first", amount: 500, status: "succeeded" })
+      .mockRejectedValueOnce(new Error("Stripe connection reset"));
+    const failed = await send(payload);
+    expect(failed.status).toBe(400);
+    expect(failed.body.data).toMatchObject({ refundPending: true, refundedMinor: 500, remainingMinor: 300 });
+    expect(failed.body.message).toContain("£5.00");
+    const failedRequest = stripe.refunds.create.mock.calls[1];
+    const pendingOrder = await Order.findById(order._id).select("+subscriptionRefundPlan").lean();
+    expect(pendingOrder.refunds).toHaveLength(1);
+    expect(pendingOrder.subscriptionRefundPlan.steps.map(step => step.params.amount)).toEqual([500, 300]);
+    const credit = await send({ ...payload, operationId: crypto.randomUUID(), refundMethod: "credit" });
+    expect(credit.status).toBe(400);
+    expect((await Customer.findById(customer._id)).creditBalance).toBe(0);
+    const addOn = await request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] });
+    expect(addOn.status).toBe(400);
+    expect(addOn.body.message).toMatch(/refund is unfinished/);
+    stripe.refunds.create.mockResolvedValueOnce({ id: "re_split_second", amount: 300, status: "succeeded" });
+    const retry = await send(payload);
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.refundedMinor).toBe(800);
+    expect(stripe.refunds.create.mock.calls[2]).toEqual(failedRequest);
+    expect(stripe.refunds.create).toHaveBeenCalledTimes(3);
+    const final = await Order.findById(order._id).lean();
+    expect(final.status).toBe("refunded");
+    expect(final.refunds.map(record => record.amountMinor)).toEqual([500, 300]);
+    expect(final.subscriptionRefundPlan).toBeUndefined();
+    expect((await send(payload)).status).toBe(200);
+    expect(stripe.refunds.create).toHaveBeenCalledTimes(3);
+  });
 
   it.each([false, true])("updates equal-price fulfillment atomically (inject failure: %s)", async (fail) => {
     const { variant: second } = await createTestProduct();

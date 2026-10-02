@@ -11,6 +11,7 @@ const CustomerNotification = require("../../models/customerNotification.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
 const stripe = require("../../utils/stripe.util");
+const { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure } = require("./subscriptionRefundSettlement.service");
 const { Response } = require("../../utils/response.util");
 const {
   addCalendarMonthPreservingWeekdayOccurrence,
@@ -1125,109 +1126,6 @@ async function attachDeliveryAddOnToOrder({
   return order;
 }
 
-async function refundAcrossSubscriptionPayments(
-  subscription,
-  customer,
-  primaryPaymentIntentId,
-  amountMinor,
-  metadataType,
-  operationKey,
-  orderId,
-) {
-  if (!stripe.paymentIntents?.list) {
-    const refund = await stripe.refunds.create(
-      {
-        payment_intent: primaryPaymentIntentId,
-        amount: amountMinor,
-        metadata: {
-          subscriptionId: String(subscription._id),
-          subscriptionNumber: subscription.subscriptionNumber,
-          type: metadataType,
-          ...(orderId ? { orderId: String(orderId) } : {}),
-        },
-      },
-      operationKey ? { idempotencyKey: `${operationKey}:primary` } : undefined,
-    );
-    return [refund];
-  }
-
-  const intentPage = await stripe.paymentIntents.list({
-    customer: customer.stripeCustomerId,
-    limit: 100,
-  });
-  const fundedOrder = orderId
-    ? await Order.findById(orderId).select("paymentAllocations").lean()
-    : null;
-  const allocatedSupplementalIntentIds = new Set(
-    (fundedOrder?.paymentAllocations || [])
-      .filter((allocation) =>
-        ["modification", "delivery_add_on", "resume"].includes(
-          allocation.source,
-        ),
-      )
-      .map((allocation) => allocation.paymentIntentId)
-      .filter(Boolean),
-  );
-  const primary = intentPage.data.find(
-    (intent) => intent.id === primaryPaymentIntentId,
-  );
-  const supplementalIntents = intentPage.data
-    .filter(
-      (intent) =>
-        intent.id !== primaryPaymentIntentId &&
-        intent.status === "succeeded" &&
-        String(intent.metadata?.subscriptionId || "") ===
-          String(subscription._id) &&
-        ["subscription_modification", "delivery_add_on"].includes(
-          intent.metadata?.type,
-        ) &&
-        (allocatedSupplementalIntentIds.size === 0 ||
-          allocatedSupplementalIntentIds.has(intent.id)),
-    )
-    .sort((left, right) => Number(left.created) - Number(right.created));
-  const candidates = [primary, ...supplementalIntents].filter(Boolean);
-  let remainingMinor = amountMinor;
-  const refunds = [];
-
-  for (const intent of candidates) {
-    if (remainingMinor <= 0) break;
-    const existingRefunds = await stripe.refunds.list({
-      payment_intent: intent.id,
-      limit: 100,
-    });
-    const alreadyRefundedMinor = existingRefunds.data
-      .filter((refund) => refund.status === "succeeded")
-      .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
-    const capturedMinor = Number(intent.amount_received || intent.amount || 0);
-    const availableMinor = Math.max(0, capturedMinor - alreadyRefundedMinor);
-    const refundMinor = Math.min(remainingMinor, availableMinor);
-    if (refundMinor <= 0) continue;
-
-    const refund = await stripe.refunds.create(
-      {
-        payment_intent: intent.id,
-        amount: refundMinor,
-        metadata: {
-          subscriptionId: String(subscription._id),
-          subscriptionNumber: subscription.subscriptionNumber,
-          type: metadataType,
-          ...(orderId ? { orderId: String(orderId) } : {}),
-        },
-      },
-      operationKey
-        ? { idempotencyKey: `${operationKey}:${intent.id}` }
-        : undefined,
-    );
-    refunds.push(refund);
-    remainingMinor -= refundMinor;
-  }
-
-  if (remainingMinor > 0) {
-    throw new Error("Insufficient captured payment balance to refund");
-  }
-
-  return refunds;
-}
 
 /**
  * Attempt to refund `amountMinor` to the customer's card by refunding the most
@@ -1587,6 +1485,9 @@ async function applyItemChange(
   refundMethod = "credit",
   operationId,
 ) {
+  if (await hasUnfinishedCardRefund(subscription._id)) {
+    return Response(false, "A card refund is unfinished. Retry that refund before editing this subscription.", null);
+  }
   const { isPastCutoff, settings } = await getCutoffStatus(subscription);
   const upcomingDeliveryDate = await getUpcomingDeliveryDate(subscription._id);
   const upcomingCutoffAt = computeCutoffDate(upcomingDeliveryDate, settings);
@@ -2465,6 +2366,14 @@ async function UpdateSubscription({
     );
   }
 
+  const refundInProgress = await hasUnfinishedCardRefund(subscription._id);
+  if (refundInProgress) {
+    // Only a card-settled delivery-day removal can continue its original plan.
+    if (refundMethod !== "refund" || deliveryDayPlans !== undefined || frequency !== undefined ||
+        deliveryAddressId !== undefined || notes !== undefined) {
+      return Response(false, "A card refund is unfinished. Retry that refund before making another change.", null);
+    }
+  }
   const settings = await subscriptionSettingsService.getOrCreateSettings();
 
   const targetFrequency = frequency ?? subscription.frequency;
@@ -2511,6 +2420,11 @@ async function UpdateSubscription({
       resolvedDays.days,
       currentResolvedDays.ok ? currentResolvedDays.days : [],
     );
+
+  if (refundInProgress && (!scheduleChangeRequested || !currentResolvedDays.ok ||
+      resolvedDays.days.length >= currentResolvedDays.days.length)) {
+    return Response(false, "A card refund is unfinished. Retry the original refund before making another change.", null);
+  }
 
   const dayPlanChangeRequested = deliveryDayPlans !== undefined;
   const shouldUseDayPlans =
@@ -2982,6 +2896,10 @@ async function UpdateSubscription({
       return cutoffAt ? now.getTime() < cutoffAt.getTime() : true;
     });
 
+    if (await hasUnfinishedCardRefund(subscription._id, eligibleOrders.map(order => order._id))) {
+      return Response(false, "An unfinished card refund is outside this change's eligible deliveries. Please contact support to reconcile it.", null);
+    }
+
     if (
       refundMethod === "refund" &&
       eligibleOrders.some((order) => !order.stripePaymentIntentId)
@@ -3001,7 +2919,9 @@ async function UpdateSubscription({
       if (amountMinor <= 0) continue;
 
       if (refundMethod === "refund") {
-        const refunds = await refundAcrossSubscriptionPayments(
+        let refunds;
+        try {
+          refunds = await refundAcrossSubscriptionPayments(
           subscription,
           customer,
           order.stripePaymentIntentId,
@@ -3010,6 +2930,9 @@ async function UpdateSubscription({
           `subscription:${subscription._id}:remove-day:${deliveryDateKey(order.deliveryDate)}:${order._id}`,
           order._id,
         );
+        } catch (error) {
+          return refundFailure(error);
+        }
         removedDayRefundedMinor += amountMinor;
         removedDayStripeRefundId =
           refunds.at(-1)?.id || removedDayStripeRefundId;
@@ -3374,6 +3297,9 @@ async function PauseSubscription({
     refundMethod === "credit" || refundMethod === "refund"
       ? refundMethod
       : "refund";
+  if (settlementMethod === "credit" && await hasUnfinishedCardRefund(subscription._id)) {
+    return Response(false, "A card refund is unfinished. Retry the card refund; store credit cannot replace it yet.", null);
+  }
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
   const now = new Date(subscriptionClock.now());
@@ -3407,6 +3333,9 @@ async function PauseSubscription({
   const eligibleOrders = refundableOrders.filter((order) =>
     openDateKeys.has(deliveryDateKey(order.deliveryDate)),
   );
+  if (await hasUnfinishedCardRefund(subscription._id, eligibleOrders.map(order => order._id))) {
+    return Response(false, "An unfinished card refund is outside this pause's eligible deliveries. Please contact support to reconcile it.", null);
+  }
   let refundedMinor = 0;
   let creditedMinor = 0;
 
@@ -3471,11 +3400,7 @@ async function PauseSubscription({
         refundedMinor += amountMinor;
       } catch (error) {
         await restoreStripeBilling();
-        return Response(
-          false,
-          "We couldn't refund your card. Please choose store credit instead.",
-          null,
-        );
+        return refundFailure(error);
       }
     } else {
       const credit = await storeCreditService.addCredit({
@@ -3598,6 +3523,9 @@ async function CancelSubscription({
       ? refundMethod
       : "refund";
 
+  if (settlementMethod === "credit" && await hasUnfinishedCardRefund(subscription._id)) {
+    return Response(false, "A card refund is unfinished. Retry the card refund; store credit cannot replace it yet.", null);
+  }
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const customer = await Customer.findById(customerId);
   const now = new Date(subscriptionClock.now());
@@ -3661,6 +3589,10 @@ async function CancelSubscription({
     return cutoffAt ? subscriptionClock.now() < cutoffAt.getTime() : true;
   });
 
+  if (await hasUnfinishedCardRefund(subscription._id, refundableOrders.map(order => order._id))) {
+    return Response(false, "An unfinished card refund is outside the eligible deliveries. Please contact support to reconcile it.", null);
+  }
+
   // Refund each open (before cut-off) delivery order. Locked deliveries are
   // kept and cancellation is scheduled to apply after they are delivered.
   if (refundableOrders.length > 0) {
@@ -3700,11 +3632,7 @@ async function CancelSubscription({
           refundedMinor += refundAmountMinor;
           stripeRefundId = refunds.at(-1)?.id || stripeRefundId;
         } catch (err) {
-          return Response(
-            false,
-            "We couldn't refund your card. Please choose store credit instead.",
-            null,
-          );
+          return refundFailure(err);
         }
       } else {
         const creditResult = await storeCreditService.addCredit({
@@ -3785,11 +3713,7 @@ async function CancelSubscription({
           refundedMinor = refundAmountMinor;
           stripeRefundId = refunds.at(-1)?.id || null;
         } catch (err) {
-          return Response(
-            false,
-            "We couldn't refund your card. Please choose store credit instead.",
-            null,
-          );
+          return refundFailure(err);
         }
       } else {
         const creditResult = await storeCreditService.addCredit({
@@ -3950,6 +3874,10 @@ async function AddNextDeliveryAddOn({
       "One-time add-ons are only available for active subscriptions.",
       null,
     );
+  }
+
+  if (await hasUnfinishedCardRefund(subscription._id)) {
+    return Response(false, "A card refund is unfinished. Retry that refund before adding products.", null);
   }
 
   const deliveryCandidates = await SubscriptionDelivery.find({
