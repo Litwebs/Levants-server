@@ -54,6 +54,19 @@ const getCustomerLabel = (order: any) => {
 };
 
 
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error !== "object" || error === null || !("response" in error)) {
+    return fallback;
+  }
+
+  const response = (error as {
+    response?: { data?: { message?: unknown } };
+  }).response;
+  const message = response?.data?.message;
+
+  return typeof message === "string" && message.trim() ? message : fallback;
+};
+
 const formatDecimal = (value: unknown, maximumFractionDigits = 2) => {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return "—";
@@ -175,11 +188,11 @@ const Reports = () => {
       .then((detail) => {
         if (!cancelled) setProductDetail(detail);
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
         setProductDetail(null);
         setProductDetailError(
-          err?.response?.data?.message || "Failed to load product detail",
+          getApiErrorMessage(err, "Failed to load product detail"),
         );
       })
       .finally(() => {
@@ -221,11 +234,11 @@ const Reports = () => {
       .then((detail) => {
         if (!cancelled) setVariantDetail(detail);
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         if (cancelled) return;
         setVariantDetail(null);
         setVariantDetailError(
-          err?.response?.data?.message || "Failed to load variant detail",
+          getApiErrorMessage(err, "Failed to load variant detail"),
         );
       })
       .finally(() => {
