@@ -1708,6 +1708,237 @@ async function GetRevenueSeries({
   };
 }
 
+async function GetSubscriptionTrends({
+  range,
+  from,
+  to,
+  interval,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+  revenueSeriesPromise,
+} = {}) {
+  const isUnbounded =
+    !from &&
+    !to &&
+    (range === undefined || range === "all");
+  const normalizedInterval = normalizeRevenueInterval(
+    interval || (isUnbounded ? "month" : "week"),
+  );
+
+  if (isUnbounded && ["day", "week"].includes(normalizedInterval)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "All-time analytics require a monthly or yearly time-series interval.",
+    };
+  }
+
+  const bucketCount = estimateRevenueSeriesBucketCount({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  if (bucketCount > MAX_REVENUE_SERIES_BUCKETS) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `Requested time series contains ${bucketCount} buckets; maximum is ${MAX_REVENUE_SERIES_BUCKETS}. Use a coarser interval or a shorter date range.`,
+    };
+  }
+
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  if (parsedPeriod.invalid) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: "Invalid analytics date range.",
+    };
+  }
+
+  const createdStages = buildRevenueSeriesStages(normalizedInterval, range, {
+    dateExpression: "$createdAt",
+    timeZone,
+  });
+  const cancelledStages = buildRevenueSeriesStages(normalizedInterval, range, {
+    dateExpression: "$cancelledAt",
+    timeZone,
+  });
+
+  const seriesWork =
+    revenueSeriesPromise ||
+    GetRevenueSeries({
+      range,
+      from,
+      to,
+      interval: normalizedInterval,
+      orderSource: "subscription",
+      timeZone,
+    });
+
+  const cancelledAtMatch = buildEventDateMatch({
+    range,
+    from,
+    to,
+    field: "cancelledAt",
+    timeZone,
+  });
+  const cancellationMatch = {
+    status: "cancelled",
+    ...(Object.keys(cancelledAtMatch).length > 0
+      ? cancelledAtMatch
+      : { cancelledAt: { $ne: null } }),
+  };
+
+  const [series, newRows, cancelledRows] = await Promise.all([
+    seriesWork,
+    Subscription.aggregate([
+      { $match: buildCreatedAtMatch({ range, from, to, timeZone }) },
+      {
+        $group: {
+          _id: createdStages.groupId,
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: createdStages.sortStage },
+      {
+        $project: {
+          ...createdStages.projectStage,
+          count: 1,
+        },
+      },
+    ]),
+    Subscription.aggregate([
+      { $match: cancellationMatch },
+      {
+        $group: {
+          _id: cancelledStages.groupId,
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: cancelledStages.sortStage },
+      {
+        $project: {
+          ...cancelledStages.projectStage,
+          count: 1,
+        },
+      },
+    ]),
+  ]);
+
+  if (!series.success) return series;
+
+  const subscriptionChannel =
+    series.data.salesTrends?.channels?.find(
+      (channel) => channel.key === "subscription",
+    ) || {
+      points: [],
+      totals: {
+        grossRevenue: 0,
+        refunds: 0,
+        netRevenue: 0,
+        revenue: 0,
+        orders: 0,
+      },
+    };
+
+  const newByLabel = new Map(
+    (newRows || []).map((row) => [row.label, Number(row.count) || 0]),
+  );
+  const cancelledByLabel = new Map(
+    (cancelledRows || []).map((row) => [row.label, Number(row.count) || 0]),
+  );
+  const revenueByLabel = new Map(
+    (subscriptionChannel.points || []).map((point) => [point.label, point]),
+  );
+
+  const expectedLabels = buildExpectedSeriesLabels({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const labels =
+    expectedLabels.length > 0
+      ? expectedLabels
+      : Array.from(
+          new Set([
+            ...newByLabel.keys(),
+            ...cancelledByLabel.keys(),
+            ...revenueByLabel.keys(),
+          ]),
+        ).sort((left, right) => String(left).localeCompare(String(right)));
+
+  const points = labels.map((label) => {
+    const revenuePoint = revenueByLabel.get(label) || {};
+    return {
+      label,
+      newSubscriptions: newByLabel.get(label) || 0,
+      cancelledSubscriptions: cancelledByLabel.get(label) || 0,
+      grossRevenue: Number(revenuePoint.grossRevenue) || 0,
+      refunds: Number(revenuePoint.refunds) || 0,
+      netRevenue: Number(revenuePoint.netRevenue) || 0,
+      revenue: Number(revenuePoint.netRevenue) || 0,
+      orders: Number(revenuePoint.orders) || 0,
+    };
+  });
+
+  const totals = points.reduce(
+    (acc, point) => {
+      acc.newSubscriptions += point.newSubscriptions;
+      acc.cancelledSubscriptions += point.cancelledSubscriptions;
+      acc.grossRevenue += point.grossRevenue;
+      acc.refunds += point.refunds;
+      acc.netRevenue += point.netRevenue;
+      acc.revenue += point.revenue;
+      acc.orders += point.orders;
+      return acc;
+    },
+    {
+      newSubscriptions: 0,
+      cancelledSubscriptions: 0,
+      grossRevenue: 0,
+      refunds: 0,
+      netRevenue: 0,
+      revenue: 0,
+      orders: 0,
+    },
+  );
+
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  return {
+    success: true,
+    data: {
+      interval: normalizedInterval,
+      period,
+      points,
+      totals,
+      metricBasis: {
+        newSubscriptions:
+          "Subscriptions are counted in the bucket containing their immutable createdAt timestamp, regardless of later lifecycle status.",
+        cancelledSubscriptions:
+          "Only effective cancellations are counted, using cancelledAt. Scheduled cancellations are excluded until they become effective.",
+        revenue:
+          "Subscription net revenue is collected gross Subscription-channel sales minus refunds issued in each bucket.",
+        activeSubscriptions:
+          "Historical active-subscription counts are not reconstructed because lifecycle status snapshots are not stored.",
+        source:
+          "Subscription Trends are inherently scoped to the Subscription channel; the global order-source filter does not alter them.",
+      },
+    },
+  };
+}
+
 async function GetSalesTrends(options = {}) {
   const series = await GetRevenueSeries(options);
   if (!series.success) return series;
@@ -4375,6 +4606,18 @@ async function GetDashboard({
     orderSource,
     timeZone,
   });
+  const canReuseRevenueForSubscriptionTrends =
+    !orderSource || orderSource === "all" || orderSource === "subscription";
+  const subscriptionTrendsPromise = GetSubscriptionTrends({
+    range,
+    from,
+    to,
+    interval,
+    timeZone,
+    revenueSeriesPromise: canReuseRevenueForSubscriptionTrends
+      ? revenuePromise
+      : undefined,
+  });
   const topProductsPromise = GetTopProducts({
     range,
     from,
@@ -4461,6 +4704,7 @@ async function GetDashboard({
     averageSubscriptionValue,
     newSubscriptions,
     cancelledSubscriptions,
+    subscriptionTrends,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -4476,6 +4720,7 @@ async function GetDashboard({
     averageSubscriptionValuePromise,
     newSubscriptionsPromise,
     cancelledSubscriptionsPromise,
+    subscriptionTrendsPromise,
     salesBreakdownPromise,
     recentOrdersPromise,
     stockSnapshotPromise,
@@ -4493,6 +4738,7 @@ async function GetDashboard({
     averageSubscriptionValue,
     newSubscriptions,
     cancelledSubscriptions,
+    subscriptionTrends,
     salesBreakdown,
     recentOrders,
     stockSnapshot,
@@ -4602,6 +4848,7 @@ async function GetDashboard({
       averageSubscriptionValue: averageSubscriptionValue.data,
       newSubscriptions: newSubscriptions.data,
       cancelledSubscriptions: cancelledSubscriptions.data,
+      subscriptionTrends: subscriptionTrends.data,
       subscriptionRevenue: buildSubscriptionRevenueData(salesBreakdown.data),
       recurringVsOneTime: buildRecurringVsOneTimeData(salesBreakdown.data),
       topSubscriptionProductsVariants: topSubscriptionProductsVariants.data,
@@ -4639,6 +4886,7 @@ module.exports = {
   GetRecurringVsOneTime,
   GetSubscriptionRevenue,
   GetTopSubscriptionProductsVariants,
+  GetSubscriptionTrends,
   GetSalesTrends,
   GetRevenueSeries,
   GetRevenueOverview,

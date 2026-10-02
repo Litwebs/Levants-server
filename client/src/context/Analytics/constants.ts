@@ -159,6 +159,43 @@ export type SalesTrendChannel = {
   totals: RevenueSeriesTotals;
 };
 
+export type SubscriptionTrendPoint = {
+  label: string;
+  newSubscriptions: number;
+  cancelledSubscriptions: number;
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
+  revenue: number;
+  orders: number;
+};
+
+export type SubscriptionTrendsResult = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  points: SubscriptionTrendPoint[];
+  totals: {
+    newSubscriptions: number;
+    cancelledSubscriptions: number;
+    grossRevenue: number;
+    refunds: number;
+    netRevenue: number;
+    revenue: number;
+    orders: number;
+  };
+  metricBasis: {
+    newSubscriptions: string;
+    cancelledSubscriptions: string;
+    revenue: string;
+    activeSubscriptions: string;
+    source: string;
+  };
+};
+
 export type SalesTrends = {
   interval: RevenueInterval;
   period: {
@@ -791,6 +828,7 @@ export type AnalyticsDashboard = {
   cancelledSubscriptions: CancelledSubscriptionsResult;
   subscriptionRevenue: SubscriptionRevenueResult;
   recurringVsOneTime: RecurringVsOneTimeResult;
+  subscriptionTrends: SubscriptionTrendsResult;
   topSubscriptionProductsVariants: TopSubscriptionProductsVariantsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;

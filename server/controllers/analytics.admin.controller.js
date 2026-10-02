@@ -125,6 +125,24 @@ const GetSalesBreakdown = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetSubscriptionTrends = async (req, res) => {
+  const result = await service.GetSubscriptionTrends({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetSalesTrends = async (req, res) => {
   const result = await service.GetSalesTrends({
     range: req.query.range,
@@ -542,6 +560,7 @@ module.exports = {
   GetRecurringVsOneTime,
   GetSubscriptionRevenue,
   GetTopSubscriptionProductsVariants,
+  GetSubscriptionTrends,
   GetSalesTrends,
   GetRevenueSeries,
   GetRevenueOverview,

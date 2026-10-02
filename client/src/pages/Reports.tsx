@@ -355,6 +355,7 @@ const Reports = () => {
   const cancelledSubscriptions = dashboard?.cancelledSubscriptions;
   const subscriptionRevenue = dashboard?.subscriptionRevenue;
   const recurringVsOneTime = dashboard?.recurringVsOneTime;
+  const subscriptionTrends = dashboard?.subscriptionTrends;
   const topSubscriptionProductsVariants =
     dashboard?.topSubscriptionProductsVariants;
 
@@ -796,6 +797,69 @@ const Reports = () => {
                   ),
                 )}
               </div>
+            </div>
+          </div>
+
+          <div className={styles.chartsGrid}>
+            <div className={styles.productDetailSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>
+                  Subscription Revenue Trend
+                </span>
+                <span className={styles.variantMeta}>
+                  Net collected revenue
+                </span>
+              </div>
+              <SimpleBarChart
+                type="line"
+                height={210}
+                color="success"
+                data={(subscriptionTrends?.points ?? []).map((point) => ({
+                  label: point.label,
+                  value: point.netRevenue,
+                }))}
+                valueFormatter={(value) =>
+                  formatCurrencyGBP(value, { compact: true })
+                }
+              />
+            </div>
+            <div className={styles.productDetailSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>
+                  New Subscription Trend
+                </span>
+                <span className={styles.variantMeta}>Created in period</span>
+              </div>
+              <SimpleBarChart
+                type="bar"
+                height={210}
+                color="primary"
+                data={(subscriptionTrends?.points ?? []).map((point) => ({
+                  label: point.label,
+                  value: point.newSubscriptions,
+                }))}
+                valueFormatter={(value) => formatCompactNumber(value)}
+              />
+            </div>
+            <div className={styles.productDetailSection}>
+              <div className={styles.variantHeader}>
+                <span className={styles.variantTitle}>
+                  Cancellation Trend
+                </span>
+                <span className={styles.variantMeta}>
+                  Effective cancellations
+                </span>
+              </div>
+              <SimpleBarChart
+                type="bar"
+                height={210}
+                color="info"
+                data={(subscriptionTrends?.points ?? []).map((point) => ({
+                  label: point.label,
+                  value: point.cancelledSubscriptions,
+                }))}
+                valueFormatter={(value) => formatCompactNumber(value)}
+              />
             </div>
           </div>
 

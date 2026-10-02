@@ -72,6 +72,14 @@ router.get(
   }),
   asyncHandler(controller.GetSalesTrends),
 );
+router.get(
+  "/subscription-trends",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetSubscriptionTrends),
+);
 
 router.get(
   "/revenue",

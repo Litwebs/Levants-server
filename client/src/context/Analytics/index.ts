@@ -15,6 +15,8 @@ export type {
   SalesBreakdown,
   SalesTrendChannel,
   SalesTrends,
+  SubscriptionTrendPoint,
+  SubscriptionTrendsResult,
   RevenueComposition,
   RevenueInterval,
   RevenueSeries,

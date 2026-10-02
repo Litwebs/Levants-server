@@ -376,6 +376,28 @@ describe("analytics overview dashboard dataset", () => {
         comparedTotals: expect.any(Object),
       }),
     );
+    expect(result.data.subscriptionTrends).toEqual(
+      expect.objectContaining({
+        interval: "day",
+        points: [
+          expect.objectContaining({
+            label: "2026-06-10",
+            newSubscriptions: 0,
+            cancelledSubscriptions: 0,
+          }),
+          expect.objectContaining({
+            label: "2026-06-11",
+            newSubscriptions: 0,
+            cancelledSubscriptions: 0,
+          }),
+          expect.objectContaining({
+            label: "2026-06-12",
+            newSubscriptions: 0,
+            cancelledSubscriptions: 0,
+          }),
+        ],
+      }),
+    );
 
     expect(result.data.subscriptionRevenue).toEqual({
       subscriptionRevenue: 0,
