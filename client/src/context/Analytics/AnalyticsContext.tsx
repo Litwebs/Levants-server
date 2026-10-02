@@ -123,13 +123,13 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
         payload: {
           range: filters.range,
           orderSource: filters.orderSource ?? state.orderSource,
-          from: filters.from ?? "",
-          to: filters.to ?? "",
+          from: filters.from ?? state.from,
+          to: filters.to ?? state.to,
           interval: filters.interval ?? state.interval,
         },
       });
     },
-    [state.interval],
+    [state.orderSource, state.from, state.to, state.interval],
   );
 
   const getDashboard = useCallback(

@@ -1,3 +1,9 @@
+export {
+  analyticsDateRangeOptions,
+  analyticsOrderSourceOptions,
+  analyticsIntervalOptions,
+  defaultAnalyticsIntervalForRange,
+} from "./filters";
 export { AnalyticsProvider, useAnalyticsApi } from "./AnalyticsContext";
 export type {
   AnalyticsDashboard,

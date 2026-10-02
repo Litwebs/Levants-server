@@ -2,6 +2,9 @@ import type {
   AnalyticsDateRange,
   AnalyticsOrderSource,
 } from "../../../context/Analytics";
+import {
+  defaultAnalyticsIntervalForRange,
+} from "../../../context/Analytics";
 import { Select } from "../../../components/common";
 import styles from "../Dashboard.module.css";
 
@@ -39,12 +42,13 @@ const DashboardHeader: React.FC<Props> = ({
         <div className={styles.filtersBar}>
           <Select
             value={range}
-            onChange={(value) =>
+            onChange={(value) => {
+              const nextRange = value as AnalyticsDateRange;
               setFilters({
-                range: value as AnalyticsDateRange,
+                range: nextRange,
                 orderSource,
-                interval,
-              })
+                interval: defaultAnalyticsIntervalForRange(nextRange),
+              });
             }
             options={dateRangeOptions}
           />

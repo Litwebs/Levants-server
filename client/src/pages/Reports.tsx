@@ -28,6 +28,10 @@ import {
   type ProductDetail,
   type VariantDetail,
   type RevenueInterval,
+  analyticsDateRangeOptions,
+  analyticsOrderSourceOptions,
+  analyticsIntervalOptions,
+  defaultAnalyticsIntervalForRange,
 } from "../context/Analytics";
 
 import styles from "./Reports.module.css";
@@ -99,21 +103,6 @@ const KpiTrend = ({ change }: { change?: AnalyticsMetricChange }) => {
       <span className={styles.trendLabel}>vs previous period</span>
     </span>
   );
-};
-
-const defaultIntervalForRange = (
-  range: AnalyticsDateRange,
-): RevenueInterval => {
-  if (range === "today" || range === "yesterday" || range === "last7") {
-    return "day";
-  }
-  if (range === "last30" || range === "thisMonth" || range === "lastMonth") {
-    return "week";
-  }
-  if (range === "thisYear" || range === "lastYear" || range === "all") {
-    return "month";
-  }
-  return "day";
 };
 
 const PRODUCT_TREND_COLORS = ["primary", "success", "info"] as const;
@@ -257,36 +246,6 @@ const Reports = () => {
     interval,
     getVariantDetail,
   ]);
-
-  const dateRangeOptions: { value: AnalyticsDateRange; label: string }[] = [
-    { value: "today", label: "Today" },
-    { value: "yesterday", label: "Yesterday" },
-    { value: "last7", label: "Last 7 Days" },
-    { value: "last30", label: "Last 30 Days" },
-    { value: "thisMonth", label: "This Month" },
-    { value: "lastMonth", label: "Last Month" },
-    { value: "thisYear", label: "This Year" },
-    { value: "lastYear", label: "Last Year" },
-    { value: "all", label: "All Time" },
-    { value: "custom", label: "Custom" },
-  ];
-
-  const intervalOptions: { value: RevenueInterval; label: string }[] = [
-    { value: "day", label: "Daily" },
-    { value: "week", label: "Weekly" },
-    { value: "month", label: "Monthly" },
-    { value: "year", label: "Yearly" },
-  ];
-
-  const orderSourceOptions: {
-    value: AnalyticsOrderSource;
-    label: string;
-  }[] = [
-    { value: "all", label: "All Sources" },
-    { value: "website", label: "Website" },
-    { value: "subscription", label: "Subscription" },
-    { value: "imported", label: "Imported" },
-  ];
 
   const summary = dashboard?.summary;
   const overview = dashboard?.overview;
@@ -492,12 +451,12 @@ const Reports = () => {
               setFilters({
                 range: value as AnalyticsDateRange,
                 orderSource,
-                interval: defaultIntervalForRange(
+                interval: defaultAnalyticsIntervalForRange(
                   value as AnalyticsDateRange,
                 ),
               })
             }
-            options={dateRangeOptions}
+            options={analyticsDateRangeOptions}
           />
 
           <Select
@@ -509,7 +468,7 @@ const Reports = () => {
                 interval,
               })
             }
-            options={orderSourceOptions}
+            options={analyticsOrderSourceOptions}
           />
 
           <Select
@@ -523,7 +482,7 @@ const Reports = () => {
                 interval: value as RevenueInterval,
               })
             }
-            options={intervalOptions}
+            options={analyticsIntervalOptions}
           />
 
           {range === "custom" ? (
