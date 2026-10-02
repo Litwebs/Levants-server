@@ -2861,11 +2861,22 @@ describe("Portal Subscriptions", () => {
       { upsert: true },
     );
 
+    await Customer.updateOne(
+      { _id: customer._id, "addresses._id": addressId },
+      { $set: { "addresses.$.line1": "2 Before Cutoff Street" } },
+    );
     const beforeRes = await request(app)
       .patch(`/api/portal/subscriptions/${sub._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ notes: "before cutoff settings" });
+      .send({ deliveryAddressId: addressId });
     expect(beforeRes.status).toBe(200);
+    const beforeStored = await Subscription.findById(sub._id).lean();
+    expect(beforeStored.deliveryAddress.line1).toBe("2 Before Cutoff Street");
+    expect(beforeStored.pendingChanges?.deliveryAddress).toBeFalsy();
+    await Customer.updateOne(
+      { _id: customer._id, "addresses._id": addressId },
+      { $set: { "addresses.$.line1": "3 After Cutoff Street" } },
+    );
 
     await SubscriptionSettings.findOneAndUpdate(
       { singletonKey: "subscription-settings" },
@@ -2884,7 +2895,10 @@ describe("Portal Subscriptions", () => {
 
     expect(afterRes.status).toBe(200);
     const stored = await Subscription.findById(sub._id).lean();
-    expect(stored.pendingChanges).toBeTruthy();
+    expect(stored.deliveryAddress.line1).toBe("2 Before Cutoff Street");
+    expect(stored.pendingChanges.deliveryAddress.line1).toBe("3 After Cutoff Street");
+    expect(new Date(stored.pendingChanges.effectiveFrom).getTime())
+      .toBeGreaterThan(deliveryInThreeDays.getTime());
   });
 
   it("multi-day create rejects invalid deliveryDayPlans and supports defaults", async () => {
@@ -3614,13 +3628,32 @@ describe("Portal Subscriptions", () => {
       nextDeliveryDate: tomorrow,
     });
 
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      { cutoffDaysBefore: 2, cutoffTime: "22:00" },
+    );
+    const unchangedRes = await request(app)
+      .patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ deliveryAddressId: knownAddressId });
+    expect(unchangedRes.status).toBe(200);
+    const unchangedStored = await Subscription.findById(sub._id).lean();
+    expect(unchangedStored.pendingChanges?.deliveryAddress).toBeFalsy();
+
+    await Customer.updateOne(
+      { _id: customer._id, "addresses._id": knownAddressId },
+      { $set: { "addresses.$.line1": "4 Future Delivery Street" } },
+    );
     const afterRes = await request(app)
       .patch(`/api/portal/subscriptions/${sub._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ deliveryAddressId: knownAddressId });
     expect(afterRes.status).toBe(200);
     const afterStored = await Subscription.findById(sub._id).lean();
-    expect(afterStored.pendingChanges).toBeTruthy();
+    expect(afterStored.deliveryAddress.line1).toBe(sub.deliveryAddress.line1);
+    expect(afterStored.pendingChanges.deliveryAddress.line1).toBe("4 Future Delivery Street");
+    expect(new Date(afterStored.pendingChanges.effectiveFrom).getTime())
+      .toBeGreaterThan(tomorrow.getTime());
 
     const noOpRes = await request(app)
       .patch(`/api/portal/subscriptions/${sub._id}`)
