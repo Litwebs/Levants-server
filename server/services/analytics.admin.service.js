@@ -133,6 +133,87 @@ const roundPercentage = (value, total) =>
     ? Math.round(((value / total) * 100 + Number.EPSILON) * 100) / 100
     : 0;
 
+const buildRecurringVsOneTimeData = (salesBreakdown = {}) => {
+  const channels = new Map(
+    (salesBreakdown.channels || []).map((channel) => [channel.key, channel]),
+  );
+  const emptyChannel = (key, label) => ({
+    key,
+    label,
+    grossRevenue: 0,
+    merchandiseRevenue: 0,
+    deliveryRevenue: 0,
+    discountAmount: 0,
+    refundAmount: 0,
+    netRevenue: 0,
+    totalOrders: 0,
+    unitsSold: 0,
+    averageOrderValue: 0,
+    averageUnitsPerOrder: 0,
+  });
+  const normalize = (key, label) => {
+    const source = channels.get(key) || emptyChannel(key, label);
+    return {
+      key,
+      label,
+      grossRevenue: Number(source.grossRevenue) || 0,
+      merchandiseRevenue: Number(source.merchandiseRevenue) || 0,
+      deliveryRevenue: Number(source.deliveryRevenue) || 0,
+      discountAmount: Number(source.discountAmount) || 0,
+      refundAmount: Number(source.refundAmount) || 0,
+      netRevenue: Number(source.netRevenue) || 0,
+      totalOrders: Number(source.totalOrders) || 0,
+      unitsSold: Number(source.unitsSold) || 0,
+      averageOrderValue: Number(source.averageOrderValue) || 0,
+      averageUnitsPerOrder: Number(source.averageUnitsPerOrder) || 0,
+    };
+  };
+
+  const oneTime = normalize("website", "Website One-Time");
+  const subscription = normalize("subscription", "Subscription");
+  const importedExcluded = normalize("imported", "Imported");
+  const comparedTotals = {
+    grossRevenue: oneTime.grossRevenue + subscription.grossRevenue,
+    refundAmount: oneTime.refundAmount + subscription.refundAmount,
+    netRevenue: oneTime.netRevenue + subscription.netRevenue,
+    totalOrders: oneTime.totalOrders + subscription.totalOrders,
+    unitsSold: oneTime.unitsSold + subscription.unitsSold,
+  };
+
+  const withShares = (channel) => ({
+    ...channel,
+    netRevenueSharePercent: roundPercentage(
+      channel.netRevenue,
+      comparedTotals.netRevenue,
+    ),
+    orderSharePercent: roundPercentage(
+      channel.totalOrders,
+      comparedTotals.totalOrders,
+    ),
+    unitSharePercent: roundPercentage(
+      channel.unitsSold,
+      comparedTotals.unitsSold,
+    ),
+  });
+
+  return {
+    oneTime: withShares(oneTime),
+    subscription: withShares(subscription),
+    importedExcluded,
+    comparedTotals,
+    metricBasis: {
+      comparison:
+        "Website One-Time and Subscription are compared as mutually exclusive sales channels. Imported/manual orders are shown separately and excluded from the comparison denominator.",
+      revenue:
+        "Net revenue is collected gross sales in the selected period minus refunds issued in the selected period.",
+      classification:
+        "Imported/manual classification has precedence over Subscription markers, preventing double counting.",
+      source:
+        "This comparison always evaluates both Website One-Time and Subscription channels, so the global order-source filter does not alter it.",
+    },
+  };
+};
+
 const buildSubscriptionRevenueData = (salesBreakdown = {}) => {
   const subscription = (salesBreakdown.channels || []).find(
     (channel) => channel.key === "subscription",
@@ -819,6 +900,26 @@ async function GetSalesBreakdown({
       channels,
       totals,
     },
+  };
+}
+
+async function GetRecurringVsOneTime({
+  range,
+  from,
+  to,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const breakdown = await GetSalesBreakdown({
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  if (!breakdown.success) return breakdown;
+
+  return {
+    success: true,
+    data: buildRecurringVsOneTimeData(breakdown.data),
   };
 }
 
@@ -4502,6 +4603,7 @@ async function GetDashboard({
       newSubscriptions: newSubscriptions.data,
       cancelledSubscriptions: cancelledSubscriptions.data,
       subscriptionRevenue: buildSubscriptionRevenueData(salesBreakdown.data),
+      recurringVsOneTime: buildRecurringVsOneTimeData(salesBreakdown.data),
       topSubscriptionProductsVariants: topSubscriptionProductsVariants.data,
       variantContribution: {
         variants: variantUnits.data.byRevenue,
@@ -4534,6 +4636,7 @@ module.exports = {
   GetPerformanceMetrics,
   GetRevenueComposition,
   GetSalesBreakdown,
+  GetRecurringVsOneTime,
   GetSubscriptionRevenue,
   GetTopSubscriptionProductsVariants,
   GetSalesTrends,

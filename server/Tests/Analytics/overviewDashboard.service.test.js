@@ -368,6 +368,15 @@ describe("analytics overview dashboard dataset", () => {
         source: expect.stringContaining("Order-source filters do not apply"),
       },
     });
+    expect(result.data.recurringVsOneTime).toEqual(
+      expect.objectContaining({
+        oneTime: expect.objectContaining({ key: "website" }),
+        subscription: expect.objectContaining({ key: "subscription" }),
+        importedExcluded: expect.objectContaining({ key: "imported" }),
+        comparedTotals: expect.any(Object),
+      }),
+    );
+
     expect(result.data.subscriptionRevenue).toEqual({
       subscriptionRevenue: 0,
       grossRevenue: 0,

@@ -670,6 +670,43 @@ export type TopSubscriptionProductsVariantsResult = {
   };
 };
 
+export type RecurringVsOneTimeChannel = {
+  key: "website" | "subscription" | "imported";
+  label: string;
+  grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  refundAmount: number;
+  netRevenue: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+  netRevenueSharePercent?: number;
+  orderSharePercent?: number;
+  unitSharePercent?: number;
+};
+
+export type RecurringVsOneTimeResult = {
+  oneTime: RecurringVsOneTimeChannel;
+  subscription: RecurringVsOneTimeChannel;
+  importedExcluded: RecurringVsOneTimeChannel;
+  comparedTotals: {
+    grossRevenue: number;
+    refundAmount: number;
+    netRevenue: number;
+    totalOrders: number;
+    unitsSold: number;
+  };
+  metricBasis: {
+    comparison: string;
+    revenue: string;
+    classification: string;
+    source: string;
+  };
+};
+
 export type SubscriptionRevenueResult = {
   subscriptionRevenue: number;
   grossRevenue: number;
@@ -753,6 +790,7 @@ export type AnalyticsDashboard = {
   newSubscriptions: NewSubscriptionsResult;
   cancelledSubscriptions: CancelledSubscriptionsResult;
   subscriptionRevenue: SubscriptionRevenueResult;
+  recurringVsOneTime: RecurringVsOneTimeResult;
   topSubscriptionProductsVariants: TopSubscriptionProductsVariantsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;

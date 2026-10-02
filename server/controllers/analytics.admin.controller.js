@@ -37,6 +37,23 @@ const GetSummaryComparison = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetRecurringVsOneTime = async (req, res) => {
+  const result = await service.GetRecurringVsOneTime({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetSubscriptionRevenue = async (req, res) => {
   const result = await service.GetSubscriptionRevenue({
     range: req.query.range,
@@ -522,6 +539,7 @@ module.exports = {
   GetSummaryComparison,
   GetRevenueComposition,
   GetSalesBreakdown,
+  GetRecurringVsOneTime,
   GetSubscriptionRevenue,
   GetTopSubscriptionProductsVariants,
   GetSalesTrends,

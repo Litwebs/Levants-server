@@ -354,6 +354,7 @@ const Reports = () => {
   const newSubscriptions = dashboard?.newSubscriptions;
   const cancelledSubscriptions = dashboard?.cancelledSubscriptions;
   const subscriptionRevenue = dashboard?.subscriptionRevenue;
+  const recurringVsOneTime = dashboard?.recurringVsOneTime;
   const topSubscriptionProductsVariants =
     dashboard?.topSubscriptionProductsVariants;
 
@@ -714,6 +715,20 @@ const Reports = () => {
                 {formatCurrency(subscriptionRevenue?.refundAmount ?? 0)}
               </span>
               <span className={styles.metricLabel}>Subscription Refunds</span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(recurringVsOneTime?.oneTime.netRevenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>One-Time Revenue</span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatDecimal(
+                  recurringVsOneTime?.subscription.netRevenueSharePercent ?? 0,
+                )}%
+              </span>
+              <span className={styles.metricLabel}>Recurring Revenue Share</span>
             </div>
           </div>
           <div className={styles.chartsGrid}>

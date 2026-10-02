@@ -48,6 +48,11 @@ router.get(
   asyncHandler(controller.GetSubscriptionRevenue),
 );
 router.get(
+  "/recurring-vs-one-time",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetRecurringVsOneTime),
+);
+router.get(
   "/top-subscription-products-variants",
   validateAnalyticsQuery({ maxLimit: 25 }),
   asyncHandler(controller.GetTopSubscriptionProductsVariants),

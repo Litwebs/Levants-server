@@ -51,6 +51,8 @@ export type {
   NewSubscriptionsResult,
   CancelledSubscriptionsResult,
   SubscriptionRevenueResult,
+  RecurringVsOneTimeChannel,
+  RecurringVsOneTimeResult,
   TopSubscriptionProductRow,
   TopSubscriptionVariantRow,
   TopSubscriptionProductsVariantsResult,
