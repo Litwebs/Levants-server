@@ -4438,8 +4438,9 @@ describe("Portal Subscriptions", () => {
       .send({ operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] });
     expect(addOn.status).toBe(400);
     expect(addOn.body.message).toMatch(/refund is unfinished/);
-    // A late webhook may derive this status while another refund is pending.
-    await Order.findByIdAndUpdate(order._id, { status: "refund_pending" });
+    // Legacy allocation records can make a webhook derive terminal status early.
+    // The durable plan, rather than that status alone, controls recovery.
+    await Order.findByIdAndUpdate(order._id, { status: action === "cancel" ? "refunded" : "refund_pending" });
     stripe.refunds.create.mockResolvedValueOnce({ id: "re_split_second", amount: 300, status: "succeeded" });
     const retry = await send(payload);
     expect(retry.status).toBe(200);
@@ -4450,6 +4451,11 @@ describe("Portal Subscriptions", () => {
     expect(final.status).toBe("refunded");
     expect(final.refunds.map(record => record.amountMinor)).toEqual([500, 300]);
     expect(final.subscriptionRefundPlan).toBeUndefined();
+    await refundService.applyStripeRefundSucceeded({
+      orderId: order._id, paymentIntentId: order.stripePaymentIntentId,
+      stripeRefundId: "re_split_first", amountMinor: 500, currency: "gbp",
+    });
+    expect((await Order.findById(order._id)).status).toBe("refunded");
     expect((await send(payload)).status).toBe(200);
     expect(stripe.refunds.create).toHaveBeenCalledTimes(3);
   });

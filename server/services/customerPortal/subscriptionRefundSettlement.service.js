@@ -21,8 +21,11 @@ async function listRefunds(paymentIntentId) {
 
 async function hasUnfinishedCardRefund(subscriptionId, eligibleOrderIds) {
   return Boolean(await Order.exists({ subscription: subscriptionId,
-    status: { $in: ["paid", "partially_refunded", "refund_pending"] },
     subscriptionRefundPlan: { $ne: null },
+    $or: [
+      { status: { $ne: "refunded" } },
+      { "subscriptionRefundPlan.steps": { $elemMatch: { "refund.status": { $ne: "succeeded" } } } },
+    ],
     ...(eligibleOrderIds ? { _id: { $nin: eligibleOrderIds } } : {}),
   }));
 }

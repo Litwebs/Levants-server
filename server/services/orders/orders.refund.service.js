@@ -383,7 +383,7 @@ async function applyStripeRefundSucceeded({
       orderId
         ? { _id: orderId, stripePaymentIntentId: paymentIntentId }
         : exactFilter,
-    ).session(session);
+    ).select("+subscriptionRefundPlan").session(session);
 
     // Legacy refunds may not carry orderId and may not have been pre-recorded.
     // A PaymentIntent is unambiguous for ordinary orders; subscription refunds
@@ -459,7 +459,11 @@ async function applyStripeRefundSucceeded({
       }
     }
 
-    order.status = nextStatus;
+    // A terminal subscription settlement may be smaller than the original
+    // capture after store-credit reductions. Its late webhook must not reopen it.
+    if (!(order.subscriptionRefundPlan && order.status === "refunded")) {
+      order.status = nextStatus;
+    }
     await order.save({ session });
 
     const updatedOrderId = order._id;

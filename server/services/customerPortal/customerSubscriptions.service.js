@@ -2883,6 +2883,7 @@ async function UpdateSubscription({
       $or: [
         { status: { $in: ["paid", "partially_refunded"] } },
         { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+        { status: "refunded", "subscriptionRefundPlan.steps": { $elemMatch: { "refund.status": { $ne: "succeeded" } } } },
       ],
       deliveryStatus: "ordered",
       deliveryDate: { $gte: startOfDay(now) },
@@ -3330,6 +3331,7 @@ async function PauseSubscription({
     $or: [
       { status: { $in: ["paid", "partially_refunded"] } },
       { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+      { status: "refunded", "subscriptionRefundPlan.steps": { $elemMatch: { "refund.status": { $ne: "succeeded" } } } },
     ],
     deliveryStatus: "ordered",
     deliveryDate: { $gte: startOfDay(now), $lt: resumeDate },
@@ -3580,6 +3582,7 @@ async function CancelSubscription({
     $or: [
       { status: { $in: ["paid", "partially_refunded"] } },
       { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+      { status: "refunded", "subscriptionRefundPlan.steps": { $elemMatch: { "refund.status": { $ne: "succeeded" } } } },
     ],
     deliveryStatus: "ordered",
   })
@@ -3683,6 +3686,7 @@ async function CancelSubscription({
       $or: [
         { status: { $in: ["paid", "partially_refunded"] } },
         { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
+        { status: "refunded", "subscriptionRefundPlan.steps": { $elemMatch: { "refund.status": { $ne: "succeeded" } } } },
       ],
       deliveryStatus: "ordered",
       ...(settlementMethod === "refund"
