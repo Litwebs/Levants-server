@@ -267,6 +267,7 @@ const Reports = () => {
   const lowestProductsByUnits = dashboard?.topProducts?.lowestByUnits ?? [];
   const productTotals = dashboard?.topProducts?.totals;
   const productTrendProducts = dashboard?.productTrends?.products;
+  const variantTrendVariants = dashboard?.variantTrends?.variants;
   const variantsByUnits = dashboard?.variantUnits?.byUnits ?? [];
   const variantUnitTotals = dashboard?.variantUnits?.totals;
   const maxVariantUnits = variantsByUnits[0]?.totalUnits ?? 0;
@@ -312,6 +313,42 @@ const Reports = () => {
         })),
       })),
     [productTrendProducts],
+  );
+
+  const variantRevenueTrendSeries = useMemo(
+    () =>
+      (variantTrendVariants ?? []).map((variant, index) => ({
+        key: String(variant.variantId),
+        label:
+          variant.catalogStatus === "deleted"
+            ? `${variant.variantName} · Deleted`
+            : variant.variantName,
+        color:
+          PRODUCT_TREND_COLORS[index % PRODUCT_TREND_COLORS.length],
+        data: variant.points.map((point) => ({
+          label: point.label,
+          value: point.revenue,
+        })),
+      })),
+    [variantTrendVariants],
+  );
+
+  const variantUnitsTrendSeries = useMemo(
+    () =>
+      (variantTrendVariants ?? []).map((variant, index) => ({
+        key: String(variant.variantId),
+        label:
+          variant.catalogStatus === "deleted"
+            ? `${variant.variantName} · Deleted`
+            : variant.variantName,
+        color:
+          PRODUCT_TREND_COLORS[index % PRODUCT_TREND_COLORS.length],
+        data: variant.points.map((point) => ({
+          label: point.label,
+          value: point.units,
+        })),
+      })),
+    [variantTrendVariants],
   );
 
   const productDisplay = (product: (typeof productsByRevenue)[number]) => ({
@@ -771,6 +808,47 @@ const Reports = () => {
             <div className={styles.chartFooter}>
               <span className={styles.chartTotal}>
                 Historical units by product
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+
+      <div className={styles.chartsGrid}>
+        <Card className={styles.chartCard}>
+          <CardHeader>
+            <CardTitle>Variant Revenue Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MultiLineChart
+              series={variantRevenueTrendSeries}
+              height={250}
+              valueFormatter={(value) =>
+                formatCurrencyGBP(value, { compact: true })
+              }
+            />
+            <div className={styles.chartFooter}>
+              <span className={styles.chartTotal}>
+                Top variants by collected merchandise revenue
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className={styles.chartCard}>
+          <CardHeader>
+            <CardTitle>Variant Units Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MultiLineChart
+              series={variantUnitsTrendSeries}
+              height={250}
+              valueFormatter={(value) => formatCompactNumber(value)}
+            />
+            <div className={styles.chartFooter}>
+              <span className={styles.chartTotal}>
+                Historical units by variant
               </span>
             </div>
           </CardContent>

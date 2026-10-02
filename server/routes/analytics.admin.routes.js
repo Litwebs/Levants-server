@@ -112,6 +112,15 @@ router.get(
   asyncHandler(controller.GetVariantContribution),
 );
 router.get(
+  "/variant-trends",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    maxLimit: 10,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetVariantTrends),
+);
+router.get(
   "/product-trends",
   validateAnalyticsQuery({
     allowInterval: true,

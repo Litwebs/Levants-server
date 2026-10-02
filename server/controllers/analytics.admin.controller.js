@@ -260,6 +260,26 @@ const GetVariantContribution = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetVariantTrends = async (req, res) => {
+  const result = await service.GetVariantTrends({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetProductTrends = async (req, res) => {
   const result = await service.GetProductTrends({
     range: req.query.range,
@@ -398,6 +418,7 @@ module.exports = {
   GetVariantPriceComparison,
   GetVariantSalesMix,
   GetVariantContribution,
+  GetVariantTrends,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,

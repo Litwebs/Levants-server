@@ -415,6 +415,44 @@ export type VariantContributionResult = {
   };
 };
 
+export type VariantTrendPoint = {
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  realisedSellingPrice: number;
+};
+
+export type VariantTrendVariant = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  realisedSellingPrice: number;
+  points: VariantTrendPoint[];
+};
+
+export type VariantTrends = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  variants: VariantTrendVariant[];
+  metricBasis: {
+    ranking: string;
+    revenue: string;
+    units: string;
+    identity: string;
+  };
+};
+
 export type ProductTrendPoint = {
   label: string;
   revenue: number;
@@ -538,6 +576,7 @@ export type AnalyticsDashboard = {
   salesBreakdown: SalesBreakdown;
   topProducts: TopProductsResult;
   productTrends: ProductTrends;
+  variantTrends: VariantTrends;
   variantUnits: VariantUnitsResult;
   variantRevenue: VariantRevenueResult;
   variantRealisedPrice: VariantRealisedPriceResult;

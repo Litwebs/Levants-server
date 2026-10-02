@@ -154,6 +154,43 @@ describe("analytics overview dashboard dataset", () => {
       }),
     );
 
+    expect(result.data.variantTrends).toEqual(
+      expect.objectContaining({
+        interval: "day",
+        variants: [
+          expect.objectContaining({
+            variantId: variant._id,
+            productId: product._id,
+            totalRevenue: 120,
+            totalUnits: 3,
+            totalOrders: 1,
+            realisedSellingPrice: 40,
+            points: [
+              expect.objectContaining({
+                label: "2026-06-10",
+                revenue: 0,
+                units: 0,
+                orders: 0,
+              }),
+              expect.objectContaining({
+                label: "2026-06-11",
+                revenue: 120,
+                units: 3,
+                orders: 1,
+                realisedSellingPrice: 40,
+              }),
+              expect.objectContaining({
+                label: "2026-06-12",
+                revenue: 0,
+                units: 0,
+                orders: 0,
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+
     expect(result.data.topProducts).toEqual(
       expect.objectContaining({
         byRevenue: [

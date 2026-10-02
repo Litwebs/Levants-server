@@ -2072,6 +2072,319 @@ async function GetVariantContribution(args = {}) {
   };
 }
 
+async function GetVariantTrends({
+  range,
+  from,
+  to,
+  interval,
+  limit = 5,
+  orderSource,
+  timeZone = DEFAULT_ANALYTICS_TIME_ZONE,
+} = {}) {
+  const isUnbounded =
+    !from &&
+    !to &&
+    (range === undefined || range === "all");
+  const normalizedInterval = normalizeRevenueInterval(
+    interval || (isUnbounded ? "month" : "week"),
+  );
+
+  if (isUnbounded && ["day", "week"].includes(normalizedInterval)) {
+    return {
+      success: false,
+      statusCode: 400,
+      message:
+        "All-time analytics require a monthly or yearly time-series interval.",
+    };
+  }
+
+  const bucketCount = estimateRevenueSeriesBucketCount({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+
+  if (bucketCount > MAX_REVENUE_SERIES_BUCKETS) {
+    return {
+      success: false,
+      statusCode: 400,
+      message: `Requested time series contains ${bucketCount} buckets; maximum is ${MAX_REVENUE_SERIES_BUCKETS}. Use a coarser interval or a shorter date range.`,
+    };
+  }
+
+  const salesMatch = buildSalesOrderMatch({
+    range,
+    from,
+    to,
+    orderSource,
+    timeZone,
+  });
+  const lim = Math.max(1, Math.min(Number(limit) || 5, 10));
+  const seriesStages = buildRevenueSeriesStages(
+    normalizedInterval,
+    range,
+    {
+      dateExpression: EFFECTIVE_PAID_AT_EXPRESSION,
+      timeZone,
+    },
+  );
+
+  const rows = await Order.aggregate([
+    { $match: salesMatch },
+    { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+    { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
+    { $unwind: "$items" },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
+    {
+      $group: {
+        _id: {
+          product: "$items.product",
+          variant: "$items.variant",
+          ...seriesStages.groupId,
+        },
+        productNameSnapshot: { $first: "$items.productName" },
+        variantNameSnapshot: { $first: "$items.name" },
+        skuSnapshot: { $first: "$items.sku" },
+        latestPaidAt: { $first: "$_analyticsPaidAt" },
+        revenue: { $sum: "$_analyticsLineRevenue" },
+        units: { $sum: { $ifNull: ["$items.quantity", 0] } },
+        orderIds: { $addToSet: "$_id" },
+      },
+    },
+    {
+      $project: {
+        ...seriesStages.projectStage,
+        productId: "$_id.product",
+        variantId: "$_id.variant",
+        productNameSnapshot: 1,
+        variantNameSnapshot: 1,
+        skuSnapshot: 1,
+        latestPaidAt: 1,
+        revenue: 1,
+        units: 1,
+        orders: { $size: "$orderIds" },
+      },
+    },
+    { $sort: { latestPaidAt: -1 } },
+    {
+      $group: {
+        _id: {
+          product: "$productId",
+          variant: "$variantId",
+        },
+        productId: { $first: "$productId" },
+        variantId: { $first: "$variantId" },
+        productNameSnapshot: { $first: "$productNameSnapshot" },
+        variantNameSnapshot: { $first: "$variantNameSnapshot" },
+        skuSnapshot: { $first: "$skuSnapshot" },
+        latestPaidAt: { $first: "$latestPaidAt" },
+        totalRevenue: { $sum: "$revenue" },
+        totalUnits: { $sum: "$units" },
+        totalOrders: { $sum: "$orders" },
+        points: {
+          $push: {
+            label: "$label",
+            revenue: "$revenue",
+            units: "$units",
+            orders: "$orders",
+          },
+        },
+      },
+    },
+    { $match: { totalUnits: { $gt: 0 } } },
+    {
+      $sort: {
+        totalRevenue: -1,
+        totalUnits: -1,
+        latestPaidAt: -1,
+        variantId: 1,
+      },
+    },
+    { $limit: lim },
+    {
+      $lookup: {
+        from: "products",
+        localField: "productId",
+        foreignField: "_id",
+        as: "catalogProduct",
+      },
+    },
+    {
+      $lookup: {
+        from: "productvariants",
+        localField: "variantId",
+        foreignField: "_id",
+        as: "catalogVariant",
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        productId: 1,
+        variantId: 1,
+        productName: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$productNameSnapshot", null] },
+                { $ne: ["$productNameSnapshot", ""] },
+              ],
+            },
+            "$productNameSnapshot",
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogProduct.name", 0] },
+                {
+                  $concat: [
+                    "Deleted product · ",
+                    { $substrBytes: [{ $toString: "$productId" }, 18, 6] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        variantName: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$variantNameSnapshot", null] },
+                { $ne: ["$variantNameSnapshot", ""] },
+              ],
+            },
+            "$variantNameSnapshot",
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogVariant.name", 0] },
+                {
+                  $concat: [
+                    "Deleted variant · ",
+                    { $substrBytes: [{ $toString: "$variantId" }, 18, 6] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        sku: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$skuSnapshot", null] },
+                { $ne: ["$skuSnapshot", ""] },
+              ],
+            },
+            "$skuSnapshot",
+            {
+              $ifNull: [
+                { $arrayElemAt: ["$catalogVariant.sku", 0] },
+                "Unknown SKU",
+              ],
+            },
+          ],
+        },
+        catalogStatus: {
+          $ifNull: [
+            { $arrayElemAt: ["$catalogVariant.status", 0] },
+            "deleted",
+          ],
+        },
+        totalRevenue: 1,
+        totalUnits: 1,
+        totalOrders: 1,
+        points: 1,
+      },
+    },
+  ]);
+
+  const expectedLabels = buildExpectedSeriesLabels({
+    interval: normalizedInterval,
+    range,
+    from,
+    to,
+    timeZone,
+  });
+  const labels =
+    expectedLabels.length > 0
+      ? expectedLabels
+      : Array.from(
+          new Set(
+            (rows || []).flatMap((row) =>
+              (row.points || []).map((point) => point.label),
+            ),
+          ),
+        ).sort((left, right) => String(left).localeCompare(String(right)));
+
+  const variants = (rows || []).map((row) => {
+    const pointsByLabel = new Map(
+      (row.points || []).map((point) => [point.label, point]),
+    );
+    const points = labels.map((label) => {
+      const source = pointsByLabel.get(label) || {};
+      const revenue = Number(source.revenue) || 0;
+      const units = Number(source.units) || 0;
+      const orders = Number(source.orders) || 0;
+
+      return {
+        label,
+        revenue,
+        units,
+        orders,
+        realisedSellingPrice: units > 0 ? revenue / units : 0,
+      };
+    });
+
+    const totalRevenue = Number(row.totalRevenue) || 0;
+    const totalUnits = Number(row.totalUnits) || 0;
+    const totalOrders = Number(row.totalOrders) || 0;
+
+    return {
+      productId: row.productId,
+      variantId: row.variantId,
+      productName: row.productName,
+      variantName: row.variantName,
+      sku: row.sku,
+      catalogStatus: row.catalogStatus,
+      totalRevenue,
+      totalUnits,
+      totalOrders,
+      realisedSellingPrice: totalUnits > 0 ? totalRevenue / totalUnits : 0,
+      points,
+    };
+  });
+
+  const parsedPeriod = parseDateRange({ range, from, to, timeZone });
+  const period =
+    parsedPeriod.start && parsedPeriod.end
+      ? {
+          from: formatYmdInTimeZone(parsedPeriod.start, timeZone),
+          to: formatYmdInTimeZone(parsedPeriod.end, timeZone),
+          timeZone: parsedPeriod.timeZone,
+        }
+      : null;
+
+  return {
+    success: true,
+    data: {
+      interval: normalizedInterval,
+      period,
+      variants,
+      metricBasis: {
+        ranking:
+          "Variants are selected by collected merchandise revenue in the selected period.",
+        revenue:
+          "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
+        units:
+          "Historical units on collected orders, including partially-paid orders.",
+        identity:
+          "Variant name and SKU come from immutable order-item snapshots, so deleted or renamed variants remain historically visible.",
+      },
+    },
+  };
+}
+
 async function GetProductTrends({
   range,
   from,
@@ -2853,6 +3166,15 @@ async function GetDashboard({
     orderSource,
     timeZone,
   });
+  const variantTrendsPromise = GetVariantTrends({
+    range,
+    from,
+    to,
+    interval,
+    limit: 3,
+    orderSource,
+    timeZone,
+  });
   const variantUnitsPromise = GetVariantUnits({
     range,
     from,
@@ -2898,6 +3220,7 @@ async function GetDashboard({
     revenue,
     topProducts,
     productTrends,
+    variantTrends,
     variantUnits,
     salesBreakdown,
     recentOrders,
@@ -2907,6 +3230,7 @@ async function GetDashboard({
     revenuePromise,
     topProductsPromise,
     productTrendsPromise,
+    variantTrendsPromise,
     variantUnitsPromise,
     salesBreakdownPromise,
     recentOrdersPromise,
@@ -2918,6 +3242,7 @@ async function GetDashboard({
     revenue,
     topProducts,
     productTrends,
+    variantTrends,
     variantUnits,
     salesBreakdown,
     recentOrders,
@@ -2946,6 +3271,7 @@ async function GetDashboard({
       revenueComposition: buildRevenueComposition(summary.data),
       topProducts: topProducts.data,
       productTrends: productTrends.data,
+      variantTrends: variantTrends.data,
       variantUnits: variantUnits.data,
       variantRevenue: {
         variants: variantUnits.data.byRevenue,
@@ -3065,6 +3391,7 @@ module.exports = {
   GetVariantPriceComparison,
   GetVariantSalesMix,
   GetVariantContribution,
+  GetVariantTrends,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,
