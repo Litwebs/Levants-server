@@ -157,6 +157,33 @@ const Reports = () => {
     null,
   );
 
+  const openProductDetail = (productId: unknown) => {
+    setSelectedVariantId(null);
+    openProductDetail(productId);
+  };
+
+  const openVariantDetail = (variantId: unknown) => {
+    setSelectedProductId(null);
+    openVariantDetail(variantId);
+  };
+
+  useEffect(() => {
+    const targetId = selectedVariantId
+      ? "variant-analytics-detail"
+      : selectedProductId
+        ? "product-analytics-detail"
+        : null;
+    if (!targetId) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .getElementById(targetId)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedProductId, selectedVariantId]);
+
   useEffect(() => {
     const isCustom = range === "custom";
     if (isCustom && (!from || !to)) return;
@@ -773,6 +800,13 @@ const Reports = () => {
                           {formatCompactNumber(product.totalUnits)} units ·{" "}
                           {formatDecimal(product.revenueContributionPercent)}%
                         </span>
+                        <button
+                          type="button"
+                          className={styles.drilldownButton}
+                          onClick={() => openProductDetail(product.productId)}
+                        >
+                          View details
+                        </button>
                       </div>
                     </div>
                   ),
@@ -806,6 +840,13 @@ const Reports = () => {
                           {formatCurrency(variant.totalRevenue)} ·{" "}
                           {formatCompactNumber(variant.totalUnits)} units
                         </span>
+                        <button
+                          type="button"
+                          className={styles.drilldownButton}
+                          onClick={() => openVariantDetail(variant.variantId)}
+                        >
+                          View details
+                        </button>
                       </div>
                     </div>
                   ),
@@ -1219,7 +1260,7 @@ const Reports = () => {
                           type="button"
                           className={styles.drilldownButton}
                           onClick={() =>
-                            setSelectedProductId(String(product.productId))
+                            openProductDetail(product.productId)
                           }
                         >
                           View details
@@ -1269,7 +1310,7 @@ const Reports = () => {
                           type="button"
                           className={styles.drilldownButton}
                           onClick={() =>
-                            setSelectedProductId(String(product.productId))
+                            openProductDetail(product.productId)
                           }
                         >
                           View details
@@ -1318,7 +1359,7 @@ const Reports = () => {
                           type="button"
                           className={styles.drilldownButton}
                           onClick={() =>
-                            setSelectedProductId(String(product.productId))
+                            openProductDetail(product.productId)
                           }
                         >
                           View details
@@ -1367,7 +1408,7 @@ const Reports = () => {
                           type="button"
                           className={styles.drilldownButton}
                           onClick={() =>
-                            setSelectedProductId(String(product.productId))
+                            openProductDetail(product.productId)
                           }
                         >
                           View details
@@ -1482,7 +1523,7 @@ const Reports = () => {
                         type="button"
                         className={styles.drilldownButton}
                         onClick={() =>
-                          setSelectedVariantId(String(variant.variantId))
+                          openVariantDetail(variant.variantId)
                         }
                       >
                         View details
@@ -1566,7 +1607,7 @@ const Reports = () => {
                         type="button"
                         className={styles.drilldownButton}
                         onClick={() =>
-                          setSelectedVariantId(String(variant.variantId))
+                          openVariantDetail(variant.variantId)
                         }
                       >
                         View details
@@ -1644,6 +1685,13 @@ const Reports = () => {
                         )}{" "}
                         · {formatCompactNumber(variant.totalUnits)} units
                       </span>
+                      <button
+                        type="button"
+                        className={styles.drilldownButton}
+                        onClick={() => openVariantDetail(variant.variantId)}
+                      >
+                        View details
+                      </button>
                     </div>
                   </div>
                 ))
@@ -1725,6 +1773,13 @@ const Reports = () => {
                         {formatCompactNumber(variant.subscription.units)} units ·{" "}
                         {formatCompactNumber(variant.subscription.orders)} orders
                       </span>
+                      <button
+                        type="button"
+                        className={styles.drilldownButton}
+                        onClick={() => openVariantDetail(variant.variantId)}
+                      >
+                        View details
+                      </button>
                     </div>
                   </div>
                 ))
@@ -1783,6 +1838,13 @@ const Reports = () => {
                         {formatCurrency(variant.totalRevenue)} ·{" "}
                         {formatDecimal(variant.revenueContributionPercent)}% revenue
                       </span>
+                      <button
+                        type="button"
+                        className={styles.drilldownButton}
+                        onClick={() => openVariantDetail(variant.variantId)}
+                      >
+                        View details
+                      </button>
                     </div>
                     <div className={styles.rankBar}>
                       <div
@@ -1820,6 +1882,13 @@ const Reports = () => {
                         {formatCompactNumber(variant.totalUnits)} units ·{" "}
                         {formatDecimal(variant.unitContributionPercent)}% units
                       </span>
+                      <button
+                        type="button"
+                        className={styles.drilldownButton}
+                        onClick={() => openVariantDetail(variant.variantId)}
+                      >
+                        View details
+                      </button>
                     </div>
                     <div className={styles.rankBar}>
                       <div
@@ -1844,7 +1913,10 @@ const Reports = () => {
       </Card>
 
       {selectedVariantId ? (
-        <Card className={styles.fullWidthChart}>
+        <Card
+          id="variant-analytics-detail"
+          className={styles.fullWidthChart}
+        >
           <CardHeader>
             <div className={styles.productDetailHeader}>
               <div>
@@ -2072,7 +2144,10 @@ const Reports = () => {
       ) : null}
 
       {selectedProductId ? (
-        <Card className={styles.fullWidthChart}>
+        <Card
+          id="product-analytics-detail"
+          className={styles.fullWidthChart}
+        >
           <CardHeader>
             <div className={styles.productDetailHeader}>
               <div>
@@ -2302,6 +2377,13 @@ const Reports = () => {
                             <span className={styles.variantMeta}>
                               {variant.sku || "No SKU"}
                             </span>
+                            <button
+                              type="button"
+                              className={styles.drilldownButton}
+                              onClick={() => openVariantDetail(variant.variantId)}
+                            >
+                              View variant
+                            </button>
                           </div>
                           <div className={styles.variantList}>
                             <div className={styles.variantItem}>
