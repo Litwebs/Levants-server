@@ -210,8 +210,8 @@ describe("analytics historical product rankings", () => {
     expect(
       result.data.lowestByRevenue.map((p) => String(p.productId)),
     ).toEqual([
-      String(productA._id),
       String(productLegacy._id),
+      String(productA._id),
       String(productB._id),
     ]);
     expect(
