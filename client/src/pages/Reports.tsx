@@ -4,6 +4,7 @@ import {
   ShoppingCart,
   Package,
   BarChart3,
+  Download,
 } from "lucide-react";
 
 import {
@@ -15,6 +16,12 @@ import {
   Badge,
   Button,
   Skeleton,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
 } from "../components/common";
 import {
   SimpleBarChart,
@@ -41,6 +48,7 @@ import {
 import styles from "./Reports.module.css";
 
 import { formatCurrencyGBP, formatCompactNumber } from "../lib/numberFormat";
+import { downloadCsv } from "../lib/csvExport";
 
 const formatCurrency = (amount: unknown) => {
   const n = typeof amount === "number" ? amount : Number(amount);
@@ -541,6 +549,75 @@ const Reports = () => {
     Number(overviewMetrics?.refundAmount ?? 0) !== 0 ||
     Number(newSubscriptions?.newSubscriptions ?? 0) > 0 ||
     Number(cancelledSubscriptions?.cancelledSubscriptions ?? 0) > 0;
+
+  const exportScope =
+    range === "custom" ? `${from || "start"}-${to || "end"}` : range;
+  const exportSuffix = `${exportScope}-${orderSource}`;
+
+  const exportSalesChannels = () =>
+    downloadCsv(`analytics-sales-channels-${exportSuffix}`, salesChannels, [
+      { header: "Channel", value: (row) => row.label },
+      { header: "Gross Revenue", value: (row) => row.grossRevenue },
+      { header: "Refunds", value: (row) => row.refundAmount },
+      { header: "Net Revenue", value: (row) => row.netRevenue },
+      { header: "Orders", value: (row) => row.totalOrders },
+      { header: "Units", value: (row) => row.unitsSold },
+      { header: "Average Order Value", value: (row) => row.averageOrderValue },
+      {
+        header: "Average Units Per Order",
+        value: (row) => row.averageUnitsPerOrder,
+      },
+    ]);
+
+  const exportProducts = () =>
+    downloadCsv(`analytics-products-${exportSuffix}`, productsByRevenueChart, [
+      { header: "Product", value: (row) => row.label },
+      { header: "Catalog Status", value: (row) => row.catalogStatus },
+      { header: "Revenue", value: (row) => row.revenue },
+      { header: "Units", value: (row) => row.units },
+      { header: "Orders", value: (row) => row.orders },
+      {
+        header: "Realised ASP",
+        value: (row) => row.averageSellingPrice,
+      },
+      {
+        header: "Revenue Contribution %",
+        value: (row) => row.revenueContributionPercent,
+      },
+      {
+        header: "Unit Contribution %",
+        value: (row) => row.unitContributionPercent,
+      },
+    ]);
+
+  const exportVariants = () =>
+    downloadCsv(`analytics-variants-${exportSuffix}`, variantsByRevenue, [
+      { header: "Product", value: (row) => row.productName },
+      { header: "Variant", value: (row) => row.variantName },
+      { header: "SKU", value: (row) => row.sku },
+      { header: "Catalog Status", value: (row) => row.catalogStatus },
+      { header: "Revenue", value: (row) => row.totalRevenue },
+      { header: "Units", value: (row) => row.totalUnits },
+      { header: "Orders", value: (row) => row.orderCount },
+      {
+        header: "Realised ASP",
+        value: (row) => row.realisedSellingPrice,
+      },
+      { header: "Current Price", value: (row) => row.currentPrice },
+      {
+        header: "Price Difference",
+        value: (row) => row.priceDifference,
+      },
+    ]);
+
+  const exportRecentOrders = () =>
+    downloadCsv(`analytics-recent-orders-${exportSuffix}`, recentOrders, [
+      { header: "Order ID", value: (row) => row.orderId },
+      { header: "Customer", value: (row) => getCustomerLabel(row) },
+      { header: "Status", value: (row) => row.status },
+      { header: "Total", value: (row) => row.total },
+      { header: "Created At", value: (row) => row.createdAt },
+    ]);
 
   return (
     <div className={styles.reports}>
@@ -2011,6 +2088,282 @@ const Reports = () => {
             <span className={styles.chartTotal}>
               Contribution uses all sold variants in the selected period as the denominator, even when the displayed ranking is limited.
             </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <div className={styles.exportCardHeader}>
+            <div>
+              <CardTitle>Export-ready Tables</CardTitle>
+              <div className={styles.productDetailSubheading}>
+                Rows reflect the currently loaded dashboard view and selected filters.
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.exportTableStack}>
+            <section className={styles.exportTableSection}>
+              <div className={styles.exportTableHeader}>
+                <div>
+                  <div className={styles.exportTableTitle}>Sales Channels</div>
+                  <div className={styles.exportTableNote}>
+                    Complete website, subscription, and imported channel breakdown.
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Download size={14} />}
+                  disabled={salesChannels.length === 0}
+                  onClick={exportSalesChannels}
+                >
+                  Export CSV
+                </Button>
+              </div>
+              {salesChannels.length === 0 ? (
+                <div className={styles.emptyState}>No sales-channel rows to export</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Channel</TableHead>
+                      <TableHead align="right">Net Revenue</TableHead>
+                      <TableHead align="right">Gross</TableHead>
+                      <TableHead align="right">Refunds</TableHead>
+                      <TableHead align="right">Orders</TableHead>
+                      <TableHead align="right">Units</TableHead>
+                      <TableHead align="right">AOV</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {salesChannels.map((channel) => (
+                      <TableRow key={channel.key}>
+                        <TableCell>{channel.label}</TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(channel.netRevenue)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(channel.grossRevenue)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(channel.refundAmount)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCompactNumber(channel.totalOrders)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCompactNumber(channel.unitsSold)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(channel.averageOrderValue)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </section>
+
+            <section className={styles.exportTableSection}>
+              <div className={styles.exportTableHeader}>
+                <div>
+                  <div className={styles.exportTableTitle}>Product Performance</div>
+                  <div className={styles.exportTableNote}>
+                    Current product revenue ranking from the dashboard query.
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Download size={14} />}
+                  disabled={productsByRevenueChart.length === 0}
+                  onClick={exportProducts}
+                >
+                  Export CSV
+                </Button>
+              </div>
+              {productsByRevenueChart.length === 0 ? (
+                <div className={styles.emptyState}>No product rows to export</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead align="right">Revenue</TableHead>
+                      <TableHead align="right">Units</TableHead>
+                      <TableHead align="right">Orders</TableHead>
+                      <TableHead align="right">ASP</TableHead>
+                      <TableHead align="right">Revenue %</TableHead>
+                      <TableHead align="right">Units %</TableHead>
+                      <TableHead align="right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {productsByRevenueChart.map((product) => (
+                      <TableRow key={String(product.productId)}>
+                        <TableCell>{product.label}</TableCell>
+                        <TableCell>{product.catalogStatus}</TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(product.revenue)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCompactNumber(product.units)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCompactNumber(product.orders)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(product.averageSellingPrice)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatDecimal(product.revenueContributionPercent)}%
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatDecimal(product.unitContributionPercent)}%
+                        </TableCell>
+                        <TableCell align="right">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openProductDetail(product.productId)}
+                          >
+                            View details
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </section>
+
+            <section className={styles.exportTableSection}>
+              <div className={styles.exportTableHeader}>
+                <div>
+                  <div className={styles.exportTableTitle}>Variant Performance</div>
+                  <div className={styles.exportTableNote}>
+                    Current variant revenue ranking with historical identity.
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Download size={14} />}
+                  disabled={variantsByRevenue.length === 0}
+                  onClick={exportVariants}
+                >
+                  Export CSV
+                </Button>
+              </div>
+              {variantsByRevenue.length === 0 ? (
+                <div className={styles.emptyState}>No variant rows to export</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Variant</TableHead>
+                      <TableHead>SKU</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead align="right">Revenue</TableHead>
+                      <TableHead align="right">Units</TableHead>
+                      <TableHead align="right">Orders</TableHead>
+                      <TableHead align="right">Realised ASP</TableHead>
+                      <TableHead align="right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {variantsByRevenue.map((variant) => (
+                      <TableRow key={String(variant.variantId)}>
+                        <TableCell>{variant.productName}</TableCell>
+                        <TableCell>{variant.variantName}</TableCell>
+                        <TableCell>{variant.sku}</TableCell>
+                        <TableCell>{variant.catalogStatus}</TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(variant.totalRevenue)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCompactNumber(variant.totalUnits)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCompactNumber(variant.orderCount)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(variant.realisedSellingPrice)}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openVariantDetail(variant.variantId)}
+                          >
+                            View details
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </section>
+
+            <section className={styles.exportTableSection}>
+              <div className={styles.exportTableHeader}>
+                <div>
+                  <div className={styles.exportTableTitle}>Recent Orders</div>
+                  <div className={styles.exportTableNote}>
+                    The recent-order rows included in the current dashboard response.
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Download size={14} />}
+                  disabled={recentOrders.length === 0}
+                  onClick={exportRecentOrders}
+                >
+                  Export CSV
+                </Button>
+              </div>
+              {recentOrders.length === 0 ? (
+                <div className={styles.emptyState}>No recent orders to export</div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Order</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Created</TableHead>
+                      <TableHead align="right">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentOrders.map((order) => (
+                      <TableRow key={order._id}>
+                        <TableCell>{order.orderId}</TableCell>
+                        <TableCell>{getCustomerLabel(order)}</TableCell>
+                        <TableCell>{order.status}</TableCell>
+                        <TableCell>{formatDateTime(order.createdAt)}</TableCell>
+                        <TableCell align="right">
+                          {formatCurrency(order.total)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </section>
           </div>
         </CardContent>
       </Card>
