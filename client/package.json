@@ -9,8 +9,9 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test:map-tiles": "node scripts/check-map-tiles.mjs",
-    "check:release": "npm run test:map-tiles && npm run lint -- --max-warnings 395 && npm run build",
-    "preview": "vite preview"
+    "check:release": "npm run test:map-tiles && npm run test:analytics && npm run lint -- --max-warnings 395 && npm run build",
+    "preview": "vite preview",
+    "test:analytics": "node --test scripts/analytics-ui.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

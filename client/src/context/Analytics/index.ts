@@ -4,6 +4,11 @@ export {
   analyticsComparisonOptions,
   analyticsIntervalOptions,
   defaultAnalyticsIntervalForRange,
+  mergeAnalyticsFilters,
+} from "./filters";
+export type {
+  AnalyticsFilterState,
+  AnalyticsFilterUpdate,
 } from "./filters";
 export { AnalyticsProvider, useAnalyticsApi } from "./AnalyticsContext";
 export type {

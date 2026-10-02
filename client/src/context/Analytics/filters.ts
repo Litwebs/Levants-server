@@ -5,6 +5,36 @@ import type {
   RevenueInterval,
 } from "./constants";
 
+export type AnalyticsFilterState = {
+  range: AnalyticsDateRange;
+  orderSource: AnalyticsOrderSource;
+  from: string;
+  to: string;
+  interval: RevenueInterval;
+  comparison: AnalyticsComparisonMode;
+};
+
+export type AnalyticsFilterUpdate = {
+  range: AnalyticsDateRange;
+  orderSource?: AnalyticsOrderSource;
+  from?: string;
+  to?: string;
+  interval?: RevenueInterval;
+  comparison?: AnalyticsComparisonMode;
+};
+
+export const mergeAnalyticsFilters = (
+  current: AnalyticsFilterState,
+  update: AnalyticsFilterUpdate,
+): AnalyticsFilterState => ({
+  range: update.range,
+  orderSource: update.orderSource ?? current.orderSource,
+  from: update.from ?? current.from,
+  to: update.to ?? current.to,
+  interval: update.interval ?? current.interval,
+  comparison: update.comparison ?? current.comparison,
+});
+
 export const analyticsDateRangeOptions: {
   value: AnalyticsDateRange;
   label: string;

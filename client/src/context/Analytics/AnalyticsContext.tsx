@@ -31,6 +31,10 @@ import {
   type RevenueInterval,
   initialAnalyticsState,
 } from "./constants";
+import {
+  mergeAnalyticsFilters,
+  type AnalyticsFilterUpdate,
+} from "./filters";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -63,14 +67,7 @@ type AnalyticsContextType = {
   loading: AnalyticsState["loading"];
   error: AnalyticsState["error"];
 
-  setFilters: (filters: {
-    range: AnalyticsDateRange;
-    orderSource?: AnalyticsOrderSource;
-    from?: string;
-    to?: string;
-    interval?: RevenueInterval;
-    comparison?: AnalyticsComparisonMode;
-  }) => void;
+  setFilters: (filters: AnalyticsFilterUpdate) => void;
 
   getDashboard: (params?: {
     range?: AnalyticsDateRange;
@@ -115,27 +112,24 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(AnalyticsReducer, initialAnalyticsState);
 
   const setFilters = useCallback(
-    (filters: {
-      range: AnalyticsDateRange;
-      orderSource?: AnalyticsOrderSource;
-      from?: string;
-      to?: string;
-      interval?: RevenueInterval;
-      comparison?: AnalyticsComparisonMode;
-    }) => {
+    (filters: AnalyticsFilterUpdate) => {
       dispatch({
         type: ANALYTICS_SET_FILTERS,
-        payload: {
-          range: filters.range,
-          orderSource: filters.orderSource ?? state.orderSource,
-          from: filters.from ?? state.from,
-          to: filters.to ?? state.to,
-          interval: filters.interval ?? state.interval,
-          comparison: filters.comparison ?? state.comparison,
-        },
+        payload: mergeAnalyticsFilters(
+          {
+            range: state.range,
+            orderSource: state.orderSource,
+            from: state.from,
+            to: state.to,
+            interval: state.interval,
+            comparison: state.comparison,
+          },
+          filters,
+        ),
       });
     },
     [
+      state.range,
       state.orderSource,
       state.from,
       state.to,
