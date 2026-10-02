@@ -286,12 +286,40 @@ export type VariantUnitsRow = {
 export type VariantUnitsResult = {
   variants: VariantUnitsRow[];
   byUnits: VariantUnitsRow[];
+  byRevenue: (VariantUnitsRow & { totalRevenue: number })[];
   totals: {
+    totalRevenue: number;
     totalUnits: number;
     variantsSold: number;
   };
   metricBasis: {
+    revenue: string;
     units: string;
+    ranking: string;
+    identity: string;
+  };
+};
+
+export type VariantRevenueRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalRevenue: number;
+  orderCount: number;
+};
+
+export type VariantRevenueResult = {
+  variants: VariantRevenueRow[];
+  byRevenue: VariantRevenueRow[];
+  totals: {
+    totalRevenue: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    revenue: string;
     ranking: string;
     identity: string;
   };
@@ -421,6 +449,7 @@ export type AnalyticsDashboard = {
   topProducts: TopProductsResult;
   productTrends: ProductTrends;
   variantUnits: VariantUnitsResult;
+  variantRevenue: VariantRevenueResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

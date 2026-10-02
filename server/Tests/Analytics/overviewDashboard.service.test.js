@@ -184,7 +184,26 @@ describe("analytics overview dashboard dataset", () => {
           }),
         ],
         totals: {
+          totalRevenue: 120,
           totalUnits: 3,
+          variantsSold: 1,
+        },
+      }),
+    );
+
+    expect(result.data.variantRevenue).toEqual(
+      expect.objectContaining({
+        byRevenue: [
+          expect.objectContaining({
+            variantId: variant._id,
+            variantName: variant.name,
+            sku: variant.sku,
+            totalRevenue: 120,
+            orderCount: 1,
+          }),
+        ],
+        totals: {
+          totalRevenue: 120,
           variantsSold: 1,
         },
       }),

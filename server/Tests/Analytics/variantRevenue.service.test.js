@@ -7,8 +7,8 @@ const {
   createOrder,
 } = require("../Orders/helpers/orderFactory");
 
-describe("analytics variant units", () => {
-  test("ranks historical variant units, de-duplicates orders, and survives rename/delete", async () => {
+describe("analytics variant revenue", () => {
+  test("ranks historical collected revenue with discounts and partial payments", async () => {
     const customer = await createCustomer();
     const product = await createProduct({ name: "Current Juice" });
     const variantA = await createVariant({ product, price: 10, stock: 100 });
@@ -23,35 +23,26 @@ describe("analytics variant units", () => {
           productName: "Historical Juice",
           variant: variantA._id,
           name: "Historical Small",
-          sku: "JUICE-S-HIST",
+          sku: "REV-S-HIST",
           price: 10,
-          quantity: 2,
-          subtotal: 20,
-        },
-        {
-          product: product._id,
-          productName: "Historical Juice",
-          variant: variantA._id,
-          name: "Historical Small",
-          sku: "JUICE-S-HIST",
-          price: 10,
-          quantity: 1,
-          subtotal: 10,
+          quantity: 6,
+          subtotal: 60,
         },
         {
           product: product._id,
           productName: "Historical Juice",
           variant: variantB._id,
           name: "Historical Large",
-          sku: "JUICE-L-HIST",
+          sku: "REV-L-HIST",
           price: 20,
           quantity: 2,
           subtotal: 40,
         },
       ],
       overrides: {
-        subtotal: 70,
-        total: 70,
+        subtotal: 100,
+        discountAmount: 20,
+        total: 80,
         paidAt: new Date("2026-06-10T12:00:00.000Z"),
       },
     });
@@ -65,16 +56,16 @@ describe("analytics variant units", () => {
           productName: "Historical Juice",
           variant: variantA._id,
           name: "Historical Small",
-          sku: "JUICE-S-HIST",
+          sku: "REV-S-HIST",
           price: 10,
-          quantity: 4,
-          subtotal: 40,
+          quantity: 2,
+          subtotal: 20,
         },
       ],
       overrides: {
-        subtotal: 40,
-        total: 40,
-        amountPaid: 20,
+        subtotal: 20,
+        total: 20,
+        amountPaid: 10,
         paidAt: new Date("2026-06-11T12:00:00.000Z"),
         metadata: { manualImport: true },
       },
@@ -82,11 +73,11 @@ describe("analytics variant units", () => {
 
     await Variant.updateOne(
       { _id: variantA._id },
-      { $set: { name: "Renamed Small", sku: "JUICE-S-NEW" } },
+      { $set: { name: "Renamed Small", sku: "REV-S-NEW" } },
     );
     await Variant.deleteOne({ _id: variantB._id });
 
-    const result = await analyticsService.GetVariantUnits({
+    const result = await analyticsService.GetVariantRevenue({
       from: "2026-06-10",
       to: "2026-06-12",
       limit: 10,
@@ -96,57 +87,55 @@ describe("analytics variant units", () => {
     expect(result.success).toBe(true);
     expect(result.data.totals).toEqual({
       totalRevenue: 90,
-      totalUnits: 9,
       variantsSold: 2,
     });
-    expect(result.data.byUnits.map((row) => String(row.variantId))).toEqual([
+    expect(result.data.byRevenue.map((row) => String(row.variantId))).toEqual([
       String(variantA._id),
       String(variantB._id),
     ]);
-
-    expect(result.data.byUnits[0]).toEqual(
+    expect(result.data.byRevenue[0]).toEqual(
       expect.objectContaining({
         productId: product._id,
         productName: "Historical Juice",
         variantName: "Historical Small",
-        sku: "JUICE-S-HIST",
+        sku: "REV-S-HIST",
         catalogStatus: "active",
-        totalUnits: 7,
+        totalRevenue: 58,
         orderCount: 2,
-        averageUnitsPerOrder: 3.5,
       }),
     );
-    expect(result.data.byUnits[1]).toEqual(
+    expect(result.data.byRevenue[1]).toEqual(
       expect.objectContaining({
         variantName: "Historical Large",
-        sku: "JUICE-L-HIST",
+        sku: "REV-L-HIST",
         catalogStatus: "deleted",
-        totalUnits: 2,
+        totalRevenue: 32,
         orderCount: 1,
-        averageUnitsPerOrder: 2,
       }),
     );
-    expect(result.data.variants).toEqual(result.data.byUnits);
+    expect(result.data.variants).toEqual(result.data.byRevenue);
   });
 
-  test("applies mutually exclusive source filters to variant units", async () => {
+  test("applies mutually exclusive source filters to variant revenue", async () => {
     const customer = await createCustomer();
     const product = await createProduct({ name: "Source Product" });
     const variant = await createVariant({ product, price: 10, stock: 100 });
 
+    const item = {
+      product: product._id,
+      productName: "Source Product",
+      variant: variant._id,
+      name: "Source Variant",
+      sku: "REV-SOURCE",
+      price: 10,
+      quantity: 2,
+      subtotal: 20,
+    };
+
     await createOrder({
       customer,
       status: "paid",
-      items: [{
-        product: product._id,
-        productName: "Source Product",
-        variant: variant._id,
-        name: "Source Variant",
-        sku: "SOURCE-V",
-        price: 10,
-        quantity: 2,
-        subtotal: 20,
-      }],
+      items: [item],
       overrides: {
         subtotal: 20,
         total: 20,
@@ -157,50 +146,40 @@ describe("analytics variant units", () => {
     await createOrder({
       customer,
       status: "partially_paid",
-      items: [{
-        product: product._id,
-        productName: "Source Product",
-        variant: variant._id,
-        name: "Source Variant",
-        sku: "SOURCE-V",
-        price: 10,
-        quantity: 3,
-        subtotal: 30,
-      }],
+      items: [item],
       overrides: {
-        subtotal: 30,
-        total: 30,
-        amountPaid: 15,
+        subtotal: 20,
+        total: 20,
+        amountPaid: 10,
         paidAt: new Date("2026-06-11T12:00:00.000Z"),
         metadata: { manualImport: true },
       },
     });
 
-    const website = await analyticsService.GetVariantUnits({
+    const website = await analyticsService.GetVariantRevenue({
       from: "2026-06-10",
       to: "2026-06-12",
       orderSource: "website",
       timeZone: "Europe/London",
     });
-    const imported = await analyticsService.GetVariantUnits({
+    const imported = await analyticsService.GetVariantRevenue({
       from: "2026-06-10",
       to: "2026-06-12",
       orderSource: "imported",
       timeZone: "Europe/London",
     });
-    const subscription = await analyticsService.GetVariantUnits({
+    const subscription = await analyticsService.GetVariantRevenue({
       from: "2026-06-10",
       to: "2026-06-12",
       orderSource: "subscription",
       timeZone: "Europe/London",
     });
 
-    expect(website.data.byUnits[0].totalUnits).toBe(2);
-    expect(imported.data.byUnits[0].totalUnits).toBe(3);
-    expect(subscription.data.byUnits).toEqual([]);
+    expect(website.data.byRevenue[0].totalRevenue).toBe(20);
+    expect(imported.data.byRevenue[0].totalRevenue).toBe(10);
+    expect(subscription.data.byRevenue).toEqual([]);
     expect(subscription.data.totals).toEqual({
       totalRevenue: 0,
-      totalUnits: 0,
       variantsSold: 0,
     });
   });

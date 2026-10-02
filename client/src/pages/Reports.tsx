@@ -270,6 +270,9 @@ const Reports = () => {
   const variantsByUnits = dashboard?.variantUnits?.byUnits ?? [];
   const variantUnitTotals = dashboard?.variantUnits?.totals;
   const maxVariantUnits = variantsByUnits[0]?.totalUnits ?? 0;
+  const variantsByRevenue = dashboard?.variantRevenue?.byRevenue ?? [];
+  const variantRevenueTotals = dashboard?.variantRevenue?.totals;
+  const maxVariantRevenue = variantsByRevenue[0]?.totalRevenue ?? 0;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -1108,6 +1111,81 @@ const Reports = () => {
             <span className={styles.chartTotal}>
               Units are counted from collected orders, including partially-paid
               orders. Deleted variants remain visible from order snapshots.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Variant Revenue</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.metricsGrid}>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(variantRevenueTotals?.totalRevenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Variant Revenue</span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCompactNumber(variantRevenueTotals?.variantsSold ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>Variants Sold</span>
+            </div>
+          </div>
+
+          <div className={styles.productRankingSection}>
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Top Variants by Revenue</span>
+              <span className={styles.variantMeta}>
+                Collected merchandise revenue
+              </span>
+            </div>
+            <div className={styles.productRanking}>
+              {variantsByRevenue.length === 0 && !loading ? (
+                <div className={styles.emptyState}>No variant revenue</div>
+              ) : (
+                variantsByRevenue.map((variant, index) => (
+                  <div key={variant.variantId} className={styles.rankItem}>
+                    <span className={styles.rankNumber}>#{index + 1}</span>
+                    <div className={styles.rankInfo}>
+                      <span className={styles.rankName}>
+                        {variant.variantName}
+                        {variant.catalogStatus === "deleted" ? " · Deleted" : ""}
+                      </span>
+                      <span className={styles.rankMeta}>
+                        {variant.productName} · {variant.sku} ·{" "}
+                        {formatCurrency(variant.totalRevenue)} ·{" "}
+                        {formatCompactNumber(variant.orderCount)} orders
+                      </span>
+                    </div>
+                    <div className={styles.rankBar}>
+                      <div
+                        className={styles.rankFill}
+                        style={{
+                          width:
+                            maxVariantRevenue > 0
+                              ? `${Math.min(
+                                  100,
+                                  (variant.totalRevenue / maxVariantRevenue) * 100,
+                                )}%`
+                              : "0%",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Revenue is collected merchandise after proportional order
+              discounts. Delivery and item-unattributed refunds are excluded.
             </span>
           </div>
         </CardContent>

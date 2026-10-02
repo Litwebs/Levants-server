@@ -1543,6 +1543,7 @@ async function GetVariantUnits({
     { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
     { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
     { $unwind: "$items" },
+    { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
     {
       $group: {
         _id: {
@@ -1554,6 +1555,7 @@ async function GetVariantUnits({
         variantNameSnapshot: { $first: "$items.name" },
         skuSnapshot: { $first: "$items.sku" },
         latestPaidAt: { $first: "$_analyticsPaidAt" },
+        revenue: { $sum: "$_analyticsLineRevenue" },
         units: { $sum: { $ifNull: ["$items.quantity", 0] } },
       },
     },
@@ -1570,6 +1572,7 @@ async function GetVariantUnits({
         variantNameSnapshot: { $first: "$variantNameSnapshot" },
         skuSnapshot: { $first: "$skuSnapshot" },
         latestPaidAt: { $first: "$latestPaidAt" },
+        totalRevenue: { $sum: "$revenue" },
         totalUnits: { $sum: "$units" },
         orderIds: { $addToSet: "$_id.order" },
       },
@@ -1664,6 +1667,7 @@ async function GetVariantUnits({
             "deleted",
           ],
         },
+        totalRevenue: 1,
         totalUnits: 1,
         orderCount: 1,
         averageUnitsPerOrder: {
@@ -1689,10 +1693,23 @@ async function GetVariantUnits({
           },
           { $limit: lim },
         ],
+        byRevenue: [
+          {
+            $sort: {
+              totalRevenue: -1,
+              orderCount: -1,
+              productName: 1,
+              variantName: 1,
+              sku: 1,
+            },
+          },
+          { $limit: lim },
+        ],
         totals: [
           {
             $group: {
               _id: null,
+              totalRevenue: { $sum: "$totalRevenue" },
               totalUnits: { $sum: "$totalUnits" },
               variantsSold: { $sum: 1 },
             },
@@ -1702,12 +1719,15 @@ async function GetVariantUnits({
     },
   ]);
 
-  const byUnits = (result?.byUnits || []).map((variant) => ({
+  const normalizeVariant = (variant) => ({
     ...variant,
+    totalRevenue: Number(variant.totalRevenue) || 0,
     totalUnits: Number(variant.totalUnits) || 0,
     orderCount: Number(variant.orderCount) || 0,
     averageUnitsPerOrder: Number(variant.averageUnitsPerOrder) || 0,
-  }));
+  });
+  const byUnits = (result?.byUnits || []).map(normalizeVariant);
+  const byRevenue = (result?.byRevenue || []).map(normalizeVariant);
   const totalsRow = result?.totals?.[0] || {};
 
   return {
@@ -1715,17 +1735,44 @@ async function GetVariantUnits({
     data: {
       variants: byUnits,
       byUnits,
+      byRevenue,
       totals: {
+        totalRevenue: Number(totalsRow.totalRevenue) || 0,
         totalUnits: Number(totalsRow.totalUnits) || 0,
         variantsSold: Number(totalsRow.variantsSold) || 0,
       },
       metricBasis: {
+        revenue:
+          "Collected merchandise revenue after proportional order discounts; excludes delivery fees and item-unattributed refunds.",
         units:
           "Units on collected orders, including partially-paid orders.",
         ranking:
-          "Variants are ranked by historical units sold in the selected period; repeated lines are combined and order counts are de-duplicated.",
+          "Variants are ranked from historical order-item snapshots; repeated lines are combined and order counts are de-duplicated.",
         identity:
           "Variant name and SKU come from immutable order-item snapshots, so deleted or renamed variants remain historically visible.",
+      },
+    },
+  };
+}
+
+async function GetVariantRevenue(args = {}) {
+  const result = await GetVariantUnits(args);
+  if (!result.success) return result;
+
+  return {
+    success: true,
+    data: {
+      variants: result.data.byRevenue,
+      byRevenue: result.data.byRevenue,
+      totals: {
+        totalRevenue: result.data.totals.totalRevenue,
+        variantsSold: result.data.totals.variantsSold,
+      },
+      metricBasis: {
+        revenue: result.data.metricBasis.revenue,
+        ranking:
+          "Variants are ranked by collected merchandise revenue in the selected period.",
+        identity: result.data.metricBasis.identity,
       },
     },
   };
@@ -2606,6 +2653,20 @@ async function GetDashboard({
       topProducts: topProducts.data,
       productTrends: productTrends.data,
       variantUnits: variantUnits.data,
+      variantRevenue: {
+        variants: variantUnits.data.byRevenue,
+        byRevenue: variantUnits.data.byRevenue,
+        totals: {
+          totalRevenue: variantUnits.data.totals.totalRevenue,
+          variantsSold: variantUnits.data.totals.variantsSold,
+        },
+        metricBasis: {
+          revenue: variantUnits.data.metricBasis.revenue,
+          ranking:
+            "Variants are ranked by collected merchandise revenue in the selected period.",
+          identity: variantUnits.data.metricBasis.identity,
+        },
+      },
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
@@ -2627,6 +2688,7 @@ module.exports = {
   GetOrderStatusCounts,
   GetTopProducts,
   GetVariantUnits,
+  GetVariantRevenue,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,
