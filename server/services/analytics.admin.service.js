@@ -1540,7 +1540,12 @@ async function GetVariantUnits({
 
   const [result] = await Order.aggregate([
     { $match: salesMatch },
-    { $addFields: { _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION } },
+    {
+      $addFields: {
+        _analyticsPaidAt: EFFECTIVE_PAID_AT_EXPRESSION,
+        _analyticsSalesChannel: SALES_CHANNEL_EXPRESSION,
+      },
+    },
     { $sort: { _analyticsPaidAt: -1, createdAt: -1 } },
     { $unwind: "$items" },
     { $addFields: { _analyticsLineRevenue: PRODUCT_LINE_REVENUE_EXPRESSION } },
@@ -1555,6 +1560,7 @@ async function GetVariantUnits({
         variantNameSnapshot: { $first: "$items.name" },
         skuSnapshot: { $first: "$items.sku" },
         latestPaidAt: { $first: "$_analyticsPaidAt" },
+        salesChannel: { $first: "$_analyticsSalesChannel" },
         revenue: { $sum: "$_analyticsLineRevenue" },
         units: { $sum: { $ifNull: ["$items.quantity", 0] } },
       },
@@ -1575,9 +1581,63 @@ async function GetVariantUnits({
         totalRevenue: { $sum: "$revenue" },
         totalUnits: { $sum: "$units" },
         orderIds: { $addToSet: "$_id.order" },
+        oneTimeRevenue: {
+          $sum: { $cond: [{ $eq: ["$salesChannel", "website"] }, "$revenue", 0] },
+        },
+        oneTimeUnits: {
+          $sum: { $cond: [{ $eq: ["$salesChannel", "website"] }, "$units", 0] },
+        },
+        oneTimeOrderIds: {
+          $addToSet: {
+            $cond: [{ $eq: ["$salesChannel", "website"] }, "$_id.order", null],
+          },
+        },
+        subscriptionRevenue: {
+          $sum: {
+            $cond: [{ $eq: ["$salesChannel", "subscription"] }, "$revenue", 0],
+          },
+        },
+        subscriptionUnits: {
+          $sum: {
+            $cond: [{ $eq: ["$salesChannel", "subscription"] }, "$units", 0],
+          },
+        },
+        subscriptionOrderIds: {
+          $addToSet: {
+            $cond: [
+              { $eq: ["$salesChannel", "subscription"] },
+              "$_id.order",
+              null,
+            ],
+          },
+        },
+        importedRevenue: {
+          $sum: { $cond: [{ $eq: ["$salesChannel", "imported"] }, "$revenue", 0] },
+        },
+        importedUnits: {
+          $sum: { $cond: [{ $eq: ["$salesChannel", "imported"] }, "$units", 0] },
+        },
+        importedOrderIds: {
+          $addToSet: {
+            $cond: [{ $eq: ["$salesChannel", "imported"] }, "$_id.order", null],
+          },
+        },
       },
     },
-    { $addFields: { orderCount: { $size: "$orderIds" } } },
+    {
+      $addFields: {
+        orderCount: { $size: "$orderIds" },
+        oneTimeOrderCount: {
+          $size: { $setDifference: ["$oneTimeOrderIds", [null]] },
+        },
+        subscriptionOrderCount: {
+          $size: { $setDifference: ["$subscriptionOrderIds", [null]] },
+        },
+        importedOrderCount: {
+          $size: { $setDifference: ["$importedOrderIds", [null]] },
+        },
+      },
+    },
     { $match: { totalUnits: { $gt: 0 } } },
     {
       $lookup: {
@@ -1671,6 +1731,21 @@ async function GetVariantUnits({
         totalRevenue: 1,
         totalUnits: 1,
         orderCount: 1,
+        oneTimeRevenue: 1,
+        oneTimeUnits: 1,
+        oneTimeOrderCount: 1,
+        subscriptionRevenue: 1,
+        subscriptionUnits: 1,
+        subscriptionOrderCount: 1,
+        importedRevenue: 1,
+        importedUnits: 1,
+        importedOrderCount: 1,
+        comparedRevenue: {
+          $add: ["$oneTimeRevenue", "$subscriptionRevenue"],
+        },
+        comparedUnits: {
+          $add: ["$oneTimeUnits", "$subscriptionUnits"],
+        },
         realisedSellingPrice: {
           $cond: [
             { $gt: ["$totalUnits", 0] },
@@ -1713,6 +1788,19 @@ async function GetVariantUnits({
           },
           { $limit: lim },
         ],
+        bySalesMix: [
+          { $match: { comparedUnits: { $gt: 0 } } },
+          {
+            $sort: {
+              comparedRevenue: -1,
+              comparedUnits: -1,
+              productName: 1,
+              variantName: 1,
+              sku: 1,
+            },
+          },
+          { $limit: lim },
+        ],
         totals: [
           {
             $group: {
@@ -1720,6 +1808,12 @@ async function GetVariantUnits({
               totalRevenue: { $sum: "$totalRevenue" },
               totalUnits: { $sum: "$totalUnits" },
               variantsSold: { $sum: 1 },
+              oneTimeRevenue: { $sum: "$oneTimeRevenue" },
+              oneTimeUnits: { $sum: "$oneTimeUnits" },
+              subscriptionRevenue: { $sum: "$subscriptionRevenue" },
+              subscriptionUnits: { $sum: "$subscriptionUnits" },
+              importedRevenue: { $sum: "$importedRevenue" },
+              importedUnits: { $sum: "$importedUnits" },
             },
           },
         ],
@@ -1741,12 +1835,32 @@ async function GetVariantUnits({
       currentPrice !== null && currentPrice > 0
         ? Math.round((priceDifference / currentPrice) * 10000) / 100
         : null;
+    const oneTime = {
+      revenue: Number(variant.oneTimeRevenue) || 0,
+      units: Number(variant.oneTimeUnits) || 0,
+      orders: Number(variant.oneTimeOrderCount) || 0,
+    };
+    const subscription = {
+      revenue: Number(variant.subscriptionRevenue) || 0,
+      units: Number(variant.subscriptionUnits) || 0,
+      orders: Number(variant.subscriptionOrderCount) || 0,
+    };
+    const importedExcluded = {
+      revenue: Number(variant.importedRevenue) || 0,
+      units: Number(variant.importedUnits) || 0,
+      orders: Number(variant.importedOrderCount) || 0,
+    };
 
     return {
       ...variant,
       totalRevenue,
       totalUnits,
       orderCount: Number(variant.orderCount) || 0,
+      oneTime,
+      subscription,
+      importedExcluded,
+      comparedRevenue: Number(variant.comparedRevenue) || 0,
+      comparedUnits: Number(variant.comparedUnits) || 0,
       realisedSellingPrice,
       currentPrice,
       priceDifference,
@@ -1756,6 +1870,7 @@ async function GetVariantUnits({
   };
   const byUnits = (result?.byUnits || []).map(normalizeVariant);
   const byRevenue = (result?.byRevenue || []).map(normalizeVariant);
+  const bySalesMix = (result?.bySalesMix || []).map(normalizeVariant);
   const totalsRow = result?.totals?.[0] || {};
 
   return {
@@ -1764,10 +1879,23 @@ async function GetVariantUnits({
       variants: byUnits,
       byUnits,
       byRevenue,
+      bySalesMix,
       totals: {
         totalRevenue: Number(totalsRow.totalRevenue) || 0,
         totalUnits: Number(totalsRow.totalUnits) || 0,
         variantsSold: Number(totalsRow.variantsSold) || 0,
+        oneTime: {
+          revenue: Number(totalsRow.oneTimeRevenue) || 0,
+          units: Number(totalsRow.oneTimeUnits) || 0,
+        },
+        subscription: {
+          revenue: Number(totalsRow.subscriptionRevenue) || 0,
+          units: Number(totalsRow.subscriptionUnits) || 0,
+        },
+        importedExcluded: {
+          revenue: Number(totalsRow.importedRevenue) || 0,
+          units: Number(totalsRow.importedUnits) || 0,
+        },
       },
       metricBasis: {
         revenue:
@@ -1778,6 +1906,8 @@ async function GetVariantUnits({
           "Current catalog variant price at request time; deleted variants have no current-price comparison.",
         priceComparison:
           "Difference is realised selling price minus current catalog price; percentage difference uses current catalog price as the denominator.",
+        salesMix:
+          "Website One-Time and Subscription are mutually exclusive channels. Imported/manual orders are excluded from the comparison and reported separately.",
         units:
           "Units on collected orders, including partially-paid orders.",
         ranking:
@@ -1858,6 +1988,39 @@ async function GetVariantPriceComparison(args = {}) {
         realisedSellingPrice: result.data.metricBasis.realisedSellingPrice,
         currentPrice: result.data.metricBasis.currentPrice,
         priceComparison: result.data.metricBasis.priceComparison,
+        identity: result.data.metricBasis.identity,
+      },
+    },
+  };
+}
+
+async function GetVariantSalesMix(args = {}) {
+  const result = await GetVariantUnits(args);
+  if (!result.success) return result;
+
+  return {
+    success: true,
+    data: {
+      variants: result.data.bySalesMix.map((variant) => ({
+        productId: variant.productId,
+        variantId: variant.variantId,
+        productName: variant.productName,
+        variantName: variant.variantName,
+        sku: variant.sku,
+        catalogStatus: variant.catalogStatus,
+        oneTime: variant.oneTime,
+        subscription: variant.subscription,
+        importedExcluded: variant.importedExcluded,
+      })),
+      totals: {
+        oneTime: result.data.totals.oneTime,
+        subscription: result.data.totals.subscription,
+        importedExcluded: result.data.totals.importedExcluded,
+      },
+      metricBasis: {
+        salesMix: result.data.metricBasis.salesMix,
+        revenue: result.data.metricBasis.revenue,
+        units: result.data.metricBasis.units,
         identity: result.data.metricBasis.identity,
       },
     },
@@ -2791,6 +2954,30 @@ async function GetDashboard({
           identity: variantUnits.data.metricBasis.identity,
         },
       },
+      variantSalesMix: {
+        variants: variantUnits.data.bySalesMix.map((variant) => ({
+          productId: variant.productId,
+          variantId: variant.variantId,
+          productName: variant.productName,
+          variantName: variant.variantName,
+          sku: variant.sku,
+          catalogStatus: variant.catalogStatus,
+          oneTime: variant.oneTime,
+          subscription: variant.subscription,
+          importedExcluded: variant.importedExcluded,
+        })),
+        totals: {
+          oneTime: variantUnits.data.totals.oneTime,
+          subscription: variantUnits.data.totals.subscription,
+          importedExcluded: variantUnits.data.totals.importedExcluded,
+        },
+        metricBasis: {
+          salesMix: variantUnits.data.metricBasis.salesMix,
+          revenue: variantUnits.data.metricBasis.revenue,
+          units: variantUnits.data.metricBasis.units,
+          identity: variantUnits.data.metricBasis.identity,
+        },
+      },
       salesBreakdown: salesBreakdown.data,
       recentOrders: recentOrders.data,
       lowStock: stockSnapshot.data.lowStock,
@@ -2815,6 +3002,7 @@ module.exports = {
   GetVariantRevenue,
   GetVariantRealisedPrice,
   GetVariantPriceComparison,
+  GetVariantSalesMix,
   GetProductTrends,
   GetProductDetail,
   GetRecentOrders,

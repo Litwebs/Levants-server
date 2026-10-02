@@ -275,6 +275,7 @@ const Reports = () => {
   const maxVariantRevenue = variantsByRevenue[0]?.totalRevenue ?? 0;
   const variantRealisedPrice = dashboard?.variantRealisedPrice;
   const variantPriceComparison = dashboard?.variantPriceComparison;
+  const variantSalesMix = dashboard?.variantSalesMix;
 
   const productRevenueTrendSeries = useMemo(
     () =>
@@ -1245,6 +1246,88 @@ const Reports = () => {
           <div className={styles.chartFooter}>
             <span className={styles.chartTotal}>
               Realised price reflects discounts and partial payments. Current price is the live catalog price at request time; deleted variants remain historically visible with comparison unavailable.
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+
+      <Card className={styles.fullWidthChart}>
+        <CardHeader>
+          <CardTitle>Variant Subscription vs One-Time</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={styles.metricsGrid}>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(variantSalesMix?.totals.oneTime.revenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>
+                Website One-Time · {formatCompactNumber(variantSalesMix?.totals.oneTime.units ?? 0)} units
+              </span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(variantSalesMix?.totals.subscription.revenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>
+                Subscription · {formatCompactNumber(variantSalesMix?.totals.subscription.units ?? 0)} units
+              </span>
+            </div>
+            <div className={styles.metricItem}>
+              <span className={styles.metricValue}>
+                {formatCurrency(variantSalesMix?.totals.importedExcluded.revenue ?? 0)}
+              </span>
+              <span className={styles.metricLabel}>
+                Imported Excluded · {formatCompactNumber(variantSalesMix?.totals.importedExcluded.units ?? 0)} units
+              </span>
+            </div>
+          </div>
+
+          <div className={styles.productRankingSection}>
+            <div className={styles.variantHeader}>
+              <span className={styles.variantTitle}>Variant Sales Mix</span>
+              <span className={styles.variantMeta}>
+                Website One-Time vs Subscription
+              </span>
+            </div>
+            <div className={styles.productRanking}>
+              {(variantSalesMix?.variants ?? []).length === 0 && !loading ? (
+                <div className={styles.emptyState}>
+                  No one-time or subscription variant sales
+                </div>
+              ) : (
+                (variantSalesMix?.variants ?? []).map((variant, index) => (
+                  <div key={variant.variantId} className={styles.rankItem}>
+                    <span className={styles.rankNumber}>#{index + 1}</span>
+                    <div className={styles.rankInfo}>
+                      <span className={styles.rankName}>
+                        {variant.variantName}
+                        {variant.catalogStatus === "deleted" ? " · Deleted" : ""}
+                      </span>
+                      <span className={styles.rankMeta}>
+                        {variant.productName} · {variant.sku}
+                      </span>
+                      <span className={styles.rankMeta}>
+                        One-Time {formatCurrency(variant.oneTime.revenue)} ·{" "}
+                        {formatCompactNumber(variant.oneTime.units)} units ·{" "}
+                        {formatCompactNumber(variant.oneTime.orders)} orders
+                      </span>
+                      <span className={styles.rankMeta}>
+                        Subscription {formatCurrency(variant.subscription.revenue)} ·{" "}
+                        {formatCompactNumber(variant.subscription.units)} units ·{" "}
+                        {formatCompactNumber(variant.subscription.orders)} orders
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className={styles.chartFooter}>
+            <span className={styles.chartTotal}>
+              Imported/manual orders are excluded from the one-time vs subscription comparison and shown separately above.
             </span>
           </div>
         </CardContent>

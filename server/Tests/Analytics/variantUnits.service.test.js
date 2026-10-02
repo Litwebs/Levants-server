@@ -98,6 +98,9 @@ describe("analytics variant units", () => {
       totalRevenue: 90,
       totalUnits: 9,
       variantsSold: 2,
+      oneTime: { revenue: 70, units: 5 },
+      subscription: { revenue: 0, units: 0 },
+      importedExcluded: { revenue: 20, units: 4 },
     });
     expect(result.data.byUnits.map((row) => String(row.variantId))).toEqual([
       String(variantA._id),
@@ -202,6 +205,9 @@ describe("analytics variant units", () => {
       totalRevenue: 0,
       totalUnits: 0,
       variantsSold: 0,
+      oneTime: { revenue: 0, units: 0 },
+      subscription: { revenue: 0, units: 0 },
+      importedExcluded: { revenue: 0, units: 0 },
     });
   });
 });

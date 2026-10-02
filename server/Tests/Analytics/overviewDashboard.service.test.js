@@ -187,6 +187,9 @@ describe("analytics overview dashboard dataset", () => {
           totalRevenue: 120,
           totalUnits: 3,
           variantsSold: 1,
+          oneTime: { revenue: 120, units: 3 },
+          subscription: { revenue: 0, units: 0 },
+          importedExcluded: { revenue: 0, units: 0 },
         },
       }),
     );
@@ -240,6 +243,24 @@ describe("analytics overview dashboard dataset", () => {
           totalUnits: 3,
           realisedSellingPrice: 40,
           variantsSold: 1,
+        },
+      }),
+    );
+
+    expect(result.data.variantSalesMix).toEqual(
+      expect.objectContaining({
+        variants: [
+          expect.objectContaining({
+            variantId: variant._id,
+            oneTime: { revenue: 120, units: 3, orders: 1 },
+            subscription: { revenue: 0, units: 0, orders: 0 },
+            importedExcluded: { revenue: 0, units: 0, orders: 0 },
+          }),
+        ],
+        totals: {
+          oneTime: { revenue: 120, units: 3 },
+          subscription: { revenue: 0, units: 0 },
+          importedExcluded: { revenue: 0, units: 0 },
         },
       }),
     );

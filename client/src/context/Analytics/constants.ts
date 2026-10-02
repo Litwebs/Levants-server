@@ -360,6 +360,39 @@ export type VariantPriceComparisonResult = {
   };
 };
 
+export type VariantSalesChannelMetric = {
+  revenue: number;
+  units: number;
+  orders: number;
+};
+
+export type VariantSalesMixRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  oneTime: VariantSalesChannelMetric;
+  subscription: VariantSalesChannelMetric;
+  importedExcluded: VariantSalesChannelMetric;
+};
+
+export type VariantSalesMixResult = {
+  variants: VariantSalesMixRow[];
+  totals: {
+    oneTime: { revenue: number; units: number };
+    subscription: { revenue: number; units: number };
+    importedExcluded: { revenue: number; units: number };
+  };
+  metricBasis: {
+    salesMix: string;
+    revenue: string;
+    units: string;
+    identity: string;
+  };
+};
+
 export type ProductTrendPoint = {
   label: string;
   revenue: number;
@@ -487,6 +520,7 @@ export type AnalyticsDashboard = {
   variantRevenue: VariantRevenueResult;
   variantRealisedPrice: VariantRealisedPriceResult;
   variantPriceComparison: VariantPriceComparisonResult;
+  variantSalesMix: VariantSalesMixResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;

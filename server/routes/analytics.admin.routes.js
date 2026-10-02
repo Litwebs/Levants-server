@@ -102,6 +102,11 @@ router.get(
   asyncHandler(controller.GetVariantPriceComparison),
 );
 router.get(
+  "/variant-sales-mix",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantSalesMix),
+);
+router.get(
   "/product-trends",
   validateAnalyticsQuery({
     allowInterval: true,
