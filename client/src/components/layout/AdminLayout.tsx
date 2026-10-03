@@ -41,6 +41,7 @@ import {
 } from "@/lib/businessBranding";
 import { hasLitwebsEmail } from "@/lib/internalAccess";
 import styles from "./AdminLayout.module.css";
+import { PageTransition } from "../common";
 
 const navItems = [
   {
@@ -190,16 +191,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   );
   const navCounts = useNavCounts();
   const location = useLocation();
-  const [routeTransition, setRouteTransition] = useState({
-    pathname: location.pathname,
-    returningToOrders: false,
-  });
-  if (routeTransition.pathname !== location.pathname) {
-    setRouteTransition({
-      pathname: location.pathname,
-      returningToOrders: location.pathname === "/orders" && /^\/orders\/[^/]+$/.test(routeTransition.pathname),
-    });
-  }
   const navigate = useNavigate();
   const { user, logout, updateSelf } = useAuth();
   const { hasAnyPermission } = usePermissions();
@@ -516,9 +507,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         <main
           className={`${styles.content} ${isDeliveryRunDetailsRoute ? styles.contentEdgeToEdgeMobile : ""}`}
         >
-          <div className={routeTransition.returningToOrders ? styles.ordersReturn : undefined}>
-            {children}
-          </div>
+          <PageTransition>{children}</PageTransition>
         </main>
       </div>
     </div>

@@ -92,16 +92,20 @@
   padding: var(--space-3) var(--space-4);
   color: var(--color-gray-700);
   vertical-align: middle;
+  white-space: nowrap;
 }
 
-.align-left {
+.th.align-left,
+.td.align-left {
   text-align: left;
 }
 
-.align-center {
+.th.align-center,
+.td.align-center {
   text-align: center;
 }
 
-.align-right {
+.th.align-right,
+.td.align-right {
   text-align: right;
 }

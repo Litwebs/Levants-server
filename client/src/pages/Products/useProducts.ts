@@ -10,9 +10,11 @@ import { useToast } from '../../components/common/Toast';
 import api from "../../context/api";
 import { AdminProduct } from "./types";
 import { getImageUrl, getImageUrls } from "./product.utils";
+import { useNavigate } from "react-router-dom";
 
 export function useProducts() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [apiCategories, setApiCategories] = useState<string[]>([]);
@@ -36,7 +38,6 @@ export function useProducts() {
 
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   const [productImages, setProductImages] = useState({
@@ -258,23 +259,7 @@ export function useProducts() {
     }));
 
   const handleEditProduct = (product: AdminProduct) => {
-    setSelectedProduct(product);
-    setEditForm({
-      _id: product._id,
-      name: product.name,
-      category: product.category,
-      description: product.description,
-      status: product.status,
-      allergens: product.allergens,
-      storageNotes: product.storageNotes,
-      thumbnailImage: product.thumbnailImage,
-      galleryImages: product.galleryImages,
-    });
-    setProductImages({
-      thumbnail: getImageUrl(product.thumbnailImage),
-      gallery: getImageUrls(product.galleryImages),
-    });
-    setIsEditModalOpen(true);
+    navigate(`/products/${product._id}/edit`, { state: { product } });
   };
 
   const handleSaveEdit = async () => {
@@ -341,49 +326,6 @@ export function useProducts() {
     }
   };
 
-  const handleCreateProduct = () => {
-    setSelectedProduct(null);
-    setEditForm({ status: "draft", allergens: [], storageNotes: "" });
-    setProductImages({ thumbnail: "", gallery: [] });
-    setIsCreateModalOpen(true);
-  };
-
-  const handleCreate = async () => {
-    if (isSaving) return;
-
-    setIsSaving(true);
-    try {
-      const payload: Record<string, any> = {
-        name: editForm.name,
-        category: editForm.category,
-        description: editForm.description,
-        status: editForm.status || "draft",
-        allergens: editForm.allergens || [],
-        storageNotes: editForm.storageNotes ?? "",
-        thumbnailImage: productImages.thumbnail,
-        galleryImages: productImages.gallery,
-      };
-
-      const res = await api.post("/admin/products", payload);
-      const created = res.data?.data?.product as AdminProduct;
-      setProducts((prev) => [created, ...prev]);
-
-      showToast({ type: "success", title: "Product created" });
-      setIsCreateModalOpen(false);
-
-      // Refresh list so images/variants are populated consistently
-      await fetchProducts();
-    } catch (e: any) {
-      showToast({
-        type: "error",
-        title: "Failed to create product",
-        message: e?.response?.data?.message || e?.message,
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const handleArchiveProduct = async (product: AdminProduct) => {
     if (isSaving) return;
 
@@ -416,6 +358,7 @@ export function useProducts() {
 
     isLoading,
     isSaving,
+    fetchProducts,
 
     stats,
     filteredProducts,
@@ -452,8 +395,6 @@ export function useProducts() {
     setIsViewModalOpen,
     isEditModalOpen,
     setIsEditModalOpen,
-    isCreateModalOpen,
-    setIsCreateModalOpen,
     isDeleteModalOpen,
     setIsDeleteModalOpen,
 
@@ -469,8 +410,6 @@ export function useProducts() {
 
     handleEditProduct,
     handleSaveEdit,
-    handleCreateProduct,
-    handleCreate,
     handleArchiveProduct,
 
     showToast,

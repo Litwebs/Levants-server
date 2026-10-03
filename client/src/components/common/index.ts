@@ -13,6 +13,7 @@ export * from './Checkbox';
 export * from './FormGrid';
 export * from './PageToolbar';
 export * from './PageContainer';
+export * from './PageTransition';
 export * from './LoadingScreen';
 export * from './DataTableCard';
 export * from './FiltersCardLayout';

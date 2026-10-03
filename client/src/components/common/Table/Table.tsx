@@ -99,13 +99,26 @@ export const TableBody: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => <tbody className={styles.body}>{children}</tbody>;
 
-export const TableRow: React.FC<{
+interface TableRowProps
+  extends Omit<
+    React.HTMLAttributes<HTMLTableRowElement>,
+    "children" | "className" | "onClick"
+  > {
   children: React.ReactNode;
-  onClick?: () => void;
+  onClick?: React.MouseEventHandler<HTMLTableRowElement>;
   selected?: boolean;
   className?: string;
-}> = ({ children, onClick, selected, className = "" }) => (
+}
+
+export const TableRow: React.FC<TableRowProps> = ({
+  children,
+  onClick,
+  selected,
+  className = "",
+  ...rest
+}) => (
   <tr
+    {...rest}
     className={`${styles.row} ${onClick ? styles.clickable : ""} ${selected ? styles.selected : ""} ${className}`}
     onClick={onClick}
   >

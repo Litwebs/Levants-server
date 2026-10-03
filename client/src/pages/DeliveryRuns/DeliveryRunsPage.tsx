@@ -1,8 +1,26 @@
-import React, { useState, useMemo } from "react";
-import { Loader2, Plus, Calendar, Download } from "lucide-react";
+import React, { useState, useMemo, useRef } from "react";
+import {
+  Plus,
+  Download,
+  RefreshCw,
+  Upload,
+  FileSpreadsheet,
+  PackageCheck,
+  PackageX,
+  Loader2,
+  X,
+} from "lucide-react";
 import { useDeliveryRuns } from "./useDeliveryRuns";
 import { DeliveryRunsTable } from "./components";
-import { Button, Modal, ModalFooter, Select } from "@/components/common";
+import {
+  Button,
+  FiltersCardLayout,
+  Input,
+  Modal,
+  ModalFooter,
+  PageContainer,
+  Select,
+} from "@/components/common";
 import { useToast } from "@/components/common/Toast";
 import {
   getImportedOrdersCount,
@@ -11,8 +29,7 @@ import {
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/context/Auth/AuthContext";
 import styles from "./DeliveryRunsPage.module.css";
-
-type QuickFilter = "next" | "week" | "all";
+import sharedFilterStyles from "@/components/common/FiltersCardLayout/SharedFilters.module.css";
 
 const IMPORT_TEMPLATE_ROWS = [
   [
@@ -47,6 +64,9 @@ const IMPORT_TEMPLATE_ROWS = [
   ],
 ];
 
+const MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024;
+const IMPORT_FILE_PATTERN = /\.(xlsx?|csv)$/i;
+
 const escapeCsvCell = (value: string) =>
   /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 
@@ -76,12 +96,11 @@ export const DeliveryRunsPage: React.FC = () => {
     params,
     updateFilters,
     createRun,
-    deleteRun,
     creating,
+    refetch,
   } = useDeliveryRuns();
   const { showToast } = useToast();
 
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newRunDate, setNewRunDate] = useState("");
   const [eligibleOrders, setEligibleOrders] = useState<Array<any>>([]);
@@ -90,6 +109,8 @@ export const DeliveryRunsPage: React.FC = () => {
   const [ordersFile, setOrdersFile] = useState<File | null>(null);
   const [importedOrdersCount, setImportedOrdersCount] = useState(0);
   const [importCountLoading, setImportCountLoading] = useState(false);
+  const [isFileDragActive, setIsFileDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const roleName = useMemo(() => {
     const role: any = (user as any)?.role;
@@ -103,7 +124,6 @@ export const DeliveryRunsPage: React.FC = () => {
   const isDriver = roleName === "driver";
   const totalOrdersToCreate = selectedOrderIds.length + importedOrdersCount;
 
-  // Calculate quick filter dates
   const filterDates = useMemo(() => {
     const today = new Date();
     const nextDeliveryDays: Date[] = [];
@@ -119,43 +139,10 @@ export const DeliveryRunsPage: React.FC = () => {
       }
     }
 
-    const weekEnd = new Date(today);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-
     return {
       next: nextDeliveryDays[0]?.toISOString().split("T")[0],
-      weekEnd: weekEnd.toISOString().split("T")[0],
-      today: today.toISOString().split("T")[0],
     };
   }, []);
-
-  const handleQuickFilter = (filter: QuickFilter) => {
-    setQuickFilter(filter);
-
-    switch (filter) {
-      case "next":
-        updateFilters({
-          fromDate: filterDates.next,
-          toDate: filterDates.next,
-          status: "all",
-        });
-        break;
-      case "week":
-        updateFilters({
-          fromDate: filterDates.today,
-          toDate: filterDates.weekEnd,
-          status: "all",
-        });
-        break;
-      case "all":
-      default:
-        updateFilters({
-          fromDate: undefined,
-          toDate: undefined,
-          status: "all",
-        });
-    }
-  };
 
   const handleStatusFilter = (status: string) => {
     updateFilters({ status: status as any });
@@ -163,7 +150,7 @@ export const DeliveryRunsPage: React.FC = () => {
 
   const handleCreateRun = async () => {
     if (!newRunDate) return;
-    if (selectedOrderIds.length === 0 && !ordersFile) {
+    if (totalOrdersToCreate === 0) {
       showToast({
         type: "error",
         title: "Select orders or upload a file",
@@ -208,230 +195,333 @@ export const DeliveryRunsPage: React.FC = () => {
     return filterDates.next || new Date().toISOString().split("T")[0];
   };
 
+  const openCreateRun = () => {
+    const defaultDate = getDefaultDate();
+    setNewRunDate(defaultDate);
+    setImportedOrdersCount(0);
+    setOrdersFile(null);
+    setShowCreateModal(true);
+    void loadOrdersForDate(defaultDate);
+  };
+
+  const handleOrdersFileChange = async (file: File | null) => {
+    if (file && !IMPORT_FILE_PATTERN.test(file.name)) {
+      showToast({
+        type: "error",
+        title: "Choose an XLSX, XLS, or CSV file",
+      });
+      return;
+    }
+
+    if (file && file.size > MAX_IMPORT_FILE_SIZE) {
+      showToast({
+        type: "error",
+        title: "The import file must be smaller than 10 MB",
+      });
+      return;
+    }
+
+    setOrdersFile(file);
+    setImportedOrdersCount(0);
+
+    if (!file) return;
+
+    setImportCountLoading(true);
+    try {
+      const count = await getImportedOrdersCount(file);
+      setImportedOrdersCount(count);
+    } catch {
+      setImportedOrdersCount(0);
+      showToast({
+        type: "error",
+        title: "Could not read the imported orders file",
+      });
+    } finally {
+      setImportCountLoading(false);
+    }
+  };
+
+  const clearOrdersFile = () => {
+    void handleOrdersFileChange(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   return (
-    <div className={styles.page}>
+    <PageContainer className={styles.page}>
       <div className={styles.header}>
-        <h1 className={styles.title}>Delivery Runs</h1>
-        {hasPermission("delivery.routes.update") && !isDriver && (
-          <Button
-            variant="primary"
-            onClick={() => {
-              setNewRunDate(getDefaultDate());
-              setImportedOrdersCount(0);
-              setOrdersFile(null);
-              setShowCreateModal(true);
-              // Load eligible orders for default date.
-              loadOrdersForDate(getDefaultDate());
-            }}
-          >
-            <Plus size={18} />
-            Create Delivery Run
-          </Button>
-        )}
+        <div>
+          <h1 className={styles.title}>Delivery Runs</h1>
+          <p className={styles.subtitle}>
+            {runs.length} delivery {runs.length === 1 ? "run" : "runs"} found
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          leftIcon={<RefreshCw size={16} />}
+          onClick={refetch}
+          disabled={loading}
+        >
+          Refresh
+        </Button>
       </div>
 
-      <div className={styles.filters}>
-        <div className={styles.quickFilters}>
-          <button
-            className={`${styles.quickFilter} ${quickFilter === "next" ? styles.active : ""}`}
-            onClick={() => handleQuickFilter("next")}
-          >
-            Next Delivery
-          </button>
-          <button
-            className={`${styles.quickFilter} ${quickFilter === "week" ? styles.active : ""}`}
-            onClick={() => handleQuickFilter("week")}
-          >
-            This Week
-          </button>
-          <button
-            className={`${styles.quickFilter} ${quickFilter === "all" ? styles.active : ""}`}
-            onClick={() => handleQuickFilter("all")}
-          >
-            All
-          </button>
-        </div>
+      <FiltersCardLayout
+        className={sharedFilterStyles.filtersCard}
+        topRow={
+          <div className={styles.filterToolbar}>
+            <Select
+              className={styles.statusFilter}
+              label="Status"
+              value={params.status || "all"}
+              onChange={(value) => handleStatusFilter(value)}
+              options={[
+                { value: "all", label: "All Statuses" },
+                { value: "draft", label: "Draft" },
+                { value: "locked", label: "Locked" },
+                { value: "routed", label: "Routed" },
+                { value: "dispatched", label: "Dispatched" },
+                { value: "completed", label: "Completed" },
+              ]}
+            />
 
-        <div className={styles.filterGroup}>
-          <span className={styles.filterLabel}>Status:</span>
-          <Select
-            value={params.status || "all"}
-            onChange={(value) => handleStatusFilter(value)}
-            options={[
-              { value: "all", label: "All Statuses" },
-              { value: "draft", label: "Draft" },
-              { value: "locked", label: "Locked" },
-              { value: "routed", label: "Routed" },
-              { value: "dispatched", label: "Dispatched" },
-              { value: "completed", label: "Completed" },
-            ]}
-          />
-        </div>
-      </div>
-
-      <div className={styles.tableCard}>
-        {loading ? (
-          <div className={styles.loading}>
-            <Loader2 size={24} className={styles.spinner} />
-            Loading delivery runs...
+            {hasPermission("delivery.routes.update") && !isDriver && (
+              <Button
+                className={styles.createButton}
+                variant="primary"
+                size="sm"
+                leftIcon={<Plus size={16} />}
+                onClick={openCreateRun}
+              >
+                Create Delivery Run
+              </Button>
+            )}
           </div>
-        ) : error ? (
-          <div className={styles.error}>{error}</div>
-        ) : (
-          <DeliveryRunsTable
-            runs={runs}
-            loading={loading}
-            onDeleteRun={async (runId: string) => {
-              const result = await deleteRun(runId);
-              if (result.success) {
-                showToast({ type: "success", title: "Delivery run deleted" });
-              } else {
-                showToast({
-                  type: "error",
-                  title:
-                    (result as any).message || "Failed to delete delivery run",
-                });
-              }
-              return result;
-            }}
-          />
-        )}
-      </div>
+        }
+      />
+
+      {error ? <div className={styles.error}>{error}</div> : null}
+
+      <DeliveryRunsTable
+        runs={runs}
+        loading={loading}
+      />
 
       {/* Create Run Modal */}
       <Modal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         title="Create Delivery Run"
-        size="sm"
+        size="xl"
       >
-        <div className={styles.formField}>
-          <label className={styles.formLabel}>
-            <Calendar
-              size={16}
-              style={{
-                display: "inline",
-                marginRight: "8px",
-                verticalAlign: "middle",
+        <p className={styles.modalDescription}>
+          Choose a delivery date and review the orders that will be included.
+          You can also import additional one-time orders from a spreadsheet.
+        </p>
+
+        <div className={styles.createRunGrid}>
+          <section className={styles.modalSection}>
+            <div className={styles.sectionHeading}>
+              <span className={styles.sectionNumber}>1</span>
+              <div>
+                <h3>Delivery schedule</h3>
+                <p>Paid orders for this date are included automatically.</p>
+              </div>
+            </div>
+
+            <Input
+              type="date"
+              label="Delivery date"
+              fullWidth
+              value={newRunDate}
+              onChange={(event) => {
+                const value = event.target.value;
+                setNewRunDate(value);
+                void loadOrdersForDate(value);
               }}
+              min={new Date().toISOString().split("T")[0]}
             />
-            Delivery Date
-          </label>
-          <input
-            type="date"
-            className={styles.formInput}
-            value={newRunDate}
-            onChange={(e) => {
-              const v = e.target.value;
-              setNewRunDate(v);
-              loadOrdersForDate(v);
-            }}
-            min={new Date().toISOString().split("T")[0]}
-          />
-          <p className={styles.formHelp}>
-            Select the date for this delivery run. Orders for this date will be
-            included.
-          </p>
-        </div>
 
-        <div className={styles.formField}>
-          <label className={styles.formLabel}>Orders</label>
-          {ordersLoading ? (
-            <div className={styles.formHelp}>Loading orders...</div>
-          ) : eligibleOrders.length === 0 ? (
-            <div className={styles.formHelp}>
-              No eligible paid orders found for this date.
+            <div
+              className={`${styles.availability} ${
+                !ordersLoading && selectedOrderIds.length > 0
+                  ? styles.availabilityReady
+                  : !ordersLoading
+                    ? styles.availabilityEmpty
+                    : ""
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className={styles.availabilityIcon}>
+                {ordersLoading ? (
+                  <Loader2 className={styles.spinner} size={20} />
+                ) : selectedOrderIds.length > 0 ? (
+                  <PackageCheck size={20} />
+                ) : (
+                  <PackageX size={20} />
+                )}
+              </div>
+              <div>
+                <strong>
+                  {ordersLoading
+                    ? "Checking available orders"
+                    : `${selectedOrderIds.length} eligible ${selectedOrderIds.length === 1 ? "order" : "orders"}`}
+                </strong>
+                <p>
+                  {ordersLoading
+                    ? "Please wait while orders are matched to this date."
+                    : selectedOrderIds.length > 0
+                      ? "These paid orders will be added to the delivery run."
+                      : "No eligible paid orders were found for this date."}
+                </p>
+              </div>
             </div>
-          ) : (
-            <div className={styles.formHelp}>
-              {selectedOrderIds.length} existing paid orders will be included
-              automatically.
-            </div>
-          )}
-        </div>
+          </section>
 
-        <div className={styles.formField}>
-          <label className={styles.formLabel}>
-            Import from XLSX/CSV (optional)
-          </label>
+          <section className={styles.modalSection}>
+            <div className={styles.sectionHeading}>
+              <span className={styles.sectionNumber}>2</span>
+              <div>
+                <h3>Import additional orders</h3>
+                <p>Optional · XLSX, XLS, or CSV</p>
+              </div>
+            </div>
+
           <input
+            ref={fileInputRef}
+            id="delivery-run-orders-file"
             type="file"
-            className={styles.formInput}
+            className={styles.fileInput}
             accept=".xlsx,.xls,.csv"
-            onChange={async (e) => {
-              const f = e.target.files?.[0] || null;
-              setOrdersFile(f);
-              setImportedOrdersCount(0);
-
-              if (!f) return;
-
-              setImportCountLoading(true);
-              try {
-                const count = await getImportedOrdersCount(f);
-                setImportedOrdersCount(count);
-              } catch {
-                setImportedOrdersCount(0);
-                showToast({
-                  type: "error",
-                  title: "Could not read the imported orders file",
-                });
-              } finally {
-                setImportCountLoading(false);
-              }
-            }}
+            onChange={(event) =>
+              void handleOrdersFileChange(event.target.files?.[0] || null)
+            }
           />
-          <p className={styles.formHelp}>
-            Upload an XLSX or CSV file to create additional one-time paid orders
-            for this route. Columns: name, address, postcode, contact, order,
-            delivery fee, total, and Delivery Instructions. Use product SKUs in
-            the order column, separated by commas (for example, "1x SKU-1, 2x
-            SKU-2").
-          </p>
-          <button
-            type="button"
-            className={styles.templateDownload}
-            onClick={downloadImportTemplate}
-          >
-            <Download size={15} aria-hidden="true" />
-            Download example CSV
-          </button>
+
+            {ordersFile ? (
+              <div className={styles.selectedFile}>
+                <FileSpreadsheet size={24} aria-hidden="true" />
+                <div className={styles.selectedFileDetails}>
+                  <strong>{ordersFile.name}</strong>
+                  <span>
+                    {importCountLoading
+                      ? "Reading imported orders…"
+                      : `${importedOrdersCount} ${importedOrdersCount === 1 ? "order" : "orders"} detected`}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Remove selected orders file"
+                  onClick={clearOrdersFile}
+                  disabled={importCountLoading}
+                >
+                  <X size={16} />
+                </Button>
+              </div>
+            ) : (
+              <div
+                className={`${styles.uploadArea} ${isFileDragActive ? styles.uploadAreaDragActive : ""}`}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setIsFileDragActive(true);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                    setIsFileDragActive(false);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsFileDragActive(false);
+                  void handleOrdersFileChange(event.dataTransfer.files?.[0] || null);
+                }}
+              >
+                <div className={styles.uploadIcon}>
+                  <Upload size={24} aria-hidden="true" />
+                </div>
+                <div>
+                  <strong>Drop a spreadsheet here</strong>
+                  <p>or choose a file from your device · maximum 10 MB</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Upload size={16} />}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Choose file
+                </Button>
+              </div>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<Download size={16} />}
+              onClick={downloadImportTemplate}
+              className={styles.templateButton}
+            >
+              Download CSV template
+            </Button>
+
+            <p className={styles.importHint}>
+              Required columns: name, address, postcode, contact, order,
+              delivery fee, and total. Use product SKUs in the order column.
+            </p>
+          </section>
         </div>
 
-        <div className={styles.formField}>
-          <label className={styles.formLabel}>Total Orders</label>
-          <div className={styles.formHelp}>
-            {ordersLoading
-              ? "Calculating available orders..."
-              : `${totalOrdersToCreate} orders will be included in this delivery run.`}
+        <div
+          className={`${styles.runSummary} ${totalOrdersToCreate > 0 ? styles.runSummaryReady : ""}`}
+          aria-live="polite"
+        >
+          <div className={styles.summaryIcon}>
+            <PackageCheck size={22} aria-hidden="true" />
           </div>
-          {ordersFile && (
-            <div className={styles.formHelp}>
-              {importCountLoading
-                ? "Reading imported file..."
-                : `${importedOrdersCount} imported orders detected from ${ordersFile.name}.`}
-            </div>
-          )}
+          <div className={styles.summaryContent}>
+            <strong>Run summary</strong>
+            <p>
+              {selectedOrderIds.length} existing + {importedOrdersCount} imported
+              {newRunDate ? ` for ${new Date(`${newRunDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}` : ""}
+            </p>
+          </div>
+          <div className={styles.summaryTotal}>
+            <strong>{ordersLoading || importCountLoading ? "—" : totalOrdersToCreate}</strong>
+            <span>Total orders</span>
+          </div>
         </div>
 
         <ModalFooter>
-          <Button variant="ghost" onClick={() => setShowCreateModal(false)}>
+          <span className={styles.footerHint} aria-live="polite">
+            {ordersLoading || importCountLoading
+              ? "Finishing order checks…"
+              : totalOrdersToCreate > 0
+                ? `Ready to create with ${totalOrdersToCreate} ${totalOrdersToCreate === 1 ? "order" : "orders"}.`
+                : "Add at least one order to continue."}
+          </span>
+          <Button variant="outline" onClick={() => setShowCreateModal(false)}>
             Cancel
           </Button>
           <Button
             variant="primary"
+            size="md"
+            isLoading={creating}
             onClick={handleCreateRun}
             disabled={
               !newRunDate ||
               importCountLoading ||
+              ordersLoading ||
               creating ||
-              (selectedOrderIds.length === 0 && !ordersFile)
+              totalOrdersToCreate === 0
             }
           >
-            {creating ? "Creating..." : "Create Run"}
+            {`Create run${totalOrdersToCreate > 0 ? ` (${totalOrdersToCreate})` : ""}`}
           </Button>
         </ModalFooter>
       </Modal>
-    </div>
+    </PageContainer>
   );
 };
 

@@ -55,7 +55,7 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
   const isLoading = loading || Boolean(pagination?.loading);
 
   return (
-    <Card className={className}>
+    <Card className={cx(styles.card, className)} padding="none">
       <div className={cx(styles.tableArea, tableAreaClassName)}>
         <div className={cx(styles.tableWrapper, tableWrapperClassName)}>
           <DataTableLoadingContext.Provider

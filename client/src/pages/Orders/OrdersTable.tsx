@@ -84,7 +84,6 @@ const OrdersTable = ({
 
   return (
     <DataTableCard
-      className={styles.tableCard}
       loading={loading}
       loadingText="Loading orders…"
       pagination={{
@@ -98,7 +97,7 @@ const OrdersTable = ({
         loading,
       }}
     >
-      <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
+      <Table withWrapper={false}>
         <TableHeader>
           <TableRow>
             <TableHead>
@@ -132,11 +131,7 @@ const OrdersTable = ({
             filteredOrders.map((order) => (
               <TableRow
                 key={order.id}
-                className={
-                  selectedIds.has(order.id)
-                    ? styles.selectedRow
-                    : undefined
-                }
+                selected={selectedIds.has(order.id)}
               >
                 <TableCell className={styles.checkboxCol} data-label="Select">
                   <Checkbox
