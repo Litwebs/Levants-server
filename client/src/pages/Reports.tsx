@@ -629,6 +629,7 @@ const Reports = () => {
 
         <div className={styles.headerActions}>
           <Select
+            aria-label="Date range"
             value={range}
             onChange={(value) =>
               setFilters({
@@ -643,6 +644,7 @@ const Reports = () => {
           />
 
           <Select
+            aria-label="Order source"
             value={orderSource}
             onChange={(value) =>
               setFilters({
@@ -655,6 +657,7 @@ const Reports = () => {
           />
 
           <Select
+            aria-label="Comparison"
             value={comparison}
             onChange={(value) =>
               setFilters({
@@ -670,6 +673,7 @@ const Reports = () => {
           />
 
           <Select
+            aria-label="Interval"
             value={interval}
             onChange={(value) =>
               setFilters({
@@ -686,6 +690,7 @@ const Reports = () => {
           {range === "custom" ? (
             <div className={styles.customDateRow}>
               <input
+                aria-label="From date"
                 className={styles.dateInput}
                 type="date"
                 value={from}
@@ -700,6 +705,7 @@ const Reports = () => {
                 }
               />
               <input
+                aria-label="To date"
                 className={styles.dateInput}
                 type="date"
                 value={to}
