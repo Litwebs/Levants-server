@@ -11,8 +11,8 @@
 3. In **Settings → Branches → Add branch protection rule**, protect `main`.
 4. Enable **Require a pull request before merging** and **Require status checks
    to pass before merging**.
-5. Require these checks: **Backend tests**, **Client lint and build**, and
-   **Subscription E2E (Stripe test mode)**.
+5. Require these checks: **Backend tests**, **Client lint and build**,
+   **Analytics E2E**, and **Subscription E2E (Stripe test mode)**.
 6. Disable bypasses/direct pushes to `main` for normal contributors.
 7. Update `/root/LWS-Scripts/05-auto-deploy.sh` to fetch and check out the
    commit in `DEPLOY_SHA` before installing dependencies or restarting the
@@ -28,7 +28,7 @@
    test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
    ```
 
-The deploy job depends on all three checks and therefore cannot start for a
+The deploy job depends on all four checks and therefore cannot start for a
 failed commit. The client artifact uploaded to production is the exact build
 produced by the successful check.
 

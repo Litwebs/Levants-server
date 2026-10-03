@@ -36,10 +36,10 @@ module.exports = defineConfig({
       env: { ...process.env },
     },
     {
-      command: "npm run dev -- --host 127.0.0.1 --port 4174",
+      command: "npm run build && npm run preview -- --host 127.0.0.1 --port 4174",
       cwd: path.resolve(__dirname, "../client"),
       url: ADMIN_ORIGIN,
-      timeout: 120_000,
+      timeout: 180_000,
       reuseExistingServer: false,
       env: {
         ...process.env,
