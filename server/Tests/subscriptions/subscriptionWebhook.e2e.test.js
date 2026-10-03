@@ -138,6 +138,44 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(result.missingEvents).toContain("invoice.payment_failed");
   });
 
+  it("concurrent invoice recovery creates one payment record for the same order", async () => {
+    await Payment.init();
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date(Date.now() + 2 * 86400000);
+    const subscription = await createSubscriptionFixture({ customer: customer._id,
+      stripeSubscriptionId: "sub_concurrent_ledger", nextDeliveryDate: nextDelivery,
+      items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: nextDelivery, status: "scheduled" });
+    const invoice = { id: "in_concurrent_ledger", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_concurrent_ledger", paid: true, currency: "gbp", created: Math.floor(Date.now() / 1000) };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    await Payment.deleteMany({ subscription: subscription._id });
+    // Force both real handler calls to observe a missing ledger before either
+    // can insert, then let the database's unique index choose one record.
+    let release;
+    let readers = 0;
+    const barrier = new Promise(resolve => { release = resolve; });
+    const exists = jest.spyOn(Payment, "exists").mockImplementation(async () => {
+      if (++readers === 2) release();
+      await barrier;
+      return null;
+    });
+    try {
+      await Promise.all([
+        subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+        subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+      ]);
+    } finally { exists.mockRestore(); }
+    expect(await Payment.countDocuments({ subscription: subscription._id })).toBe(1);
+    expect(await Order.countDocuments({ subscription: subscription._id, stripeInvoiceId: invoice.id })).toBe(1);
+    const saved = await Payment.findOne({ subscription: subscription._id }).lean();
+    expect(saved.subscriptionInvoiceKey).toBe(`${subscription._id}:${invoice.id}:${saved.order}`);
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    expect(await Payment.countDocuments({ subscription: subscription._id })).toBe(1);
+  });
+
   it.each(["refunded", "missing", "paid"])("invoice recovery preserves a refunded order with a %s ledger", async ledgerState => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
@@ -506,14 +544,15 @@ describe("Subscription Stripe webhook E2E", () => {
     event.data.object.created = Math.floor(Date.now() / 1000);
     event.data.object.paid = true;
     const failingModel = failure === "order" ? Order : Payment;
-    const originalCreate = failingModel.create.bind(failingModel);
+    const writeMethod = failure === "order" ? "create" : "findOneAndUpdate";
+    const originalCreate = failingModel[writeMethod].bind(failingModel);
     jest
-      .spyOn(failingModel, "create")
+      .spyOn(failingModel, writeMethod)
       .mockImplementationOnce((...args) => originalCreate(...args))
       .mockRejectedValueOnce(new Error("transient payment-ledger failure"));
 
     expect((await postStripeEvent(event)).status).toBe(500);
-    failingModel.create.mockRestore();
+    failingModel[writeMethod].mockRestore();
     expect(await Order.countDocuments({ subscription: subscription._id })).toBe(failure === "order" ? 1 : 2);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       stripe.invoices.list.mockResolvedValueOnce({ data: [event.data.object] });

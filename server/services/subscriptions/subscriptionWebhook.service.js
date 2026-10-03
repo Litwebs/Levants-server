@@ -13,6 +13,7 @@ const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
+const { saveInvoicePayment } = require("./subscriptionInvoicePayment.service");
 const CustomerNotification = require("../../models/customerNotification.model");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
@@ -330,7 +331,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
           .filter((item) => !item.isSubscriptionAddOn)
           .reduce((sum, item) => sum + Number(item.subtotal || 0), 0) +
           Number(existing.deliveryFee || 0);
-        await Payment.create({
+        await saveInvoicePayment(invoice.id, {
           customer: subscription.customer._id,
           order: existing._id,
           subscription: subscription._id,
@@ -482,7 +483,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       });
     }
 
-    await Payment.create({
+    await saveInvoicePayment(invoice.id, {
       customer: subscription.customer._id,
       order: order._id,
       subscription: subscription._id,

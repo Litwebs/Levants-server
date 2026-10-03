@@ -24,27 +24,27 @@ function setup(status, hasLedger = false) {
   jest.spyOn(Delivery, "findOne").mockResolvedValue(slot);
   jest.spyOn(Payment, "exists").mockResolvedValue(hasLedger);
   jest.spyOn(Payment, "updateMany").mockResolvedValue({ modifiedCount: 1 });
-  jest.spyOn(Payment, "create").mockResolvedValue({});
+  jest.spyOn(Payment, "findOneAndUpdate").mockResolvedValue({});
   return { id: "in_paid", subscription: "sub", payment_intent: "pi", paid: true };
 }
 it.each(["paid", "refunded"])("preserves an existing settled payment when the order is %s", async status => {
   await paid(setup(status, true));
   expect(Payment.exists).toHaveBeenCalledWith(expect.objectContaining({ status: { $in: ["paid", "refunded"] } }));
-  expect(Payment.create).not.toHaveBeenCalled();
+  expect(Payment.findOneAndUpdate).not.toHaveBeenCalled();
 });
 it("repairs a missing refunded ledger as refunded, never paid", async () => {
   await paid(setup("refunded"));
-  expect(Payment.create).toHaveBeenCalledWith(expect.objectContaining({ status: "refunded", amount: 11,
-    refundedAt: new Date("2026-10-09T12:00:00Z") }));
+  expect(Payment.findOneAndUpdate).toHaveBeenCalledWith(expect.any(Object), { $setOnInsert: expect.objectContaining({ status: "refunded", amount: 11,
+    refundedAt: new Date("2026-10-09T12:00:00Z") }) }, expect.any(Object));
 });
 it("repairs a paid ledger left behind by an interrupted order refund", async () => {
   await paid(setup("refunded", true));
   expect(Payment.updateMany).toHaveBeenCalledWith({ order: "o", subscription: "s", providerReference: "pi", status: "paid" },
     { $set: { status: "refunded", refundedAt: new Date("2026-10-09T12:00:00Z") } });
-  expect(Payment.create).not.toHaveBeenCalled();
+  expect(Payment.findOneAndUpdate).not.toHaveBeenCalled();
 });
 it("still repairs a genuinely missing paid ledger", async () => {
   await paid(setup("paid"));
-  expect(Payment.create).toHaveBeenCalledWith(expect.objectContaining({ status: "paid", amount: 11 }));
+  expect(Payment.findOneAndUpdate).toHaveBeenCalledWith(expect.any(Object), { $setOnInsert: expect.objectContaining({ status: "paid", amount: 11 }) }, expect.any(Object));
   expect(Payment.updateMany).not.toHaveBeenCalled();
 });

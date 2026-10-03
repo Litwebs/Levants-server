@@ -240,6 +240,11 @@ const connectDb = async () => {
     // must be enforced explicitly before the app starts accepting traffic.
     await ensureSubscriptionMutationOperationIndex();
     await ensureStoreCreditIdempotencyIndex();
+    await mongoose.connection.db.collection("payments").createIndex(
+      { subscriptionInvoiceKey: 1 },
+      { unique: true, name: "subscriptionInvoiceKey_1",
+        partialFilterExpression: { subscriptionInvoiceKey: { $type: "string" } } },
+    );
 
     if (env !== "test") {
       logger.db("MongoDB connected");
