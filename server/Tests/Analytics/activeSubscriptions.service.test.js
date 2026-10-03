@@ -60,10 +60,10 @@ describe("analytics active subscriptions", () => {
 
     expect(result.success).toBe(true);
     expect(result.data).toEqual({
-      activeSubscriptions: 2,
+      activeSubscriptions: 3,
       metricBasis: {
         activeSubscriptions: expect.stringContaining(
-          "status is active and cancellation is not scheduled",
+          "Scheduled cancellations remain active",
         ),
         scope: expect.stringContaining("Point-in-time current state"),
       },

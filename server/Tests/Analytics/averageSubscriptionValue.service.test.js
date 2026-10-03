@@ -93,22 +93,22 @@ describe("analytics average subscription value", () => {
     const result = await analyticsService.GetAverageSubscriptionValue();
 
     expect(result.success).toBe(true);
-    expect(result.data).toEqual({
-      averageSubscriptionValue: 19,
-      averageMerchandiseValue: 17.5,
-      averageDeliveryFeeValue: 1.5,
-      totalRecurringCharge: 38,
-      activeSubscriptions: 2,
-      metricBasis: {
-        averageSubscriptionValue: expect.stringContaining(
-          "average recurring charge per billing cycle",
-        ),
-        scope: expect.stringContaining("Pending post-cutoff changes are excluded"),
-      },
+    expect(result.data.activeSubscriptions).toBe(3);
+    expect(result.data.totalRecurringCharge).toBe(2539);
+    expect(result.data.averageMerchandiseValue).toBe(845);
+    expect(result.data.averageDeliveryFeeValue).toBeCloseTo(4 / 3);
+    expect(result.data.averageSubscriptionValue).toBeCloseTo(2539 / 3);
+    expect(result.data.metricBasis).toEqual({
+      averageSubscriptionValue: expect.stringContaining(
+        "average recurring charge per billing cycle",
+      ),
+      scope: expect.stringContaining(
+        "scheduled cancellations remain included while lifecycle status is active",
+      ),
     });
 
     const active = await analyticsService.GetActiveSubscriptions();
-    expect(active.data.activeSubscriptions).toBe(2);
+    expect(active.data.activeSubscriptions).toBe(3);
   });
 
   test("returns a stable zero shape when no subscription is recurring-active", async () => {

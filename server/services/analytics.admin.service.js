@@ -4426,7 +4426,6 @@ async function GetCurrentSubscriptionSnapshot() {
     {
       $match: {
         status: "active",
-        isCancellationScheduled: { $ne: true },
       },
     },
     {
@@ -4499,7 +4498,7 @@ const buildActiveSubscriptionsData = (snapshot = {}) => ({
   activeSubscriptions: Number(snapshot.activeSubscriptions) || 0,
   metricBasis: {
     activeSubscriptions:
-      "Current subscriptions eligible to continue recurring service: status is active and cancellation is not scheduled. Paused, cancelled, and scheduled-cancellation subscriptions are excluded.",
+      "Current subscriptions whose lifecycle status is active. Scheduled cancellations remain active until the cancellation lifecycle is finalized; paused and cancelled subscriptions are excluded.",
     scope:
       "Point-in-time current state at request time; historical date and order-source filters do not apply because subscription status history is not stored as snapshots.",
   },
@@ -4526,7 +4525,7 @@ const buildAverageSubscriptionValueData = (snapshot = {}) => {
       averageSubscriptionValue:
         "Current average recurring charge per billing cycle across subscriptions eligible to continue recurring service. It uses each subscription's effective item price snapshots plus the same £1-per-delivery fee structure used by recurring billing.",
       scope:
-        "Point-in-time current subscription state. Pending post-cutoff changes are excluded until they become effective; historical date and order-source filters do not apply.",
+        "Point-in-time current subscription state. Pending post-cutoff item changes are excluded until they become effective; scheduled cancellations remain included while lifecycle status is active; historical date and order-source filters do not apply.",
     },
   };
 };
