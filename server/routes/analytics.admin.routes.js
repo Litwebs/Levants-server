@@ -3,6 +3,9 @@ const express = require("express");
 const asyncHandler = require("../utils/asyncHandler.util");
 const { requireAuth } = require("../middleware/auth.middleware");
 const { requirePermission } = require("../middleware/permission.middleware");
+const {
+  validateAnalyticsQuery,
+} = require("../middleware/analyticsQuery.middleware");
 
 const controller = require("../controllers/analytics.admin.controller");
 
@@ -10,23 +13,189 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-// Nav badge counts only need auth — no analytics.read required
+// Nav badge counts only need auth — no analytics.read required.
 router.get("/nav-counts", asyncHandler(controller.GetNavCounts));
 
-// Dashboard analytics needs both orders and products.
 router.use(requirePermission("analytics.read"));
 
-// Single call for the whole analytics page
-router.get("/dashboard", asyncHandler(controller.GetDashboard));
+router.get(
+  "/dashboard",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+    allowComparison: true,
+  }),
+  asyncHandler(controller.GetDashboard),
+);
 
-// Granular endpoints
-router.get("/summary", asyncHandler(controller.GetSummary));
-router.get("/revenue", asyncHandler(controller.GetRevenueSeries));
-router.get("/revenue-overview", asyncHandler(controller.GetRevenueOverview));
-router.get("/order-status", asyncHandler(controller.GetOrderStatusCounts));
-router.get("/top-products", asyncHandler(controller.GetTopProducts));
-router.get("/recent-orders", asyncHandler(controller.GetRecentOrders));
-router.get("/low-stock", asyncHandler(controller.GetLowStock));
-router.get("/nav-counts", asyncHandler(controller.GetNavCounts));
+router.get(
+  "/summary",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetSummary),
+);
+router.get(
+  "/comparison",
+  validateAnalyticsQuery({ allowComparison: true }),
+  asyncHandler(controller.GetSummaryComparison),
+);
+router.get(
+  "/revenue-composition",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetRevenueComposition),
+);
+router.get(
+  "/subscription-revenue",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetSubscriptionRevenue),
+);
+router.get(
+  "/recurring-vs-one-time",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetRecurringVsOneTime),
+);
+router.get(
+  "/top-subscription-products-variants",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetTopSubscriptionProductsVariants),
+);
+
+router.get(
+  "/sales-breakdown",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetSalesBreakdown),
+);
+
+router.get(
+  "/sales-trends",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetSalesTrends),
+);
+router.get(
+  "/subscription-trends",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetSubscriptionTrends),
+);
+
+router.get(
+  "/revenue",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetRevenueSeries),
+);
+router.get(
+  "/revenue-overview",
+  validateAnalyticsQuery({ allowDays: true }),
+  asyncHandler(controller.GetRevenueOverview),
+);
+router.get(
+  "/order-status",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetOrderStatusCounts),
+);
+router.get(
+  "/top-products",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetTopProducts),
+);
+router.get(
+  "/variant-units",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantUnits),
+);
+router.get(
+  "/variant-revenue",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantRevenue),
+);
+router.get(
+  "/variant-realised-price",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantRealisedPrice),
+);
+router.get(
+  "/variant-price-comparison",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantPriceComparison),
+);
+router.get(
+  "/variant-sales-mix",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantSalesMix),
+);
+router.get(
+  "/variant-contribution",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetVariantContribution),
+);
+router.get(
+  "/variant-trends",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    maxLimit: 10,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetVariantTrends),
+);
+router.get(
+  "/product-trends",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    maxLimit: 10,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetProductTrends),
+);
+router.get(
+  "/products/:productId",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetProductDetail),
+);
+router.get(
+  "/variants/:variantId",
+  validateAnalyticsQuery({
+    allowInterval: true,
+    enforceSeriesBucketLimit: true,
+  }),
+  asyncHandler(controller.GetVariantDetail),
+);
+router.get(
+  "/active-subscriptions",
+  asyncHandler(controller.GetActiveSubscriptions),
+);
+router.get(
+  "/average-subscription-value",
+  asyncHandler(controller.GetAverageSubscriptionValue),
+);
+router.get(
+  "/new-subscriptions",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetNewSubscriptions),
+);
+router.get(
+  "/cancelled-subscriptions",
+  validateAnalyticsQuery(),
+  asyncHandler(controller.GetCancelledSubscriptions),
+);
+router.get(
+  "/recent-orders",
+  validateAnalyticsQuery({ maxLimit: 25 }),
+  asyncHandler(controller.GetRecentOrders),
+);
+router.get(
+  "/low-stock",
+  validateAnalyticsQuery({ maxLimit: 200 }),
+  asyncHandler(controller.GetLowStock),
+);
 
 module.exports = router;

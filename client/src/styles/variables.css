@@ -28,12 +28,13 @@
   --color-gray-900: #111827;
   
   /* Sidebar Colors */
-  --sidebar-bg: #151414;
-  --sidebar-hover: #252628;
-  --sidebar-active:#252628;
-  --sidebar-text: #7e7e7e;
-  --sidebar-text-active: #ffffff;
-  --sidebar-border: #1e293b;
+  --sidebar-bg: #ffffff;
+  --sidebar-hover: #f3f4f6;
+  --sidebar-active: #e8f6f1;
+  --sidebar-text: #5b6470;
+  --sidebar-text-active: #111827;
+  --sidebar-border: #e5e7eb;
+  --sidebar-badge-text: #ffffff;
   
   /* Status Colors */
   --color-success: #10b981;
@@ -142,17 +143,63 @@
 
 /* Dark Mode Variables */
 [data-theme="dark"] {
-  /* --color-cream: #1a1a1a; */
-  --color-cream: #070707;
-  --color-cream-dark: #262626;
+  /* Brand colors tuned for legibility on dark surfaces. */
+  --color-primary: #39b98f;
+  --color-primary-light: #62cdaa;
+  --color-primary-dark: #278d6e;
+  --color-primary-bg: rgba(57, 185, 143, 0.14);
 
-  --color-gray-50: #1f1f1f;
-  --color-gray-100: #2a2a2a;
-  --color-gray-200: #3a3a3a;
-  --color-gray-700: #e5e5e5;
-  --color-gray-800: #f5f5f5;
-  --color-gray-900: #ffffff;
-  --color-white: #0c0c0c;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  --color-secondary: #e7ad4b;
+  --color-secondary-light: #f1c979;
+  --color-secondary-dark: #bd8124;
+
+  /* Neutral charcoal surfaces; brand green is reserved for accents. */
+  --color-white: #171719;
+  --color-cream: #0f0f11;
+  --color-cream-dark: #202023;
+  --color-gray-50: #1d1d20;
+  --color-gray-100: #27272b;
+  --color-gray-200: #36363c;
+  --color-gray-300: #4b4b53;
+  --color-gray-400: #7d7d87;
+  --color-gray-500: #9d9da7;
+  --color-gray-600: #b9b9c1;
+  --color-gray-700: #d2d2d7;
+  --color-gray-800: #e7e7ea;
+  --color-gray-900: #f7f7f8;
+
+  --sidebar-bg: var(--color-white);
+  --sidebar-hover: var(--color-gray-100);
+  --sidebar-active: var(--color-gray-200);
+  --sidebar-text: #aaaab3;
+  --sidebar-text-active: #f7f7f8;
+  --sidebar-border: var(--color-gray-200);
+  --sidebar-badge-text: #ffffff;
+
+  --color-success: #42c99a;
+  --color-success-bg: rgba(66, 201, 154, 0.14);
+  --color-warning: #f2b84b;
+  --color-warning-bg: rgba(242, 184, 75, 0.14);
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.14);
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.14);
+
+  --status-new: #a78bfa;
+  --status-confirmed: #60a5fa;
+  --status-preparing: #f2b84b;
+  --status-out-for-delivery: #22d3ee;
+  --status-delivered: #42c99a;
+  --status-cancelled: #f87171;
+
+  --payment-unpaid: #f87171;
+  --payment-paid: #42c99a;
+  --payment-refunded: #a78bfa;
+  --payment-partial: #f2b84b;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.36), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.42);
+  --shadow-lg: 0 12px 24px -8px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 24px 40px -12px rgba(0, 0, 0, 0.58);
 }

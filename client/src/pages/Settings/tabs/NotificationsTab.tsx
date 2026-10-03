@@ -1,5 +1,6 @@
 import { Card } from "@/components/common/Card";
 import { Button } from "@/components/common/Button";
+import { Toggle } from "@/components/common/Toggle";
 import { Save } from "lucide-react";
 import styles from "../Settings.module.css";
 
@@ -36,16 +37,14 @@ const NotificationsTab = ({
 
             <div className={styles.notificationToggles}>
               {(["email"] as const).map((channel) => (
-                <label key={channel} className={styles.toggle}>
-                  <input
-                    type="checkbox"
+                <Toggle
+                    key={channel}
                     checked={setting[channel]}
+                    aria-label={`${setting.name} email notifications`}
                     onChange={() =>
                       handleToggleNotification(setting.id, channel)
                     }
-                  />
-                  <span className={styles.toggleSlider}></span>
-                </label>
+                />
               ))}
             </div>
           </div>

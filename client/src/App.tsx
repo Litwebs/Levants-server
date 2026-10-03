@@ -9,10 +9,13 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { ToastProvider } from "./components/common/Toast";
 import { LoadingScreen } from "./components/common";
 import Dashboard from "./pages/Dashboard/Dashboard";
+import Reports from "./pages/Reports";
 import Orders from "./pages/Orders/Orders";
+import OrderDetailPage from "./pages/Orders/OrderDetailPage";
 import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";
 import ProductVariantsPage from "./pages/Products/ProductVariantsPage";
+import ProductCreatePage from "./pages/Products/ProductCreatePage";
 import Customers from "./pages/Customers/Customers";
 import CustomerDetailsPage from "./pages/Customers/CustomerDetailsPage";
 import Promotions from "./pages/Promotions";
@@ -31,6 +34,9 @@ import { CustomersProvider } from "./context/Customers";
 import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
+import { RequireAdmin } from "./components/auth/RequireAdmin";
+import { RequireLitwebsEmail } from "./components/auth/RequireLitwebsEmail";
+import ComponentCatalog from "./pages/ComponentCatalog/ComponentCatalog";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
 import { DiscountsPage } from "./pages/Discounts";
@@ -163,6 +169,14 @@ const App = () => (
                         >
                           <Route path="/" element={<HomeRoute />} />
                           <Route
+                            path="/analytics"
+                            element={
+                              <RequirePermission permission="analytics.read">
+                                <Reports />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
                             path="/orders"
                             element={
                               <RequirePermission permission="orders.read">
@@ -171,6 +185,18 @@ const App = () => (
                                   fallbackPath="/delivery-runs"
                                 >
                                   <Orders />
+                                </RequireNotRole>
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/orders/:orderId"
+                            element={
+                              <RequirePermission permission="orders.read">
+                                <RequireNotRole role="driver" fallbackPath="/delivery-runs">
+                                  <OrdersProvider>
+                                    <OrderDetailPage />
+                                  </OrdersProvider>
                                 </RequireNotRole>
                               </RequirePermission>
                             }
@@ -204,6 +230,22 @@ const App = () => (
                             element={
                               <RequirePermission permission="products.read">
                                 <Products />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/products/new"
+                            element={
+                              <RequirePermission permission="products.create">
+                                <ProductCreatePage />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/products/:productId/edit"
+                            element={
+                              <RequirePermission permission="products.update">
+                                <ProductCreatePage />
                               </RequirePermission>
                             }
                           />
@@ -319,10 +361,23 @@ const App = () => (
                           />
                           <Route
                             path="/reports"
-                            element={<Navigate to="/" replace />}
+                            element={<Navigate to="/analytics" replace />}
                           />
                           <Route path="/settings" element={<Settings />} />
                         </Route>
+
+                        <Route
+                          path="/component-catalog"
+                          element={
+                            <RequireAuth>
+                              <RequireLitwebsEmail>
+                                <RequireAdmin>
+                                  <ComponentCatalog />
+                                </RequireAdmin>
+                              </RequireLitwebsEmail>
+                            </RequireAuth>
+                          }
+                        />
                       </Routes>
                     </BrowserRouter>
                 </AnalyticsProvider>

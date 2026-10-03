@@ -10,14 +10,32 @@ export type AnalyticsDateRange =
   | "lastYear"
   | "custom";
 
-export type AnalyticsOrderSource = "all" | "website" | "imported";
+export type AnalyticsOrderSource =
+  | "all"
+  | "website"
+  | "subscription"
+  | "imported";
 
-export type RevenueInterval = "week" | "month" | "year";
+export type RevenueInterval = "day" | "week" | "month" | "year";
+
+export type AnalyticsComparisonMode =
+  | "previous_period"
+  | "previous_year"
+  | "none";
 
 export type AnalyticsSummary = {
   totalOrders: number;
   revenue: number;
+  grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
+  refundAmount: number;
+  netRevenue: number;
+  averageOrderValue: number;
   unitsSold: number;
+  averageUnitsPerOrder: number;
   totalRefunds: number;
   newCustomers: number;
   repeatCustomers: number;
@@ -41,15 +59,197 @@ export type AnalyticsSummary = {
   };
 };
 
+export type AnalyticsOverviewMetrics = {
+  netRevenue: number;
+  grossRevenue: number;
+  refundAmount: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+};
+
+export type AnalyticsMetricChange = {
+  current: number;
+  previous: number;
+  absoluteChange: number;
+  percentChange: number | null;
+  percentChangeAvailable: boolean;
+  direction: "up" | "down" | "flat";
+};
+
+export type AnalyticsComparisonPeriod = {
+  from: string;
+  to: string;
+  start: string;
+  end: string;
+  days: number;
+};
+
+export type AnalyticsOverviewComparison = {
+  available: boolean;
+  reason: string | null;
+  strategy: string | null;
+  timeZone: string;
+  currentPeriod: AnalyticsComparisonPeriod | null;
+  previousPeriod: AnalyticsComparisonPeriod | null;
+  current: (AnalyticsOverviewMetrics & { revenue?: number }) | null;
+  previous: (AnalyticsOverviewMetrics & { revenue?: number }) | null;
+  changes: {
+    grossRevenue: AnalyticsMetricChange;
+    refundAmount: AnalyticsMetricChange;
+    netRevenue: AnalyticsMetricChange;
+    totalOrders: AnalyticsMetricChange;
+    unitsSold: AnalyticsMetricChange;
+    averageOrderValue: AnalyticsMetricChange;
+    averageUnitsPerOrder: AnalyticsMetricChange;
+  } | null;
+};
+
+export type AnalyticsOverview = {
+  metrics: AnalyticsOverviewMetrics;
+  comparison: AnalyticsOverviewComparison;
+};
+
+export type SalesChannelKey =
+  | "website"
+  | "subscription"
+  | "imported";
+
+export type SalesChannelMetrics = {
+  key: SalesChannelKey;
+  label: string;
+  grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
+  refundAmount: number;
+  netRevenue: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+  averageDiscountPerDiscountedOrder: number;
+  discountRate: number;
+  grossRevenueShare: number;
+  orderShare: number;
+};
+
+export type SalesBreakdownTotals = {
+  grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
+  refundAmount: number;
+  netRevenue: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+  averageDiscountPerDiscountedOrder: number;
+  discountRate: number;
+};
+
+export type SalesBreakdown = {
+  channels: SalesChannelMetrics[];
+  totals: SalesBreakdownTotals;
+};
+
+export type SalesTrendChannel = {
+  key: SalesChannelKey;
+  label: string;
+  points: RevenuePoint[];
+  totals: RevenueSeriesTotals;
+};
+
+export type SubscriptionTrendPoint = {
+  label: string;
+  newSubscriptions: number;
+  cancelledSubscriptions: number;
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
+  revenue: number;
+  orders: number;
+};
+
+export type SubscriptionTrendsResult = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  points: SubscriptionTrendPoint[];
+  totals: {
+    newSubscriptions: number;
+    cancelledSubscriptions: number;
+    grossRevenue: number;
+    refunds: number;
+    netRevenue: number;
+    revenue: number;
+    orders: number;
+  };
+  metricBasis: {
+    newSubscriptions: string;
+    cancelledSubscriptions: string;
+    revenue: string;
+    activeSubscriptions: string;
+    source: string;
+  };
+};
+
+export type SalesTrends = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  channels: SalesTrendChannel[];
+};
+
+export type RevenueComposition = {
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  discountedOrders: number;
+  averageDiscountPerDiscountedOrder: number;
+  discountRate: number;
+  preDiscountRevenue: number;
+  grossRevenue: number;
+  refundAmount: number;
+  netRevenue: number;
+};
+
 export type RevenuePoint = {
   label: string;
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
+  revenue: number;
+  orders: number;
+};
+
+export type RevenueSeriesTotals = {
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
   revenue: number;
   orders: number;
 };
 
 export type RevenueSeries = {
   interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
   points: RevenuePoint[];
+  totals: RevenueSeriesTotals;
 };
 
 export type RevenueOverviewPoint = {
@@ -71,18 +271,354 @@ export type TopProductVariant = {
   sku: string;
   revenue: number;
   quantity: number;
+  orderCount: number;
+  averageSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
 };
 
 export type TopProduct = {
   productId: string;
   productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
   totalRevenue: number;
   totalQuantity: number;
+  orderCount: number;
+  averageSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
   variants: TopProductVariant[];
 };
 
 export type TopProductsResult = {
   products: TopProduct[];
+  byRevenue: TopProduct[];
+  byUnits: TopProduct[];
+  lowestByRevenue: TopProduct[];
+  lowestByUnits: TopProduct[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    productsSold: number;
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    contribution: string;
+    lowest: string;
+  };
+};
+
+export type VariantUnitsRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalUnits: number;
+  orderCount: number;
+  averageUnitsPerOrder: number;
+};
+
+export type VariantUnitsResult = {
+  variants: VariantUnitsRow[];
+  byUnits: VariantUnitsRow[];
+  byRevenue: (VariantUnitsRow & { totalRevenue: number })[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    ranking: string;
+    identity: string;
+  };
+};
+
+export type VariantRevenueRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  orderCount: number;
+  realisedSellingPrice: number;
+  currentPrice: number | null;
+  priceDifference: number | null;
+  priceDifferencePercent: number | null;
+};
+
+export type VariantRevenueResult = {
+  variants: VariantRevenueRow[];
+  byRevenue: VariantRevenueRow[];
+  totals: {
+    totalRevenue: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    revenue: string;
+    ranking: string;
+    identity: string;
+  };
+};
+
+export type VariantRealisedPriceResult = {
+  variants: VariantRevenueRow[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    realisedSellingPrice: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    realisedSellingPrice: string;
+    identity: string;
+  };
+};
+
+export type VariantPriceComparisonResult = {
+  variants: VariantRevenueRow[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    realisedSellingPrice: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    realisedSellingPrice: string;
+    currentPrice: string;
+    priceComparison: string;
+    identity: string;
+  };
+};
+
+export type VariantSalesChannelMetric = {
+  revenue: number;
+  units: number;
+  orders: number;
+};
+
+export type VariantSalesMixRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  oneTime: VariantSalesChannelMetric;
+  subscription: VariantSalesChannelMetric;
+  importedExcluded: VariantSalesChannelMetric;
+};
+
+export type VariantSalesMixResult = {
+  variants: VariantSalesMixRow[];
+  totals: {
+    oneTime: { revenue: number; units: number };
+    subscription: { revenue: number; units: number };
+    importedExcluded: { revenue: number; units: number };
+  };
+  metricBasis: {
+    salesMix: string;
+    revenue: string;
+    units: string;
+    identity: string;
+  };
+};
+
+export type VariantContributionRow = VariantRevenueRow & {
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type VariantContributionResult = {
+  variants: VariantContributionRow[];
+  byRevenue: VariantContributionRow[];
+  byUnits: VariantContributionRow[];
+  totals: {
+    totalRevenue: number;
+    totalUnits: number;
+    variantsSold: number;
+  };
+  metricBasis: {
+    contribution: string;
+    revenue: string;
+    units: string;
+    identity: string;
+  };
+};
+
+export type VariantTrendPoint = {
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  realisedSellingPrice: number;
+};
+
+export type VariantTrendVariant = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  realisedSellingPrice: number;
+  points: VariantTrendPoint[];
+};
+
+export type VariantTrends = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  variants: VariantTrendVariant[];
+  metricBasis: {
+    ranking: string;
+    revenue: string;
+    units: string;
+    identity: string;
+  };
+};
+
+export type ProductTrendPoint = {
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  averageSellingPrice: number;
+};
+
+export type ProductTrendProduct = {
+  productId: string;
+  productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  averageSellingPrice: number;
+  points: ProductTrendPoint[];
+};
+
+export type ProductTrends = {
+  interval: RevenueInterval;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  products: ProductTrendProduct[];
+  metricBasis: {
+    ranking: string;
+    revenue: string;
+    units: string;
+  };
+};
+
+export type ProductDetailSource = {
+  key: SalesChannelKey;
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  averageSellingPrice: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type ProductDetail = {
+  productId: string;
+  productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  averageSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+  variants: TopProductVariant[];
+  sourceSplit: ProductDetailSource[];
+  trend: {
+    interval: RevenueInterval;
+    points: ProductTrendPoint[];
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    contribution: string;
+    source: string;
+  };
+};
+
+export type VariantDetailSource = {
+  key: SalesChannelKey;
+  label: string;
+  revenue: number;
+  units: number;
+  orders: number;
+  realisedSellingPrice: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type VariantDetail = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  currentPrice: number | null;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+  realisedSellingPrice: number;
+  averageRevenuePerOrder: number;
+  averageUnitsPerOrder: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+  priceDifference: number | null;
+  priceDifferencePercent: number | null;
+  sourceSplit: VariantDetailSource[];
+  trend: {
+    interval: RevenueInterval;
+    points: VariantTrendPoint[];
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    contribution: string;
+    realisedSellingPrice: string;
+    currentPrice: string;
+    source: string;
+    identity: string;
+  };
 };
 
 export type RecentOrder = {
@@ -123,10 +659,182 @@ export type LowStockResult = {
   items: LowStockItem[];
 };
 
+export type TopSubscriptionProductRow = {
+  productId: string;
+  productName: string;
+  catalogStatus: "draft" | "active" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  orderCount: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type TopSubscriptionVariantRow = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  variantName: string;
+  sku: string;
+  catalogStatus: "active" | "inactive" | "archived" | "deleted";
+  totalRevenue: number;
+  totalUnits: number;
+  orderCount: number;
+  revenueContributionPercent: number;
+  unitContributionPercent: number;
+};
+
+export type TopSubscriptionProductsVariantsResult = {
+  products: {
+    byRevenue: TopSubscriptionProductRow[];
+    byUnits: TopSubscriptionProductRow[];
+    totals: {
+      totalRevenue: number;
+      totalUnits: number;
+      productsSold: number;
+    };
+  };
+  variants: {
+    byRevenue: TopSubscriptionVariantRow[];
+    byUnits: TopSubscriptionVariantRow[];
+    totals: {
+      totalRevenue: number;
+      totalUnits: number;
+      variantsSold: number;
+    };
+  };
+  metricBasis: {
+    revenue: string;
+    units: string;
+    ranking: string;
+    identity: string;
+    source: string;
+  };
+};
+
+export type RecurringVsOneTimeChannel = {
+  key: "website" | "subscription" | "imported";
+  label: string;
+  grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  refundAmount: number;
+  netRevenue: number;
+  totalOrders: number;
+  unitsSold: number;
+  averageOrderValue: number;
+  averageUnitsPerOrder: number;
+  netRevenueSharePercent?: number;
+  orderSharePercent?: number;
+  unitSharePercent?: number;
+};
+
+export type RecurringVsOneTimeResult = {
+  oneTime: RecurringVsOneTimeChannel;
+  subscription: RecurringVsOneTimeChannel;
+  importedExcluded: RecurringVsOneTimeChannel;
+  comparedTotals: {
+    grossRevenue: number;
+    refundAmount: number;
+    netRevenue: number;
+    totalOrders: number;
+    unitsSold: number;
+  };
+  metricBasis: {
+    comparison: string;
+    revenue: string;
+    classification: string;
+    source: string;
+  };
+};
+
+export type SubscriptionRevenueResult = {
+  subscriptionRevenue: number;
+  grossRevenue: number;
+  merchandiseRevenue: number;
+  deliveryRevenue: number;
+  discountAmount: number;
+  refundAmount: number;
+  totalOrders: number;
+  unitsSold: number;
+  metricBasis: {
+    subscriptionRevenue: string;
+    channel: string;
+    source: string;
+  };
+};
+
+export type CancelledSubscriptionsResult = {
+  cancelledSubscriptions: number;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  metricBasis: {
+    cancelledSubscriptions: string;
+    source: string;
+  };
+};
+
+export type NewSubscriptionsResult = {
+  newSubscriptions: number;
+  period: {
+    from: string;
+    to: string;
+    timeZone: string;
+  } | null;
+  metricBasis: {
+    newSubscriptions: string;
+    source: string;
+  };
+};
+
+export type AverageSubscriptionValueResult = {
+  averageSubscriptionValue: number;
+  averageMerchandiseValue: number;
+  averageDeliveryFeeValue: number;
+  totalRecurringCharge: number;
+  activeSubscriptions: number;
+  metricBasis: {
+    averageSubscriptionValue: string;
+    scope: string;
+  };
+};
+
+export type ActiveSubscriptionsResult = {
+  activeSubscriptions: number;
+  metricBasis: {
+    activeSubscriptions: string;
+    scope: string;
+  };
+};
+
 export type AnalyticsDashboard = {
+  overview: AnalyticsOverview;
   summary: AnalyticsSummary;
   revenue: RevenueSeries;
+  salesTrends: SalesTrends;
+  revenueComposition: RevenueComposition;
+  salesBreakdown: SalesBreakdown;
   topProducts: TopProductsResult;
+  productTrends: ProductTrends;
+  variantTrends: VariantTrends;
+  variantUnits: VariantUnitsResult;
+  variantRevenue: VariantRevenueResult;
+  variantRealisedPrice: VariantRealisedPriceResult;
+  variantPriceComparison: VariantPriceComparisonResult;
+  variantSalesMix: VariantSalesMixResult;
+  variantContribution: VariantContributionResult;
+  activeSubscriptions: ActiveSubscriptionsResult;
+  averageSubscriptionValue: AverageSubscriptionValueResult;
+  newSubscriptions: NewSubscriptionsResult;
+  cancelledSubscriptions: CancelledSubscriptionsResult;
+  subscriptionRevenue: SubscriptionRevenueResult;
+  recurringVsOneTime: RecurringVsOneTimeResult;
+  subscriptionTrends: SubscriptionTrendsResult;
+  topSubscriptionProductsVariants: TopSubscriptionProductsVariantsResult;
   recentOrders: RecentOrdersResult;
   lowStock: LowStockResult;
   outOfStock: LowStockResult;
@@ -142,6 +850,7 @@ export interface AnalyticsState {
   from: string;
   to: string;
   interval: RevenueInterval;
+  comparison: AnalyticsComparisonMode;
 
   loading: boolean;
   error: string | null;
@@ -159,7 +868,8 @@ export const initialAnalyticsState: AnalyticsState = {
   orderSource: "all",
   from: "",
   to: "",
-  interval: "week",
+  interval: "day",
+  comparison: "previous_period",
 
   loading: false,
   error: null,

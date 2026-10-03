@@ -77,6 +77,118 @@
   text-align: center;
 }
 
+
+.lineChart {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.lineSvg {
+  width: 100%;
+  flex: 1;
+  overflow: visible;
+}
+
+.lineBaseline {
+  stroke: var(--color-gray-200);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.linePath {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.linePoint {
+  stroke-width: 1.5;
+}
+
+.linePath.primary {
+  stroke: var(--color-primary);
+}
+
+.linePath.success {
+  stroke: var(--color-success);
+}
+
+.linePath.info {
+  stroke: var(--color-info);
+}
+
+.linePoint.primary {
+  fill: var(--color-primary);
+  stroke: var(--background);
+}
+
+.linePoint.success {
+  fill: var(--color-success);
+  stroke: var(--background);
+}
+
+.linePoint.info {
+  fill: var(--color-info);
+  stroke: var(--background);
+}
+
+.lineLabels {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  gap: 0;
+  min-height: 1.5rem;
+}
+
+.lineLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--color-gray-500);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multiLineLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+.multiLineLegendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-gray-600);
+}
+
+.multiLineSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+}
+
+.multiLineSwatch.primary {
+  background: var(--color-primary);
+}
+
+.multiLineSwatch.success {
+  background: var(--color-success);
+}
+
+.multiLineSwatch.info {
+  background: var(--color-info);
+}
+
 /* Horizontal Bar Chart */
 .horizontalChart {
   display: flex;

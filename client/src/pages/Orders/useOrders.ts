@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useToast } from "../../components/common/Toast";
+import { useSearchParams } from "react-router-dom";
 import {
   useOrdersApi,
   type AdminOrder,
+  type OrderCustomer,
   type OrdersStockRequirements,
 } from "../../context/Orders";
 
@@ -18,6 +20,47 @@ type FulfillmentStatus =
   | (string & {});
 
 const MANUAL_IMPORT_DELIVERY_FEE = 1;
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error === "object" && error !== null) {
+    const response = "response" in error ? error.response : null;
+    if (typeof response === "object" && response !== null && "data" in response) {
+      const data = response.data;
+      if (typeof data === "object" && data !== null && "message" in data && typeof data.message === "string") {
+        return data.message;
+      }
+    }
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+};
+
+const parseDateInput = (value: string) => {
+  if (!value) return null;
+  if (value.includes("T")) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const parts = value.split("-").map(Number);
+  if (parts.length !== 3) return null;
+  const [year, month, day] = parts;
+  if (!year || !month || !day) return null;
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const toStartOfDayIso = (value: string) => {
+  const date = parseDateInput(value);
+  if (!date) return undefined;
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString();
+};
+
+const toEndOfDayIso = (value: string) => {
+  const date = parseDateInput(value);
+  if (!date) return undefined;
+  date.setHours(23, 59, 59, 999);
+  return date.toISOString();
+};
 
 export type OrderItem = {
   name: string;
@@ -36,6 +79,7 @@ export type Order = {
   deliveryAddress: { line1: string; line2?: string; city: string; postcode: string };
   deliverySlot: { date: string; timeWindow: string };
   items: OrderItem[];
+  itemCount: number;
   subtotal: number;
   deliveryFee: number;
   deliveryStatus:string
@@ -54,19 +98,34 @@ export type Order = {
   customerNotes?: string;
   internalNotes?: string;
   driverNote?: string | null;
-  history: { status: string; timestamp: string; user: string }[];
+  history: {
+    id?: string;
+    from?: string | null;
+    status: string;
+    timestamp: string;
+    user: string;
+    role?: string | null;
+    source?: string;
+    effects: string[];
+  }[];
   deliveryProofUrl?: string;
   deliveredAt?: string | null;
   deliveryNote?: string;
+  emailNotifications: {
+    orderConfirmationSentAt: string | null;
+    dispatchedEmailSentAt: string | null;
+    inTransitEmailSentAt: string | null;
+    deliveredEmailSentAt: string | null;
+  };
   createdAt: string;
   updatedAt: string;
   
 };
 
-const getDefaultAddress = (customer: any) => {
+const getDefaultAddress = (customer: OrderCustomer | null) => {
   const addresses = Array.isArray(customer?.addresses) ? customer.addresses : [];
   return (
-    addresses.find((a: any) => a?.isDefault) ||
+    addresses.find((address) => address.isDefault) ||
     addresses[0] || {
       line1: "-",
       line2: null,
@@ -79,18 +138,26 @@ const getDefaultAddress = (customer: any) => {
 
 const isNonEmptyString = (v: unknown) => typeof v === "string" && v.trim().length > 0;
 
-const getOrderDeliveryAddress = (order: AdminOrder, customer: any) => {
-  const fromOrder = (order as any)?.deliveryAddress;
+const getMetadataDate = (
+  metadata: Record<string, unknown> | null,
+  key: string,
+) => {
+  const value = metadata?.[key];
+  if (typeof value === "string" && value.trim()) return value;
+  if (value instanceof Date) return value.toISOString();
+  return null;
+};
+
+const getOrderDeliveryAddress = (order: AdminOrder, customer: OrderCustomer | null) => {
+  const fromOrder = order.deliveryAddress;
   if (fromOrder && typeof fromOrder === "object") {
-    const line1 = (fromOrder as any).line1;
-    const city = (fromOrder as any).city;
-    const postcode = (fromOrder as any).postcode;
+    const { line1, city, postcode } = fromOrder;
 
     if (isNonEmptyString(line1) && isNonEmptyString(city) && isNonEmptyString(postcode)) {
       return {
         line1: String(line1).trim(),
-        line2: isNonEmptyString((fromOrder as any).line2)
-          ? String((fromOrder as any).line2).trim()
+        line2: isNonEmptyString(fromOrder.line2)
+          ? String(fromOrder.line2).trim()
           : undefined,
         city: String(city).trim(),
         postcode: String(postcode).trim(),
@@ -107,7 +174,7 @@ const getOrderDeliveryAddress = (order: AdminOrder, customer: any) => {
   };
 };
 
-const mapAdminOrderToUi = (order: AdminOrder): Order => {
+export const mapAdminOrderToUi = (order: AdminOrder): Order => {
   const customer =
     order.customer && typeof order.customer === "object" ? order.customer : null;
 
@@ -117,8 +184,8 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     : "-";
 
   const metadata =
-    (order as any)?.metadata && typeof (order as any).metadata === "object"
-      ? ((order as any).metadata as Record<string, unknown>)
+    order.metadata && typeof order.metadata === "object"
+      ? order.metadata
       : null;
 
   const deliveryProofUrl =
@@ -127,7 +194,7 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
       : undefined;
 
   const deliveredAtRaw =
-    (metadata as any)?.deliveredAt ?? (metadata as any)?.deliveredEmailSentAt;
+    metadata?.deliveredAt ?? metadata?.deliveredEmailSentAt;
   const deliveredAt =
     typeof deliveredAtRaw === "string"
       ? deliveredAtRaw
@@ -141,29 +208,29 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
       : undefined;
 
   const customerInstructions =
-    typeof (order as any)?.customerInstructions === "string"
-      ? String((order as any).customerInstructions).trim() || undefined
+    typeof order.customerInstructions === "string"
+      ? order.customerInstructions.trim() || undefined
       : undefined;
 
-  const isManualImport = Boolean((metadata as any)?.manualImport);
+  const isManualImport = Boolean(metadata?.manualImport);
   const isStripeBacked = Boolean(
-    (order as any)?.stripeCheckoutSessionId || (order as any)?.stripePaymentIntentId,
+    order.stripeCheckoutSessionId || order.stripePaymentIntentId,
   );
   const effectiveDeliveryFee = isManualImport
     ? MANUAL_IMPORT_DELIVERY_FEE
     : order.deliveryFee;
   const discount =
-    typeof (order as any).discountAmount === "number"
-      ? (order as any).discountAmount
-      : typeof (order as any).totalBeforeDiscount === "number"
-        ? Math.max(0, (order as any).totalBeforeDiscount - order.total)
+    typeof order.discountAmount === "number"
+      ? order.discountAmount
+      : typeof order.totalBeforeDiscount === "number"
+        ? Math.max(0, order.totalBeforeDiscount - order.total)
         : 0;
   const inferredIncludeDeliveryFeeInTotal =
     Math.abs(order.total - Math.max(0, order.subtotal + effectiveDeliveryFee - discount)) <
     0.000001;
   const includeDeliveryFeeInTotal =
-    typeof (order as any)?.includeDeliveryFeeInTotal === "boolean"
-      ? Boolean((order as any).includeDeliveryFeeInTotal)
+    typeof order.includeDeliveryFeeInTotal === "boolean"
+      ? order.includeDeliveryFeeInTotal
       : typeof metadata?.includeDeliveryFeeInTotal === "boolean"
         ? Boolean(metadata.includeDeliveryFeeInTotal)
         : inferredIncludeDeliveryFeeInTotal;
@@ -185,10 +252,9 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
   return {
     id: order._id,
     orderNumber: order.orderId,
-    orderType: (order as any).orderType,
+    orderType: order.orderType,
     isSubscriptionGenerated:
-      (order as any).orderType === "subscription_generated" ||
-      Boolean((order as any).subscription),
+      order.orderType === "subscription_generated" || Boolean(order.subscription),
 
     customer: {
       name: customerName,
@@ -212,16 +278,17 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
       quantity: i.quantity,
       unitPrice: i.price,
     })),
+    itemCount: (order.items ?? []).reduce((total, item) => total + item.quantity, 0),
 
     subtotal: order.subtotal,
     deliveryFee: effectiveDeliveryFee,
     discount,
     total: order.total,
-    amountPaid: typeof (order as any).amountPaid === "number" ? (order as any).amountPaid : undefined,
-    amountRefunded: Array.isArray((order as any).refunds)
-      ? (order as any).refunds
-          .filter((r: any) => r.status === "succeeded" && typeof r.amount === "number")
-          .reduce((sum: number, r: any) => sum + r.amount, 0) || undefined
+    amountPaid: typeof order.amountPaid === "number" ? order.amountPaid : undefined,
+    amountRefunded: Array.isArray(order.refunds)
+      ? order.refunds
+          .filter((refund) => refund.status === "succeeded" && typeof refund.amount === "number")
+          .reduce((sum, refund) => sum + (refund.amount || 0), 0) || undefined
       : undefined,
     importedBaseTotal,
     includeDeliveryFeeInTotal,
@@ -234,13 +301,30 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
     isStripeBacked,
 
     customerInstructions,
-    driverNote: typeof (order as any)?.driverNote === "string" ? (order as any).driverNote || null : null,
+    driverNote: typeof order.driverNote === "string" ? order.driverNote || null : null,
 
-    history: [],
+    history: Array.isArray(order.statusAudit)
+      ? order.statusAudit.map((entry) => ({
+          id: entry._id,
+          from: entry.from || null,
+          status: entry.to,
+          timestamp: entry.changedAt,
+          user: entry.actorName || "System",
+          role: entry.actorRole || null,
+          source: entry.source,
+          effects: Array.isArray(entry.effects) ? entry.effects : [],
+        }))
+      : [],
 
   deliveryProofUrl,
   deliveredAt,
   deliveryNote,
+  emailNotifications: {
+    orderConfirmationSentAt: getMetadataDate(metadata, "orderConfirmationSentAt"),
+    dispatchedEmailSentAt: getMetadataDate(metadata, "dispatchedEmailSentAt"),
+    inTransitEmailSentAt: getMetadataDate(metadata, "inTransitEmailSentAt"),
+    deliveredEmailSentAt: getMetadataDate(metadata, "deliveredEmailSentAt"),
+  },
 
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
@@ -249,87 +333,158 @@ const mapAdminOrderToUi = (order: AdminOrder): Order => {
 
 export const useOrders = () => {
   const { showToast } = useToast();
+  const [urlParams, setUrlParams] = useSearchParams();
   const {
     orders: adminOrders,
     meta,
-    loading,
+    loading: apiLoading,
     error,
     listOrders,
-    getOrderById,
-    updateOrderStatus: updateOrderStatusApi,
-    updateOrderPaymentStatus: updateOrderPaymentStatusApi,
-    updateOrderItems: updateOrderItemsApi,
-    deleteOrder: deleteOrderApi,
-    bulkDeleteOrders: bulkDeleteOrdersApi,
-    refundOrder: refundOrderApi,
     bulkUpdateDeliveryStatus: bulkUpdateDeliveryStatusApi,
     bulkAssignDeliveryDate: bulkAssignDeliveryDateApi,
     getOrdersStockRequirements: getOrdersStockRequirementsApi,
-    updateDriverNote: updateDriverNoteApi,
   } = useOrdersApi();
 
   // Backend filters
-  const [searchQuery, setSearchQuery] = useState(""); // free-text server-side search
-  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<string>("all");
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("all");
-  const [orderSourceFilter, setOrderSourceFilter] = useState<string>("all");
-  const [dateFilter, setDateFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("newest");
-  const [minTotal, setMinTotal] = useState("");
-  const [maxTotal, setMaxTotal] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => urlParams.get("q") || "");
+  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState(() =>
+    urlParams.get("delivery") || "all",
+  );
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState(() =>
+    urlParams.get("payment") || "all",
+  );
+  const [orderSourceFilter, setOrderSourceFilter] = useState(() =>
+    urlParams.get("source") || "all",
+  );
+  const [dateFilter, setDateFilter] = useState(() =>
+    urlParams.get("range") || (urlParams.get("from") || urlParams.get("to") ? "custom" : "all"),
+  );
+  const [sortBy, setSortBy] = useState(() =>
+    urlParams.get("sort") || "newest",
+  );
+  const [minTotal, setMinTotal] = useState(() => urlParams.get("min") || "");
+  const [maxTotal, setMaxTotal] = useState(() => urlParams.get("max") || "");
 
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => urlParams.get("from") || "");
+  const [dateTo, setDateTo] = useState(() => urlParams.get("to") || "");
 
-  const [refundedOnly, setRefundedOnly] = useState(false);
-  const [expiredOnly, setExpiredOnly] = useState(false);
+  const [refundedOnly, setRefundedOnly] = useState(
+    () => urlParams.get("refunded") === "true",
+  );
+  const [expiredOnly, setExpiredOnly] = useState(
+    () => urlParams.get("expired") === "true",
+  );
+  const [pendingFilters, setPendingFilters] = useState(false);
+  const filterRequestIdRef = useRef(0);
+  const lastFilterKeyRef = useRef("");
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(() =>
+    Math.max(1, Number(urlParams.get("page")) || 1),
+  );
+  const [pageSize, setPageSize] = useState(() => {
+    const value = Number(urlParams.get("pageSize"));
+    return [50, 100, 200].includes(value) ? value : 50;
+  });
 
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(
+    () => urlParams.get("filters") === "open",
+  );
+  const lastWrittenSearchRef = useRef(urlParams.toString());
+  const syncingFromUrlRef = useRef(false);
+
+  useEffect(() => {
+    const search = urlParams.toString();
+    if (search === lastWrittenSearchRef.current) return;
+    syncingFromUrlRef.current = true;
+    setSearchQuery(urlParams.get("q") || "");
+    setDeliveryStatusFilter(urlParams.get("delivery") || "all");
+    setPaymentStatusFilter(urlParams.get("payment") || "all");
+    setOrderSourceFilter(urlParams.get("source") || "all");
+    setDateFilter(
+      urlParams.get("range") || (urlParams.get("from") || urlParams.get("to") ? "custom" : "all"),
+    );
+    setDateFrom(urlParams.get("from") || "");
+    setDateTo(urlParams.get("to") || "");
+    setMinTotal(urlParams.get("min") || "");
+    setMaxTotal(urlParams.get("max") || "");
+    setRefundedOnly(urlParams.get("refunded") === "true");
+    setExpiredOnly(urlParams.get("expired") === "true");
+    setSortBy(urlParams.get("sort") || "newest");
+    setPage(Math.max(1, Number(urlParams.get("page")) || 1));
+    const nextPageSize = Number(urlParams.get("pageSize"));
+    setPageSize([50, 100, 200].includes(nextPageSize) ? nextPageSize : 50);
+    setShowFilters(urlParams.get("filters") === "open");
+  }, [urlParams]);
+
+  useEffect(() => {
+    if (syncingFromUrlRef.current) {
+      syncingFromUrlRef.current = false;
+      lastWrittenSearchRef.current = urlParams.toString();
+      return;
+    }
+    const next = new URLSearchParams();
+    if (searchQuery) next.set("q", searchQuery);
+    if (deliveryStatusFilter !== "all") next.set("delivery", deliveryStatusFilter);
+    if (paymentStatusFilter !== "all") next.set("payment", paymentStatusFilter);
+    if (orderSourceFilter !== "all") next.set("source", orderSourceFilter);
+    if (dateFilter !== "all") next.set("range", dateFilter);
+    if (dateFrom) next.set("from", dateFrom);
+    if (dateTo) next.set("to", dateTo);
+    if (minTotal) next.set("min", minTotal);
+    if (maxTotal) next.set("max", maxTotal);
+    if (refundedOnly) next.set("refunded", "true");
+    if (expiredOnly) next.set("expired", "true");
+    if (sortBy !== "newest") next.set("sort", sortBy);
+    if (page !== 1) next.set("page", String(page));
+    if (pageSize !== 50) next.set("pageSize", String(pageSize));
+    if (showFilters) next.set("filters", "open");
+    const nextSearch = next.toString();
+    if (nextSearch !== urlParams.toString()) {
+      lastWrittenSearchRef.current = nextSearch;
+      setUrlParams(next, { replace: true });
+    }
+  }, [
+    dateFilter,
+    dateFrom,
+    dateTo,
+    deliveryStatusFilter,
+    expiredOnly,
+    maxTotal,
+    minTotal,
+    orderSourceFilter,
+    page,
+    pageSize,
+    paymentStatusFilter,
+    refundedOnly,
+    searchQuery,
+    setUrlParams,
+    showFilters,
+    sortBy,
+    urlParams,
+  ]);
+
+  const filterError = useMemo(() => {
+    const minimum = minTotal === "" ? null : Number(minTotal);
+    const maximum = maxTotal === "" ? null : Number(maxTotal);
+    if (minimum !== null && (!Number.isFinite(minimum) || minimum < 0)) {
+      return "Minimum total must be zero or greater.";
+    }
+    if (maximum !== null && (!Number.isFinite(maximum) || maximum < 0)) {
+      return "Maximum total must be zero or greater.";
+    }
+    if (minimum !== null && maximum !== null && minimum > maximum) {
+      return "Minimum total cannot exceed maximum total.";
+    }
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      return "The From date cannot be later than the To date.";
+    }
+    return "";
+  }, [dateFrom, dateTo, maxTotal, minTotal]);
 
   const toDateInputValue = (d: Date) => {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  };
-
-  const parseDateInput = (value: string) => {
-    // Accept either YYYY-MM-DD (from <input type="date">) or an ISO string.
-    if (!value) return null;
-    if (value.includes("T")) {
-      const parsed = new Date(value);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    }
-
-    const parts = value.split("-").map((p) => Number(p));
-    if (parts.length !== 3) return null;
-    const [year, month, day] = parts;
-    if (!year || !month || !day) return null;
-
-    // Construct as local time to match the user's expectations.
-    const dt = new Date(year, month - 1, day);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  };
-
-  const toStartOfDayIso = (value: string) => {
-    const dt = parseDateInput(value);
-    if (!dt) return undefined;
-    const start = new Date(dt);
-    start.setHours(0, 0, 0, 0);
-    return start.toISOString();
-  };
-
-  const toEndOfDayIso = (value: string) => {
-    const dt = parseDateInput(value);
-    if (!dt) return undefined;
-    const end = new Date(dt);
-    end.setHours(23, 59, 59, 999);
-    return end.toISOString();
   };
 
   const mapSortToApi = (value: string): { sortBy?: string; sortOrder?: "asc" | "desc" } => {
@@ -337,7 +492,7 @@ export const useOrders = () => {
     if (value === "oldest") return { sortBy: "createdAt", sortOrder: "asc" };
     if (value === "total-high") return { sortBy: "total", sortOrder: "desc" };
     if (value === "total-low") return { sortBy: "total", sortOrder: "asc" };
-    if (value === "delivery") return { sortBy: "createdAt", sortOrder: "desc" };
+    if (value === "delivery") return { sortBy: "deliveryDate", sortOrder: "asc" };
     return { sortBy: "createdAt", sortOrder: "desc" };
   };
 
@@ -380,7 +535,7 @@ export const useOrders = () => {
   }, [dateFilter]);
 
 const refresh = useCallback(
-  async (opts?: { page?: number; pageSize?: number }) => {
+  async (opts?: { page?: number; pageSize?: number; signal?: AbortSignal }) => {
     const targetPage = opts?.page ?? page;
     const targetPageSize = opts?.pageSize ?? pageSize;
 
@@ -415,7 +570,7 @@ const refresh = useCallback(
 
       sortBy: sort.sortBy,
       sortOrder: sort.sortOrder,
-    });
+    }, { signal: opts?.signal });
   },
   [
     listOrders,
@@ -437,21 +592,7 @@ const refresh = useCallback(
 
 
   // Fetch orders (server-side pagination + filters)
-  useEffect(() => {
-    const handle = window.setTimeout(() => {
-      refresh().catch(() => {
-        // error state is tracked in context
-      });
-    }, 250);
-
-    return () => window.clearTimeout(handle);
-  }, [refresh]);
-
-  // Reset to page 1 when any filter changes (excluding pagination)
-  useEffect(() => {
-    setPage(1);
-    setSelectedOrders([]);
-  }, [
+  const filterKey = useMemo(() => JSON.stringify({
     searchQuery,
     deliveryStatusFilter,
     paymentStatusFilter,
@@ -464,6 +605,61 @@ const refresh = useCallback(
     refundedOnly,
     expiredOnly,
     sortBy,
+  }), [
+    dateFilter, dateFrom, dateTo, deliveryStatusFilter, expiredOnly, maxTotal,
+    minTotal, orderSourceFilter, paymentStatusFilter, refundedOnly, searchQuery, sortBy,
+  ]);
+
+  useEffect(() => {
+    const requestId = ++filterRequestIdRef.current;
+    const controller = new AbortController();
+    const filtersChanged = lastFilterKeyRef.current !== filterKey;
+    lastFilterKeyRef.current = filterKey;
+
+    if (filtersChanged) {
+      setSelectedOrders([]);
+      if (page !== 1) {
+        setPage(1);
+        return () => controller.abort();
+      }
+    }
+
+    if (filterError) {
+      setPendingFilters(false);
+      return () => controller.abort();
+    }
+
+    setPendingFilters(true);
+
+    const handle = window.setTimeout(async () => {
+      try {
+        await refresh({ signal: controller.signal });
+      } catch (error: unknown) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "ERR_CANCELED"
+        ) {
+          return;
+        }
+        // error state is tracked in context
+      } finally {
+        if (!controller.signal.aborted && filterRequestIdRef.current === requestId) {
+          setPendingFilters(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(handle);
+    };
+  }, [
+    refresh,
+    page,
+    filterKey,
+    filterError,
   ]);
 
   const orders = useMemo(() => adminOrders.map(mapAdminOrderToUi), [adminOrders]);
@@ -491,151 +687,19 @@ const refresh = useCallback(
   };
 
   const toggleSelectAll = () => {
-    setSelectedOrders((prev) =>
-      prev.length === filteredOrders.length ? [] : filteredOrders.map((o) => o.id),
-    );
-  };
+    const visibleIds = filteredOrders.map((order) => order.id);
+    setSelectedOrders((previous) => {
+      const selected = new Set(previous);
+      const allVisibleSelected =
+        visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
 
-  const updateOrderStatus = async (
-    id: string,
-    deliveryStatus: string,
-    deliveryProofFile?: File,
-  ) => {
-    // Backend currently supports: ordered | dispatched | in_transit | delivered | returned
-    if (
-      deliveryStatus !== "ordered" &&
-      deliveryStatus !== "dispatched" &&
-      deliveryStatus !== "in_transit" &&
-      deliveryStatus !== "delivered" &&
-      deliveryStatus !== "returned"
-    ) {
-      showToast({ title: "Unsupported status", type: "error" });
-      return;
-    }
-
-    try {
-      await updateOrderStatusApi(id, deliveryStatus, deliveryProofFile);
-      showToast({ title: "Order status updated", type: "success" });
-      setIsStatusModalOpen(false);
-    } catch {
-      showToast({ title: "Failed to update status", type: "error" });
-    }
-  };
-
-  const updateOrderPaymentStatus = async (orderId: string, paid: boolean, amountPaid?: number) => {
-    try {
-      const adminOrder = await updateOrderPaymentStatusApi(orderId, paid, amountPaid);
-      const uiOrder = mapAdminOrderToUi(adminOrder);
-      setSelectedOrder(uiOrder);
-      showToast({
-        title: paid ? (amountPaid !== undefined && amountPaid < (uiOrder.total ?? 0) ? "Marked as partially paid" : "Marked as paid") : "Marked as unpaid",
-        type: "success",
+      visibleIds.forEach((id) => {
+        if (allVisibleSelected) selected.delete(id);
+        else selected.add(id);
       });
-      return uiOrder;
-    } catch (err: any) {
-      showToast({
-        title:
-          err?.response?.data?.message || "Failed to update payment status",
-        type: "error",
-      });
-      return null;
-    }
-  };
 
-  const updateOrderItems = async (
-    orderId: string,
-    items: { variantId: string; quantity: number }[],
-    pricing?: {
-      importedBaseTotal?: number;
-      includeDeliveryFee?: boolean;
-    },
-  ) => {
-    try {
-      const adminOrder = await updateOrderItemsApi(orderId, items, pricing);
-      const uiOrder = mapAdminOrderToUi(adminOrder);
-      setSelectedOrder(uiOrder);
-      showToast({ title: "Order items updated", type: "success" });
-      return uiOrder;
-    } catch (err: any) {
-      showToast({
-        title: err?.response?.data?.message || "Failed to update order items",
-        type: "error",
-      });
-      return null;
-    }
-  };
-
-  const updateDriverNote = async (orderId: string, driverNote: string | null) => {
-    try {
-      const adminOrder = await updateDriverNoteApi(orderId, driverNote);
-      const uiOrder = mapAdminOrderToUi(adminOrder);
-      setSelectedOrder(uiOrder);
-      showToast({ title: "Driver note saved", type: "success" });
-      return uiOrder;
-    } catch (err: any) {
-      showToast({ title: err?.response?.data?.message || "Failed to save driver note", type: "error" });
-      return null;
-    }
-  };
-
-  const refundOrder = async (id: string, amount?: number) => {
-    try {
-      await refundOrderApi(
-        id,
-        typeof amount === "number" && Number.isFinite(amount)
-          ? { amount }
-          : undefined,
-      );
-      showToast({ title: "Order refunded", type: "success" });
-      await refresh();
-    } catch {
-      showToast({ title: "Refund failed", type: "error" });
-      throw new Error("Refund failed");
-    }
-  };
-
-  const deleteOrder = async (orderId: string) => {
-    try {
-      const result = await deleteOrderApi(orderId);
-      if (selectedOrder?.id === orderId) {
-        setSelectedOrder(null);
-        setIsDetailModalOpen(false);
-      }
-      setSelectedOrders((prev) => prev.filter((id) => id !== orderId));
-      showToast({ title: "Order deleted", type: "success" });
-      await refresh();
-      return result;
-    } catch (err: any) {
-      showToast({
-        title: err?.response?.data?.message || "Failed to delete order",
-        type: "error",
-      });
-      return null;
-    }
-  };
-
-  const bulkDeleteOrders = async (orderIds: string[]) => {
-    if (!orderIds.length) return null;
-    try {
-      const result = await bulkDeleteOrdersApi(orderIds);
-      setSelectedOrders([]);
-      if (selectedOrder && orderIds.includes(selectedOrder.id)) {
-        setSelectedOrder(null);
-        setIsDetailModalOpen(false);
-      }
-      showToast({
-        title: `${result.deleted} orders deleted`,
-        type: "success",
-      });
-      await refresh();
-      return result;
-    } catch (err: any) {
-      showToast({
-        title: err?.response?.data?.message || "Failed to delete orders",
-        type: "error",
-      });
-      return null;
-    }
+      return [...selected];
+    });
   };
 
 const bulkUpdateStatus = async (deliveryStatus: string) => {
@@ -701,10 +765,9 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
 
       setSelectedOrders([]);
       await refresh();
-    } catch (err: any) {
+    } catch (error: unknown) {
       showToast({
-        title:
-          err?.response?.data?.message || "Bulk assign delivery date failed",
+        title: getErrorMessage(error, "Bulk assign delivery date failed"),
         type: "error",
       });
     }
@@ -724,12 +787,9 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
         deliveryDate: params?.deliveryDate,
       });
       return data;
-    } catch (err: any) {
+    } catch (error: unknown) {
       showToast({
-        title:
-          err?.message ||
-          err?.response?.data?.message ||
-          "Failed to calculate stock requirements",
+        title: getErrorMessage(error, "Failed to calculate stock requirements"),
         type: "error",
       });
       return null;
@@ -737,38 +797,11 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
   };
 
 
-  const exportToCSV = () => {
-    const rows = filteredOrders.map(
-      (o) => `${o.orderNumber},${o.customer.name},${o.customer.email},£${o.total}`,
-    );
-    const csv = ["Order,Customer,Email,Total", ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement("a"), {
-      href: url,
-      download: "orders.csv",
-    }).click();
-    showToast({ title: "Orders exported", type: "success" });
-  };
-
-  const openOrderDetails = useCallback(
-    async (orderId: string) => {
-      setIsDetailModalOpen(true);
-      try {
-        const adminOrder = await getOrderById(orderId);
-        setSelectedOrder(mapAdminOrderToUi(adminOrder));
-      } catch {
-        showToast({ title: "Failed to load order", type: "error" });
-        setIsDetailModalOpen(false);
-      }
-    },
-    [getOrderById, showToast],
-  );
-
   return {
     orders,
-    loading,
+    loading: apiLoading || pendingFilters,
     error,
+    filterError,
     meta,
     refresh,
 
@@ -805,13 +838,6 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
 
     selectedOrders,
     setSelectedOrders,
-    selectedOrder,
-    setSelectedOrder,
-
-    isDetailModalOpen,
-    setIsDetailModalOpen,
-    isStatusModalOpen,
-    setIsStatusModalOpen,
     showFilters,
     setShowFilters,
 
@@ -820,17 +846,10 @@ const bulkUpdateStatus = async (deliveryStatus: string) => {
 
     toggleOrderSelection,
     toggleSelectAll,
-    updateOrderStatus,
-    updateOrderPaymentStatus,
-    updateOrderItems,
-    updateDriverNote,
-    deleteOrder,
-    bulkDeleteOrders,
-    refundOrder,
     bulkUpdateStatus,
     bulkAssignDeliveryDate,
     getOrdersStockRequirements,
-    exportToCSV,
-    openOrderDetails,
   };
 };
+
+export type OrdersPageState = ReturnType<typeof useOrders>;

@@ -121,6 +121,13 @@ describe("PATCH /api/admin/delivery/batch/:batchId/dispatch (E2E)", () => {
 
     expect(updated1.deliveryStatus).toBe("dispatched");
     expect(updated2.deliveryStatus).toBe("dispatched");
+    expect(updated1.statusAudit).toHaveLength(1);
+    expect(updated1.statusAudit[0]).toMatchObject({
+      from: "ordered",
+      to: "dispatched",
+      actorName: "Delivery dispatch system",
+      source: "delivery_dispatch",
+    });
 
     expect(updated1.metadata?.dispatchedEmailSentAt).toBeTruthy();
     expect(updated2.metadata?.dispatchedEmailSentAt).toBeTruthy();

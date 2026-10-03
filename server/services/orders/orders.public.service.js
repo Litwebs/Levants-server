@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
+const {
+  attachProductNameSnapshots,
+} = require("../../utils/orderItemSnapshot.util");
 const stripe = require("../../utils/stripe.util");
 const Customer = require("../../models/customer.model");
 const { geocodeAddress } = require("../../Integration/google.geocode");
@@ -201,6 +204,8 @@ async function CreateOrder({
 
         subtotal += lineSubtotal;
       }
+
+      await attachProductNameSnapshots(resolvedItems, { session });
 
       const deliveryFee = 1;
       const totalBeforeDiscount = subtotal + deliveryFee;
