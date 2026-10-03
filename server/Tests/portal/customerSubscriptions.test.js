@@ -4237,7 +4237,7 @@ describe("Portal Subscriptions", () => {
 
     expect(first.status).toBe(200);
     expect(retry.status).toBe(200);
-    expect(retry.body.message).toMatch(/already paid/i);
+    expect(retry.body).toEqual(first.body);
     expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
 
     const updatedOrder = await Order.findById(order._id).lean();

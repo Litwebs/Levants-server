@@ -1,5 +1,5 @@
 "use strict";
-jest.mock("../../utils/stripe.util", () => ({ paymentIntents: { create: jest.fn(), retrieve: jest.fn() } }));
+jest.mock("../../utils/stripe.util", () => ({ customers: { retrieve: jest.fn() }, paymentIntents: { create: jest.fn(), retrieve: jest.fn() } }));
 const stripe = require("../../utils/stripe.util");
 const Mutation = require("../../models/subscriptionMutation.model");
 const { recoverAddOnPayment } = require("../../services/customerPortal/subscriptionAddOnPayment.service");
@@ -9,6 +9,7 @@ beforeEach(() => {
     chargeParams: { amount: 500, payment_method: "pm_original" }, idempotencyKey: "original-key" } };
   stripe.paymentIntents.create.mockReset().mockResolvedValue({ id: "pi_original", status: "succeeded" });
   stripe.paymentIntents.retrieve.mockReset();
+  stripe.customers.retrieve.mockReset().mockResolvedValue({ invoice_settings: { default_payment_method: "pm_replacement" } });
   jest.spyOn(Mutation, "updateOne").mockResolvedValue({ matchedCount: 1 });
 });
 afterEach(() => jest.restoreAllMocks());
@@ -53,4 +54,31 @@ it("propagates a payment checkpoint write failure before fulfillment", async () 
   Mutation.updateOne.mockRejectedValueOnce(new Error("database unavailable"));
   await expect(recoverAddOnPayment(mutation)).rejects.toThrow("database unavailable");
   expect(mutation.addOnSnapshot.paymentIntent).toBeUndefined();
+});
+
+it("retries a confirmed unpaid decline with a new saved key and current card", async () => {
+  mutation.attempts = 2;
+  mutation.addOnSnapshot.paymentIntent = { id: "pi_declined", status: "requires_payment_method" };
+  stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_declined", status: "requires_payment_method", amount_received: 0 });
+  expect((await recoverAddOnPayment(mutation)).ok).toBe(true);
+  expect(stripe.paymentIntents.create).toHaveBeenCalledWith(
+    { amount: 500, payment_method: "pm_replacement" }, { idempotencyKey: "original-key:retry:2" });
+  expect(mutation.addOnSnapshot.deliveryId).toBe("original");
+  expect(Mutation.updateOne.mock.invocationCallOrder[0]).toBeLessThan(stripe.paymentIntents.create.mock.invocationCallOrder[0]);
+});
+it("reuses the saved retry key when a post-decline response is lost", async () => {
+  mutation.addOnSnapshot.paymentIntent = { id: "pi_declined", status: "requires_payment_method" };
+  stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_declined", status: "requires_payment_method", amount_received: 0 });
+  stripe.paymentIntents.create.mockRejectedValueOnce(new Error("response lost"));
+  expect((await recoverAddOnPayment(mutation)).ok).toBe(false);
+  mutation.attempts = 3;
+  expect((await recoverAddOnPayment(mutation)).ok).toBe(true);
+  expect(stripe.paymentIntents.create.mock.calls[0]).toEqual(stripe.paymentIntents.create.mock.calls[1]);
+});
+it("never creates a retry payment if saving its new key fails", async () => {
+  mutation.addOnSnapshot.paymentIntent = { id: "pi_declined", status: "requires_payment_method" };
+  stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_declined", status: "requires_payment_method", amount_received: 0 });
+  Mutation.updateOne.mockRejectedValueOnce(new Error("database unavailable"));
+  expect((await recoverAddOnPayment(mutation)).ok).toBe(false);
+  expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
 });

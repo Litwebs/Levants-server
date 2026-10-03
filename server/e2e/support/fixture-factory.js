@@ -887,6 +887,15 @@ async function crossCutoff(subscriptionId) {
     if (fixture.cadence === "weekly-single-day") cutoffDaysBefore = 14;
     if (fixture.cadence === "fortnightly") cutoffDaysBefore = 21;
   }
+  if (fixture.cadence === "weekly-multi-day") {
+    // Lock exactly the first two fixture deliveries, even across London
+    // midnight. A fixed seven-day cutoff can also lock the third occurrence.
+    const { formatDateKeyInTimeZone } = require("../../utils/subscriptionCutoff.util");
+    const londonDay = date => Date.parse(`${formatDateKeyInTimeZone(date)}T00:00:00Z`);
+    cutoffDaysBefore = Math.max(0, Math.round(
+      (londonDay(new Date(fixture.deliveryDates[1])) - londonDay(new Date())) / DAY_MS,
+    ));
+  }
   await SubscriptionSettings.findOneAndUpdate(
     { singletonKey: "subscription-settings" },
     { cutoffDaysBefore, cutoffTime: "00:00" },
