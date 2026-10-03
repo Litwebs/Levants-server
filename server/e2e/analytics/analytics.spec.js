@@ -85,18 +85,31 @@ test("admin analytics supports real filters, drilldowns, and CSV export", async 
     .locator("..");
   await milkRankInfo.getByRole("button", { name: "View details" }).click();
 
+  const productDetail = page.locator("#product-analytics-detail");
   await expect(
-    page.getByText("Historical product performance for the selected filters"),
+    productDetail.getByText(
+      "Historical product performance for the selected filters",
+    ),
   ).toBeVisible();
-  await expect(page.getByText("AN-MILK-1L", { exact: true })).toBeVisible();
+  await expect(
+    productDetail.getByText("AN-MILK-1L", { exact: true }),
+  ).toBeVisible();
 
-  await page.getByRole("button", { name: "View variant", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Milk 1L", exact: true }))
-    .toBeVisible();
-  await expect(page.getByText("Analytics Milk · AN-MILK-1L", { exact: true }))
-    .toBeVisible();
+  await productDetail
+    .getByRole("button", { name: "View variant", exact: true })
+    .click();
 
-  await page.getByRole("button", { name: "Close", exact: true }).click();
+  const variantDetail = page.locator("#variant-analytics-detail");
+  await expect(
+    variantDetail.getByRole("heading", { name: "Milk 1L", exact: true }),
+  ).toBeVisible();
+  await expect(
+    variantDetail.getByText("Analytics Milk · AN-MILK-1L", { exact: true }),
+  ).toBeVisible();
+
+  await variantDetail
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
 
   const exportSection = page
     .getByText("Product Performance", { exact: true })
