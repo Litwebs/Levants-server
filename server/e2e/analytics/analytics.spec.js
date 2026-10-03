@@ -159,7 +159,9 @@ test("admin analytics supports real filters, comparisons, trends, drilldowns, an
     .getByRole("heading", { name: "Product Performance", exact: true })
     .locator("xpath=../../..");
   await expect(
-    filteredProductPerformanceCard.getByText("Analytics Eggs", { exact: true }),
+    filteredProductPerformanceCard
+      .getByText("Analytics Eggs", { exact: true })
+      .first(),
   ).toBeVisible();
   await expect(
     filteredProductPerformanceCard.getByText("Analytics Milk", { exact: true }),
