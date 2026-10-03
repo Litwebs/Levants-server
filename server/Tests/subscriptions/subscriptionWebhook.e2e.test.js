@@ -420,7 +420,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(orders).toHaveLength(1);
   });
 
-  it("repairs a partially processed multi-day invoice on retry", async () => {
+  it.each(["order", "ledger"])("reconciles a partially processed multi-day invoice (%s failure)", async failure => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
     const sunday = new Date("2026-07-12T09:00:00.000Z");
@@ -469,15 +469,24 @@ describe("Subscription Stripe webhook E2E", () => {
         },
       },
     };
-    const originalCreate = Payment.create.bind(Payment);
+    event.data.object.created = Math.floor(Date.now() / 1000);
+    event.data.object.paid = true;
+    const failingModel = failure === "order" ? Order : Payment;
+    const originalCreate = failingModel.create.bind(failingModel);
     jest
-      .spyOn(Payment, "create")
+      .spyOn(failingModel, "create")
       .mockImplementationOnce((...args) => originalCreate(...args))
       .mockRejectedValueOnce(new Error("transient payment-ledger failure"));
 
     expect((await postStripeEvent(event)).status).toBe(500);
-    Payment.create.mockRestore();
-    expect((await postStripeEvent(event)).status).toBe(200);
+    failingModel.create.mockRestore();
+    expect(await Order.countDocuments({ subscription: subscription._id })).toBe(failure === "order" ? 1 : 2);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      stripe.invoices.list.mockResolvedValueOnce({ data: [event.data.object] });
+      const result = await subscriptionWebhookService.ReconcileRecentPaidSubscriptionInvoices();
+      expect(result.failed).toBe(0);
+      expect(result.reconciled).toBe(1);
+    }
 
     expect(
       await Order.countDocuments({

@@ -16,6 +16,7 @@ const Payment = require("../../models/payment.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
+const { selectInvoicesForRecovery } = require("./subscriptionInvoiceRecovery.util");
 const {
   addCalendarMonthPreservingWeekdayOccurrence,
 } = require("../../utils/subscriptionCadence.util");
@@ -752,16 +753,11 @@ async function ReconcileRecentPaidSubscriptionInvoices({
           stripeInvoiceId: { $ne: null },
         }),
       );
-      const unlinked = paidInvoices.filter(
-        (invoice) => !linkedIds.has(invoice.id),
-      );
-      if (unlinked.length === 0) continue;
-
-      const historical = unlinked.filter(
-        (invoice) => Number(invoice.created) < cutoffSeconds,
-      );
-      const recent = unlinked.filter(
-        (invoice) => Number(invoice.created) >= cutoffSeconds,
+      // A linked order does not prove the whole billing window was saved.
+      // Replay recent invoices through the per-delivery idempotent handler so
+      // missing orders, slot links and payment records can all be repaired.
+      const { historical, recent } = selectInvoicesForRecovery(
+        paidInvoices, linkedIds, cutoffSeconds,
       );
       if (historical.length > 0) {
         result.historicalDrift += 1;
