@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
+const path = require("path");
 
 const {
   listBatches,
@@ -30,6 +31,24 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // up to 5MB for XLSX exports
+  },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname || "").toLowerCase();
+    const allowedExtensions = new Set([".csv", ".xls", ".xlsx"]);
+    const allowedMimeTypes = new Set([
+      "text/csv",
+      "application/csv",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ]);
+
+    if (allowedExtensions.has(extension) && allowedMimeTypes.has(file.mimetype)) {
+      return callback(null, true);
+    }
+
+    const error = new Error("ordersFile must be a CSV or Excel spreadsheet");
+    error.statusCode = 400;
+    return callback(error);
   },
 });
 

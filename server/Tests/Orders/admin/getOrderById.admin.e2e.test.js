@@ -85,6 +85,47 @@ describe("GET /api/admin/orders/:id (Admin)", () => {
     expect(res.body.success).toBe(false);
   });
 
+  test("returns locally recorded email history when older emails have no Resend id", async () => {
+    const adminCookie = await loginAsAdmin(app);
+    const customer = await createCustomer();
+    const product = await createProduct();
+    const variant = await createVariant({ product });
+    const sentAt = new Date("2026-09-24T12:00:00.000Z");
+    const order = await Order.create({
+      customer: customer._id,
+      items: [{
+        product: product._id,
+        variant: variant._id,
+        name: variant.name,
+        sku: variant.sku,
+        price: variant.price,
+        quantity: 1,
+        subtotal: variant.price,
+      }],
+      subtotal: variant.price,
+      deliveryAddress: getValidDeliveryAddress(),
+      location: getValidLocation(),
+      deliveryFee: 0,
+      total: variant.price,
+      status: "paid",
+      paidAt: sentAt,
+      reservationExpiresAt: new Date(),
+      metadata: { orderConfirmationSentAt: sentAt },
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/orders/${order._id}/emails`)
+      .set("Cookie", adminCookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.emails).toHaveLength(1);
+    expect(res.body.data.emails[0]).toMatchObject({
+      template: "orderConfirmation",
+      providerStatus: "not_recorded",
+      provider: null,
+    });
+  });
+
   test("returns 404 when order is archived", async () => {
     const adminCookie = await loginAsAdmin(app);
 

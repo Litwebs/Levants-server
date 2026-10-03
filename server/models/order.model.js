@@ -1,5 +1,31 @@
 const mongoose = require("mongoose");
 
+const orderStatusAuditSchema = new mongoose.Schema(
+  {
+    from: { type: String, default: null },
+    to: { type: String, required: true },
+    changedAt: { type: Date, default: Date.now, required: true },
+    actor: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    actorName: { type: String, default: "System" },
+    actorRole: { type: String, default: null },
+    source: { type: String, default: "admin" },
+    effects: { type: [String], default: [] },
+  },
+  { _id: true },
+);
+
+const orderEmailLogSchema = new mongoose.Schema(
+  {
+    template: { type: String, required: true },
+    providerId: { type: String, default: null, index: true },
+    subject: { type: String, required: true },
+    to: { type: String, required: true },
+    sentAt: { type: Date, default: Date.now, required: true },
+    trigger: { type: String, default: null },
+  },
+  { _id: true },
+);
+
 /**
  * Individual item snapshot
  * (NEVER recomputed after creation)
@@ -10,14 +36,6 @@ const orderItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
-    },
-
-    // Product display-name snapshot at order creation time. Optional for
-    // legacy orders created before product-name snapshotting was introduced.
-    productName: {
-      type: String,
-      trim: true,
-      default: undefined,
     },
 
     variant: {
@@ -203,6 +221,9 @@ const orderSchema = new mongoose.Schema(
       default: "ordered",
       index: true,
     },
+
+    statusAudit: { type: [orderStatusAuditSchema], default: [] },
+    emailLog: { type: [orderEmailLogSchema], default: [] },
 
     reservationExpiresAt: {
       type: Date,

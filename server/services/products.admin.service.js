@@ -137,40 +137,149 @@ async function ListProducts({
   pageSize = 20,
   filters = {},
   search,
+  sort = "newest",
 } = {}) {
-  const query = { status: { $ne: "archived" } };
+  const availableStockExpression = {
+    $subtract: [
+      { $ifNull: ["$stockQuantity", 0] },
+      { $ifNull: ["$reservedQuantity", 0] },
+    ],
+  };
 
-  // For UI filter dropdowns, return all categories (not limited by current
-  // `category` filter or search query), but still respect status scope.
-  const categoriesQuery = { status: query.status };
+  // Stock is summarized before querying products so stock filters are applied
+  // before pagination. The browser receives only the requested result page.
+  const variantStockSummaries = await Variant.aggregate([
+    { $match: { status: { $ne: "archived" } } },
+    {
+      $group: {
+        _id: "$product",
+        total: { $sum: 1 },
+        activeCount: {
+          $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
+        },
+        low: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$status", "active"] },
+                  { $gt: [availableStockExpression, 0] },
+                  { $gt: [{ $ifNull: ["$lowStockAlert", 0] }, 0] },
+                  {
+                    $lte: [
+                      availableStockExpression,
+                      { $ifNull: ["$lowStockAlert", 0] },
+                    ],
+                  },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+        out: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$status", "active"] },
+                  { $lte: [availableStockExpression, 0] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]);
 
-  if (filters.status && filters.status !== "archived")
-    query.status = filters.status;
+  const lowStockProductIds = variantStockSummaries
+    .filter((summary) => summary.low > 0)
+    .map((summary) => summary._id);
+  const fullyInStockProductIds = variantStockSummaries
+    .filter((summary) => summary.activeCount > 0 && summary.out === 0)
+    .map((summary) => summary._id);
+
+  const conditions = [];
+  conditions.push(
+    filters.status
+      ? { status: filters.status }
+      : { status: { $ne: "archived" } },
+  );
+
   const categoryList = parseCommaSeparatedList(filters.category);
   if (categoryList) {
-    query.category =
-      categoryList.length === 1 ? categoryList[0] : { $in: categoryList };
+    conditions.push({
+      category:
+        categoryList.length === 1 ? categoryList[0] : { $in: categoryList },
+    });
   }
 
   if (search) {
-    const rx = new RegExp(search, "i");
-    query.$or = [{ name: rx }, { description: rx }, { slug: rx }];
+    const escapedSearch = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rx = new RegExp(escapedSearch, "i");
+    conditions.push({ $or: [{ name: rx }, { description: rx }, { slug: rx }] });
   }
+
+  if (filters.stock === "low") {
+    conditions.push({ _id: { $in: lowStockProductIds } });
+  } else if (filters.stock === "out") {
+    // Products with no active variants are also considered out of stock.
+    conditions.push({ _id: { $nin: fullyInStockProductIds } });
+  }
+
+  const query = conditions.length === 1 ? conditions[0] : { $and: conditions };
+  const sortOptions = {
+    newest: { createdAt: -1 },
+    oldest: { createdAt: 1 },
+    "name-asc": { name: 1 },
+    "name-desc": { name: -1 },
+  };
+  const productSort = sortOptions[sort] || sortOptions.newest;
 
   const skip = (page - 1) * pageSize;
 
-  const [total, products, categories, categoryDocs] = await Promise.all([
+  const [
+    total,
+    products,
+    categories,
+    categoryDocs,
+    catalogueTotal,
+    activeTotal,
+    lowStockTotal,
+    outOfStockTotal,
+  ] = await Promise.all([
     Product.countDocuments(query),
     Product.find(query)
-      .sort({ createdAt: -1 })
+      .sort(productSort)
       .skip(skip)
       .limit(pageSize)
       .populate("thumbnailImage")
       .populate("galleryImages")
       .lean(),
-    Product.distinct("category", categoriesQuery),
+    Product.distinct("category", { status: { $ne: "archived" } }),
     Category.find().select("title").sort({ title: 1 }).lean(),
+    Product.countDocuments({ status: { $ne: "archived" } }),
+    Product.countDocuments({ status: "active" }),
+    Product.countDocuments({
+      status: { $ne: "archived" },
+      _id: { $in: lowStockProductIds },
+    }),
+    Product.countDocuments({
+      status: { $ne: "archived" },
+      _id: { $nin: fullyInStockProductIds },
+    }),
   ]);
+
+  const stats = {
+    total: catalogueTotal,
+    active: activeTotal,
+    lowStock: lowStockTotal,
+    outOfStock: outOfStockTotal,
+  };
 
   const categoryDocTitles = categoryDocs.map((d) => d.title);
   const allCategories = Array.from(
@@ -190,8 +299,9 @@ async function ListProducts({
         page,
         pageSize,
         total,
-        totalPages: Math.ceil(total / pageSize),
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
         categories: allCategories,
+        stats,
       },
     };
   }
@@ -223,8 +333,9 @@ async function ListProducts({
       page,
       pageSize,
       total,
-      totalPages: Math.ceil(total / pageSize),
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
       categories: allCategories,
+      stats,
     },
   };
 }
