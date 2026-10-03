@@ -30,6 +30,17 @@ export function useProducts() {
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    lowStock: 0,
+    outOfStock: 0,
+  });
+  const [paginationMeta, setPaginationMeta] = useState({
+    total: 0,
+    totalPages: 1,
+  });
 
   const [selectedProduct, setSelectedProduct] = useState<AdminProduct | null>(
     null,
@@ -47,27 +58,72 @@ export function useProducts() {
 
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, selectedCategory, selectedStatus, variantStockFilter, sortBy]);
 
   const fetchProducts = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
     try {
       const res = await api.get("/admin/products", {
-        params: { page: 1, pageSize: 100 },
+        params: {
+          page,
+          pageSize,
+          search: debouncedSearchQuery || undefined,
+          category: selectedCategory === "All" ? undefined : selectedCategory,
+          status: selectedStatus === "All" ? undefined : selectedStatus,
+          stock: variantStockFilter === "All" ? undefined : variantStockFilter,
+          sort: sortBy,
+        },
       });
 
+      if (requestId !== requestIdRef.current) return;
+
       const next = (res.data?.data?.products || []) as AdminProduct[];
+      const meta = res.data?.meta || {};
       setProducts(next);
-      setApiCategories((res.data?.meta?.categories || []) as string[]);
+      setApiCategories((meta.categories || []) as string[]);
+      setStats({
+        total: Number(meta.stats?.total) || 0,
+        active: Number(meta.stats?.active) || 0,
+        lowStock: Number(meta.stats?.lowStock) || 0,
+        outOfStock: Number(meta.stats?.outOfStock) || 0,
+      });
+      setPaginationMeta({
+        total: Number(meta.total) || 0,
+        totalPages: Math.max(1, Number(meta.totalPages) || 1),
+      });
     } catch (e: any) {
+      if (requestId !== requestIdRef.current) return;
       showToast({
         type: "error",
         title: "Failed to load products",
         message: e?.response?.data?.message || e?.message,
       });
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) setIsLoading(false);
     }
-  }, [showToast]);
+  }, [
+    debouncedSearchQuery,
+    page,
+    pageSize,
+    selectedCategory,
+    selectedStatus,
+    showToast,
+    sortBy,
+    variantStockFilter,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,131 +137,25 @@ export function useProducts() {
     };
   }, [fetchProducts]);
 
-  const stats = useMemo(() => {
-    const active = products.filter((p) => p.status === "active").length;
-
-    const lowStock = products.filter((p) => {
-      const variants = (p.variants || []).filter((v) => v.status === "active");
-      if (variants.length === 0) return false;
-
-      return variants.some((v) => {
-        const available = (v.stockQuantity || 0) - (v.reservedQuantity || 0);
-        const threshold = v.lowStockAlert ?? 0;
-        return threshold > 0 && available > 0 && available <= threshold;
-      });
-    }).length;
-
-    const outOfStock = products.filter((p) => {
-      const variants = (p.variants || []).filter((v) => v.status === "active");
-      // For dashboard-style visibility, treat a product as "out of stock"
-      // if it has no active variants OR any active variant is out of stock.
-      if (variants.length === 0) return true;
-      return variants.some((v) => {
-        const available = (v.stockQuantity || 0) - (v.reservedQuantity || 0);
-        return available <= 0;
-      });
-    }).length;
-
-    return { total: products.length, active, lowStock, outOfStock };
-  }, [products]);
-
   const categoryOptions = useMemo(
     () => ["All", ...apiCategories],
     [apiCategories],
   );
 
-  const filteredProducts = useMemo(() => {
-    const filtered = products.filter((product) => {
-      const matchesSearch =
-        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.slug.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory =
-        selectedCategory === "All" || product.category === selectedCategory;
-      const matchesStatus =
-        selectedStatus === "All" || product.status === selectedStatus;
-
-      const activeVariants = (product.variants || []).filter(
-        (v) => v.status === "active",
-      );
-      const outOfStockCount = activeVariants.filter((v) => {
-        const available = (v.stockQuantity || 0) - (v.reservedQuantity || 0);
-        return available <= 0;
-      }).length;
-      const lowStockCount = activeVariants.filter((v) => {
-        const available = (v.stockQuantity || 0) - (v.reservedQuantity || 0);
-        const threshold = v.lowStockAlert ?? 0;
-        return threshold > 0 && available > 0 && available <= threshold;
-      }).length;
-      const isOutOfStock = activeVariants.length === 0 || outOfStockCount > 0;
-
-      const matchesVariantStock =
-        variantStockFilter === "All" ||
-        (variantStockFilter === "low" && lowStockCount > 0) ||
-        (variantStockFilter === "out" && isOutOfStock);
-
-      return (
-        matchesSearch &&
-        matchesCategory &&
-        matchesStatus &&
-        matchesVariantStock
-      );
-    });
-
-    const sorted = [...filtered];
-
-    switch (sortBy) {
-      case "oldest":
-        sorted.sort((a, b) => {
-          const timeA = new Date(a.createdAt || 0).getTime();
-          const timeB = new Date(b.createdAt || 0).getTime();
-          return timeA - timeB;
-        });
-        break;
-      case "name-asc":
-        sorted.sort((a, b) => a.name.localeCompare(b.name));
-        break;
-      case "name-desc":
-        sorted.sort((a, b) => b.name.localeCompare(a.name));
-        break;
-      case "newest":
-      default:
-        sorted.sort((a, b) => {
-          const timeA = new Date(a.createdAt || 0).getTime();
-          const timeB = new Date(b.createdAt || 0).getTime();
-          return timeB - timeA;
-        });
-        break;
-    }
-
-    return sorted;
-  }, [products, searchQuery, selectedCategory, selectedStatus, variantStockFilter, sortBy]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, selectedCategory, selectedStatus, variantStockFilter, sortBy]);
-
-  const paginationMeta = useMemo(() => {
-    const total = filteredProducts.length;
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
-    return { total, totalPages };
-  }, [filteredProducts.length, pageSize]);
+  // These aliases preserve the table interface while making it explicit that
+  // the returned collection is already filtered, sorted, and paginated.
+  const filteredProducts = products;
+  const pagedProducts = products;
 
   useEffect(() => {
     setPage((p) => Math.min(Math.max(1, p), paginationMeta.totalPages));
   }, [paginationMeta.totalPages]);
 
-  const pagedProducts = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
-    return filteredProducts.slice(start, end);
-  }, [filteredProducts, page, pageSize]);
-
   const productVariantCounts = useMemo(() => {
     const map: Record<string, { total: number; low: number; out: number }> =
       {};
 
-    filteredProducts.forEach((p) => {
+    products.forEach((p) => {
       const variants = Array.isArray(p.variants) ? p.variants : [];
       const active = variants.filter((v) => v.status === "active");
 
@@ -223,7 +173,7 @@ export function useProducts() {
     });
 
     return map;
-  }, [filteredProducts]);
+  }, [products]);
 
   const handleThumbnailUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

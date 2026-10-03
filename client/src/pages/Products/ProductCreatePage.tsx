@@ -10,6 +10,7 @@ import {
   type ChangeEvent,
   type FormEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -19,6 +20,8 @@ import {
   Card,
   Input,
   LoadingScreen,
+  Modal,
+  ModalFooter,
   PageContainer,
   Select,
 } from "../../components/common";
@@ -65,6 +68,12 @@ const getProductDraft = (product: AdminProduct): ProductDraft => ({
   storageNotes: product.storageNotes ?? "",
 });
 
+const getFormSnapshot = (
+  draft: ProductDraft,
+  thumbnail: string,
+  gallery: string[],
+) => JSON.stringify({ draft, thumbnail, gallery });
+
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_GALLERY_IMAGES = 10;
 
@@ -84,18 +93,24 @@ const ProductCreatePage = () => {
   const routedProduct = (
     location.state as { product?: AdminProduct } | null
   )?.product;
+  const routedDraft = routedProduct
+    ? getProductDraft(routedProduct)
+    : initialDraft;
+  const routedThumbnail = routedProduct
+    ? getImageUrl(routedProduct.thumbnailImage)
+    : "";
+  const routedGallery = routedProduct
+    ? getImageUrls(routedProduct.galleryImages)
+    : [];
   const { showToast } = useToast();
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  const [draft, setDraft] = useState<ProductDraft>(() =>
-    routedProduct ? getProductDraft(routedProduct) : initialDraft,
-  );
-  const [thumbnail, setThumbnail] = useState(() =>
-    routedProduct ? getImageUrl(routedProduct.thumbnailImage) : "",
-  );
-  const [gallery, setGallery] = useState<string[]>(() =>
-    routedProduct ? getImageUrls(routedProduct.galleryImages) : [],
+  const [draft, setDraft] = useState<ProductDraft>(() => routedDraft);
+  const [thumbnail, setThumbnail] = useState(() => routedThumbnail);
+  const [gallery, setGallery] = useState<string[]>(() => routedGallery);
+  const [baselineSnapshot, setBaselineSnapshot] = useState(() =>
+    getFormSnapshot(routedDraft, routedThumbnail, routedGallery),
   );
   const [categories, setCategories] = useState<string[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
@@ -104,6 +119,16 @@ const ProductCreatePage = () => {
   );
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [discardTarget, setDiscardTarget] = useState<string | null>(null);
+  const allowNavigationRef = useRef(false);
+  const hasUserEditedRef = useRef(false);
+
+  const currentSnapshot = useMemo(
+    () => getFormSnapshot(draft, thumbnail, gallery),
+    [draft, gallery, thumbnail],
+  );
+  const hasUnsavedChanges =
+    !productLoading && currentSnapshot !== baselineSnapshot;
 
   useEffect(() => {
     let active = true;
@@ -146,9 +171,17 @@ const ProductCreatePage = () => {
         const product = response.data?.data?.product as AdminProduct | undefined;
         if (!active || !product) return;
 
-        setDraft(getProductDraft(product));
-        setThumbnail(getImageUrl(product.thumbnailImage));
-        setGallery(getImageUrls(product.galleryImages));
+        if (!hasUserEditedRef.current) {
+          const nextDraft = getProductDraft(product);
+          const nextThumbnail = getImageUrl(product.thumbnailImage);
+          const nextGallery = getImageUrls(product.galleryImages);
+          setDraft(nextDraft);
+          setThumbnail(nextThumbnail);
+          setGallery(nextGallery);
+          setBaselineSnapshot(
+            getFormSnapshot(nextDraft, nextThumbnail, nextGallery),
+          );
+        }
       } catch (error: any) {
         if (!active) return;
         showToast({
@@ -168,7 +201,64 @@ const ProductCreatePage = () => {
     };
   }, [navigate, productId, routedProduct, showToast]);
 
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const warning = "You have unsaved product changes. Discard them?";
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (allowNavigationRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (
+        allowNavigationRef.current ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target as Element | null;
+      const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) {
+        return;
+      }
+
+      const nextUrl = new URL(anchor.href, window.location.href);
+      if (nextUrl.href === window.location.href) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setDiscardTarget(nextUrl.href);
+    };
+    const handlePopState = () => {
+      if (allowNavigationRef.current) return;
+      if (!window.confirm(warning)) {
+        allowNavigationRef.current = true;
+        window.history.forward();
+        window.setTimeout(() => {
+          allowNavigationRef.current = false;
+        }, 0);
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleDocumentClick, true);
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleDocumentClick, true);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [hasUnsavedChanges]);
+
   const updateDraft = (field: keyof ProductDraft, value: string) => {
+    hasUserEditedRef.current = true;
     setDraft((current) => ({ ...current, [field]: value }));
     setErrors((current) => {
       if (!current[field]) return current;
@@ -205,6 +295,7 @@ const ProductCreatePage = () => {
     event.target.value = "";
     if (!file || !validateImage(file)) return;
 
+    hasUserEditedRef.current = true;
     setThumbnail(await readImage(file));
     setErrors((current) => {
       const next = { ...current };
@@ -221,6 +312,7 @@ const ProductCreatePage = () => {
     event.target.value = "";
     if (files.length === 0) return;
 
+    hasUserEditedRef.current = true;
     const images = await Promise.all(files.map(readImage));
     setGallery((current) => [...current, ...images].slice(0, MAX_GALLERY_IMAGES));
   };
@@ -281,6 +373,8 @@ const ProductCreatePage = () => {
         : await api.post("/admin/products", payload);
 
       const product = response.data?.data?.product as AdminProduct | undefined;
+      allowNavigationRef.current = true;
+      setBaselineSnapshot(currentSnapshot);
       showToast({
         type: "success",
         title: isEditing ? "Product updated" : "Product created",
@@ -313,6 +407,19 @@ const ProductCreatePage = () => {
 
   const pageTitle = isEditing ? "Edit product" : "Create product";
   const submitLabel = isEditing ? "Save changes" : "Create product";
+
+  const keepEditing = () => setDiscardTarget(null);
+  const discardChanges = () => {
+    if (!discardTarget) return;
+    allowNavigationRef.current = true;
+    const nextUrl = new URL(discardTarget, window.location.href);
+    setDiscardTarget(null);
+    if (nextUrl.origin === window.location.origin) {
+      navigate(`${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    } else {
+      window.location.assign(nextUrl.href);
+    }
+  };
 
   return (
     <PageContainer className={styles.page} width="wide">
@@ -503,7 +610,10 @@ const ProductCreatePage = () => {
                   <button
                     type="button"
                     className={styles.removeImageButton}
-                    onClick={() => setThumbnail("")}
+                    onClick={() => {
+                      hasUserEditedRef.current = true;
+                      setThumbnail("");
+                    }}
                     aria-label="Remove thumbnail"
                   >
                     <X size={16} />
@@ -550,9 +660,12 @@ const ProductCreatePage = () => {
                       type="button"
                       className={styles.galleryRemoveButton}
                       onClick={() =>
-                        setGallery((current) =>
-                          current.filter((_, itemIndex) => itemIndex !== index),
-                        )
+                        setGallery((current) => {
+                          hasUserEditedRef.current = true;
+                          return current.filter(
+                            (_, itemIndex) => itemIndex !== index,
+                          );
+                        })
                       }
                       aria-label={`Remove gallery image ${index + 1}`}
                     >
@@ -582,7 +695,39 @@ const ProductCreatePage = () => {
             </div>
           </Card>
         </div>
+
+        <Button
+          type="submit"
+          leftIcon={isEditing ? <Save size={16} /> : <Plus size={16} />}
+          isLoading={isSaving}
+          className={styles.mobileSubmit}
+        >
+          {submitLabel}
+        </Button>
       </form>
+
+      <Modal
+        isOpen={Boolean(discardTarget)}
+        onClose={keepEditing}
+        title="Discard changes?"
+        size="sm"
+        showCloseButton={false}
+      >
+        <div className={styles.discardDialog}>
+          <p>
+            You have unsaved product changes. If you leave now, those changes
+            will be lost.
+          </p>
+        </div>
+        <ModalFooter>
+          <Button variant="outline" onClick={keepEditing}>
+            Keep editing
+          </Button>
+          <Button variant="danger" onClick={discardChanges}>
+            Discard changes
+          </Button>
+        </ModalFooter>
+      </Modal>
     </PageContainer>
   );
 };

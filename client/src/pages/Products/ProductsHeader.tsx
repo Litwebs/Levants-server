@@ -2,8 +2,8 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "../../components/common";
 import styles from "./Products.module.css";
 
-const ProductsHeader = ({ stats, fetchProducts, isLoading }: any) => {
-  const productCount = stats?.total ?? 0;
+const ProductsHeader = ({ paginationMeta, stats, fetchProducts, isLoading }: any) => {
+  const productCount = paginationMeta?.total ?? stats?.total ?? 0;
 
   return (
     <div className={styles.header}>
