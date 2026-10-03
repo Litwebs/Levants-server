@@ -124,10 +124,14 @@ test("admin analytics supports real filters, comparisons, trends, drilldowns, an
     .getByRole("heading", { name: "Product Performance", exact: true })
     .locator("xpath=../../..");
   await expect(
-    productsTabPerformanceCard.getByText("Analytics Milk", { exact: true }),
+    productsTabPerformanceCard
+      .getByText("Analytics Milk", { exact: true })
+      .first(),
   ).toBeVisible();
   await expect(
-    productsTabPerformanceCard.getByText("Analytics Eggs", { exact: true }),
+    productsTabPerformanceCard
+      .getByText("Analytics Eggs", { exact: true })
+      .first(),
   ).toBeVisible();
 
   await page.getByRole("tab", { name: "Variants", exact: true }).click();
