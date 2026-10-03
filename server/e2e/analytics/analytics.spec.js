@@ -226,8 +226,9 @@ test("admin analytics handles direct routes, empty periods, and retryable dashbo
   const retryResponse = waitForDashboard(page);
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await retryResponse;
-  await expect(page.getByRole("heading", { name: "Revenue Trend", exact: true }))
-    .toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Subscription Analytics", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await page.getByLabel("Date range").selectOption("custom");
