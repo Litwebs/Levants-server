@@ -916,3 +916,268 @@
     flex-direction: column;
   }
 }
+
+
+/* Analytics layout refresh
+   Keep dense reporting readable inside the grouped admin shell and avoid
+   rendering a wall of empty period charts when the selected period is quiet. */
+.reports {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.header {
+  align-items: flex-end;
+}
+
+.headerActions {
+  gap: var(--space-2);
+}
+
+.headerActions > * {
+  min-width: 0;
+}
+
+.analyticsContent,
+.periodSections {
+  min-width: 0;
+}
+
+.analyticsContent {
+  gap: var(--space-5);
+}
+
+.periodSections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.periodSectionsHidden {
+  display: none;
+}
+
+.kpiGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.kpiCard,
+.chartCard,
+.fullWidthChart,
+.inventoryCard {
+  min-width: 0;
+}
+
+.kpiCard {
+  padding: var(--space-4);
+}
+
+.kpiContent {
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.kpiIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-lg);
+}
+
+.kpiValue {
+  font-size: var(--text-xl);
+}
+
+.metricsGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: 0;
+  text-align: left;
+}
+
+.metricItem {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 38%, var(--card));
+}
+
+.metricValue {
+  font-size: var(--text-xl);
+}
+
+.subscriptionCard {
+  overflow: visible;
+}
+
+.subscriptionMetricsGrid {
+  margin-bottom: var(--space-5);
+}
+
+.subscriptionRankings {
+  margin-top: 0;
+}
+
+.subscriptionTrendGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.subscriptionTrendGrid > *,
+.chartsGrid > * {
+  min-width: 0;
+}
+
+.subscriptionCardQuiet .subscriptionRankings,
+.subscriptionCardQuiet .subscriptionTrendGrid {
+  display: none;
+}
+
+.compactEmptyState {
+  padding: var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 26%, var(--card));
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.chartsGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.chartCard,
+.fullWidthChart {
+  padding: var(--space-5);
+}
+
+.productDetailSection,
+.productRankingSection,
+.variantHeader,
+.rankInfo,
+.simpleListMain {
+  min-width: 0;
+}
+
+.productDetailSection {
+  margin-top: var(--space-4);
+}
+
+.productRankingSection > .variantHeader,
+.productDetailSection > .variantHeader {
+  align-items: flex-start;
+}
+
+.variantMeta,
+.chartTotal,
+.compositionNote,
+.rankMeta,
+.inventoryCount {
+  overflow-wrap: anywhere;
+}
+
+.variantMeta {
+  max-width: 52%;
+  text-align: right;
+  line-height: 1.35;
+}
+
+.chartFooter {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.chartTotal {
+  line-height: 1.45;
+}
+
+.inventoryCard {
+  padding: var(--space-5);
+}
+
+.emptyState {
+  padding: var(--space-5);
+}
+
+@media (max-width: 1100px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chartsGrid,
+  .subscriptionTrendGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .reports {
+    gap: var(--space-4);
+  }
+
+  .header {
+    align-items: flex-start;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions > * {
+    flex: 1 1 10rem;
+  }
+
+  .kpiGrid,
+  .metricsGrid,
+  .chartsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpiCard,
+  .chartCard,
+  .fullWidthChart,
+  .inventoryCard {
+    padding: var(--space-4);
+  }
+
+  .variantMeta {
+    max-width: 58%;
+  }
+}
+
+@media (max-width: 520px) {
+  .headerActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .customDateRow {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .dateInput {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .variantHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .variantMeta {
+    max-width: 100%;
+    text-align: left;
+  }
+}

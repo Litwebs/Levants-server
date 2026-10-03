@@ -550,6 +550,13 @@ const Reports = () => {
     Number(newSubscriptions?.newSubscriptions ?? 0) > 0 ||
     Number(cancelledSubscriptions?.cancelledSubscriptions ?? 0) > 0;
 
+  const hasSubscriptionPeriodActivity =
+    Number(newSubscriptions?.newSubscriptions ?? 0) > 0 ||
+    Number(cancelledSubscriptions?.cancelledSubscriptions ?? 0) > 0 ||
+    Number(subscriptionRevenue?.grossRevenue ?? 0) !== 0 ||
+    Number(subscriptionRevenue?.refundAmount ?? 0) !== 0 ||
+    Number(subscriptionRevenue?.subscriptionRevenue ?? 0) !== 0;
+
   const exportScope =
     range === "custom" ? `${from || "start"}-${to || "end"}` : range;
   const exportSuffix = `${exportScope}-${orderSource}`;
@@ -888,12 +895,18 @@ const Reports = () => {
         </Card>
       </div>
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        className={`${styles.fullWidthChart} ${styles.subscriptionCard} ${
+          !hasSubscriptionPeriodActivity ? styles.subscriptionCardQuiet : ""
+        }`}
+      >
         <CardHeader>
           <CardTitle>Subscription Analytics</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className={styles.metricsGrid}>
+          <div
+            className={`${styles.metricsGrid} ${styles.subscriptionMetricsGrid}`}
+          >
             <div className={styles.metricItem}>
               <span className={styles.metricValue}>
                 {formatCompactNumber(
@@ -959,7 +972,16 @@ const Reports = () => {
               <span className={styles.metricLabel}>Recurring Revenue Share</span>
             </div>
           </div>
-          <div className={styles.chartsGrid}>
+          {!hasSubscriptionPeriodActivity ? (
+            <div className={styles.compactEmptyState}>
+              No subscription activity in this period. Current recurring state
+              is shown above.
+            </div>
+          ) : null}
+
+          <div
+            className={`${styles.chartsGrid} ${styles.subscriptionRankings}`}
+          >
             <div className={styles.productRankingSection}>
               <div className={styles.variantHeader}>
                 <span className={styles.variantTitle}>
@@ -1041,7 +1063,7 @@ const Reports = () => {
             </div>
           </div>
 
-          <div className={styles.chartsGrid}>
+          <div className={styles.subscriptionTrendGrid}>
             <div className={styles.productDetailSection}>
               <div className={styles.variantHeader}>
                 <span className={styles.variantTitle}>
@@ -1053,7 +1075,7 @@ const Reports = () => {
               </div>
               <SimpleBarChart
                 type="line"
-                height={210}
+                height={170}
                 color="success"
                 data={(subscriptionTrends?.points ?? []).map((point) => ({
                   label: point.label,
@@ -1073,7 +1095,7 @@ const Reports = () => {
               </div>
               <SimpleBarChart
                 type="bar"
-                height={210}
+                height={170}
                 color="primary"
                 data={(subscriptionTrends?.points ?? []).map((point) => ({
                   label: point.label,
@@ -1093,7 +1115,7 @@ const Reports = () => {
               </div>
               <SimpleBarChart
                 type="bar"
-                height={210}
+                height={170}
                 color="info"
                 data={(subscriptionTrends?.points ?? []).map((point) => ({
                   label: point.label,
@@ -1118,6 +1140,11 @@ const Reports = () => {
         </CardContent>
       </Card>
 
+      <div
+        className={`${styles.periodSections} ${
+          !hasSelectedPeriodActivity ? styles.periodSectionsHidden : ""
+        }`}
+      >
       <div className={styles.chartsGrid}>
         <Card className={styles.chartCard}>
           <CardHeader>
@@ -1127,7 +1154,7 @@ const Reports = () => {
             <SimpleBarChart
               data={revenueChartData}
               type="line"
-              height={240}
+              height={210}
               color="success"
               valueFormatter={(v) => formatCurrencyGBP(v, { compact: true })}
             />
@@ -1163,7 +1190,7 @@ const Reports = () => {
           <SimpleBarChart
             data={ordersChartData}
             type="bar"
-            height={220}
+            height={190}
             color="info"
             valueFormatter={(v) => formatCompactNumber(v)}
           />
@@ -1240,7 +1267,7 @@ const Reports = () => {
         <CardContent>
           <MultiLineChart
             series={salesTrendSeries}
-            height={260}
+            height={210}
             valueFormatter={(value) =>
               formatCurrencyGBP(value, { compact: true })
             }
@@ -1319,7 +1346,7 @@ const Reports = () => {
           <CardContent>
             <MultiLineChart
               series={productRevenueTrendSeries}
-              height={250}
+              height={210}
               valueFormatter={(value) =>
                 formatCurrencyGBP(value, { compact: true })
               }
@@ -1339,7 +1366,7 @@ const Reports = () => {
           <CardContent>
             <MultiLineChart
               series={productUnitsTrendSeries}
-              height={250}
+              height={210}
               valueFormatter={(value) => formatCompactNumber(value)}
             />
             <div className={styles.chartFooter}>
@@ -1360,7 +1387,7 @@ const Reports = () => {
           <CardContent>
             <MultiLineChart
               series={variantRevenueTrendSeries}
-              height={250}
+              height={210}
               valueFormatter={(value) =>
                 formatCurrencyGBP(value, { compact: true })
               }
@@ -1380,7 +1407,7 @@ const Reports = () => {
           <CardContent>
             <MultiLineChart
               series={variantUnitsTrendSeries}
-              height={250}
+              height={210}
               valueFormatter={(value) => formatCompactNumber(value)}
             />
             <div className={styles.chartFooter}>
@@ -2915,8 +2942,9 @@ const Reports = () => {
           </CardContent>
         </Card>
       ) : null}
+      </div>
 
-      <Card>
+      <Card className={styles.inventoryCard}>
         <CardHeader>
           <CardTitle>Low Stock Alert</CardTitle>
         </CardHeader>
