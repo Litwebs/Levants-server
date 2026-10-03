@@ -307,11 +307,23 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
         existingSlot.generatedAt = existingSlot.generatedAt || new Date();
         await existingSlot.save();
       }
-      const hasPayment = await Payment.exists({
+      const paymentIdentity = {
         order: existing._id,
         subscription: subscription._id,
-        status: "paid",
         providerReference: stripePaymentIntentId || null,
+      };
+      const orderRefunded = existing.status === "refunded";
+      const refundedAt = existing.refund?.refundedAt || null;
+      if (orderRefunded) {
+        // Recover a crash between marking the order refunded and updating its
+        // invoice ledger. A paid-invoice replay must not restore paid status.
+        await Payment.updateMany({ ...paymentIdentity, status: "paid" }, {
+          $set: { status: "refunded", ...(refundedAt ? { refundedAt } : {}) },
+        });
+      }
+      const hasPayment = await Payment.exists({
+        ...paymentIdentity,
+        status: { $in: ["paid", "refunded"] },
       });
       if (!hasPayment) {
         const invoiceFundedAmount = (existing.items || [])
@@ -324,7 +336,8 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
           subscription: subscription._id,
           amount: invoiceFundedAmount,
           currency: invoice.currency || "gbp",
-          status: "paid",
+          status: orderRefunded ? "refunded" : "paid",
+          ...(orderRefunded && refundedAt ? { refundedAt } : {}),
           providerReference: stripePaymentIntentId || null,
           paidAt,
         });

@@ -138,6 +138,40 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(result.missingEvents).toContain("invoice.payment_failed");
   });
 
+  it.each(["refunded", "missing", "paid"])("invoice recovery preserves a refunded order with a %s ledger", async ledgerState => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date(Date.now() + 2 * 86400000);
+    nextDelivery.setHours(9, 0, 0, 0);
+    const subscription = await createSubscriptionFixture({
+      customer: customer._id, stripeSubscriptionId: "sub_refund_replay",
+      nextDeliveryDate: nextDelivery, items: [buildSubscriptionItem(product, variant, 1)],
+    });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: nextDelivery, status: "scheduled" });
+    const invoice = { id: "in_refund_replay", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_refund_replay", paid: true, currency: "gbp", created: Math.floor(Date.now() / 1000) };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    const order = await Order.findOne({ subscription: subscription._id, stripeInvoiceId: invoice.id });
+    const originalPayment = await Payment.findOne({ order: order._id });
+    const refundedAt = new Date(Date.now() - 60000);
+    await Order.updateOne({ _id: order._id }, { $set: { status: "refunded", "refund.refundedAt": refundedAt } });
+    if (ledgerState === "missing") await Payment.deleteOne({ _id: originalPayment._id });
+    else if (ledgerState === "refunded") await Payment.updateOne({ _id: originalPayment._id },
+      { $set: { status: "refunded", refundedAt } });
+    for (let retry = 0; retry < 2; retry += 1) {
+      stripe.invoices.list.mockResolvedValueOnce({ data: [invoice] });
+      const result = await subscriptionWebhookService.ReconcileRecentPaidSubscriptionInvoices();
+      expect(result.failed).toBe(0);
+    }
+    const payments = await Payment.find({ order: order._id }).lean();
+    expect(payments).toHaveLength(1);
+    expect(payments[0]).toMatchObject({ status: "refunded", amount: originalPayment.amount, refundedAt });
+    if (ledgerState !== "missing") expect(String(payments[0]._id)).toBe(String(originalPayment._id));
+    expect((await Order.findById(order._id)).status).toBe("refunded");
+    expect(await Order.countDocuments({ subscription: subscription._id, stripeInvoiceId: invoice.id })).toBe(1);
+  });
+
   it("reconciles a recent invoice even when an older invoice needs manual review", async () => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
