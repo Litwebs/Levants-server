@@ -83,6 +83,7 @@ async function runMutation(
 }
 
 function sendMutationError(res, result) {
+  if (result?.data?.paymentOutcome) return res.status(400).json(result);
   if (result?.data?.refundPending) return res.status(400).json(result);
   const conflict =
     result?.data?.idempotencyConflict ||

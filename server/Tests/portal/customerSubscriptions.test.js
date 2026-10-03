@@ -4105,7 +4105,9 @@ describe("Portal Subscriptions", () => {
       .set("Authorization", `Bearer ${accessToken}`).send(payload);
     stripe.paymentIntents.create.mockClear();
     stripe.paymentIntents.create.mockRejectedValueOnce(new Error("response lost"));
-    expect((await send()).status).toBe(400);
+    const first = await send();
+    expect(first.status).toBe(400);
+    expect(first.body.data.paymentOutcome).toBe("unknown");
     await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, {
       scheduledDate: new Date(Date.now() - 86400000),
     });

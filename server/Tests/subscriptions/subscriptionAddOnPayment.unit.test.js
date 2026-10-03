@@ -82,3 +82,10 @@ it("never creates a retry payment if saving its new key fails", async () => {
   expect((await recoverAddOnPayment(mutation)).ok).toBe(false);
   expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
 });
+
+it("reports a confirmed unpaid decline as safe to replace", async () => {
+  stripe.paymentIntents.create.mockRejectedValueOnce({ payment_intent: {
+    id: "pi_declined", status: "requires_payment_method", amount_received: 0,
+  } });
+  expect((await recoverAddOnPayment(mutation)).paymentOutcome).toBe("declined");
+});

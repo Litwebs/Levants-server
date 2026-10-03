@@ -3906,6 +3906,10 @@ async function CancelSubscription({
  * Add paid, one-time products to the customer's single next delivery without
  * changing the recurring subscription contents or Stripe recurring price.
  */
+function rejectUnstartedAddOn(message) {
+  return Response(false, message, { paymentOutcome: "not_started" });
+}
+
 async function AddNextDeliveryAddOn({
   customerId,
   subscriptionId,
@@ -3916,11 +3920,11 @@ async function AddNextDeliveryAddOn({
     _id: subscriptionId,
     customer: customerId,
   });
-  if (!subscription) return Response(false, "Subscription not found", null);
+  if (!subscription) return rejectUnstartedAddOn("Subscription not found", null);
   const mutation = operationId && await SubscriptionMutation.findOne({
     customer: customerId, subscription: subscriptionId, operationId,
   });
-  if (!mutation) return Response(false, "A durable operation ID is required for an add-on", null);
+  if (!mutation) return rejectUnstartedAddOn("A durable operation ID is required for an add-on", null);
   const paidDelivery = await SubscriptionDelivery.findOne({
     subscription: subscriptionId, customer: customerId, "addOns.operationId": operationId,
   });
@@ -3937,15 +3941,14 @@ async function AddNextDeliveryAddOn({
     return resumeDeliveryAddOn({ subscription, nextDelivery: originalDelivery, mutation });
   }
   if (subscription.status !== "active") {
-    return Response(
-      false,
+    return rejectUnstartedAddOn(
       "One-time add-ons are only available for active subscriptions.",
       null,
     );
   }
 
   if (await hasUnfinishedCardRefund(subscription._id)) {
-    return Response(false, "A card refund is unfinished. Retry that refund before adding products.", null);
+    return rejectUnstartedAddOn("A card refund is unfinished. Retry that refund before adding products.", null);
   }
 
   const deliveryCandidates = await SubscriptionDelivery.find({
@@ -3966,14 +3969,13 @@ async function AddNextDeliveryAddOn({
         )),
   );
   if (!nextDelivery) {
-    return Response(false, "No upcoming delivery is available", null);
+    return rejectUnstartedAddOn("No upcoming delivery is available", null);
   }
 
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const cutoffAt = computeCutoffDate(nextDelivery.scheduledDate, settings);
   if (!cutoffAt || subscriptionClock.now() >= cutoffAt.getTime()) {
-    return Response(
-      false,
+    return rejectUnstartedAddOn(
       "The cut-off for your next delivery has passed.",
       null,
     );
@@ -3993,7 +3995,7 @@ async function AddNextDeliveryAddOn({
     status: "active",
   }).populate("product", "name status");
   if (variants.length !== variantIds.length) {
-    return Response(false, "One or more products are unavailable", null);
+    return rejectUnstartedAddOn("One or more products are unavailable", null);
   }
 
   const variantsById = new Map(
@@ -4004,7 +4006,7 @@ async function AddNextDeliveryAddOn({
   for (const [variantId, quantity] of requestedByVariant) {
     const variant = variantsById.get(variantId);
     if (!variant?.product || variant.product.status !== "active") {
-      return Response(false, "One or more products are unavailable", null);
+      return rejectUnstartedAddOn("One or more products are unavailable", null);
     }
     const available =
       Number(variant.stockQuantity || 0) - Number(variant.reservedQuantity || 0);
@@ -4030,14 +4032,14 @@ async function AddNextDeliveryAddOn({
     });
   }
   if (amountMinor <= 0) {
-    return Response(false, "The selected add-on total must be greater than £0", null);
+    return rejectUnstartedAddOn("The selected add-on total must be greater than £0", null);
   }
 
   const customer = await Customer.findById(customerId);
-  if (!customer?.stripeCustomerId) return Response(false, "No payment method on file", null);
+  if (!customer?.stripeCustomerId) return rejectUnstartedAddOn("No payment method on file", null);
   const remote = await stripe.customers.retrieve(customer.stripeCustomerId);
   const paymentMethod = remote?.invoice_settings?.default_payment_method;
-  if (!paymentMethod) return Response(false, "Please add a default card first", null);
+  if (!paymentMethod) return rejectUnstartedAddOn("Please add a default card first", null);
   mutation.addOnSnapshot = {
     deliveryId: String(nextDelivery._id), items: addOnItems, amountMinor,
     startedAt: new Date(subscriptionClock.now()),
@@ -4063,10 +4065,10 @@ async function resumeDeliveryAddOn({ subscription, nextDelivery, mutation }) {
     (nextDelivery.status === "generated" && nextDelivery.order?.deliveryStatus === "ordered" &&
       ["paid", "partially_paid", "partially_refunded"].includes(nextDelivery.order?.status)));
   if (subscription.status !== "active" || !editable || !cutoffAt || subscriptionClock.now() >= cutoffAt.getTime()) {
-    return Response(false, "The original add-on delivery is no longer editable. Please contact support to reconcile this payment; it will not move to another delivery.", { reconciliationRequired: true });
+    return Response(false, "The original add-on delivery is no longer editable. Please contact support to reconcile this payment; it will not move to another delivery.", { reconciliationRequired: true, paymentOutcome: "unknown" });
   }
   const payment = await recoverAddOnPayment(mutation);
-  if (!payment.ok) return Response(false, payment.message, { reconciliationRequired: true });
+  if (!payment.ok) return Response(false, payment.message, { reconciliationRequired: payment.paymentOutcome !== "declined", paymentOutcome: payment.paymentOutcome || "unknown" });
   return finishDeliveryAddOn({ subscription, nextDelivery, mutation,
     snapshot: mutation.addOnSnapshot, paymentIntent: payment.paymentIntent });
 }

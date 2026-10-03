@@ -441,6 +441,39 @@ test("customer adds a charged one-time product to only the next delivery", async
   );
 });
 
+for (const interruptedStatus of [400, 500]) {
+  test(`add-on retry survives HTTP ${interruptedStatus} and refresh without another charge`, async ({ page, request }) => {
+    const fixture = await createFixture(request, { cadence: "weekly-single-day", timing: "before-cutoff", funds: "sufficient" });
+    const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+    const endpoint = `/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`;
+    const sent = [];
+    await page.route(`**${endpoint}`, async route => {
+      sent.push(route.request().postDataJSON());
+      const response = await route.fetch();
+      if (sent.length === 1) {
+        expect(response.ok()).toBe(true);
+        await route.fulfill({ status: interruptedStatus, contentType: "application/json",
+          body: JSON.stringify({ success: false, message: "Payment confirmation interrupted", data: { paymentOutcome: "unknown" } }) });
+      } else await route.fulfill({ response });
+    });
+    await signIn(page, fixture.credentials, detailPath);
+    await page.getByRole("link", { name: "Add to next delivery", exact: true }).click();
+    await selectAddOn(page, fixture.variants.EGGS, 1);
+    await page.getByRole("button", { name: /Pay £.+ and add once/ }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: /Charge £.+ now/ }).click();
+    await expect(page.getByRole("button", { name: "Retry confirmation" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Retry confirmation" })).toBeVisible();
+    await page.getByRole("button", { name: "Retry confirmation" }).click();
+    await expect(page).toHaveURL(detailPath);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    const state = await getState(request, fixture.subscriptionId);
+    expect(state.deliveries[0].addOns).toHaveLength(1);
+    expect(deliveryAddOnIntents(state).filter(intent => intent.status === "succeeded")).toHaveLength(1);
+  });
+}
+
 test("declined add-on payment changes nothing and succeeds after the customer retries with funds", async ({
   page,
   request,

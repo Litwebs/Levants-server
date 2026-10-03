@@ -37,8 +37,8 @@ async function recoverAddOnPayment(mutation) {
   if (!intent?.id) return { ok: false, message: "Could not confirm the add-on payment." };
   await Mutation.updateOne({ _id: mutation._id }, { $set: { "addOnSnapshot.paymentIntent": intent } });
   snapshot.paymentIntent = intent;
-  if (intent.status === "requires_payment_method") {
-    return { ok: false, message: "Your card was declined. Please check your funds or default card and retry." };
+  if (intent.status === "requires_payment_method" && intent.amount_received === 0) {
+    return { ok: false, paymentOutcome: "declined", message: "Your card was declined. Please check your funds or default card and retry." };
   }
   return intent.status === "succeeded"
     ? { ok: true, paymentIntent: intent }
