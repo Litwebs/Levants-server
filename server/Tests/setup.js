@@ -87,6 +87,7 @@ jest.mock("stripe", () => {
       list: jest.fn(async () => ({ data: [] })),
     },
     subscriptions: {
+      list: jest.fn(async () => ({ data: [], has_more: false })),
       update: jest.fn(async (id) => ({ id })),
       cancel: jest.fn(async (id) => ({ id })),
     },

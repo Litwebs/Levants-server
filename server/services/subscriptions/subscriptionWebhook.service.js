@@ -13,9 +13,20 @@ const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
+const { saveInvoicePayment } = require("./subscriptionInvoicePayment.service");
 const CustomerNotification = require("../../models/customerNotification.model");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
+const { selectInvoicesForRecovery } = require("./subscriptionInvoiceRecovery.util");
+const {
+  addCalendarMonthPreservingWeekdayOccurrence,
+} = require("../../utils/subscriptionCadence.util");
+const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
+  startOfDayInTimeZone,
+  weekdayInTimeZone,
+} = require("../../utils/subscriptionCutoff.util");
 const {
   sendSubscriptionUpdateEmail,
 } = require("../customerPortal/subscriptionEmailNotifications.service");
@@ -113,25 +124,35 @@ const SUBSCRIPTION_DELIVERY_FEE = 1;
 const BILLING_WINDOW_DAYS = {
   weekly: 7,
   every_two_weeks: 14,
-  monthly: 30,
 };
 
 function startOfDay(value) {
-  const date = new Date(value);
-  date.setHours(0, 0, 0, 0);
-  return date;
+  return startOfDayInTimeZone(value, SUBSCRIPTION_TIME_ZONE);
 }
 
 function endOfDay(value) {
-  const date = startOfDay(value);
-  date.setDate(date.getDate() + 1);
-  return date;
+  return addCalendarDaysInTimeZone(
+    startOfDay(value),
+    1,
+    SUBSCRIPTION_TIME_ZONE,
+  );
 }
 
-function addBillingWindowDays(date, frequency) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + (BILLING_WINDOW_DAYS[frequency] || 7));
-  return next;
+function addBillingWindowDays(date, frequency, preferredDeliveryDay) {
+  if (frequency === "monthly") {
+    return addCalendarMonthPreservingWeekdayOccurrence(
+      date,
+      preferredDeliveryDay ??
+        weekdayInTimeZone(date, SUBSCRIPTION_TIME_ZONE),
+      SUBSCRIPTION_TIME_ZONE,
+    );
+  }
+
+  return addCalendarDaysInTimeZone(
+    date,
+    BILLING_WINDOW_DAYS[frequency] || 7,
+    SUBSCRIPTION_TIME_ZONE,
+  );
 }
 
 function isPaymentFailurePause(subscription) {
@@ -144,7 +165,10 @@ function isPaymentFailurePause(subscription) {
 }
 
 function resolveOrderItemsForDelivery(subscription, deliveryDate) {
-  const deliveryWeekday = new Date(deliveryDate).getDay();
+  const deliveryWeekday = weekdayInTimeZone(
+    deliveryDate,
+    SUBSCRIPTION_TIME_ZONE,
+  );
   const dayPlan = Array.isArray(subscription.deliveryDayPlans)
     ? subscription.deliveryDayPlans.find(
         (plan) => Number(plan?.day) === Number(deliveryWeekday),
@@ -215,6 +239,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
   const billingWindowEnd = addBillingWindowDays(
     billingWindowStart,
     subscription.frequency,
+    subscription.preferredDeliveryDay,
   );
 
   const deliverySlots = await SubscriptionDelivery.find({
@@ -283,24 +308,37 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
         existingSlot.generatedAt = existingSlot.generatedAt || new Date();
         await existingSlot.save();
       }
-      const hasPayment = await Payment.exists({
+      const paymentIdentity = {
         order: existing._id,
         subscription: subscription._id,
-        status: "paid",
         providerReference: stripePaymentIntentId || null,
+      };
+      const orderRefunded = existing.status === "refunded";
+      const refundedAt = existing.refund?.refundedAt || null;
+      if (orderRefunded) {
+        // Recover a crash between marking the order refunded and updating its
+        // invoice ledger. A paid-invoice replay must not restore paid status.
+        await Payment.updateMany({ ...paymentIdentity, status: "paid" }, {
+          $set: { status: "refunded", ...(refundedAt ? { refundedAt } : {}) },
+        });
+      }
+      const hasPayment = await Payment.exists({
+        ...paymentIdentity,
+        status: { $in: ["paid", "refunded"] },
       });
       if (!hasPayment) {
         const invoiceFundedAmount = (existing.items || [])
           .filter((item) => !item.isSubscriptionAddOn)
           .reduce((sum, item) => sum + Number(item.subtotal || 0), 0) +
           Number(existing.deliveryFee || 0);
-        await Payment.create({
+        await saveInvoicePayment(invoice.id, {
           customer: subscription.customer._id,
           order: existing._id,
           subscription: subscription._id,
           amount: invoiceFundedAmount,
           currency: invoice.currency || "gbp",
-          status: "paid",
+          status: orderRefunded ? "refunded" : "paid",
+          ...(orderRefunded && refundedAt ? { refundedAt } : {}),
           providerReference: stripePaymentIntentId || null,
           paidAt,
         });
@@ -445,7 +483,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       });
     }
 
-    await Payment.create({
+    await saveInvoicePayment(invoice.id, {
       customer: subscription.customer._id,
       order: order._id,
       subscription: subscription._id,
@@ -484,7 +522,8 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
   // A successful retry settles the debt that caused this specific pause. Clear
   // Stripe's future-invoice pause and reactivate locally. Deliberate customer
   // pauses are left untouched even if an outstanding invoice is later paid.
-  if (isPaymentFailurePause(subscription)) {
+  if (isPaymentFailurePause(subscription) &&
+      (!subscription.paymentFailureInvoiceId || subscription.paymentFailureInvoiceId === invoice.id)) {
     if (subscription.stripeSubscriptionId) {
       await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
         pause_collection: "",
@@ -494,6 +533,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     subscription.pausedAt = null;
     subscription.pausedUntil = null;
     subscription.pauseReason = null;
+    subscription.paymentFailureInvoiceId = null;
     logger.info(
       `[SubscriptionWebhook] Reactivated subscription ${subscription.subscriptionNumber} after invoice ${invoice.id} recovered`,
     );
@@ -527,7 +567,9 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       message:
         createdOrders.length > 1
           ? `Your subscription orders have been created for ${createdOrders.length} delivery days in this billing cycle.`
-          : `Your subscription order #${createdOrders[0].orderId} has been created for ${createdOrders[0].deliveryDate.toLocaleDateString("en-GB")}.`,
+          : `Your subscription order #${createdOrders[0].orderId} has been created for ${createdOrders[0].deliveryDate.toLocaleDateString("en-GB", {
+            timeZone: SUBSCRIPTION_TIME_ZONE,
+          })}.`,
       relatedOrder: createdOrders[0]?._id,
       relatedSubscription: subscription._id,
     });
@@ -544,7 +586,11 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
  * Stripe couldn't charge the subscription. Pause it immediately and notify the customer.
  */
 async function HandleSubscriptionInvoiceFailed(eventInvoice) {
-  const invoice = await resolveLegacyInvoice(eventInvoice);
+  // Event payloads are historical snapshots, including the legacy shape.
+  // Fail closed if Stripe is unavailable so it retries instead of applying stale state.
+  const invoice = await stripe.invoices.retrieve(eventInvoice.id);
+  if (invoice.paid || ["paid", "void", "uncollectible"].includes(invoice.status)) return;
+  if (invoice.status !== "open") return;
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
   if (!stripeSubscriptionId) return;
 
@@ -555,21 +601,21 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
     );
   }
 
+  // A recorded paid order also proves this failure event is obsolete. This
+  // catches a paid handler winning the race with the Stripe retrieval above.
+  if (await Order.exists({ subscription: subscription._id, stripeInvoiceId: invoice.id })) return;
+  if (subscription.status !== "active" || subscription.isCancellationScheduled) return;
+
   // Pause Stripe billing to stop future charges while the customer fixes their payment.
   if (subscription.stripeSubscriptionId && subscription.status === "active") {
-    try {
-      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        pause_collection: { behavior: "void" },
-      });
-    } catch (err) {
-      logger.error(
-        `[SubscriptionWebhook] Failed to pause Stripe subscription ${subscription.stripeSubscriptionId} after payment failure: ${err.message}`,
-      );
-    }
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
+      pause_collection: { behavior: "void" },
+    });
 
     subscription.status = "paused";
     subscription.pausedAt = subscription.pausedAt || new Date();
     subscription.pauseReason = "payment_failed";
+    subscription.paymentFailureInvoiceId = invoice.id;
     await subscription.save();
   }
 
@@ -609,11 +655,13 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
  * This is a safety net — status changes should already be applied
  * by our API before Stripe reflects them, but this ensures consistency.
  */
-async function HandleStripeSubscriptionUpdated(stripeSub) {
+async function HandleStripeSubscriptionUpdated(eventSubscription) {
+  // Always use the current provider state, never a delayed event snapshot.
+  const stripeSub = await stripe.subscriptions.retrieve(eventSubscription.id);
   const subscription = await Subscription.findOne({
     stripeSubscriptionId: stripeSub.id,
   });
-  if (!subscription) return;
+  if (!subscription || subscription.status === "cancelled") return;
 
   let changed = false;
 
@@ -635,7 +683,9 @@ async function HandleStripeSubscriptionUpdated(stripeSub) {
       changed = true;
     }
   } else if (stripeSub.status === "active" || stripeSub.status === "trialing") {
-    if (subscription.status === "paused") {
+    // Customer pauses belong to the portal; payment-failure pauses belong to
+    // the matching paid invoice. Only a Stripe-originated pause is synced here.
+    if (subscription.status === "paused" && subscription.pauseReason === "stripe") {
       subscription.status = "active";
       subscription.pausedAt = null;
       subscription.pausedUntil = null;
@@ -717,16 +767,11 @@ async function ReconcileRecentPaidSubscriptionInvoices({
           stripeInvoiceId: { $ne: null },
         }),
       );
-      const unlinked = paidInvoices.filter(
-        (invoice) => !linkedIds.has(invoice.id),
-      );
-      if (unlinked.length === 0) continue;
-
-      const historical = unlinked.filter(
-        (invoice) => Number(invoice.created) < cutoffSeconds,
-      );
-      const recent = unlinked.filter(
-        (invoice) => Number(invoice.created) >= cutoffSeconds,
+      // A linked order does not prove the whole billing window was saved.
+      // Replay recent invoices through the per-delivery idempotent handler so
+      // missing orders, slot links and payment records can all be repaired.
+      const { historical, recent } = selectInvoicesForRecovery(
+        paidInvoices, linkedIds, cutoffSeconds,
       );
       if (historical.length > 0) {
         result.historicalDrift += 1;

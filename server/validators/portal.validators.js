@@ -24,6 +24,7 @@ const addressIdParamSchema = Joi.object({
 }).unknown(true);
 
 const createSubscriptionSchema = Joi.object({
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
     .required(),
@@ -68,6 +69,8 @@ const createSubscriptionSchema = Joi.object({
   .unknown(false);
 
 const updateSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
     .optional(),
@@ -105,6 +108,8 @@ const updateSubscriptionSchema = Joi.object({
 }).unknown(false);
 
 const subscriptionItemSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   variantId: objectId.required(),
   quantity: Joi.number().integer().min(1).required(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
@@ -125,7 +130,26 @@ const nextDeliveryAddOnSchema = Joi.object({
 }).unknown(false);
 
 const updateSubscriptionItemSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   quantity: Joi.number().integer().min(1).required(),
+  refundMethod: Joi.string().valid("credit", "refund").optional(),
+}).unknown(false);
+
+const replaceSubscriptionItemsSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
+  items: Joi.array()
+    .items(
+      Joi.object({
+        itemId: objectId.required(),
+        quantity: Joi.number().integer().min(1).required(),
+      }).unknown(false),
+    )
+    .min(1)
+    .max(100)
+    .unique("itemId")
+    .required(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
 
@@ -144,7 +168,24 @@ const subscriptionItemIdParamSchema = Joi.object({
   itemId: objectId.required(),
 }).unknown(true);
 
+// The service already owns the resume-date business validation and its
+// customer-facing error messages. The route schema intentionally leaves
+// resumeOn untouched while constraining the newly exposed settlement choice.
+const resumeSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
+}).unknown(false);
+
+const pauseSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
+  resumeOn: Joi.any().optional(),
+  refundMethod: Joi.string().valid("credit", "refund").optional(),
+}).unknown(false);
+
 const cancelSubscriptionSchema = Joi.object({
+  expectedVersion: Joi.number().integer().min(0).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
   reason: Joi.string().trim().max(500).allow(null, "").optional(),
   refundMethod: Joi.string().valid("credit", "refund").optional(),
 }).unknown(false);
@@ -215,9 +256,12 @@ module.exports = {
   subscriptionItemSchema,
   nextDeliveryAddOnSchema,
   updateSubscriptionItemSchema,
+  replaceSubscriptionItemsSchema,
   subscriptionIdParamSchema,
   subscriptionLookupIdParamSchema,
   subscriptionItemIdParamSchema,
+  pauseSubscriptionSchema,
+  resumeSubscriptionSchema,
   cancelSubscriptionSchema,
   createSupportRequestSchema,
   supportRequestIdParamSchema,

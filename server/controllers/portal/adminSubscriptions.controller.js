@@ -4,6 +4,9 @@ const adminSubService = require("../../services/customerPortal/adminSubscription
 const customerService = require("../../services/customers.service");
 const { sendOk, sendCreated, sendErr } = require("../../utils/response.util");
 
+const adminMutationStatus = (result) =>
+  result?.data?.staleSubscription || result?.data?.subscriptionBusy ? 409 : 400;
+
 const ListSubscriptions = async (req, res) => {
   const result = await adminSubService.AdminListSubscriptions({
     status: req.query.status,
@@ -56,18 +59,20 @@ const GetSubscription = async (req, res) => {
 const PauseSubscription = async (req, res) => {
   const result = await adminSubService.AdminPauseSubscription({
     subscriptionId: req.params.subscriptionId,
+    expectedVersion: req.body?.expectedVersion,
   });
   if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
+    return sendErr(res, { statusCode: adminMutationStatus(result), message: result.message });
   return sendOk(res, result.data, { message: result.message });
 };
 
 const ResumeSubscription = async (req, res) => {
   const result = await adminSubService.AdminResumeSubscription({
     subscriptionId: req.params.subscriptionId,
+    expectedVersion: req.body?.expectedVersion,
   });
   if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
+    return sendErr(res, { statusCode: adminMutationStatus(result), message: result.message });
   return sendOk(res, result.data, { message: result.message });
 };
 
@@ -75,9 +80,10 @@ const CancelSubscription = async (req, res) => {
   const result = await adminSubService.AdminCancelSubscription({
     subscriptionId: req.params.subscriptionId,
     reason: req.body?.reason,
+    expectedVersion: req.body?.expectedVersion,
   });
   if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
+    return sendErr(res, { statusCode: adminMutationStatus(result), message: result.message });
   return sendOk(res, result.data, { message: result.message });
 };
 
@@ -87,7 +93,7 @@ const UpdateSubscription = async (req, res) => {
     ...req.body,
   });
   if (!result.success)
-    return sendErr(res, { statusCode: 400, message: result.message });
+    return sendErr(res, { statusCode: adminMutationStatus(result), message: result.message });
   return sendOk(res, result.data, { message: result.message });
 };
 

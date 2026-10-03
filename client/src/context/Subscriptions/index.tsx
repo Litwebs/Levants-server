@@ -62,6 +62,7 @@ export type Subscription = {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  customerVersion?: number;
   pausedAt?: string | null;
   cancelledAt?: string | null;
   cancelReason?: string | null;
@@ -163,10 +164,15 @@ type SubscriptionsContextType = {
       preferredDeliveryDay?: number;
       notes?: string | null;
     },
+    expectedVersion: number,
   ) => Promise<Subscription>;
-  pauseSubscription: (id: string) => Promise<Subscription>;
-  resumeSubscription: (id: string) => Promise<Subscription>;
-  cancelSubscription: (id: string, reason?: string) => Promise<Subscription>;
+  pauseSubscription: (id: string, expectedVersion: number) => Promise<Subscription>;
+  resumeSubscription: (id: string, expectedVersion: number) => Promise<Subscription>;
+  cancelSubscription: (
+    id: string,
+    reason: string | undefined,
+    expectedVersion: number,
+  ) => Promise<Subscription>;
   deletePendingSubscription: (id: string) => Promise<void>;
 };
 
@@ -209,8 +215,10 @@ export const SubscriptionsProvider = ({
     [],
   );
 
-  const pauseSubscription = useCallback(async (id: string) => {
-    const res = await api.post(`/admin/subscriptions/${id}/pause`);
+  const pauseSubscription = useCallback(async (id: string, expectedVersion: number) => {
+    const res = await api.post(`/admin/subscriptions/${id}/pause`, {
+      expectedVersion,
+    });
     const next = (res.data?.data ?? res.data)?.subscription as
       | Subscription
       | undefined;
@@ -225,8 +233,10 @@ export const SubscriptionsProvider = ({
     return fallback;
   }, []);
 
-  const resumeSubscription = useCallback(async (id: string) => {
-    const res = await api.post(`/admin/subscriptions/${id}/resume`);
+  const resumeSubscription = useCallback(async (id: string, expectedVersion: number) => {
+    const res = await api.post(`/admin/subscriptions/${id}/resume`, {
+      expectedVersion,
+    });
     const next = (res.data?.data ?? res.data)?.subscription as
       | Subscription
       | undefined;
@@ -242,9 +252,10 @@ export const SubscriptionsProvider = ({
   }, []);
 
   const cancelSubscription = useCallback(
-    async (id: string, reason?: string) => {
+    async (id: string, reason: string | undefined, expectedVersion: number) => {
       const res = await api.post(`/admin/subscriptions/${id}/cancel`, {
         reason,
+        expectedVersion,
       });
       const next = (res.data?.data ?? res.data)?.subscription as
         | Subscription
@@ -327,8 +338,12 @@ export const SubscriptionsProvider = ({
         preferredDeliveryDay?: number;
         notes?: string | null;
       },
+      expectedVersion: number,
     ) => {
-      const res = await api.patch(`/admin/subscriptions/${id}`, payload);
+      const res = await api.patch(`/admin/subscriptions/${id}`, {
+        ...payload,
+        expectedVersion,
+      });
       const data = res.data?.data ?? res.data;
       const next = (data?.subscription ?? null) as Subscription | null;
       if (next?._id) {

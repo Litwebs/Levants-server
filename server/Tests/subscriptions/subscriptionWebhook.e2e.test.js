@@ -117,6 +117,9 @@ async function createSubscriptionFixture({
 }
 
 describe("Subscription Stripe webhook E2E", () => {
+  beforeEach(() => {
+    stripe.subscriptions.retrieve = jest.fn(async id => ({ id, status: "active", pause_collection: null }));
+  });
   it("detects an enabled Stripe endpoint that omits subscription events", async () => {
     stripe.webhookEndpoints.list.mockResolvedValueOnce({
       data: [
@@ -133,6 +136,78 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(result.ok).toBe(false);
     expect(result.missingEvents).toContain("invoice.payment_succeeded");
     expect(result.missingEvents).toContain("invoice.payment_failed");
+  });
+
+  it("concurrent invoice recovery creates one payment record for the same order", async () => {
+    await Payment.init();
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date(Date.now() + 2 * 86400000);
+    const subscription = await createSubscriptionFixture({ customer: customer._id,
+      stripeSubscriptionId: "sub_concurrent_ledger", nextDeliveryDate: nextDelivery,
+      items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: nextDelivery, status: "scheduled" });
+    const invoice = { id: "in_concurrent_ledger", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_concurrent_ledger", paid: true, currency: "gbp", created: Math.floor(Date.now() / 1000) };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    await Payment.deleteMany({ subscription: subscription._id });
+    // Force both real handler calls to observe a missing ledger before either
+    // can insert, then let the database's unique index choose one record.
+    let release;
+    let readers = 0;
+    const barrier = new Promise(resolve => { release = resolve; });
+    const exists = jest.spyOn(Payment, "exists").mockImplementation(async () => {
+      if (++readers === 2) release();
+      await barrier;
+      return null;
+    });
+    try {
+      await Promise.all([
+        subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+        subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+      ]);
+    } finally { exists.mockRestore(); }
+    expect(await Payment.countDocuments({ subscription: subscription._id })).toBe(1);
+    expect(await Order.countDocuments({ subscription: subscription._id, stripeInvoiceId: invoice.id })).toBe(1);
+    const saved = await Payment.findOne({ subscription: subscription._id }).lean();
+    expect(saved.subscriptionInvoiceKey).toBe(`${subscription._id}:${invoice.id}:${saved.order}`);
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    expect(await Payment.countDocuments({ subscription: subscription._id })).toBe(1);
+  });
+
+  it.each(["refunded", "missing", "paid"])("invoice recovery preserves a refunded order with a %s ledger", async ledgerState => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date(Date.now() + 2 * 86400000);
+    nextDelivery.setHours(9, 0, 0, 0);
+    const subscription = await createSubscriptionFixture({
+      customer: customer._id, stripeSubscriptionId: "sub_refund_replay",
+      nextDeliveryDate: nextDelivery, items: [buildSubscriptionItem(product, variant, 1)],
+    });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: nextDelivery, status: "scheduled" });
+    const invoice = { id: "in_refund_replay", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_refund_replay", paid: true, currency: "gbp", created: Math.floor(Date.now() / 1000) };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    const order = await Order.findOne({ subscription: subscription._id, stripeInvoiceId: invoice.id });
+    const originalPayment = await Payment.findOne({ order: order._id });
+    const refundedAt = new Date(Date.now() - 60000);
+    await Order.updateOne({ _id: order._id }, { $set: { status: "refunded", "refund.refundedAt": refundedAt } });
+    if (ledgerState === "missing") await Payment.deleteOne({ _id: originalPayment._id });
+    else if (ledgerState === "refunded") await Payment.updateOne({ _id: originalPayment._id },
+      { $set: { status: "refunded", refundedAt } });
+    for (let retry = 0; retry < 2; retry += 1) {
+      stripe.invoices.list.mockResolvedValueOnce({ data: [invoice] });
+      const result = await subscriptionWebhookService.ReconcileRecentPaidSubscriptionInvoices();
+      expect(result.failed).toBe(0);
+    }
+    const payments = await Payment.find({ order: order._id }).lean();
+    expect(payments).toHaveLength(1);
+    expect(payments[0]).toMatchObject({ status: "refunded", amount: originalPayment.amount, refundedAt });
+    if (ledgerState !== "missing") expect(String(payments[0]._id)).toBe(String(originalPayment._id));
+    expect((await Order.findById(order._id)).status).toBe("refunded");
+    expect(await Order.countDocuments({ subscription: subscription._id, stripeInvoiceId: invoice.id })).toBe(1);
   });
 
   it("reconciles a recent invoice even when an older invoice needs manual review", async () => {
@@ -417,7 +492,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(orders).toHaveLength(1);
   });
 
-  it("repairs a partially processed multi-day invoice on retry", async () => {
+  it.each(["order", "ledger"])("reconciles a partially processed multi-day invoice (%s failure)", async failure => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
     const sunday = new Date("2026-07-12T09:00:00.000Z");
@@ -466,15 +541,25 @@ describe("Subscription Stripe webhook E2E", () => {
         },
       },
     };
-    const originalCreate = Payment.create.bind(Payment);
+    event.data.object.created = Math.floor(Date.now() / 1000);
+    event.data.object.paid = true;
+    const failingModel = failure === "order" ? Order : Payment;
+    const writeMethod = failure === "order" ? "create" : "findOneAndUpdate";
+    const originalCreate = failingModel[writeMethod].bind(failingModel);
     jest
-      .spyOn(Payment, "create")
+      .spyOn(failingModel, writeMethod)
       .mockImplementationOnce((...args) => originalCreate(...args))
       .mockRejectedValueOnce(new Error("transient payment-ledger failure"));
 
     expect((await postStripeEvent(event)).status).toBe(500);
-    Payment.create.mockRestore();
-    expect((await postStripeEvent(event)).status).toBe(200);
+    failingModel[writeMethod].mockRestore();
+    expect(await Order.countDocuments({ subscription: subscription._id })).toBe(failure === "order" ? 1 : 2);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      stripe.invoices.list.mockResolvedValueOnce({ data: [event.data.object] });
+      const result = await subscriptionWebhookService.ReconcileRecentPaidSubscriptionInvoices();
+      expect(result.failed).toBe(0);
+      expect(result.reconciled).toBe(1);
+    }
 
     expect(
       await Order.countDocuments({
@@ -624,6 +709,8 @@ describe("Subscription Stripe webhook E2E", () => {
       items: [buildSubscriptionItem(product, variant, 1)],
     });
 
+    stripe.invoices.retrieve.mockResolvedValueOnce({ id: "in_test_payment_failed_1",
+      subscription: subscription.stripeSubscriptionId, status: "open", paid: false });
     const res = await postStripeEvent({
       type: "invoice.payment_failed",
       data: {
@@ -666,6 +753,8 @@ describe("Subscription Stripe webhook E2E", () => {
       status: "scheduled",
     });
 
+    stripe.invoices.retrieve.mockResolvedValueOnce({ id: "in_test_retry_1",
+      subscription: subscription.stripeSubscriptionId, status: "open", paid: false });
     const failed = await postStripeEvent({
       type: "invoice.payment_failed",
       data: {
@@ -680,6 +769,14 @@ describe("Subscription Stripe webhook E2E", () => {
     const paused = await Subscription.findById(subscription._id).lean();
     expect(paused.status).toBe("paused");
     expect(paused.pauseReason).toBe("payment_failed");
+
+    expect(paused.paymentFailureInvoiceId).toBe("in_test_retry_1");
+    const olderPaid = await postStripeEvent({ type: "invoice.payment_succeeded", data: { object: {
+      id: "in_older_paid", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_older_paid", status_transitions: { paid_at: 1786870700 },
+    } } });
+    expect(olderPaid.status).toBe(200);
+    expect((await Subscription.findById(subscription._id)).status).toBe("paused");
 
     // If Stripe fires invoice.payment_succeeded (e.g. manual payment capture), an
     // order is still created so the delivery is fulfilled.
@@ -707,6 +804,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(recovered.pausedAt).toBeNull();
     expect(recovered.pausedUntil).toBeNull();
     expect(recovered.pauseReason).toBeNull();
+    expect(recovered.paymentFailureInvoiceId).toBeNull();
     expect(stripe.subscriptions.update).toHaveBeenLastCalledWith(
       "sub_test_webhook_retry_success_1",
       { pause_collection: "" },
@@ -837,6 +935,8 @@ describe("Subscription Stripe webhook E2E", () => {
       status: "active",
     });
 
+    stripe.subscriptions.retrieve.mockResolvedValueOnce({ id: subscription.stripeSubscriptionId,
+      status: "active", pause_collection: { behavior: "void" } });
     const paused = await postStripeEvent({
       type: "customer.subscription.updated",
       data: {
@@ -867,6 +967,8 @@ describe("Subscription Stripe webhook E2E", () => {
     const afterResumed = await Subscription.findById(subscription._id).lean();
     expect(afterResumed.status).toBe("active");
 
+    stripe.subscriptions.retrieve.mockResolvedValueOnce({ id: subscription.stripeSubscriptionId,
+      status: "canceled", pause_collection: null });
     const cancelled = await postStripeEvent({
       type: "customer.subscription.updated",
       data: {

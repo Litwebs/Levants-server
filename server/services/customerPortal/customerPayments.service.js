@@ -7,6 +7,7 @@ const Customer = require("../../models/customer.model");
 const Subscription = require("../../models/subscription.model");
 const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
+const { setCustomerDefaultCard, cardIsUsedBySubscription } = require("./subscriptionPaymentMethod.service");
 
 const STRIPE_PUBLISHABLE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || null;
 let paymentMethodDomainRegistrationPromise = null;
@@ -389,19 +390,7 @@ async function AttachPaymentMethod({
   const shouldSetDefault = Boolean(setDefault || !hasDefault);
 
   if (shouldSetDefault) {
-    await PaymentMethod.updateMany(
-      { customer: customer._id, isDefault: true },
-      { $set: { isDefault: false } },
-    );
-
-    method.isDefault = true;
-    await method.save();
-
-    await stripe.customers.update(customer.stripeCustomerId, {
-      invoice_settings: {
-        default_payment_method: stripePaymentMethodId,
-      },
-    });
+    await setCustomerDefaultCard(customer, method, stripeMethod);
   }
 
   return Response(true, "Payment method saved", {
@@ -421,25 +410,9 @@ async function SetDefaultPaymentMethod({ customerId, paymentMethodId } = {}) {
   }).select("+providerReference");
   if (!method) return Response(false, "Payment method not found", null);
 
-  if (method.provider === "stripe" && method.providerReference) {
-    const customer = await ensureStripeCustomer(customerId);
-    if (!customer || !customer.stripeCustomerId) {
-      return Response(false, "Customer stripe profile not found", null);
-    }
-
-    await stripe.customers.update(customer.stripeCustomerId, {
-      invoice_settings: {
-        default_payment_method: method.providerReference,
-      },
-    });
-  }
-
-  await PaymentMethod.updateMany(
-    { customer: customerId, isDefault: true },
-    { $set: { isDefault: false } },
-  );
-  method.isDefault = true;
-  await method.save();
+  const customer = await ensureStripeCustomer(customerId);
+  if (!customer?.stripeCustomerId) return Response(false, "Customer stripe profile not found", null);
+  await setCustomerDefaultCard(customer, method);
 
   return Response(true, "Default payment method updated", {
     paymentMethod: method,
@@ -453,59 +426,36 @@ async function DeletePaymentMethod({ customerId, paymentMethodId } = {}) {
   }).select("+providerReference");
   if (!method) return Response(false, "Payment method not found", null);
 
-  const activeSubscriptions = await Subscription.countDocuments({
-    customer: customerId,
-    status: "active",
-    paymentMethod: method._id,
-  });
-  if (activeSubscriptions > 0) {
-    return Response(
-      false,
-      "This payment method is linked to active subscriptions. Set another default method first.",
-      null,
-    );
+  const customer = await getCustomerWithStripeId(customerId);
+  if (method.provider === "stripe" && !customer?.stripeCustomerId) {
+    return Response(false, "Customer Stripe profile not found; the card could not be verified.", null);
+  }
+  // Live Stripe bindings cover paused subscriptions and legacy null local links.
+  if (method.provider === "stripe" && method.providerReference && customer?.stripeCustomerId &&
+      await cardIsUsedBySubscription(customer, method)) {
+    return Response(false,
+      "This card is used by an active or paused subscription. Set another default card first.", null);
+  }
+  if (await Subscription.exists({ customer: customerId, paymentMethod: method._id,
+      status: { $in: ["active", "paused"] } })) {
+    return Response(false, "Set another default card before removing this subscription card.", null);
   }
 
+  if (method.isDefault && customer?.stripeCustomerId) {
+    const nextMethod = await PaymentMethod.findOne({ customer: customerId, _id: { $ne: method._id },
+      provider: "stripe" }).select("+providerReference").sort({ createdAt: 1 });
+    if (nextMethod) await setCustomerDefaultCard(customer, nextMethod);
+    else await stripe.customers.update(customer.stripeCustomerId, {
+      invoice_settings: { default_payment_method: null },
+    });
+  }
   if (method.provider === "stripe" && method.providerReference) {
-    try {
-      await stripe.paymentMethods.detach(method.providerReference);
-    } catch {
-      // Ignore detach failures if Stripe method is already detached.
+    try { await stripe.paymentMethods.detach(method.providerReference); }
+    catch (error) {
+      if (error.code !== "resource_missing") throw error;
     }
   }
-
   await method.deleteOne();
-
-  if (method.isDefault) {
-    const nextMethod = await PaymentMethod.findOne({ customer: customerId })
-      .select("+providerReference")
-      .sort({ createdAt: 1 });
-
-    if (nextMethod) {
-      nextMethod.isDefault = true;
-      await nextMethod.save();
-
-      if (nextMethod.provider === "stripe" && nextMethod.providerReference) {
-        const customer = await ensureStripeCustomer(customerId);
-        if (customer && customer.stripeCustomerId) {
-          await stripe.customers.update(customer.stripeCustomerId, {
-            invoice_settings: {
-              default_payment_method: nextMethod.providerReference,
-            },
-          });
-        }
-      }
-    } else {
-      const customer = await getCustomerWithStripeId(customerId);
-      if (customer && customer.stripeCustomerId) {
-        await stripe.customers.update(customer.stripeCustomerId, {
-          invoice_settings: {
-            default_payment_method: null,
-          },
-        });
-      }
-    }
-  }
 
   return Response(true, "Payment method removed", null);
 }

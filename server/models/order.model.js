@@ -292,6 +292,8 @@ const orderSchema = new mongoose.Schema(
       },
     },
 
+    subscriptionRefundPlan: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+
     refunds: {
       type: [
         new mongoose.Schema(

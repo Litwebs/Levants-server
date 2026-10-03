@@ -8,6 +8,7 @@ const {
 const {
   validateBody,
   validateParams,
+  validateQuery,
 } = require("../../middleware/validate.middleware");
 
 const controller = require("../../controllers/portal/customerSubscriptions.controller");
@@ -17,9 +18,13 @@ const {
   subscriptionItemSchema,
   nextDeliveryAddOnSchema,
   updateSubscriptionItemSchema,
+  replaceSubscriptionItemsSchema,
   subscriptionIdParamSchema,
   subscriptionItemIdParamSchema,
+  pauseSubscriptionSchema,
+  resumeSubscriptionSchema,
   cancelSubscriptionSchema,
+  portalListQuerySchema,
 } = require("../../validators/portal.validators");
 
 const router = express.Router();
@@ -32,7 +37,11 @@ router.post(
   asyncHandler(controller.CreateSubscription),
 );
 
-router.get("/", asyncHandler(controller.ListSubscriptions));
+router.get(
+  "/",
+  validateQuery(portalListQuerySchema),
+  asyncHandler(controller.ListSubscriptions),
+);
 
 router.get("/settings", asyncHandler(controller.GetSubscriptionSettings));
 
@@ -57,12 +66,14 @@ router.patch(
 router.post(
   "/:subscriptionId/pause",
   validateParams(subscriptionIdParamSchema),
+  validateBody(pauseSubscriptionSchema),
   asyncHandler(controller.PauseSubscription),
 );
 
 router.post(
   "/:subscriptionId/resume",
   validateParams(subscriptionIdParamSchema),
+  validateBody(resumeSubscriptionSchema),
   asyncHandler(controller.ResumeSubscription),
 );
 
@@ -78,6 +89,13 @@ router.post(
   validateParams(subscriptionIdParamSchema),
   validateBody(subscriptionItemSchema),
   asyncHandler(controller.AddSubscriptionItem),
+);
+
+router.put(
+  "/:subscriptionId/items",
+  validateParams(subscriptionIdParamSchema),
+  validateBody(replaceSubscriptionItemsSchema),
+  asyncHandler(controller.ReplaceSubscriptionItems),
 );
 
 router.post(
