@@ -212,7 +212,7 @@ test("admin analytics supports real filters, comparisons, trends, drilldowns, an
   await page.getByRole("tab", { name: "Data & Stock", exact: true }).click();
   const exportCard = page
     .getByRole("heading", { name: "Export-ready Tables", exact: true })
-    .locator("xpath=../../..");
+    .locator("xpath=../../../../..");
   const exportSection = exportCard
     .getByText("Product Performance", { exact: true })
     .locator("xpath=ancestor::section[1]");
