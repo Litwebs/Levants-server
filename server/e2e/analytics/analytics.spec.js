@@ -95,26 +95,49 @@ test("admin analytics supports real filters, comparisons, trends, drilldowns, an
   await page.getByLabel("Interval").selectOption("week");
   await weeklyResponse;
 
-  for (const title of [
-    "Revenue Trend",
-    "Orders Trend",
-    "Sales Channel Trend",
-    "Product Revenue Trend",
-    "Product Units Trend",
-    "Variant Revenue Trend",
-    "Variant Units Trend",
-  ]) {
+  await expect(
+    page.getByRole("tab", { name: "Overview", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  for (const title of ["Revenue Trend", "Orders Trend"]) {
     await expect(page.getByRole("heading", { name: title, exact: true }))
       .toBeVisible();
   }
 
+  await page.getByRole("tab", { name: "Sales", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Sales Channel Trend", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Revenue Composition", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "Products", exact: true }).click();
+  for (const title of [
+    "Product Revenue Trend",
+    "Product Units Trend",
+    "Product Performance",
+  ]) {
+    await expect(page.getByRole("heading", { name: title, exact: true }))
+      .toBeVisible();
+  }
   await expect(page.getByText("Analytics Milk", { exact: true }).first())
     .toBeVisible();
   await expect(page.getByText("Analytics Eggs", { exact: true }).first())
     .toBeVisible();
-  await expect(page.getByRole("heading", { name: "Low Stock Alert", exact: true }))
-    .toBeVisible();
+
+  await page.getByRole("tab", { name: "Variants", exact: true }).click();
+  for (const title of ["Variant Revenue Trend", "Variant Units Trend"]) {
+    await expect(page.getByRole("heading", { name: title, exact: true }))
+      .toBeVisible();
+  }
+
+  await page.getByRole("tab", { name: "Data & Stock", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Low Stock Alert", exact: true }),
+  ).toBeVisible();
   await expect(page.getByText(/Analytics Milk · Milk 1L/)).toBeVisible();
+
+  await page.getByRole("tab", { name: "Products", exact: true }).click();
 
   const subscriptionResponse = waitForDashboard(
     page,
@@ -123,15 +146,14 @@ test("admin analytics supports real filters, comparisons, trends, drilldowns, an
   await page.getByLabel("Order source").selectOption("subscription");
   await subscriptionResponse;
 
-  const subscriptionProductTable = page
-    .getByText("Product Performance", { exact: true })
-    .last()
-    .locator("xpath=ancestor::section[1]");
+  const filteredProductPerformanceCard = page
+    .getByRole("heading", { name: "Product Performance", exact: true })
+    .locator("xpath=../../..");
   await expect(
-    subscriptionProductTable.getByText("Analytics Eggs", { exact: true }),
+    filteredProductPerformanceCard.getByText("Analytics Eggs", { exact: true }),
   ).toBeVisible();
   await expect(
-    subscriptionProductTable.getByText("Analytics Milk", { exact: true }),
+    filteredProductPerformanceCard.getByText("Analytics Milk", { exact: true }),
   ).toHaveCount(0);
 
   const allSourcesAgain = waitForDashboard(
@@ -176,9 +198,12 @@ test("admin analytics supports real filters, comparisons, trends, drilldowns, an
     .getByRole("button", { name: "Close", exact: true })
     .click();
 
-  const exportSection = page
+  await page.getByRole("tab", { name: "Data & Stock", exact: true }).click();
+  const exportCard = page
+    .getByRole("heading", { name: "Export-ready Tables", exact: true })
+    .locator("xpath=../../..");
+  const exportSection = exportCard
     .getByText("Product Performance", { exact: true })
-    .last()
     .locator("xpath=ancestor::section[1]");
   const downloadPromise = page.waitForEvent("download");
   await exportSection.getByRole("button", { name: "Export CSV" }).click();
@@ -227,8 +252,8 @@ test("admin analytics handles direct routes, empty periods, and retryable dashbo
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await retryResponse;
   await expect(
-    page.getByRole("heading", { name: "Subscription Analytics", exact: true }),
-  ).toBeVisible();
+    page.getByRole("tab", { name: "Overview", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await page.getByLabel("Date range").selectOption("custom");
@@ -263,10 +288,19 @@ test("admin analytics stays usable on a mobile viewport without browser or analy
   await expect(page.getByLabel("Order source")).toBeVisible();
   await expect(page.getByLabel("Comparison")).toBeVisible();
   await expect(page.getByLabel("Interval")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Subscription Analytics", exact: true }))
-    .toBeVisible();
-  await expect(page.getByRole("heading", { name: "Low Stock Alert", exact: true }))
-    .toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Overview", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+
+  await page.getByRole("tab", { name: "Subscriptions", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Subscription Analytics", exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: "Data & Stock", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Low Stock Alert", exact: true }),
+  ).toBeVisible();
 
   const overflow = await page.evaluate(() => ({
     viewport: window.innerWidth,

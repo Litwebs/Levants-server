@@ -129,6 +129,23 @@ const KpiTrend = ({
 
 const PRODUCT_TREND_COLORS = ["primary", "success", "info"] as const;
 
+type AnalyticsTab =
+  | "overview"
+  | "subscriptions"
+  | "sales"
+  | "products"
+  | "variants"
+  | "data";
+
+const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "subscriptions", label: "Subscriptions" },
+  { id: "sales", label: "Sales" },
+  { id: "products", label: "Products" },
+  { id: "variants", label: "Variants" },
+  { id: "data", label: "Data & Stock" },
+];
+
 const AnalyticsStatePanel = ({
   title,
   message,
@@ -202,13 +219,16 @@ const Reports = () => {
   );
   const [productDetailRetryKey, setProductDetailRetryKey] = useState(0);
   const [variantDetailRetryKey, setVariantDetailRetryKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>("overview");
 
   const openProductDetail = (productId: unknown) => {
+    setActiveTab("products");
     setSelectedVariantId(null);
     setSelectedProductId(String(productId));
   };
 
   const openVariantDetail = (variantId: unknown) => {
+    setActiveTab("variants");
     setSelectedProductId(null);
     setSelectedVariantId(String(variantId));
   };
@@ -779,7 +799,38 @@ const Reports = () => {
 
       {canShowDashboard ? (
         <div className={styles.analyticsContent} aria-busy={loading}>
-      <div className={styles.kpiGrid}>
+      <div
+        className={styles.analyticsTabs}
+        role="tablist"
+        aria-label="Analytics sections"
+      >
+        {ANALYTICS_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={`${styles.analyticsTab} ${
+              activeTab === tab.id ? styles.analyticsTabActive : ""
+            }`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {!hasSelectedPeriodActivity &&
+      (activeTab === "sales" ||
+        activeTab === "products" ||
+        activeTab === "variants") ? (
+        <div className={styles.tabEmptyState}>
+          No period activity is available for this section with the selected
+          filters.
+        </div>
+      ) : null}
+
+      <div className={styles.kpiGrid} hidden={activeTab !== "overview"}>
         <Card className={styles.kpiCard}>
           <div className={styles.kpiContent}>
             <div className={`${styles.kpiIcon} ${styles.success}`}>
@@ -896,6 +947,7 @@ const Reports = () => {
       </div>
 
       <Card
+        hidden={activeTab !== "subscriptions"}
         className={`${styles.fullWidthChart} ${styles.subscriptionCard} ${
           !hasSubscriptionPeriodActivity ? styles.subscriptionCardQuiet : ""
         }`}
@@ -1145,7 +1197,7 @@ const Reports = () => {
           !hasSelectedPeriodActivity ? styles.periodSectionsHidden : ""
         }`}
       >
-      <div className={styles.chartsGrid}>
+      <div className={styles.chartsGrid} hidden={activeTab !== "overview"}>
         <Card className={styles.chartCard}>
           <CardHeader>
             <CardTitle>Revenue Trend</CardTitle>
@@ -1182,7 +1234,10 @@ const Reports = () => {
         </Card>
       </div>
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "overview"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Orders Trend</CardTitle>
         </CardHeader>
@@ -1202,7 +1257,10 @@ const Reports = () => {
         </CardContent>
       </Card>
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "sales"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Sales by Channel</CardTitle>
         </CardHeader>
@@ -1260,7 +1318,10 @@ const Reports = () => {
         </CardContent>
       </Card>
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "sales"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Sales Channel Trend</CardTitle>
         </CardHeader>
@@ -1280,7 +1341,10 @@ const Reports = () => {
         </CardContent>
       </Card>
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "sales"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Revenue Composition</CardTitle>
         </CardHeader>
@@ -1338,7 +1402,7 @@ const Reports = () => {
         </CardContent>
       </Card>
 
-      <div className={styles.chartsGrid}>
+      <div className={styles.chartsGrid} hidden={activeTab !== "products"}>
         <Card className={styles.chartCard}>
           <CardHeader>
             <CardTitle>Product Revenue Trend</CardTitle>
@@ -1379,7 +1443,7 @@ const Reports = () => {
       </div>
 
 
-      <div className={styles.chartsGrid}>
+      <div className={styles.chartsGrid} hidden={activeTab !== "variants"}>
         <Card className={styles.chartCard}>
           <CardHeader>
             <CardTitle>Variant Revenue Trend</CardTitle>
@@ -1419,7 +1483,7 @@ const Reports = () => {
         </Card>
       </div>
 
-      <div className={styles.chartsGrid}>
+      <div className={styles.chartsGrid} hidden={activeTab !== "products"}>
         <Card className={styles.chartCard}>
           <CardHeader>
             <CardTitle>Product Performance</CardTitle>
@@ -1687,7 +1751,10 @@ const Reports = () => {
 
 
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "variants"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Variant Units</CardTitle>
         </CardHeader>
@@ -1772,7 +1839,10 @@ const Reports = () => {
       </Card>
 
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "variants"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Variant Revenue</CardTitle>
         </CardHeader>
@@ -1856,7 +1926,10 @@ const Reports = () => {
       </Card>
 
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "variants"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader><CardTitle>Variant Realised Selling Price</CardTitle></CardHeader>
         <CardContent>
           <div className={styles.metricsGrid}>
@@ -1920,7 +1993,10 @@ const Reports = () => {
       </Card>
 
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "variants"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Variant Subscription vs One-Time</CardTitle>
         </CardHeader>
@@ -2009,7 +2085,10 @@ const Reports = () => {
       </Card>
 
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "variants"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <CardTitle>Variant Contribution</CardTitle>
         </CardHeader>
@@ -2125,7 +2204,10 @@ const Reports = () => {
         </CardContent>
       </Card>
 
-      <Card className={styles.fullWidthChart}>
+      <Card
+        hidden={activeTab !== "data"}
+        className={styles.fullWidthChart}
+      >
         <CardHeader>
           <div className={styles.exportCardHeader}>
             <div>
@@ -2401,7 +2483,7 @@ const Reports = () => {
         </CardContent>
       </Card>
 
-      {selectedVariantId ? (
+      {selectedVariantId && activeTab === "variants" ? (
         <Card
           id="variant-analytics-detail"
           className={styles.fullWidthChart}
@@ -2639,7 +2721,7 @@ const Reports = () => {
         </Card>
       ) : null}
 
-      {selectedProductId ? (
+      {selectedProductId && activeTab === "products" ? (
         <Card
           id="product-analytics-detail"
           className={styles.fullWidthChart}
@@ -2944,7 +3026,10 @@ const Reports = () => {
       ) : null}
       </div>
 
-      <Card className={styles.inventoryCard}>
+      <Card
+        hidden={activeTab !== "data"}
+        className={styles.inventoryCard}
+      >
         <CardHeader>
           <CardTitle>Low Stock Alert</CardTitle>
         </CardHeader>
