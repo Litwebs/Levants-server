@@ -120,10 +120,15 @@ test("admin analytics supports real filters, comparisons, trends, drilldowns, an
     await expect(page.getByRole("heading", { name: title, exact: true }))
       .toBeVisible();
   }
-  await expect(page.getByText("Analytics Milk", { exact: true }).first())
-    .toBeVisible();
-  await expect(page.getByText("Analytics Eggs", { exact: true }).first())
-    .toBeVisible();
+  const productsTabPerformanceCard = page
+    .getByRole("heading", { name: "Product Performance", exact: true })
+    .locator("xpath=../../..");
+  await expect(
+    productsTabPerformanceCard.getByText("Analytics Milk", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    productsTabPerformanceCard.getByText("Analytics Eggs", { exact: true }),
+  ).toBeVisible();
 
   await page.getByRole("tab", { name: "Variants", exact: true }).click();
   for (const title of ["Variant Revenue Trend", "Variant Units Trend"]) {
