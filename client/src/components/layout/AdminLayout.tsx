@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  BarChart3,
   ShoppingCart,
   Truck,
   Package,
@@ -45,6 +46,12 @@ const navItems = [
     path: "/",
     label: "Overview",
     icon: LayoutDashboard,
+    requiredAny: ["analytics.read"],
+  },
+  {
+    path: "/analytics",
+    label: "Analytics",
+    icon: BarChart3,
     requiredAny: ["analytics.read"],
   },
   {
@@ -128,7 +135,7 @@ function useNavCounts() {
     let active = true;
     const fetch = async () => {
       try {
-        const res = await api.get("/analytics/nav-counts");
+        const res = await api.get("/admin/analytics/nav-counts");
         const data = res.data?.data ?? res.data;
         if (active && data) setCounts(data);
       } catch {

@@ -19,6 +19,150 @@ const GetSummary = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetSummaryComparison = async (req, res) => {
+  const result = await service.GetSummaryComparison({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    orderSource: req.query.orderSource,
+    comparison: req.query.comparison,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetRecurringVsOneTime = async (req, res) => {
+  const result = await service.GetRecurringVsOneTime({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetSubscriptionRevenue = async (req, res) => {
+  const result = await service.GetSubscriptionRevenue({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetTopSubscriptionProductsVariants = async (req, res) => {
+  const result = await service.GetTopSubscriptionProductsVariants({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetRevenueComposition = async (req, res) => {
+  const result = await service.GetRevenueComposition({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetSalesBreakdown = async (req, res) => {
+  const result = await service.GetSalesBreakdown({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetSubscriptionTrends = async (req, res) => {
+  const result = await service.GetSubscriptionTrends({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetSalesTrends = async (req, res) => {
+  const result = await service.GetSalesTrends({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
 const GetRevenueSeries = async (req, res) => {
   const result = await service.GetRevenueSeries({
     range: req.query.range,
@@ -62,6 +206,260 @@ const GetTopProducts = async (req, res) => {
     limit: req.query.limit,
     orderSource: req.query.orderSource,
   });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantUnits = async (req, res) => {
+  const result = await service.GetVariantUnits({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantRevenue = async (req, res) => {
+  const result = await service.GetVariantRevenue({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantRealisedPrice = async (req, res) => {
+  const result = await service.GetVariantRealisedPrice({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantPriceComparison = async (req, res) => {
+  const result = await service.GetVariantPriceComparison({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantSalesMix = async (req, res) => {
+  const result = await service.GetVariantSalesMix({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantContribution = async (req, res) => {
+  const result = await service.GetVariantContribution({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantTrends = async (req, res) => {
+  const result = await service.GetVariantTrends({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetProductTrends = async (req, res) => {
+  const result = await service.GetProductTrends({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    limit: req.query.limit,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetProductDetail = async (req, res) => {
+  const result = await service.GetProductDetail({
+    productId: req.params.productId,
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetVariantDetail = async (req, res) => {
+  const result = await service.GetVariantDetail({
+    variantId: req.params.variantId,
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+    interval: req.query.interval,
+    orderSource: req.query.orderSource,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetCancelledSubscriptions = async (req, res) => {
+  const result = await service.GetCancelledSubscriptions({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetNewSubscriptions = async (req, res) => {
+  const result = await service.GetNewSubscriptions({
+    range: req.query.range,
+    from: req.query.from,
+    to: req.query.to,
+  });
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetAverageSubscriptionValue = async (req, res) => {
+  const result = await service.GetAverageSubscriptionValue();
+
+  if (!result.success) {
+    return sendErr(res, {
+      statusCode: result.statusCode || 400,
+      message: result.message || "Request failed",
+    });
+  }
+
+  return sendOk(res, result.data);
+};
+
+const GetActiveSubscriptions = async (req, res) => {
+  const result = await service.GetActiveSubscriptions();
 
   if (!result.success) {
     return sendErr(res, {
@@ -143,6 +541,7 @@ const GetDashboard = async (req, res) => {
     to: req.query.to,
     interval: req.query.interval,
     orderSource: req.query.orderSource,
+    comparison: req.query.comparison,
   });
 
   if (!result.success) {
@@ -157,10 +556,32 @@ const GetDashboard = async (req, res) => {
 
 module.exports = {
   GetSummary,
+  GetSummaryComparison,
+  GetRevenueComposition,
+  GetSalesBreakdown,
+  GetRecurringVsOneTime,
+  GetSubscriptionRevenue,
+  GetTopSubscriptionProductsVariants,
+  GetSubscriptionTrends,
+  GetSalesTrends,
   GetRevenueSeries,
   GetRevenueOverview,
   GetOrderStatusCounts,
   GetTopProducts,
+  GetVariantUnits,
+  GetVariantRevenue,
+  GetVariantRealisedPrice,
+  GetVariantPriceComparison,
+  GetVariantSalesMix,
+  GetVariantContribution,
+  GetVariantTrends,
+  GetProductTrends,
+  GetProductDetail,
+  GetVariantDetail,
+  GetActiveSubscriptions,
+  GetAverageSubscriptionValue,
+  GetNewSubscriptions,
+  GetCancelledSubscriptions,
   GetRecentOrders,
   GetLowStock,
   GetDashboard,

@@ -9,6 +9,7 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { ToastProvider } from "./components/common/Toast";
 import { LoadingScreen } from "./components/common";
 import Dashboard from "./pages/Dashboard/Dashboard";
+import Reports from "./pages/Reports";
 import Orders from "./pages/Orders/Orders";
 import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";
@@ -162,6 +163,14 @@ const App = () => (
                           }
                         >
                           <Route path="/" element={<HomeRoute />} />
+                          <Route
+                            path="/analytics"
+                            element={
+                              <RequirePermission permission="analytics.read">
+                                <Reports />
+                              </RequirePermission>
+                            }
+                          />
                           <Route
                             path="/orders"
                             element={
@@ -319,7 +328,7 @@ const App = () => (
                           />
                           <Route
                             path="/reports"
-                            element={<Navigate to="/" replace />}
+                            element={<Navigate to="/analytics" replace />}
                           />
                           <Route path="/settings" element={<Settings />} />
                         </Route>

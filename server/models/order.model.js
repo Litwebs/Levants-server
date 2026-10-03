@@ -12,6 +12,14 @@ const orderItemSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Product display-name snapshot at order creation time. Optional for
+    // legacy orders created before product-name snapshotting was introduced.
+    productName: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
+
     variant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductVariant",
@@ -450,5 +458,40 @@ orderSchema.method("toJSON", function () {
 
 orderSchema.index({ "location.lat": 1, "location.lng": 1 });
 orderSchema.index({ deliveryDate: 1, status: 1 });
+
+// Analytics read-path indexes. Production disables Mongoose autoIndex, so these
+// are also enforced explicitly during DB startup in config/db.js.
+orderSchema.index(
+  { status: 1, paidAt: 1 },
+  { name: "analytics_status_paidAt" },
+);
+orderSchema.index(
+  { status: 1, createdAt: 1 },
+  { name: "analytics_status_createdAt" },
+);
+orderSchema.index(
+  { orderType: 1, status: 1, paidAt: 1 },
+  { name: "analytics_orderType_status_paidAt" },
+);
+orderSchema.index(
+  { "metadata.manualImport": 1, status: 1, paidAt: 1 },
+  { name: "analytics_import_status_paidAt" },
+);
+orderSchema.index(
+  { subscription: 1, status: 1, paidAt: 1 },
+  { name: "analytics_subscription_status_paidAt" },
+);
+orderSchema.index(
+  { "refunds.status": 1, "refunds.refundedAt": 1 },
+  { name: "analytics_refund_status_refundedAt" },
+);
+orderSchema.index(
+  { "items.product": 1, status: 1, paidAt: 1 },
+  { name: "analytics_product_status_paidAt" },
+);
+orderSchema.index(
+  { "items.variant": 1, status: 1, paidAt: 1 },
+  { name: "analytics_variant_status_paidAt" },
+);
 
 module.exports = mongoose.model("Order", orderSchema);
