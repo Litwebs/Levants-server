@@ -4096,6 +4096,50 @@ describe("Portal Subscriptions", () => {
     expect(later.addOns).toHaveLength(0);
   });
 
+  it("blocks conflicting actions while an add-on outcome is unknown but allows its original retry", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    const payload = { operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] };
+    const addOn = body => request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`).send(body);
+    stripe.paymentIntents.create.mockClear();
+    stripe.paymentIntents.create.mockRejectedValueOnce(new Error("response lost"));
+    expect((await addOn(payload)).status).toBe(400);
+    for (const action of ["pause", "cancel"]) {
+      const result = await request(app).post(`/api/portal/subscriptions/${sub._id}/${action}`)
+        .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID() });
+      expect(result.status).toBe(409);
+      expect(result.body.message).toMatch(/earlier payment/);
+    }
+    const edit = await request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ notes: "Blocked edit", operationId: crypto.randomUUID() });
+    expect(edit.status).toBe(409);
+    expect((await addOn({ ...payload, operationId: crypto.randomUUID() })).status).toBe(409);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    expect((await Subscription.findById(sub._id)).status).toBe("active");
+    expect((await addOn(payload)).status).toBe(200);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(2);
+    expect(stripe.paymentIntents.create.mock.calls[1]).toEqual(stripe.paymentIntents.create.mock.calls[0]);
+    const after = await request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ notes: "Allowed after recovery", operationId: crypto.randomUUID() });
+    expect(after.status).toBe(200);
+  });
+
+  it("does not lock a subscription after a confirmed unpaid add-on decline", async () => {
+    const sub = await createBasicSubscription();
+    await prepareUpcomingDeliveries(sub._id);
+    stripe.paymentIntents.create.mockRejectedValueOnce({ message: "declined", payment_intent: {
+      id: "pi_unpaid_decline", status: "requires_payment_method", amount_received: 0,
+    } });
+    const first = await request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] });
+    expect(first.status).toBe(400);
+    expect(first.body.data.paymentOutcome).toBe("declined");
+    const edit = await request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ notes: "Allowed after decline", operationId: crypto.randomUUID() });
+    expect(edit.status).toBe(200);
+  });
+
   it("keeps an ambiguous add-on payment bound to its original delivery after cutoff", async () => {
     const sub = await createBasicSubscription();
     const deliveries = await prepareUpcomingDeliveries(sub._id);

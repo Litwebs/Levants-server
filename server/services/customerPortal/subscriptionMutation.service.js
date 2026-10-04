@@ -242,12 +242,24 @@ async function executeSubscriptionConcurrencyGuard({
   try {
     // An accepted charge must finish its saved fulfillment change before another
     // customer mutation can replace the baseline or cancel the target delivery.
-    const pending = subscriptionId && await SubscriptionMutation.findOne({
+    const pending = subscriptionId ? await SubscriptionMutation.find({
       customer: customerId, subscription: subscriptionId,
-      itemIncreaseSnapshot: { $ne: null }, status: { $ne: "completed" },
-      operationId: { $ne: operationId },
-    }).select("_id").lean();
-    if (pending) return busyResponse(claim.currentVersion);
+      status: { $ne: "completed" }, operationId: { $ne: operationId },
+      $or: [{ itemIncreaseSnapshot: { $ne: null } }, { addOnSnapshot: { $ne: null } }],
+    }).select("itemIncreaseSnapshot addOnSnapshot").lean() : [];
+    const unresolved = pending.some(mutation => {
+      if (mutation.itemIncreaseSnapshot) return true;
+      const intent = mutation.addOnSnapshot?.paymentIntent;
+      // A confirmed unpaid decline is safe to replace. Missing/processing or
+      // accepted payments must finish their original operation first.
+      return Boolean(mutation.addOnSnapshot) &&
+        !(intent?.status === "requires_payment_method" && intent.amount_received === 0);
+    });
+    if (unresolved) {
+      return Response(false,
+        "An earlier payment still needs confirmation. Retry the original purchase before changing this subscription or placing another purchase.",
+        { subscriptionBusy: true, retryable: true, currentVersion: claim.currentVersion });
+    }
     return await execute();
   } finally {
     await releaseSubscriptionMutationLock({
