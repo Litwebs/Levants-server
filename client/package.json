@@ -9,10 +9,11 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test:map-tiles": "node scripts/check-map-tiles.mjs",
-    "check:release": "npm run test:map-tiles && npm run test:analytics && npm run lint -- --max-warnings 395 && npm run build",
+    "check:release": "npm run test:map-tiles && npm run test:analytics && npm run test:deals && npm run lint -- --max-warnings 395 && npm run build",
     "preview": "vite preview",
     "test:analytics": "node --test scripts/analytics-ui.test.mjs",
-    "check:component-catalog": "node scripts/check-component-catalog.mjs"
+    "check:component-catalog": "node scripts/check-component-catalog.mjs",
+    "test:deals": "vitest run"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -73,6 +74,8 @@
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
@@ -82,11 +85,13 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "jsdom": "^24.1.3",
     "lovable-tagger": "^1.1.13",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vite": "^5.4.19"
+    "vite": "^5.4.19",
+    "vitest": "^2.1.9"
   }
 }

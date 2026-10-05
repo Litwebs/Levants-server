@@ -6,7 +6,11 @@ export type VariantSearchItem = {
   sku: string;
   price?: number;
   status?: "active" | "inactive" | string;
-  product?: { name: string } | null;
+  stockQuantity?: number;
+  reservedQuantity?: number;
+  availableQuantity?: number;
+  thumbnailImage?: { url?: string } | null;
+  product?: { name: string; category?: string; status?: string; thumbnailImage?: { url?: string } | null } | null;
 };
 
 type ApiEnvelope<T> = {
