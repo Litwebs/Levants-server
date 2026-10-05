@@ -271,4 +271,24 @@ describe("admin deal creation with existing components", () => {
       }),
     );
   });
+  test("empty management state offers creation and a failed listing can be retried", async () => {
+    listDeals.mockRejectedValueOnce(new Error("Cannot load offers"));
+    listDeals.mockResolvedValueOnce({
+      deals: [],
+      meta: { total: 0, totalPages: 1 },
+    });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <DealsPage />
+      </MemoryRouter>,
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Cannot load offers",
+    );
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("No product packages yet.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New Deal" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

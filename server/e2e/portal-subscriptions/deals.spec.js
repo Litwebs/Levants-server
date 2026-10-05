@@ -264,6 +264,14 @@ for (const mode of ["signed-in", "guest"]) {
     ).toBeVisible();
     const pathname =
       mode === "guest" ? "/api/orders" : "/api/portal/orders/checkout";
+    // Read the real API response before the storefront navigates to Stripe.
+    // Chromium discards the original response body during that cross-origin redirect.
+    let checkoutData;
+    await page.route(`**${pathname}`, async (route) => {
+      const upstream = await route.fetch();
+      checkoutData = await upstream.json();
+      await route.fulfill({ response: upstream });
+    });
     const submitted = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
@@ -273,7 +281,7 @@ for (const mode of ["signed-in", "guest"]) {
       .getByRole("button", { name: "Place Order - £9.00", exact: true })
       .click();
     const response = await submitted;
-    expect(response.ok(), await response.text()).toBeTruthy();
+    expect(response.ok(), JSON.stringify(checkoutData)).toBeTruthy();
     expect(response.request().postDataJSON()).toMatchObject({
       items: [{ variantId: data.variants.MILK.id, quantity: 2 }],
       deals: [
@@ -285,7 +293,7 @@ for (const mode of ["signed-in", "guest"]) {
         },
       ],
     });
-    const order = (await response.json()).data;
+    const order = checkoutData.data;
     await page.locator("#cardNumber").fill("4242424242424242");
     await page.locator("#cardExpiry").fill("1234");
     await page.locator("#cardCvc").fill("123");
@@ -443,4 +451,26 @@ test("admin edits, schedules, deactivates, reactivates and archives a shared off
   expect(
     (await request.get(`${API_ORIGIN}/api/deals/${saved.slug}`)).status(),
   ).toBe(404);
+});
+
+test("mobile deal details wrap maximum-length names and descriptions without overflow", async ({
+  page,
+  request,
+}, testInfo) => {
+  const data = await fixture(request);
+  await adminLogin(page.request, data.adminCredentials);
+  const name = "Offer".repeat(28);
+  const update = await page.request.patch(
+    `${API_ORIGIN}/api/admin/deals/${data.deal._id}`,
+    { data: { name, description: "Description".repeat(270) } },
+  );
+  expect(update.ok(), await update.text()).toBeTruthy();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${CLIENT_ORIGIN}/deals/${data.deal.slug}`);
+  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+  await assertNoOverflow(page);
+  await page.screenshot({
+    path: testInfo.outputPath("customer-long-name-mobile.png"),
+    fullPage: true,
+  });
 });

@@ -1393,3 +1393,10 @@
     flex: 1;
   }
 }
+
+.previewBody h3,
+.previewBody p,
+.valuePreview h3,
+.review h3 {
+  overflow-wrap: anywhere;
+}
