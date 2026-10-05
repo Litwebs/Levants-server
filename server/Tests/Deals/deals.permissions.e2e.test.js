@@ -129,4 +129,24 @@ describe("admin Deals permissions", () => {
     expect(saved.isActive).toBe(true);
     expect(saved.archivedAt).toBeNull();
   });
+  test("temporary 2FA and customer tokens cannot act as administrator access tokens", async () => {
+    const jwtUtil = require("../../utils/jwt.util");
+    const user = await createUser({ role: "admin", twoFactorEnabled: true });
+    await user.populate("role");
+    const tokens = [
+      jwtUtil.sign2FATempToken(user),
+      jwtUtil.signCustomerAccessToken({ _id: user._id }),
+    ];
+    for (const token of tokens) {
+      const list = await request(app)
+        .get("/api/admin/deals")
+        .set("Authorization", `Bearer ${token}`);
+      expect(list.status).toBe(401);
+      const create = await request(app)
+        .post("/api/admin/deals")
+        .set("Authorization", `Bearer ${token}`)
+        .send({});
+      expect(create.status).toBe(401);
+    }
+  });
 });

@@ -1,5 +1,8 @@
 # Customer deals
 
+Deals are shared retail offers managed by administrators and available to customers
+for one-off purchases. They are not CRM records owned by individual customers.
+
 The admin dashboard supports single-product offers and bundles of up to 30
 variants. Admins select products, quantities, an optional JPG/PNG/WEBP image
 (maximum 5 MB), a package price in GBP, and optional start/expiry dates.
@@ -67,28 +70,56 @@ npm run test:release
 
 # Admin UI
 cd ../client
-npm run test:deals
-npm run build
+npm run check:release
 
 # Separate Levants-client storefront
 npm run test:deals
+npx tsc --noEmit -p tsconfig.app.json
 npm run build
 ```
 
-Tests use a temporary MongoDB replica set and mocked Stripe, image upload and
-outbound email transports. They do not send fixture customer notifications.
+The backend release suite includes all deal, checkout, permission, validation,
+concurrency and index-migration tests. Unit/integration tests use a temporary
+MongoDB replica set and mocked Stripe, image upload and outbound email transports.
+They do not send fixture customer notifications. Admin release checks run UI
+interaction tests, strict TypeScript checks, the existing lint gate and a production build.
+The storefront PR has its own tests, full TypeScript check, scoped deals lint and build.
 
-Deploy the server before either UI, then create an offer in staging and check
-desktop/mobile creation, editing, image upload, homepage discovery and basket
-refresh. Complete a Stripe test-mode checkout and confirm webhook payment and
-stock consumption before production release.
+### Real browser and Stripe checks
 
-Implementation verification: 60 targeted backend tests passed; the broader
-release suite had 988 passing tests and 12 failures. All 12 failures reproduce on
-the original `ac-merge` baseline (11 analytics fixtures and one delivery-proof
-upload test). Five admin and six storefront interaction tests pass. Both production UI builds
-pass. Existing TypeScript errors also
-remain on the baselines; the component catalog check also has the same existing
-missing `PageTransition` failure. Browser visual verification was blocked by the current
-environment; desktop/mobile staging review and live Stripe test-mode verification
-remain required.
+GitHub Actions checks out both `feat/customer-deals` branches and runs the real
+admin, storefront and API with an isolated MongoDB replica set. Stripe uses test
+keys and its CLI forwards signed webhooks. The deals lane runs:
+
+```bash
+cd server
+npm run test:e2e:deals:ci
+```
+
+It covers desktop/mobile creation with image validation and file persistence,
+homepage discovery, basket and checkout display; the admin edit/schedule/
+deactivate/reactivate/archive lifecycle with reloads; real Stripe totals; fully
+funded store credit; and signed-in/guest purchases through the storefront and
+hosted Stripe Checkout, including signed-webhook confirmation and exactly-once
+stock consumption after a reload. Successful screenshots and failure traces are
+stored in the `deals-e2e-diagnostics` artifact. The full existing subscription
+E2E and analytics E2E suites run separately as regression gates.
+
+The browser harness captures the Cloudinary upload boundary and outbound mail,
+and substitutes geocoding. Image parsing, managed-file records, deals services,
+permissions, pricing, stock transactions, customer login and Stripe payments
+remain real. This does not verify production Cloudinary credentials or production
+email delivery.
+
+### Release procedure
+
+Require green checks on both PRs for the reviewed commit. Deploy the server before
+either UI. No destructive data migration or backfill is needed: startup explicitly
+creates the deal indexes even when automatic indexing is disabled; this is tested
+on a fresh collection and can safely be repeated. Shared product/file references
+and archived offer snapshots retain historical order information.
+
+After deployment, smoke-test one offer with the deployed image provider, desktop/
+mobile discovery, checkout and payment confirmation using the intended environment
+credentials. CI verifies the isolated application; it does not deploy these branches
+or certify production provider configuration.

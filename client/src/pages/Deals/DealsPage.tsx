@@ -100,6 +100,7 @@ export const DealsPage = () => {
   const [draft, setDraft] = useState(emptyDraft());
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [imageChanged, setImageChanged] = useState(false);
+  const [readingImage, setReadingImage] = useState(false);
 
   const {
     query,
@@ -219,9 +220,13 @@ export const DealsPage = () => {
   };
 
   const save = async () => {
+    if (saving || readingImage) return;
     const name = draft.name.trim();
-    if (!name) {
-      showToast({ type: "error", title: "Deal name is required" });
+    if (name.length < 2 || name.length > 140) {
+      showToast({
+        type: "error",
+        title: "Deal name must be between 2 and 140 characters",
+      });
       return;
     }
     if (selectedItems.length === 0) {
@@ -497,9 +502,10 @@ export const DealsPage = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? "Edit product package" : "Create product package"}
+        closeDisabled={saving || readingImage}
         size="lg"
       >
-        <div className={styles.form}>
+        <fieldset className={styles.form} disabled={saving || readingImage}>
           <div className={styles.grid}>
             <Input
               label="Deal name *"
@@ -522,6 +528,7 @@ export const DealsPage = () => {
             <div className={styles.full}>
               <label className={styles.label}>Description</label>
               <textarea
+                maxLength={3000}
                 className={styles.textarea}
                 value={draft.description}
                 onChange={(e) =>
@@ -556,13 +563,22 @@ export const DealsPage = () => {
                     e.target.value = "";
                     return;
                   }
+                  setReadingImage(true);
                   const reader = new FileReader();
-                  reader.onloadend = () => {
+                  reader.onload = () => {
                     setDraft((prev) => ({
                       ...prev,
                       image: String(reader.result || ""),
                     }));
                     setImageChanged(true);
+                    setReadingImage(false);
+                  };
+                  reader.onerror = () => {
+                    setReadingImage(false);
+                    showToast({
+                      type: "error",
+                      title: "Could not read the image. Please try again.",
+                    });
                   };
                   reader.readAsDataURL(file);
                 }}
@@ -775,18 +791,28 @@ export const DealsPage = () => {
               </div>
             </div>
           </div>
-        </div>
+        </fieldset>
 
         <ModalFooter>
-          <Button variant="outline" onClick={() => setModalOpen(false)}>
+          <Button
+            variant="outline"
+            disabled={saving || readingImage}
+            onClick={() => setModalOpen(false)}
+          >
             Cancel
           </Button>
           <Button
             variant="primary"
-            disabled={saving}
+            disabled={saving || readingImage}
             onClick={() => void save()}
           >
-            {saving ? "Saving…" : editing ? "Save changes" : "Create deal"}
+            {readingImage
+              ? "Reading image…"
+              : saving
+                ? "Saving…"
+                : editing
+                  ? "Save changes"
+                  : "Create deal"}
           </Button>
         </ModalFooter>
       </Modal>
@@ -795,6 +821,7 @@ export const DealsPage = () => {
         isOpen={Boolean(archiveTarget)}
         onClose={() => setArchiveTarget(null)}
         title="Archive product package"
+        closeDisabled={Boolean(archivingId)}
         size="sm"
       >
         <p>
@@ -803,7 +830,11 @@ export const DealsPage = () => {
           Existing orders keep their package snapshot.
         </p>
         <ModalFooter>
-          <Button variant="outline" onClick={() => setArchiveTarget(null)}>
+          <Button
+            variant="outline"
+            disabled={Boolean(archivingId)}
+            onClick={() => setArchiveTarget(null)}
+          >
             Cancel
           </Button>
           <Button

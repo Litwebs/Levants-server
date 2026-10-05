@@ -233,6 +233,7 @@ export function CreateDealPage() {
           className={styles.backLink}
           leftIcon={<ArrowLeft />}
           onClick={leave}
+          disabled={saving}
         >
           Deals &amp; Product Packages
         </Button>
@@ -254,7 +255,7 @@ export function CreateDealPage() {
                   size="sm"
                   variant="ghost"
                   key={label}
-                  disabled={number > step}
+                  disabled={saving || number > step}
                   className={
                     number === step
                       ? styles.activeStep
@@ -320,7 +321,8 @@ export function CreateDealPage() {
         </div>
       </header>
 
-      <div
+      <fieldset
+        disabled={saving}
         className={`${styles.workspace} ${step === 1 ? styles.catalogueWorkspace : ""}`}
       >
         {step === 1 && (
@@ -730,7 +732,7 @@ export function CreateDealPage() {
             </aside>
           </div>
         )}
-      </div>
+      </fieldset>
     </div>
   );
 }

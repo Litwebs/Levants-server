@@ -224,93 +224,125 @@ test("package checkout matches real Stripe totals and fully funded credit fulfil
   expect(final.variants[0].reservedQuantity).toBe(2);
 });
 
-test("real Stripe card payment confirms the deal and consumes component stock exactly once", async ({
-  page,
-  request,
-}, testInfo) => {
-  const data = await fixture(request);
-  const token = await login(request, data.credentials);
-  const response = await request.post(
-    `${API_ORIGIN}/api/portal/orders/checkout`,
-    {
-      headers: { authorization: `Bearer ${token}` },
-      data: {
-        items: [{ variantId: data.variants.MILK.id, quantity: 2 }],
-        deals: [
-          {
-            dealId: data.deal._id,
-            quantity: 1,
-            expectedPackagePrice: 8,
-            expectedContents: [
-              { variantId: data.variants.MILK.id, quantity: 2 },
-            ],
-          },
-        ],
-        deliveryAddress: {
-          line1: "1 E2E Dairy Lane",
-          city: "Bradford",
-          postcode: "BD5 0AL",
-          country: "UK",
-        },
-      },
-    },
-  );
-  expect(response.ok(), await response.text()).toBeTruthy();
-  const order = (await response.json()).data;
-  await page.goto(order.checkoutUrl);
-  await page.locator("#cardNumber").fill("4242424242424242");
-  await page.locator("#cardExpiry").fill("1234");
-  await page.locator("#cardCvc").fill("123");
-  await page.locator("#billingName").fill("Deal E2E Customer");
-  const country = page.locator("#billingCountry");
-  if (await country.isVisible()) await country.selectOption("GB");
-  const postcode = page.locator("#billingPostalCode");
-  if (await postcode.isVisible()) await postcode.fill("BD5 0AL");
-  await page.screenshot({
-    path: testInfo.outputPath("stripe-deal-checkout.png"),
-    fullPage: true,
-  });
-  await page
-    .locator('button[type="submit"]')
-    .filter({ hasText: /Pay/ })
-    .click();
-  await expect(page).toHaveURL(/\/checkout\/success\?session_id=/, {
-    timeout: 60000,
-  });
-  await expect(
-    page.getByRole("heading", { name: "Thank You for Your Order!" }),
-  ).toBeVisible();
-  const read = async () => {
-    const state = await request.get(
-      `${CONTROL_ORIGIN}/deal-state/${order.orderId}`,
-      { headers: controlHeaders },
+for (const mode of ["signed-in", "guest"]) {
+  test(`real Stripe card purchase through ${mode} storefront checkout consumes stock exactly once`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    const data = await fixture(request);
+    if (mode === "signed-in") {
+      await page.goto(`${CLIENT_ORIGIN}/login?redirect=%2Fdeals`);
+      await page.getByLabel("Email address").fill(data.credentials.email);
+      await page.getByLabel("Password").fill(data.credentials.password);
+      await page.getByRole("button", { name: "Sign In", exact: true }).click();
+      await expect(page).toHaveURL(`${CLIENT_ORIGIN}/deals`);
+    } else {
+      await page.goto(`${CLIENT_ORIGIN}/deals`);
+    }
+    await page.getByRole("button", { name: "Add package to basket" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Your Cart" }),
+    ).toBeVisible();
+    await page.goto(`${CLIENT_ORIGIN}/checkout`);
+    if (mode === "guest") {
+      await page.locator('input[name="firstName"]').fill("Guest");
+      await page.locator('input[name="lastName"]').fill("E2E");
+      await page
+        .locator('input[name="email"]')
+        .fill(`guest-deal-${data.scenarioId}@example.com`);
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+      await page.locator('input[name="address1"]').fill("1 E2E Dairy Lane");
+      await page.locator('input[name="city"]').fill("Bradford");
+      await page.locator('input[name="postcode"]').fill("BD5 0AL");
+      await page.getByRole("button", { name: "Continue", exact: true }).click();
+    }
+    await expect(
+      page.getByRole("heading", { name: "Payment", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Fresh milk package", { exact: true }),
+    ).toBeVisible();
+    const pathname =
+      mode === "guest" ? "/api/orders" : "/api/portal/orders/checkout";
+    const submitted = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname === pathname,
     );
-    expect(state.ok()).toBeTruthy();
-    return (await state.json()).data;
-  };
-  await expect.poll(async () => (await read()).order.status).toBe("paid");
-  if (process.env.E2E_USE_STRIPE_CLI === "1") {
-    await expect
-      .poll(async () => (await read()).signedCheckoutWebhookReceived, {
-        timeout: 30000,
-      })
-      .toBe(true);
-  }
-  const state = await read();
-  expect(state.checkout.amount_total).toBe(900);
-  expect(state.checkout.payment_status).toBe("paid");
-  expect(state.order.amountPaid).toBe(9);
-  expect(state.order.metadata.deals[0].packagePrice).toBe(8);
-  expect(state.variants[0].stockQuantity).toBe(9998);
-  expect(state.variants[0].reservedQuantity).toBe(0);
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Thank You for Your Order!" }),
-  ).toBeVisible();
-  const repeated = await read();
-  expect(repeated.variants[0].stockQuantity).toBe(9998);
-  expect(repeated.variants[0].reservedQuantity).toBe(0);
-});
+    await page
+      .getByRole("button", { name: "Place Order - £9.00", exact: true })
+      .click();
+    const response = await submitted;
+    expect(response.ok(), await response.text()).toBeTruthy();
+    expect(response.request().postDataJSON()).toMatchObject({
+      items: [{ variantId: data.variants.MILK.id, quantity: 2 }],
+      deals: [
+        {
+          dealId: data.deal._id,
+          quantity: 1,
+          expectedPackagePrice: 8,
+          expectedContents: [{ variantId: data.variants.MILK.id, quantity: 2 }],
+        },
+      ],
+    });
+    const order = (await response.json()).data;
+    await page.locator("#cardNumber").fill("4242424242424242");
+    await page.locator("#cardExpiry").fill("1234");
+    await page.locator("#cardCvc").fill("123");
+    await page.locator("#billingName").fill("Deal E2E Customer");
+    const country = page.locator("#billingCountry");
+    if (await country.isVisible()) await country.selectOption("GB");
+    const postcode = page.locator("#billingPostalCode");
+    if (await postcode.isVisible()) await postcode.fill("BD5 0AL");
+    await page.screenshot({
+      path: testInfo.outputPath("stripe-deal-checkout.png"),
+      fullPage: true,
+    });
+    await page
+      .locator('button[type="submit"]')
+      .filter({ hasText: /Pay/ })
+      .click();
+    await expect(page).toHaveURL(/\/checkout\/success\?session_id=/, {
+      timeout: 60000,
+    });
+    await expect(
+      page.getByRole("heading", { name: "Thank You for Your Order!" }),
+    ).toBeVisible();
+    const read = async () => {
+      const state = await request.get(
+        `${CONTROL_ORIGIN}/deal-state/${order.orderId}`,
+        { headers: controlHeaders },
+      );
+      expect(state.ok()).toBeTruthy();
+      return (await state.json()).data;
+    };
+    await expect.poll(async () => (await read()).order.status).toBe("paid");
+    if (process.env.E2E_USE_STRIPE_CLI === "1") {
+      await expect
+        .poll(async () => (await read()).signedCheckoutWebhookReceived, {
+          timeout: 30000,
+        })
+        .toBe(true);
+    }
+    const state = await read();
+    expect(state.checkout.amount_total).toBe(900);
+    expect(state.checkout.payment_status).toBe("paid");
+    expect(state.order.total).toBe(9);
+    expect(state.order.discountAmount).toBe(2);
+    expect(state.order.paidAt).toBeTruthy();
+    expect(state.order.stripePaymentIntentId).toMatch(/^pi_/);
+    expect(state.order.metadata.deals[0].packagePrice).toBe(8);
+    expect(state.variants[0].stockQuantity).toBe(9998);
+    expect(state.variants[0].reservedQuantity).toBe(0);
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Thank You for Your Order!" }),
+    ).toBeVisible();
+    const repeated = await read();
+    expect(repeated.variants[0].stockQuantity).toBe(9998);
+    expect(repeated.variants[0].reservedQuantity).toBe(0);
+  });
+}
 
 test("admin edits, schedules, deactivates, reactivates and archives a shared offer with persistence", async ({
   page,
