@@ -2386,8 +2386,9 @@ async function UpdateSubscription({
   const refundInProgress = await hasUnfinishedCardRefund(subscription._id);
   if (refundInProgress) {
     // Only a card-settled delivery-day removal can continue its original plan.
-    if (refundMethod !== "refund" || deliveryDayPlans !== undefined || frequency !== undefined ||
-        deliveryAddressId !== undefined || notes !== undefined) {
+    if (refundMethod !== "refund" ||
+        (frequency !== undefined && frequency !== subscription.frequency) ||
+        (notes !== undefined && (notes || null) !== (subscription.notes || null))) {
       return Response(false, "A card refund is unfinished. Retry that refund before making another change.", null);
     }
   }
@@ -2404,6 +2405,9 @@ async function UpdateSubscription({
       deliveryInstructions: selected.deliveryInstructions || null };
     const unchanged = Object.entries(address).every(([key, value]) =>
       (subscription.deliveryAddress?.[key] || null) === (value || null));
+    if (refundInProgress && (!unchanged || subscription.pendingChanges?.deliveryAddress)) {
+      return Response(false, "A card refund is unfinished. Retry that refund before changing the delivery address.", null);
+    }
     if (!unchanged || subscription.pendingChanges?.deliveryAddress) {
       try { addressChange = { address, location: await locateDeliveryAddress(address) }; }
       catch { return Response(false, "We couldn't locate this delivery address. Please check it and try again.", null); }
@@ -2465,6 +2469,9 @@ async function UpdateSubscription({
   );
   if (singleDayTransition?.error) return Response(false, singleDayTransition.error, null);
   const dayPlanChangeRequested = deliveryDayPlans !== undefined && !singleDayTransition;
+  if (refundInProgress && dayPlanChangeRequested) {
+    return Response(false, "A card refund is unfinished. Retry that refund before changing products.", null);
+  }
   const shouldUseDayPlans =
     targetFrequency === "weekly" && resolvedDays.days.length > 1;
   let resolvedDeliveryDayPlans;

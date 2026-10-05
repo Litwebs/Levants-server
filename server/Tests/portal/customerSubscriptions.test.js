@@ -4555,7 +4555,13 @@ describe("Portal Subscriptions", () => {
         deliveryDayPlans: [day, otherDay].map(day => ({ day, items: sub.items })),
         items: sub.items.map(item => ({ ...item, quantity: item.quantity * 2 })),
       });
-      Object.assign(payload, { preferredDeliveryDay: otherDay, preferredDeliveryDays: [otherDay] });
+      Object.assign(payload, {
+        preferredDeliveryDay: otherDay, preferredDeliveryDays: [otherDay],
+        deliveryAddressId: addressId,
+        deliveryDayPlans: [{ day: otherDay, items: sub.items.map(item => ({
+          variantId: String(item.variant), quantity: item.quantity,
+        })) }],
+      });
       send = body => request(app).patch(`/api/portal/subscriptions/${sub._id}`)
         .set("Authorization", `Bearer ${accessToken}`).send(body);
     } else {
@@ -4587,6 +4593,20 @@ describe("Portal Subscriptions", () => {
       .send({ operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] });
     expect(addOn.status).toBe(400);
     expect(addOn.body.message).toMatch(/refund is unfinished/);
+    if (action === "remove-day") {
+      const attempts = stripe.refunds.create.mock.calls.length;
+      const changedProducts = await send({ ...payload, operationId: crypto.randomUUID(),
+        deliveryDayPlans: payload.deliveryDayPlans.map(plan => ({ ...plan,
+          items: plan.items.map(item => ({ ...item, quantity: item.quantity + 1 })),
+        })),
+      });
+      expect(changedProducts.status).toBe(400);
+      expect(changedProducts.body.message).toMatch(/product changes separately/);
+      const changedNotes = await send({ ...payload, operationId: crypto.randomUUID(), notes: "New instructions" });
+      expect(changedNotes.status).toBe(400);
+      expect(changedNotes.body.message).toMatch(/refund is unfinished/);
+      expect(stripe.refunds.create).toHaveBeenCalledTimes(attempts);
+    }
     // Legacy allocation records can make a webhook derive terminal status early.
     // The durable plan, rather than that status alone, controls recovery.
     await Order.findByIdAndUpdate(order._id, { status: action === "cancel" ? "refunded" : "refund_pending" });
