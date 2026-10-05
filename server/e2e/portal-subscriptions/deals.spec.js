@@ -466,7 +466,14 @@ test("mobile deal details, basket and checkout handle maximum-length content wit
   );
   expect(update.ok(), await update.text()).toBeTruthy();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${CLIENT_ORIGIN}/deals/${data.deal.slug}`);
+  const detailPath = `/deals/${data.deal.slug}`;
+  await page.goto(
+    `${CLIENT_ORIGIN}/login?redirect=${encodeURIComponent(detailPath)}`,
+  );
+  await page.getByLabel("Email address").fill(data.credentials.email);
+  await page.getByLabel("Password").fill(data.credentials.password);
+  await page.getByRole("button", { name: "Sign In", exact: true }).click();
+  await expect(page).toHaveURL(`${CLIENT_ORIGIN}${detailPath}`);
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
   await assertNoOverflow(page);
   await page.screenshot({
