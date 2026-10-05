@@ -84,6 +84,7 @@ async function start() {
   // than the service method, which is also called by the synchronous fallback)
   // so fixtures can wait specifically for successful Stripe CLI delivery.
   global.__E2E_COMPLETED_SIGNED_INVOICE_WEBHOOKS__ = new Set();
+  global.__E2E_COMPLETED_SIGNED_CHECKOUT_WEBHOOKS__ = new Set();
   // The isolated UI suite captures only the image-provider boundary. Deal
   // validation, file persistence, permissions and application routes remain real.
   const managedFiles = require(`${SERVER_ROOT}/services/files.service`);
@@ -115,8 +116,12 @@ async function start() {
     res,
   ) {
     let invoiceId = null;
+    let checkoutId = null;
     try {
       const event = JSON.parse(Buffer.from(req.body).toString("utf8"));
+      if (event?.type === "checkout.session.completed") {
+        checkoutId = event.data?.object?.id || null;
+      }
       if (event?.type === "invoice.payment_succeeded") {
         invoiceId = event.data?.object?.id || null;
       }
@@ -124,6 +129,12 @@ async function start() {
       // Signature validation in the real controller remains authoritative.
     }
 
+    if (checkoutId) {
+      res.once("finish", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300)
+          global.__E2E_COMPLETED_SIGNED_CHECKOUT_WEBHOOKS__.add(checkoutId);
+      });
+    }
     if (invoiceId) {
       res.once("finish", () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {

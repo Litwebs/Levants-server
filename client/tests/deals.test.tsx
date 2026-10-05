@@ -1,20 +1,23 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { CreateDealPage } from "@/pages/Deals/CreateDealPage";
 import { DealsPage } from "@/pages/Deals/DealsPage";
 
-const { createDeal, listDeals, getCatalog, showToast } = vi.hoisted(() => ({
-  createDeal: vi.fn(),
-  listDeals: vi.fn(),
-  getCatalog: vi.fn(),
-  showToast: vi.fn(),
-}));
+const { createDeal, listDeals, getCatalog, showToast, updateDeal } = vi.hoisted(
+  () => ({
+    createDeal: vi.fn(),
+    listDeals: vi.fn(),
+    getCatalog: vi.fn(),
+    showToast: vi.fn(),
+    updateDeal: vi.fn(),
+  }),
+);
 vi.mock("@/context/Deals", () => ({
   createDeal,
   listDeals,
-  updateDeal: vi.fn(),
+  updateDeal,
   deactivateDeal: vi.fn(),
   archiveDeal: vi.fn(),
 }));
@@ -171,5 +174,101 @@ describe("admin deal creation with existing components", () => {
         .getByRole("button", { name: "Create product package" })
         .hasAttribute("disabled"),
     ).toBe(false);
+  });
+  test("disables publishing while a delayed save is pending and submits exactly once", async () => {
+    let resolve!: (value: { _id: string }) => void;
+    createDeal.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const user = userEvent.setup();
+    mount();
+    await fillOffer(user);
+    const publish = screen.getByRole("button", {
+      name: "Create product package",
+    });
+    await user.dblClick(publish);
+    expect(createDeal).toHaveBeenCalledTimes(1);
+    expect(
+      screen
+        .getByRole("button", { name: "Create product package" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await act(async () => {
+      resolve({ _id: "deal-1" });
+    });
+    await screen.findByRole("heading", { name: "Saved deals" });
+  });
+  test("failed editing preserves changed values and allows retry without a false success", async () => {
+    const deal = {
+      _id: "deal-1",
+      name: "Milk offer",
+      slug: "milk-offer",
+      description: "",
+      image: null,
+      isActive: true,
+      isFeatured: false,
+      packagePrice: 3,
+      originalValue: 5,
+      savings: 2,
+      maxPackages: 20,
+      items: [
+        {
+          variantId: variant._id,
+          quantity: 1,
+          variant,
+          product: variant.product,
+        },
+      ],
+    };
+    listDeals.mockResolvedValue({
+      deals: [deal],
+      meta: { total: 1, totalPages: 1 },
+    });
+    updateDeal.mockRejectedValueOnce(new Error("Save failed"));
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <DealsPage />
+      </MemoryRouter>,
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Edit", exact: true }),
+    );
+    const name = screen.getByLabelText("Deal name *") as HTMLInputElement;
+    await user.clear(name);
+    await user.type(name, "Changed milk offer");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "error" }),
+      ),
+    );
+    expect(name.value).toBe("Changed milk offer");
+    expect(
+      screen
+        .getByRole("button", { name: "Save changes" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
+    expect(showToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "success" }),
+    );
+    updateDeal.mockResolvedValueOnce({ ...deal, name: "Changed milk offer" });
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "success", title: "Deal updated" }),
+      ),
+    );
+    expect(updateDeal).toHaveBeenCalledTimes(2);
+    expect(updateDeal).toHaveBeenLastCalledWith(
+      "deal-1",
+      expect.objectContaining({
+        name: "Changed milk offer",
+        packagePrice: 3,
+        items: [{ variantId: variant._id, quantity: 1 }],
+      }),
+    );
   });
 });

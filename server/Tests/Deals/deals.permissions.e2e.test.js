@@ -69,7 +69,11 @@ describe("admin Deals permissions", () => {
       permissions: ["promotions.read", "promotions.update"],
       isSystem: false,
     });
-    const user = await createUser({ role: role.name, status: "active", password: "secret123" });
+    const user = await createUser({
+      role: role.name,
+      status: "active",
+      password: "secret123",
+    });
     user.role = role._id;
     await user.save();
     const cookie = await loginAs(app, user);
@@ -83,4 +87,46 @@ describe("admin Deals permissions", () => {
     expect(res.body.success).toBe(false);
   });
 
+  test("read-only admins cannot modify a deal by manipulating its ID", async () => {
+    const Deal = require("../../models/deal.model");
+    const {
+      createProduct,
+      createVariant,
+    } = require("../Orders/helpers/orderFactory");
+    const product = await createProduct();
+    const variant = await createVariant({ product, stock: 20, price: 5 });
+    const deal = await Deal.create({
+      name: "Read-only offer",
+      slug: "read-only-offer",
+      items: [{ variant: variant._id, quantity: 2 }],
+      packagePrice: 8,
+    });
+    const role = await Role.create({
+      name: "deal-read-only",
+      permissions: ["promotions.read"],
+    });
+    const user = await createUser({
+      role: role.name,
+      status: "active",
+      password: "secret123",
+    });
+    user.role = role._id;
+    await user.save();
+    const cookie = await loginAs(app, user);
+    for (const [method, path, body] of [
+      ["patch", `/api/admin/deals/${deal._id}`, { name: "Tampered name" }],
+      ["delete", `/api/admin/deals/${deal._id}`, {}],
+      ["post", `/api/admin/deals/${deal._id}/archive`, {}],
+    ]) {
+      const response = await request(app)
+        [method](path)
+        .set("Cookie", cookie)
+        .send(body);
+      expect(response.status).toBe(403);
+    }
+    const saved = await Deal.findById(deal._id).lean();
+    expect(saved.name).toBe("Read-only offer");
+    expect(saved.isActive).toBe(true);
+    expect(saved.archivedAt).toBeNull();
+  });
 });

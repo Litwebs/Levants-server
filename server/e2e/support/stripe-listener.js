@@ -3,6 +3,7 @@
 const { spawn } = require("child_process");
 
 const EVENTS = [
+  "checkout.session.completed",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",

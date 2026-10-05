@@ -23,17 +23,36 @@ async function resolveImage(imageValue, userId) {
   if (!imageValue) return undefined;
 
   if (typeof imageValue === "string" && imageValue.startsWith("data:")) {
-    const match = imageValue.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
-    if (!match) throw Object.assign(new Error("Choose a JPG, PNG or WEBP image"), { statusCode: 400 });
+    const match = imageValue.match(
+      /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/,
+    );
+    if (!match)
+      throw Object.assign(new Error("Choose a JPG, PNG or WEBP image"), {
+        statusCode: 400,
+      });
     const buffer = Buffer.from(match[2], "base64");
-    if (buffer.length > 5 * 1024 * 1024) throw Object.assign(new Error("Deal images must be 5 MB or smaller"), { statusCode: 400 });
+    if (buffer.length > 5 * 1024 * 1024)
+      throw Object.assign(new Error("Deal images must be 5 MB or smaller"), {
+        statusCode: 400,
+      });
     try {
-      const metadata = await sharp(buffer, { limitInputPixels: 40_000_000 }).metadata();
-      if (!['jpeg', 'png', 'webp'].includes(metadata.format) || metadata.format !== match[1] || !metadata.width || !metadata.height || metadata.width * metadata.height > 40_000_000) {
+      const metadata = await sharp(buffer, {
+        limitInputPixels: 40_000_000,
+      }).metadata();
+      if (
+        !["jpeg", "png", "webp"].includes(metadata.format) ||
+        metadata.format !== match[1] ||
+        !metadata.width ||
+        !metadata.height ||
+        metadata.width * metadata.height > 40_000_000
+      ) {
         throw new Error("Unsupported image content");
       }
+    } catch {
+      throw Object.assign(new Error("The deal image could not be read"), {
+        statusCode: 400,
+      });
     }
-    catch { throw Object.assign(new Error("The deal image could not be read"), { statusCode: 400 }); }
     const tmp = await base64ToTempFile(imageValue);
     const uploaded = await uploadAndCreateFile({
       ...tmp,
@@ -47,9 +66,17 @@ async function resolveImage(imageValue, userId) {
     return uploaded.data._id;
   }
 
-  const file = await File.findOne({ _id: imageValue, isArchived: false }).lean();
-  if (!file || !["image/jpeg", "image/png", "image/webp"].includes(file.mimeType)) {
-    throw Object.assign(new Error("Deal image is unavailable"), { statusCode: 400 });
+  const file = await File.findOne({
+    _id: imageValue,
+    isArchived: false,
+  }).lean();
+  if (
+    !file ||
+    !["image/jpeg", "image/png", "image/webp"].includes(file.mimeType)
+  ) {
+    throw Object.assign(new Error("Deal image is unavailable"), {
+      statusCode: 400,
+    });
   }
   return file._id;
 }
@@ -111,7 +138,9 @@ async function resolveItems(items) {
     };
   }
 
-  const byId = new Map(variants.map((variant) => [String(variant._id), variant]));
+  const byId = new Map(
+    variants.map((variant) => [String(variant._id), variant]),
+  );
   const resolved = [];
   let originalValue = 0;
   let maxPackages = Infinity;
@@ -128,7 +157,8 @@ async function resolveItems(items) {
 
     const available = Math.max(
       0,
-      Number(variant.stockQuantity || 0) - Number(variant.reservedQuantity || 0),
+      Number(variant.stockQuantity || 0) -
+        Number(variant.reservedQuantity || 0),
     );
     maxPackages = Math.min(
       maxPackages,
@@ -212,7 +242,11 @@ async function createDeal({ body, userId }) {
     return { success: false, statusCode: 400, message: "Invalid deal name" };
   }
 
-  if (body.startsAt && body.endsAt && new Date(body.endsAt) <= new Date(body.startsAt)) {
+  if (
+    body.startsAt &&
+    body.endsAt &&
+    new Date(body.endsAt) <= new Date(body.startsAt)
+  ) {
     return {
       success: false,
       statusCode: 400,
@@ -222,7 +256,11 @@ async function createDeal({ body, userId }) {
 
   const existing = await Deal.findOne({ slug }).select("_id").lean();
   if (existing) {
-    return { success: false, statusCode: 409, message: "Deal slug already exists" };
+    return {
+      success: false,
+      statusCode: 409,
+      message: "Deal slug already exists",
+    };
   }
 
   const resolution = await resolveItems(body.items);
@@ -233,7 +271,8 @@ async function createDeal({ body, userId }) {
     return {
       success: false,
       statusCode: 400,
-      message: "Package price must be lower than the current combined product value",
+      message:
+        "Package price must be lower than the current combined product value",
     };
   }
 
@@ -251,23 +290,29 @@ async function createDeal({ body, userId }) {
   let deal;
   try {
     deal = await Deal.create({
-    name: body.name,
-    slug,
-    description: body.description || "",
-    image: imageId ?? null,
-    items: resolution.data.items,
-    packagePrice,
-    currency: body.currency || "GBP",
-    isActive: body.isActive !== false,
-    isFeatured: Boolean(body.isFeatured),
-    startsAt: body.startsAt || null,
-    endsAt: body.endsAt || null,
-    sortOrder: Number(body.sortOrder || 0),
-    createdBy: userId || null,
+      name: body.name,
+      slug,
+      description: body.description || "",
+      image: imageId ?? null,
+      items: resolution.data.items,
+      packagePrice,
+      currency: body.currency || "GBP",
+      isActive: body.isActive !== false,
+      isFeatured: Boolean(body.isFeatured),
+      startsAt: body.startsAt || null,
+      endsAt: body.endsAt || null,
+      sortOrder: Number(body.sortOrder || 0),
+      createdBy: userId || null,
     });
   } catch (err) {
-    if (imageId && String(body.image || "").startsWith("data:")) await deleteFileIfOrphaned(imageId).catch(() => {});
-    if (err.code === 11000) return { success: false, statusCode: 409, message: "Deal slug already exists" };
+    if (imageId && String(body.image || "").startsWith("data:"))
+      await deleteFileIfOrphaned(imageId).catch(() => {});
+    if (err.code === 11000)
+      return {
+        success: false,
+        statusCode: 409,
+        message: "Deal slug already exists",
+      };
     throw err;
   }
 
@@ -407,7 +452,11 @@ async function updateDeal({ dealId, body, userId }) {
     .select("_id")
     .lean();
   if (slugCollision) {
-    return { success: false, statusCode: 409, message: "Deal slug already exists" };
+    return {
+      success: false,
+      statusCode: 409,
+      message: "Deal slug already exists",
+    };
   }
 
   const resolution = await resolveItems(nextItems);
@@ -417,7 +466,8 @@ async function updateDeal({ dealId, body, userId }) {
     return {
       success: false,
       statusCode: 400,
-      message: "Package price must be lower than the current combined product value",
+      message:
+        "Package price must be lower than the current combined product value",
     };
   }
 
@@ -430,7 +480,10 @@ async function updateDeal({ dealId, body, userId }) {
   if (Object.prototype.hasOwnProperty.call(body, "image")) {
     previousImageId = current.image ? String(current.image) : null;
     try {
-      const imageId = await resolveImage(body.image, userId || current.createdBy);
+      const imageId = await resolveImage(
+        body.image,
+        userId || current.createdBy,
+      );
       current.image = imageId ?? null;
     } catch (err) {
       return {
@@ -451,17 +504,21 @@ async function updateDeal({ dealId, body, userId }) {
   current.sortOrder =
     body.sortOrder !== undefined ? Number(body.sortOrder) : current.sortOrder;
 
-  try { await current.save(); }
-  catch (err) {
-    if (String(body.image || "").startsWith("data:") && current.image) await deleteFileIfOrphaned(current.image).catch(() => {});
-    if (err.code === 11000 || err.name === "VersionError") return { success: false, statusCode: 409, message: "This deal changed. Refresh and try again." };
+  try {
+    await current.save();
+  } catch (err) {
+    if (String(body.image || "").startsWith("data:") && current.image)
+      await deleteFileIfOrphaned(current.image).catch(() => {});
+    if (err.code === 11000 || err.name === "VersionError")
+      return {
+        success: false,
+        statusCode: 409,
+        message: "This deal changed. Refresh and try again.",
+      };
     throw err;
   }
 
-  if (
-    previousImageId &&
-    previousImageId !== String(current.image || "")
-  ) {
+  if (previousImageId && previousImageId !== String(current.image || "")) {
     try {
       await deleteFileIfOrphaned(previousImageId);
     } catch {
@@ -493,7 +550,17 @@ async function deactivateDeal({ dealId }) {
   }
 
   deal.isActive = false;
-  await deal.save();
+  try {
+    await deal.save();
+  } catch (err) {
+    if (err.name === "VersionError")
+      return {
+        success: false,
+        statusCode: 409,
+        message: "This deal changed. Refresh and try again.",
+      };
+    throw err;
+  }
   return { success: true, data: { deal: deal.toObject() } };
 }
 
@@ -507,7 +574,17 @@ async function archiveDeal({ dealId }) {
     deal.archivedAt = new Date();
     deal.isActive = false;
     deal.isFeatured = false;
-    await deal.save();
+    try {
+      await deal.save();
+    } catch (err) {
+      if (err.name === "VersionError")
+        return {
+          success: false,
+          statusCode: 409,
+          message: "This deal changed. Refresh and try again.",
+        };
+      throw err;
+    }
   }
 
   return { success: true, data: { deal: deal.toObject() } };

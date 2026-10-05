@@ -3,10 +3,13 @@ const app = require("../testApp");
 const Deal = require("../../models/deal.model");
 const {
   archiveDeal,
+  deactivateDeal,
   createDeal,
   updateDeal,
 } = require("../../services/deals.admin.service");
-const { validateDealsForOrder } = require("../../services/deals.public.service");
+const {
+  validateDealsForOrder,
+} = require("../../services/deals.public.service");
 const {
   createProduct,
   createVariant,
@@ -45,6 +48,31 @@ async function createDealFixture({
 }
 
 describe("deals admin and public lifecycle", () => {
+  test.each([deactivateDeal, archiveDeal])(
+    "conflicting lifecycle updates return a recoverable conflict",
+    async (mutate) => {
+      const product = await createProduct();
+      const variant = await createVariant({ product, stock: 12, price: 5 });
+      const deal = await createDealFixture({ variant });
+      const stale = await Deal.findById(deal._id);
+      await Deal.updateOne(
+        { _id: deal._id },
+        { $set: { name: "Concurrent edit" }, $inc: { __v: 1 } },
+      );
+      const lookup = jest.spyOn(Deal, "findById").mockResolvedValueOnce(stale);
+      try {
+        const result = await mutate({ dealId: String(deal._id) });
+        expect(result).toMatchObject({ success: false, statusCode: 409 });
+      } finally {
+        lookup.mockRestore();
+      }
+      const saved = await Deal.findById(deal._id).lean();
+      expect(saved.name).toBe("Concurrent edit");
+      expect(saved.isActive).toBe(true);
+      expect(saved.archivedAt).toBeNull();
+    },
+  );
+
   test("admin create calculates live value, saving and package availability", async () => {
     const product = await createProduct();
     const variant = await createVariant({ product, stock: 12, price: 5 });
@@ -207,22 +235,24 @@ describe("deals admin and public lifecycle", () => {
       isFeatured: false,
     });
 
-    const featured = await require("../../services/deals.admin.service").listDeals({
-      page: 1,
-      pageSize: 20,
-      featured: true,
-    });
+    const featured =
+      await require("../../services/deals.admin.service").listDeals({
+        page: 1,
+        pageSize: 20,
+        featured: true,
+      });
 
     expect(featured.success).toBe(true);
     expect(featured.data.deals).toHaveLength(1);
     expect(featured.data.deals[0].slug).toBe("featured-admin");
     expect(featured.meta.total).toBe(1);
 
-    const standard = await require("../../services/deals.admin.service").listDeals({
-      page: 1,
-      pageSize: 20,
-      featured: false,
-    });
+    const standard =
+      await require("../../services/deals.admin.service").listDeals({
+        page: 1,
+        pageSize: 20,
+        featured: false,
+      });
     expect(standard.success).toBe(true);
     expect(standard.data.deals).toHaveLength(1);
     expect(standard.data.deals[0].slug).toBe("standard-admin");
@@ -265,23 +295,30 @@ describe("deals admin and public lifecycle", () => {
     expect(publicDetail.status).toBe(404);
 
     const checkout = await validateDealsForOrder({
-      dealClaims: [{ dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 }],
-      resolvedItems: [{
-        product: product._id,
-        variant: variant._id,
-        price: 5,
-        quantity: 2,
-        subtotal: 10,
-      }],
+      dealClaims: [
+        { dealId: String(deal._id), quantity: 1, expectedPackagePrice: 8 },
+      ],
+      resolvedItems: [
+        {
+          product: product._id,
+          variant: variant._id,
+          price: 5,
+          quantity: 2,
+          subtotal: 10,
+        },
+      ],
     });
     expect(checkout.success).toBe(false);
     expect(checkout.message).toMatch(/no longer available/i);
 
-    const adminList = await require("../../services/deals.admin.service").listDeals({
-      page: 1,
-      pageSize: 20,
-    });
-    expect(adminList.data.deals.some((item) => item.slug === "archive-me")).toBe(true);
+    const adminList =
+      await require("../../services/deals.admin.service").listDeals({
+        page: 1,
+        pageSize: 20,
+      });
+    expect(
+      adminList.data.deals.some((item) => item.slug === "archive-me"),
+    ).toBe(true);
   });
 
   test("public list exposes only active, in-window, in-stock packages", async () => {

@@ -298,6 +298,10 @@ async function getDealOrderState(orderId) {
     : null;
   return {
     order,
+    signedCheckoutWebhookReceived:
+      global.__E2E_COMPLETED_SIGNED_CHECKOUT_WEBHOOKS__?.has(
+        order.stripeCheckoutSessionId,
+      ) || false,
     variants,
     checkout: checkout
       ? {

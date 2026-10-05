@@ -458,14 +458,20 @@ export function CreateDealPage() {
                     "A short description will appear here for customers."}
                 </p>
                 <div>
-                  <strong>{formatPence(totals.packagePricePence)}</strong>
-                  {totals.originalValuePence > 0 && (
-                    <span>{formatPence(totals.originalValuePence)}</span>
-                  )}
+                  <strong>
+                    {totals.packagePricePence > 0
+                      ? formatPence(totals.packagePricePence)
+                      : "Set package price"}
+                  </strong>
+                  {totals.packagePricePence > 0 &&
+                    totals.originalValuePence > 0 && (
+                      <span>{formatPence(totals.originalValuePence)}</span>
+                    )}
                 </div>
                 <small>
-                  {totals.totalUnits} items across {totals.uniqueVariants}{" "}
-                  variants
+                  {totals.totalUnits} item{totals.totalUnits === 1 ? "" : "s"}{" "}
+                  across {totals.uniqueVariants} variant
+                  {totals.uniqueVariants === 1 ? "" : "s"}
                 </small>
               </div>
               {errors.image && (
