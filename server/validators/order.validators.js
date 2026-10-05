@@ -2,6 +2,55 @@ const Joi = require("joi");
 
 const objectId = Joi.string().hex().length(24);
 
+const listOrdersQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).default(1),
+  pageSize: Joi.number().integer().min(1).max(200).default(20),
+  deliveryStatus: Joi.alternatives().try(
+    Joi.string().valid("ordered", "dispatched", "in_transit", "delivered", "returned"),
+    Joi.array().items(Joi.string().valid("ordered", "dispatched", "in_transit", "delivered", "returned")),
+  ),
+  paymentStatus: Joi.alternatives().try(
+    Joi.string().max(50),
+    Joi.array().items(Joi.string().max(50)),
+  ),
+  orderSource: Joi.string().valid("all", "imported", "website", "subscription"),
+  search: Joi.string().trim().max(200).allow(""),
+  minTotal: Joi.number().min(0),
+  maxTotal: Joi.number().min(0),
+  dateFrom: Joi.date().iso(),
+  dateTo: Joi.date().iso(),
+  refundedOnly: Joi.boolean(),
+  expiredOnly: Joi.boolean(),
+  sortBy: Joi.string().valid(
+    "createdAt",
+    "updatedAt",
+    "deliveryDate",
+    "total",
+    "subtotal",
+    "paidAt",
+    "expiresAt",
+    "orderId",
+    "status",
+  ),
+  sortOrder: Joi.string().valid("asc", "desc"),
+}).custom((value, helpers) => {
+  if (
+    value.minTotal !== undefined &&
+    value.maxTotal !== undefined &&
+    value.minTotal > value.maxTotal
+  ) {
+    return helpers.message({ custom: "minTotal must not exceed maxTotal" });
+  }
+  if (value.dateFrom && value.dateTo && value.dateFrom > value.dateTo) {
+    return helpers.message({ custom: "dateFrom must not be after dateTo" });
+  }
+  return value;
+}).unknown(false);
+
+const updateDriverNoteSchema = Joi.object({
+  driverNote: Joi.string().trim().max(500).allow(null, "").required(),
+}).unknown(false);
+
 const deliveryAddressSchema = Joi.object({
   line1: Joi.string().trim().min(3).max(255).required(),
   line2: Joi.string().trim().max(255).allow(null, "").optional(),
@@ -110,6 +159,7 @@ const bulkDeleteOrdersSchema = Joi.object({
 }).unknown(false);
 
 module.exports = {
+  listOrdersQuerySchema,
   createOrderSchema,
   authenticatedCheckoutOrderSchema,
   checkoutConfirmSchema,
@@ -119,4 +169,5 @@ module.exports = {
   bulkAssignDeliveryDateSchema,
   updateOrderItemsSchema,
   bulkDeleteOrdersSchema,
+  updateDriverNoteSchema,
 };

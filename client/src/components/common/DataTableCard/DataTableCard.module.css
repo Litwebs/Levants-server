@@ -1,3 +1,11 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+
 .tableArea {
   position: relative;
   display: flex;
@@ -14,13 +22,13 @@
   padding: 0;
 }
 
-.table {
+.tableWrapper table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
 
-.table th {
+.tableWrapper th {
   padding: var(--space-5) var(--space-4);
   font-weight: var(--font-semibold);
   color: var(--color-gray-600);
@@ -33,17 +41,18 @@
   white-space: nowrap;
 }
 
-.table thead th {
+.tableWrapper thead th {
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
-.table td {
+.tableWrapper td {
   padding: var(--space-3) var(--space-4);
   color: var(--color-gray-700);
   border-bottom: 1px solid var(--color-gray-100);
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .emptyTableCell {
@@ -57,40 +66,6 @@
 
 .emptyStateRow:hover {
   background-color: transparent !important;
-}
-
-.tableLoadingOverlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.tableLoadingOverlay::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-color: var(--color-white);
-  opacity: 0.55;
-}
-
-.tableLoadingInner {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--color-gray-700);
-  background-color: var(--color-white);
-  border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-lg);
-  padding: var(--space-2) var(--space-3);
-}
-
-.spinnerIcon {
-  animation: spin 1s linear infinite;
 }
 
 .paginationFooter {
@@ -141,11 +116,68 @@
   white-space: nowrap;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
+@media (max-width: 768px) {
+  .tableWrapper {
+    -webkit-overflow-scrolling: touch;
   }
-  to {
-    transform: rotate(360deg);
+
+  .tableWrapper th,
+  .tableWrapper td {
+    padding: var(--space-4);
+  }
+
+  .tableWrapper th {
+    font-size: 10px;
+  }
+
+  .tableWrapper td {
+    font-size: 13px;
+  }
+
+  .paginationFooter {
+    align-items: stretch;
+  }
+
+  .paginationInfo {
+    width: 100%;
+  }
+
+  .paginationControls,
+  .pageButtons {
+    width: 100%;
+  }
+
+  .paginationControls {
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .pageButtons {
+    flex: 1;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 600px) {
+  .paginationControls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pageSizeSelect {
+    width: 100%;
+  }
+
+  .pageButtons {
+    justify-content: space-between;
+  }
+
+  .pageButtons button {
+    min-width: 0;
+  }
+
+  .pageLabel {
+    flex: 1;
+    text-align: center;
   }
 }

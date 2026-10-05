@@ -84,7 +84,11 @@ const adminProductsQuerySchema = Joi.object({
   pageSize: Joi.number().integer().min(1).max(100).default(20),
   status: Joi.string().valid("draft", "active", "archived").optional(),
   category: Joi.string().trim().optional(),
-  search: Joi.string().trim().min(2).optional(),
+  search: Joi.string().trim().min(1).optional(),
+  stock: Joi.string().valid("low", "out").optional(),
+  sort: Joi.string()
+    .valid("newest", "oldest", "name-asc", "name-desc")
+    .default("newest"),
 }).unknown(false);
 
 module.exports = {
