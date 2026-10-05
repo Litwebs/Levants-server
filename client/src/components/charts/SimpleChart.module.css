@@ -2,6 +2,19 @@
   width: 100%;
   display: flex;
   align-items: flex-end;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chartEmpty {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
 }
 
 .barChart {
@@ -11,6 +24,12 @@
   align-items: flex-end;
   gap: var(--space-2);
   padding-bottom: var(--space-6);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(25% - 1px),
+    var(--border) 25%
+  );
 }
 
 .barWrapper {
@@ -83,12 +102,47 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.linePlot {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.yAxis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.25rem var(--space-2) 0.45rem 0;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  line-height: 1;
+  text-align: right;
+}
+
+.yAxis span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .lineSvg {
   width: 100%;
+  height: 100%;
   flex: 1;
-  overflow: visible;
+  overflow: hidden;
+}
+
+.gridLine {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .lineBaseline {
@@ -102,14 +156,16 @@
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+  opacity: 0.9;
 }
 
 .linePoint {
-  stroke-width: 1.5;
+  stroke-width: 0;
+  opacity: 0;
 }
 
 .linePath.primary {
-  stroke: var(--color-primary);
+  stroke: #8b5cf6;
 }
 
 .linePath.success {
@@ -117,7 +173,7 @@
 }
 
 .linePath.info {
-  stroke: var(--color-info);
+  stroke: #2563eb;
 }
 
 .linePoint.primary {
@@ -136,11 +192,13 @@
 }
 
 .lineLabels {
-  display: flex;
+  display: grid;
   align-items: flex-start;
   width: 100%;
   gap: 0;
   min-height: 1.5rem;
+  margin-left: 3.25rem;
+  padding-inline: 2px;
 }
 
 .lineLabel {
@@ -155,12 +213,12 @@
 }
 
 .multiLineLegend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  align-items: start;
+  gap: var(--space-2) var(--space-4);
   margin-top: var(--space-2);
+  padding-left: 3.25rem;
 }
 
 .multiLineLegendItem {
@@ -169,6 +227,13 @@
   gap: var(--space-2);
   font-size: var(--text-xs);
   color: var(--color-gray-600);
+  min-width: 0;
+}
+
+.multiLineLegendItem > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .multiLineSwatch {
@@ -178,7 +243,7 @@
 }
 
 .multiLineSwatch.primary {
-  background: var(--color-primary);
+  background: #8b5cf6;
 }
 
 .multiLineSwatch.success {
@@ -186,7 +251,7 @@
 }
 
 .multiLineSwatch.info {
-  background: var(--color-info);
+  background: #2563eb;
 }
 
 /* Horizontal Bar Chart */
@@ -253,6 +318,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-6);
+  min-width: 0;
+}
+
+.donutVisual {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
 }
 
 .donutSvg {
@@ -276,6 +349,11 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+}
+
+.donutEmptyRing {
+  stroke: var(--border);
+  stroke-width: 15;
 }
 
 .donutValue {
@@ -310,4 +388,29 @@
 .legendText {
   font-size: var(--text-sm);
   color: var(--color-gray-600);
+}
+
+@media (max-width: 640px) {
+  .linePlot {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+  }
+
+  .lineLabels {
+    margin-left: 2.75rem;
+  }
+
+  .multiLineLegend {
+    grid-template-columns: 1fr;
+    padding-left: 2.75rem;
+  }
+
+  .donutContainer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .donutVisual {
+    align-self: center;
+  }
 }

@@ -17,6 +17,13 @@ interface SimpleChartProps {
   valueFormatter?: (value: number) => string;
 }
 
+const GRID_STOPS = [0, 0.25, 0.5, 0.75, 1];
+
+const formatChartValue = (
+  value: number,
+  formatter?: (value: number) => string,
+) => (formatter ? formatter(value) : formatCompactNumber(value));
+
 export const SimpleBarChart: React.FC<SimpleChartProps> = ({
   data,
   type,
@@ -25,6 +32,14 @@ export const SimpleBarChart: React.FC<SimpleChartProps> = ({
   color = "primary",
   valueFormatter,
 }) => {
+  if (data.length === 0) {
+    return (
+      <div className={styles.chartContainer} style={{ height }}>
+        <div className={styles.chartEmpty}>No data for this period</div>
+      </div>
+    );
+  }
+
   if (type === "line") {
     const values = data.map((point) => point.value);
     const minValue = Math.min(0, ...(values.length ? values : [0]));
@@ -34,66 +49,83 @@ export const SimpleBarChart: React.FC<SimpleChartProps> = ({
       maxValue = minValue + 1;
     }
 
+    maxValue = maxValue > 0 ? maxValue * 1.12 : maxValue;
     const range = maxValue - minValue;
-    const plotTop = 8;
-    const plotBottom = 76;
+    const plotTop = 6;
+    const plotBottom = 72;
     const plotHeight = plotBottom - plotTop;
     const xAt = (index: number) =>
-      data.length <= 1 ? 50 : 4 + (index / (data.length - 1)) * 92;
+      data.length <= 1 ? 50 : 2 + (index / (data.length - 1)) * 96;
     const yAt = (value: number) =>
       plotTop + ((maxValue - value) / range) * plotHeight;
     const zeroY = yAt(0);
     const points = data
       .map((point, index) => `${xAt(index)},${yAt(point.value)}`)
       .join(" ");
-    const labelStep = Math.max(1, Math.ceil(data.length / 10));
+    const labelStep = Math.max(1, Math.ceil(data.length / 6));
 
     return (
       <div className={styles.chartContainer} style={{ height }}>
         <div className={styles.lineChart}>
-          <svg
-            className={styles.lineSvg}
-            viewBox="0 0 100 84"
-            preserveAspectRatio="none"
-            role="img"
-            aria-label="Time series chart"
-          >
-            <line
-              x1="4"
-              x2="96"
-              y1={zeroY}
-              y2={zeroY}
-              className={styles.lineBaseline}
-            />
-            {data.length > 1 ? (
-              <polyline
-                points={points}
-                className={`${styles.linePath} ${styles[color]}`}
-                vectorEffect="non-scaling-stroke"
+          <div className={styles.linePlot}>
+            <div className={styles.yAxis} aria-hidden="true">
+              {GRID_STOPS.map((stop) => (
+                <span key={stop}>
+                  {formatChartValue(maxValue - range * stop, valueFormatter)}
+                </span>
+              ))}
+            </div>
+            <svg
+              className={styles.lineSvg}
+              viewBox="0 0 100 78"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="Time series chart"
+            >
+              {GRID_STOPS.map((stop) => (
+                <line
+                  key={stop}
+                  x1="0"
+                  x2="100"
+                  y1={plotTop + stop * plotHeight}
+                  y2={plotTop + stop * plotHeight}
+                  className={styles.gridLine}
+                />
+              ))}
+              <line
+                x1="0"
+                x2="100"
+                y1={zeroY}
+                y2={zeroY}
+                className={styles.lineBaseline}
               />
-            ) : null}
-            {data.map((point, index) => (
-              <circle
-                key={`${point.label}-${index}`}
-                cx={xAt(index)}
-                cy={yAt(point.value)}
-                r="1.4"
-                className={`${styles.linePoint} ${styles[color]}`}
-                vectorEffect="non-scaling-stroke"
-              >
-                <title>
-                  {`${point.label}: ${
-                    valueFormatter
-                      ? valueFormatter(point.value)
-                      : point.value.toLocaleString("en-GB")
-                  }`}
-                </title>
-              </circle>
-            ))}
-          </svg>
+              {data.length > 1 ? (
+                <polyline
+                  points={points}
+                  className={`${styles.linePath} ${styles[color]}`}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ) : null}
+              {data.map((point, index) => (
+                <circle
+                  key={`${point.label}-${index}`}
+                  cx={xAt(index)}
+                  cy={yAt(point.value)}
+                  r="1.25"
+                  className={`${styles.linePoint} ${styles[color]}`}
+                  vectorEffect="non-scaling-stroke"
+                >
+                  <title>{`${point.label}: ${formatChartValue(point.value, valueFormatter)}`}</title>
+                </circle>
+              ))}
+            </svg>
+          </div>
 
           {showLabels ? (
-            <div className={styles.lineLabels}>
+            <div
+              className={styles.lineLabels}
+              style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+            >
               {data.map((point, index) => {
                 const visible =
                   index % labelStep === 0 || index === data.length - 1;
@@ -101,6 +133,7 @@ export const SimpleBarChart: React.FC<SimpleChartProps> = ({
                   <span
                     key={`${point.label}-label-${index}`}
                     className={styles.lineLabel}
+                    title={point.label}
                   >
                     {visible ? point.label : ""}
                   </span>
@@ -177,30 +210,57 @@ export const MultiLineChart: React.FC<MultiLineChartProps> = ({
   let maxValue = Math.max(0, ...(values.length ? values : [0]));
   if (minValue === maxValue) maxValue = minValue + 1;
 
+  maxValue = maxValue > 0 ? maxValue * 1.12 : maxValue;
   const range = maxValue - minValue;
-  const plotTop = 8;
-  const plotBottom = 76;
+  const plotTop = 6;
+  const plotBottom = 72;
   const plotHeight = plotBottom - plotTop;
   const xAt = (index: number) =>
-    labels.length <= 1 ? 50 : 4 + (index / (labels.length - 1)) * 92;
+    labels.length <= 1 ? 50 : 2 + (index / (labels.length - 1)) * 96;
   const yAt = (value: number) =>
     plotTop + ((maxValue - value) / range) * plotHeight;
   const zeroY = yAt(0);
-  const labelStep = Math.max(1, Math.ceil(labels.length / 10));
+  const labelStep = Math.max(1, Math.ceil(labels.length / 6));
+
+  if (labels.length === 0) {
+    return (
+      <div className={styles.chartContainer} style={{ height }}>
+        <div className={styles.chartEmpty}>No data for this period</div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.chartContainer} style={{ height }}>
       <div className={styles.lineChart}>
-        <svg
-          className={styles.lineSvg}
-          viewBox="0 0 100 84"
-          preserveAspectRatio="none"
-          role="img"
-          aria-label="Sales channel time series chart"
-        >
+        <div className={styles.linePlot}>
+          <div className={styles.yAxis} aria-hidden="true">
+            {GRID_STOPS.map((stop) => (
+              <span key={stop}>
+                {formatChartValue(maxValue - range * stop, valueFormatter)}
+              </span>
+            ))}
+          </div>
+          <svg
+            className={styles.lineSvg}
+            viewBox="0 0 100 78"
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="Sales channel time series chart"
+          >
+          {GRID_STOPS.map((stop) => (
+            <line
+              key={stop}
+              x1="0"
+              x2="100"
+              y1={plotTop + stop * plotHeight}
+              y2={plotTop + stop * plotHeight}
+              className={styles.gridLine}
+            />
+          ))}
           <line
-            x1="4"
-            x2="96"
+            x1="0"
+            x2="100"
             y1={zeroY}
             y2={zeroY}
             className={styles.lineBaseline}
@@ -241,10 +301,14 @@ export const MultiLineChart: React.FC<MultiLineChartProps> = ({
               </React.Fragment>
             );
           })}
-        </svg>
+          </svg>
+        </div>
 
         {showLabels ? (
-          <div className={styles.lineLabels}>
+          <div
+            className={styles.lineLabels}
+            style={{ gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))` }}
+          >
             {labels.map((label, index) => {
               const visible =
                 index % labelStep === 0 || index === labels.length - 1;
@@ -252,6 +316,7 @@ export const MultiLineChart: React.FC<MultiLineChartProps> = ({
                 <span
                   key={`${label}-multi-label-${index}`}
                   className={styles.lineLabel}
+                  title={label}
                 >
                   {visible ? label : ""}
                 </span>
@@ -364,12 +429,22 @@ export const DonutChart: React.FC<DonutChartProps> = ({
 
   return (
     <div className={styles.donutContainer}>
+      <div className={styles.donutVisual}>
       <svg
         viewBox="0 0 100 100"
         width={size}
         height={size}
         className={styles.donutSvg}
       >
+        {total === 0 ? (
+          <circle
+            cx="50"
+            cy="50"
+            r="37.5"
+            fill="none"
+            className={styles.donutEmptyRing}
+          />
+        ) : null}
         {segments.map((segment, index) => (
           <path
             key={index}
@@ -392,6 +467,7 @@ export const DonutChart: React.FC<DonutChartProps> = ({
           <span className={styles.donutLabel}>{centerLabel}</span>
         </div>
       )}
+      </div>
       <div className={styles.donutLegend}>
         {data.map((item, index) => (
           <div key={index} className={styles.legendItem}>
