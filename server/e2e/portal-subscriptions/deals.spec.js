@@ -367,10 +367,20 @@ test("admin edits, schedules, deactivates, reactivates and archives a shared off
   );
   const name = "Weekend milk and butter offer";
   await dialog.getByLabel("Deal name *").fill(name);
+  const catalogLoaded = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/api/admin/deals/catalog" &&
+      url.searchParams.get("q") === data.variants.BUTTER.name
+    );
+  });
   await dialog
     .getByLabel("Find product variant")
     .fill(data.variants.BUTTER.name);
-  await dialog.getByRole("button", { name: "Add", exact: true }).click();
+  expect((await catalogLoaded).ok()).toBe(true);
+  const addButter = dialog.getByRole("button", { name: "Add", exact: true });
+  await expect(addButter).toHaveCount(1);
+  await addButter.click();
   await dialog.getByLabel("Package price (£) *").fill("10");
   // Adding a second product changes the value from £10 to £13.
   await dialog.getByRole("button", { name: "Save changes" }).click();
