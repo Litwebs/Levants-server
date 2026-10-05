@@ -453,7 +453,7 @@ test("admin edits, schedules, deactivates, reactivates and archives a shared off
   ).toBe(404);
 });
 
-test("mobile deal details wrap maximum-length names and descriptions without overflow", async ({
+test("mobile deal details, basket and checkout handle maximum-length content without overflow", async ({
   page,
   request,
 }, testInfo) => {
@@ -471,6 +471,30 @@ test("mobile deal details wrap maximum-length names and descriptions without ove
   await assertNoOverflow(page);
   await page.screenshot({
     path: testInfo.outputPath("customer-long-name-mobile.png"),
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Add package to basket" }).click();
+  await expect(page.getByRole("heading", { name: "Your Cart" })).toBeVisible();
+  const title = page.getByRole("heading", { name, exact: true, level: 4 });
+  await expect(title).toBeVisible();
+  const remove = page.getByRole("button", { name: `Remove ${name}` });
+  await expect(remove).toBeInViewport();
+  expect(
+    await title.evaluate(
+      (element) => element.getBoundingClientRect().right <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await assertNoOverflow(page);
+  await page.screenshot({
+    path: testInfo.outputPath("customer-long-name-basket-mobile.png"),
+    fullPage: true,
+  });
+  await page.goto(`${CLIENT_ORIGIN}/checkout`);
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
+  await expect(page.getByText("1 product × 1", { exact: true })).toBeVisible();
+  await assertNoOverflow(page);
+  await page.screenshot({
+    path: testInfo.outputPath("customer-long-name-checkout-mobile.png"),
     fullPage: true,
   });
 });
