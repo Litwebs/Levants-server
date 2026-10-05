@@ -3195,7 +3195,7 @@ describe("Portal Subscriptions", () => {
     nowSpy.mockRestore();
   });
 
-  it("reducing multi-day weekly subscription to one day before cutoff refunds removed-day order", async () => {
+  it.each([false, true])("portal reduction to one day preserves products and refunds the removed day (staged=%s)", async (staged) => {
     const openCutoffNow = new Date("2026-07-06T08:00:00.000Z");
     const nowSpy = jest
       .spyOn(subscriptionClock, "now")
@@ -3220,11 +3220,23 @@ describe("Portal Subscriptions", () => {
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
-        items: [{ variantId, quantity: 1 }],
+        deliveryDayPlans: [0, 3].map(day => ({ day, items: [{ variantId, quantity: 1 }] })),
       });
     expect(createRes.status).toBe(201);
 
     const sub = createRes.body.data.subscription;
+    expect(sub.items[0].quantity).toBe(2);
+    if (staged) {
+      await Subscription.updateOne({ _id: sub._id }, { $set: { pendingChanges: {
+        items: [{ ...sub.items[0], quantity: 5 }],
+        deliveryDayPlans: [
+          { day: 0, items: [{ ...sub.items[0], quantity: 3 }] },
+          { day: 3, items: [{ ...sub.items[0], quantity: 2 }] },
+        ],
+        preferredDeliveryDays: [0, 3],
+        effectiveFrom: new Date("2026-07-15T12:00:00.000Z"),
+      } } });
+    }
 
     const nextSunday = new Date("2026-07-12T12:00:00.000Z");
     const nextWednesday = new Date("2026-07-08T12:00:00.000Z");
@@ -3305,6 +3317,8 @@ describe("Portal Subscriptions", () => {
       .send({
         preferredDeliveryDay: 3,
         preferredDeliveryDays: [3],
+        deliveryDayPlans: [{ day: 3, items: [{ variantId, quantity: staged ? 2 : 1 }] }],
+        deliveryAddressId: addressId,
         refundMethod: "refund",
       });
 
@@ -3317,6 +3331,15 @@ describe("Portal Subscriptions", () => {
     const refreshedSundayOrder = await Order.findById(sundayOrder._id).lean();
     expect(refreshedSundayOrder.status).toBe("refunded");
 
+    const updated = await Subscription.findById(sub._id).lean();
+    expect(updated.items[0].quantity).toBe(1);
+    expect(updated.deliveryDayPlans || []).toHaveLength(0);
+    expect(updated.preferredDeliveryDays).toEqual([3]);
+    if (staged) {
+      expect(updated.pendingChanges.items[0].quantity).toBe(2);
+      expect(updated.pendingChanges.deliveryDayPlans).toEqual([]);
+      expect(updated.pendingChanges.preferredDeliveryDays).toEqual([3]);
+    }
     nowSpy.mockRestore();
   });
 

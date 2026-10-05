@@ -1,6 +1,7 @@
 "use strict";
 
 const mongoose = require("mongoose");
+const { prepareSingleDayTransition } = require("./subscriptionSingleDayTransition.service");
 const subscriptionClock = require("../../utils/subscriptionClock.util");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
@@ -2459,7 +2460,11 @@ async function UpdateSubscription({
     return Response(false, "A card refund is unfinished. Retry the original refund before making another change.", null);
   }
 
-  const dayPlanChangeRequested = deliveryDayPlans !== undefined;
+  const singleDayTransition = prepareSingleDayTransition(
+    subscription, resolvedDays.days, targetFrequency, deliveryDayPlans,
+  );
+  if (singleDayTransition?.error) return Response(false, singleDayTransition.error, null);
+  const dayPlanChangeRequested = deliveryDayPlans !== undefined && !singleDayTransition;
   const shouldUseDayPlans =
     targetFrequency === "weekly" && resolvedDays.days.length > 1;
   let resolvedDeliveryDayPlans;
@@ -3043,14 +3048,17 @@ async function UpdateSubscription({
   let shouldSyncStripePrice = false;
 
   if (scheduleChangeRequested) {
-    // Always apply delivery day preference immediately — no billing impact.
-    // nextDeliveryDate is kept as-is when past cut-off so the locked delivery still ships.
+    // Apply the new schedule now; existing cut-off-locked orders remain unchanged.
     if (frequency !== undefined) subscription.frequency = frequency;
     subscription.preferredDeliveryDay = resolvedDays.primaryDay;
     subscription.preferredDeliveryDays =
       targetFrequency === "weekly" ? resolvedDays.days : undefined;
     if (!shouldUseDayPlans && !dayPlanChangeRequested) {
       subscription.deliveryDayPlans = undefined;
+      if (singleDayTransition) {
+        subscription.items = singleDayTransition.items;
+        subscription.pendingChanges = singleDayTransition.pendingChanges;
+      }
     }
   }
 

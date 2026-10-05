@@ -1583,3 +1583,30 @@ test("adds a new default card through a real Stripe Elements SetupIntent", async
   await expect(savedMethod).toContainText("Default");
   await expect(page.getByText("No payment methods")).toHaveCount(0);
 });
+
+test("portal reduces two delivery days to one and preserves the surviving product plan", async ({ page, request }) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-multi-day", timing: "before-cutoff", funds: "sufficient",
+  });
+  const before = await getState(request, fixture.subscriptionId);
+  const [removedDay, retainedDay] = before.subscription.preferredDeliveryDays;
+  const expectedItems = before.subscription.deliveryDayPlans?.find(plan => Number(plan.day) === retainedDay)?.items
+    || before.subscription.items;
+  const quantities = items => items.map(item => ({ variant: id(item.variant), quantity: item.quantity }))
+    .sort((a, b) => a.variant.localeCompare(b.variant));
+  await signIn(page, fixture.credentials, `/portal/subscriptions/${fixture.subscriptionId}`);
+  const section = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Delivery Schedule', exact: true }) });
+  await section.getByRole('button', { name: DAY_NAMES[removedDay], exact: true }).click();
+  await section.getByRole('button', { name: 'Save delivery details', exact: true }).click();
+  const response = waitForApiResponse(page, 'PATCH', `/api/portal/subscriptions/${fixture.subscriptionId}`);
+  await page.getByRole('button', { name: /Store credit/ }).click();
+  const savedResponse = await response;
+  expect(savedResponse.request().postDataJSON().deliveryDayPlans).toHaveLength(1);
+  await expectApiSuccess(savedResponse);
+  const after = await getState(request, fixture.subscriptionId);
+  expect(after.subscription.preferredDeliveryDays).toEqual([retainedDay]);
+  expect(after.subscription.deliveryDayPlans || []).toHaveLength(0);
+  expect(quantities(after.subscription.items)).toEqual(quantities(expectedItems));
+  await page.reload();
+  await expect(section.getByRole('button', { name: 'Save delivery details', exact: true })).toBeDisabled();
+});
