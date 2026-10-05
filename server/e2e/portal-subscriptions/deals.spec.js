@@ -230,6 +230,14 @@ for (const mode of ["signed-in", "guest"]) {
     request,
   }, testInfo) => {
     const data = await fixture(request);
+    let confirmations = 0;
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/orders/checkout/confirm"
+      )
+        confirmations += 1;
+    });
     if (mode === "signed-in") {
       await page.goto(`${CLIENT_ORIGIN}/login?redirect=%2Fdeals`);
       await page.getByLabel("Email address").fill(data.credentials.email);
@@ -342,6 +350,7 @@ for (const mode of ["signed-in", "guest"]) {
     expect(state.order.metadata.deals[0].packagePrice).toBe(8);
     expect(state.variants[0].stockQuantity).toBe(9998);
     expect(state.variants[0].reservedQuantity).toBe(0);
+    expect(confirmations).toBe(1);
     await page.reload();
     await expect(
       page.getByRole("heading", { name: "Thank You for Your Order!" }),
@@ -349,6 +358,7 @@ for (const mode of ["signed-in", "guest"]) {
     const repeated = await read();
     expect(repeated.variants[0].stockQuantity).toBe(9998);
     expect(repeated.variants[0].reservedQuantity).toBe(0);
+    expect(confirmations).toBe(2);
   });
 }
 
