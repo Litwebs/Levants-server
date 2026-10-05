@@ -19,10 +19,14 @@ export const Table: React.FC<TableProps> = ({
   const { loading, label, rowCount } = useDataTableLoading();
   const columnCount = Math.max(1, countHeaderColumns(children));
   const content = loading
-    ? replaceTableBody(children, (
+    ? replaceTableBody(
+        children,
         <tbody className={styles.body} aria-hidden="true">
           {Array.from({ length: rowCount }, (_, rowIndex) => (
-            <tr className={`${styles.row} ${styles.skeletonRow}`} key={rowIndex}>
+            <tr
+              className={`${styles.row} ${styles.skeletonRow}`}
+              key={rowIndex}
+            >
               {Array.from({ length: columnCount }, (__, columnIndex) => (
                 <td className={styles.td} key={columnIndex}>
                   <Skeleton
@@ -34,8 +38,8 @@ export const Table: React.FC<TableProps> = ({
               ))}
             </tr>
           ))}
-        </tbody>
-      ))
+        </tbody>,
+      )
     : children;
 
   const table = (
@@ -52,21 +56,27 @@ export const Table: React.FC<TableProps> = ({
     return table;
   }
 
-  return (
-    <div className={`${styles.tableWrapper} ${className}`}>
-      {table}
-    </div>
-  );
+  return <div className={`${styles.tableWrapper} ${className}`}>{table}</div>;
 };
 
 const countHeaderColumns = (node: React.ReactNode): number => {
   let count = 0;
   React.Children.forEach(node, (child) => {
-    if (!React.isValidElement<{ children?: React.ReactNode; colSpan?: number }>(child)) return;
+    if (
+      !React.isValidElement<{ children?: React.ReactNode; colSpan?: number }>(
+        child,
+      )
+    )
+      return;
     if (child.type === "tr" || child.type === TableRow) {
-      const rowCount = React.Children.toArray(child.props.children).reduce(
+      const rowCount = React.Children.toArray(
+        child.props.children,
+      ).reduce<number>(
         (total, cell) =>
-          total + (React.isValidElement<{ colSpan?: number }>(cell) ? cell.props.colSpan || 1 : 0),
+          total +
+          (React.isValidElement<{ colSpan?: number }>(cell)
+            ? cell.props.colSpan || 1
+            : 0),
         0,
       );
       count = Math.max(count, rowCount);
@@ -77,9 +87,13 @@ const countHeaderColumns = (node: React.ReactNode): number => {
   return count;
 };
 
-const replaceTableBody = (node: React.ReactNode, replacement: React.ReactElement) =>
+const replaceTableBody = (
+  node: React.ReactNode,
+  replacement: React.ReactElement,
+) =>
   React.Children.map(node, (child) => {
-    if (!React.isValidElement<{ children?: React.ReactNode }>(child)) return child;
+    if (!React.isValidElement<{ children?: React.ReactNode }>(child))
+      return child;
     if (child.type === "tbody" || child.type === TableBody) return replacement;
     return React.cloneElement(child, {
       children: replaceTableBody(child.props.children, replacement),
@@ -127,6 +141,7 @@ export const TableRow: React.FC<TableRowProps> = ({
 );
 
 interface TableHeadProps {
+  className?: string;
   children: React.ReactNode;
   align?: "left" | "center" | "right";
   sortable?: boolean;
@@ -142,9 +157,10 @@ export const TableHead: React.FC<TableHeadProps> = ({
   sorted,
   onSort,
   width,
+  className = "",
 }) => (
   <th
-    className={`${styles.th} ${styles[`align-${align}`]} ${sortable ? styles.sortable : ""}`}
+    className={`${styles.th} ${styles[`align-${align}`]} ${sortable ? styles.sortable : ""} ${className}`}
     style={{ width }}
     onClick={sortable ? onSort : undefined}
   >

@@ -137,7 +137,7 @@ jobs:
           # adds a "-server" suffix (for example, feature/foo-server).
           candidate_ref="${SERVER_HEAD_REF%-server}"
 
-          if [[ -n "$SERVER_HEAD_REF" && "$candidate_ref" != "$SERVER_HEAD_REF" ]] && \
+          if [[ -n "$SERVER_HEAD_REF" ]] && \
             git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
               "refs/heads/$candidate_ref" > /dev/null 2>&1; then
             portal_ref="$candidate_ref"
@@ -197,11 +197,102 @@ jobs:
         working-directory: server
         run: npm run test:e2e:subscriptions:ci
 
-      - name: Store E2E diagnostics on failure
-        if: failure()
+      - name: Store E2E reports and browser screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: subscription-e2e-diagnostics
+          path: |
+            server/playwright-report
+            server/test-results/playwright
+          if-no-files-found: ignore
+          retention-days: 7
+
+  deals-e2e:
+    name: Deals E2E (desktop, mobile and Stripe test mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+      JWT_ACCESS_SECRET: ci-only-subscription-access-secret
+      JWT_REFRESH_SECRET: ci-only-subscription-refresh-secret
+      STRIPE_DEFAULT_CURRENCY: GBP
+      TZ: Europe/London
+      E2E_CLIENT_DIR: ${{ github.workspace }}/portal-client
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve customer portal ref
+        id: portal-ref
+        shell: bash
+        env:
+          SERVER_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          portal_ref="main"
+          # Cross-repository feature branches share a name; the server branch
+          # adds a "-server" suffix (for example, feature/foo-server).
+          candidate_ref="${SERVER_HEAD_REF%-server}"
+
+          if [[ -n "$SERVER_HEAD_REF" ]] && \
+            git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
+              "refs/heads/$candidate_ref" > /dev/null 2>&1; then
+            portal_ref="$candidate_ref"
+          fi
+
+          echo "ref=$portal_ref" >> "$GITHUB_OUTPUT"
+          echo "Customer portal E2E ref: $portal_ref"
+
+      - name: Checkout customer portal
+        uses: actions/checkout@v4
+        with:
+          repository: Litwebs/Levants-client
+          token: ${{ secrets.PORTAL_CLIENT_READ_TOKEN }}
+          ref: ${{ steps.portal-ref.outputs.ref }}
+          path: portal-client
+
+      - name: Require Stripe test-mode secrets
+        shell: bash
+        run: |
+          [[ "$STRIPE_SECRET_KEY" == sk_test_* ]]
+          [[ "$STRIPE_PUBLISHABLE_KEY" == pk_test_* ]]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+            portal-client/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Install customer portal dependencies
+        working-directory: portal-client
+        run: npm ci
+
+      - name: Install admin client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: server
+        run: npx playwright install --with-deps chromium
+
+      - name: Run deals browser and checkout tests
+        working-directory: server
+        run: npm run test:e2e:deals
+
+      - name: Store E2E reports and browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deals-e2e-diagnostics
           path: |
             server/playwright-report
             server/test-results/playwright
@@ -216,6 +307,7 @@ jobs:
       - client-quality
       - analytics-e2e
       - subscription-e2e
+      - deals-e2e
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:

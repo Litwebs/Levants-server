@@ -306,8 +306,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       return false;
     }
 
-    const requiredAny = itemConfig.requiredAny;
-    if (!Array.isArray(requiredAny) || requiredAny.length === 0) return true;
+    const requiredAny = itemConfig.requiredAny ?? [];
+    if (requiredAny.length === 0) return true;
     return hasAnyPermission(requiredAny);
   });
 

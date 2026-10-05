@@ -9,11 +9,12 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test:map-tiles": "node scripts/check-map-tiles.mjs",
-    "check:release": "npm run test:map-tiles && npm run test:analytics && npm run test:deals && npm run lint -- --max-warnings 395 && npm run build",
+    "check:release": "npm run test:map-tiles && npm run test:analytics && npm run test:deals && npm run test:typecheck && npm run lint -- --max-warnings 395 && npm run build",
     "preview": "vite preview",
     "test:analytics": "node --test scripts/analytics-ui.test.mjs",
     "check:component-catalog": "node scripts/check-component-catalog.mjs",
-    "test:deals": "vitest run"
+    "test:deals": "vitest run",
+    "test:typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

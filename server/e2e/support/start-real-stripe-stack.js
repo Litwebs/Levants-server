@@ -6,14 +6,12 @@ const os = require("os");
 const path = require("path");
 const mongoose = require("mongoose");
 const { MongoMemoryReplSet } = require("mongodb-memory-server");
-const {
-  API_ORIGIN,
-  API_PORT,
-  CONTROL_PORT,
-  HOST,
-} = require("./constants");
+const { API_ORIGIN, API_PORT, CONTROL_PORT, HOST } = require("./constants");
 const { configureSafeEnvironment, SERVER_ROOT } = require("./safe-environment");
-const { startStripeListener, stopStripeListener } = require("./stripe-listener");
+const {
+  startStripeListener,
+  stopStripeListener,
+} = require("./stripe-listener");
 
 let replicaSet;
 let apiServer;
@@ -86,6 +84,28 @@ async function start() {
   // than the service method, which is also called by the synchronous fallback)
   // so fixtures can wait specifically for successful Stripe CLI delivery.
   global.__E2E_COMPLETED_SIGNED_INVOICE_WEBHOOKS__ = new Set();
+  // The isolated UI suite captures only the image-provider boundary. Deal
+  // validation, file persistence, permissions and application routes remain real.
+  const managedFiles = require(`${SERVER_ROOT}/services/files.service`);
+  const originalUpload = managedFiles.uploadAndCreateFile;
+  managedFiles.uploadAndCreateFile = async (options) => {
+    if (options.folder !== "litwebs/deals") return originalUpload(options);
+    const File = require(`${SERVER_ROOT}/models/file.model`);
+    try {
+      const buffer = await fs.promises.readFile(options.localPath);
+      const file = await File.create({
+        originalName: options.originalName,
+        filename: `deal-e2e-${Date.now()}`,
+        mimeType: options.mimeType,
+        sizeBytes: buffer.length,
+        uploadedBy: options.uploadedBy,
+        url: `data:${options.mimeType};base64,${buffer.toString("base64")}`,
+      });
+      return { success: true, data: file.toObject() };
+    } finally {
+      await fs.promises.unlink(options.localPath).catch(() => {});
+    }
+  };
   const stripeWebhookController = require(
     `${SERVER_ROOT}/controllers/stripe.webhook.controller`,
   );
@@ -120,7 +140,9 @@ async function start() {
 
   const app = require(`${SERVER_ROOT}/app`);
   fixtureFactory = require(`${SERVER_ROOT}/e2e/support/fixture-factory`);
-  const { createControlApp } = require(`${SERVER_ROOT}/e2e/support/control-app`);
+  const { createControlApp } = require(
+    `${SERVER_ROOT}/e2e/support/control-app`,
+  );
 
   apiServer = http.createServer(app);
   controlServer = http.createServer(createControlApp());

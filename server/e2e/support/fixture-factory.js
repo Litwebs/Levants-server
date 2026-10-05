@@ -238,6 +238,77 @@ async function reset() {
   await clearDatabase();
 }
 
+async function createDealFixture(options = {}) {
+  const fixture = await createFixture({
+    createSubscription: false,
+    withPaymentMethod: false,
+    creditBalance: options.creditBalance || 0,
+    address: {
+      line1: "1 E2E Dairy Lane",
+      city: "Bradford",
+      postcode: "BD5 0AL",
+      country: "United Kingdom",
+    },
+  });
+  const Role = require("../../models/role.model");
+  const User = require("../../models/user.model");
+  const role = await Role.findOneAndUpdate(
+    { name: "admin" },
+    { $set: { permissions: ["*"], isSystem: true } },
+    { upsert: true, new: true },
+  );
+  const email = `deal-admin-${fixture.scenarioId}@example.com`;
+  const password = "DealsE2E1!";
+  await User.create({
+    name: "Deal E2E Admin",
+    email,
+    passwordHash: await passwordUtil.hashPassword(password),
+    role: role._id,
+    status: "active",
+    twoFactorEnabled: false,
+  });
+  let deal = null;
+  if (options.createOffer !== false) {
+    const result =
+      await require("../../services/deals.admin.service").createDeal({
+        body: {
+          name: "Fresh milk package",
+          slug: `milk-package-${fixture.scenarioId}`,
+          items: [{ variantId: fixture.variants.MILK.id, quantity: 2 }],
+          packagePrice: 8,
+          isFeatured: true,
+        },
+      });
+    if (!result.success) throw new Error(result.message);
+    deal = result.data.deal;
+  }
+  return { ...fixture, adminCredentials: { email, password }, deal };
+}
+
+async function getDealOrderState(orderId) {
+  const order = await Order.findById(orderId).lean();
+  if (!order) throw new Error("Order not found");
+  const variants = await ProductVariant.find({
+    _id: { $in: order.items.map((item) => item.variant) },
+  })
+    .select("stockQuantity reservedQuantity")
+    .lean();
+  const checkout = order.stripeCheckoutSessionId
+    ? await stripe.checkout.sessions.retrieve(order.stripeCheckoutSessionId)
+    : null;
+  return {
+    order,
+    variants,
+    checkout: checkout
+      ? {
+          amount_total: checkout.amount_total,
+          status: checkout.status,
+          payment_status: checkout.payment_status,
+        }
+      : null,
+  };
+}
+
 async function createCatalog(scenarioId) {
   const definitions = [
     ["Whole Milk", "MILK", 5],
@@ -985,6 +1056,8 @@ async function getState(subscriptionId) {
 }
 
 module.exports = {
+  createDealFixture,
+  getDealOrderState,
   approveReview,
   autoResume,
   createFixture,

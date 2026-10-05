@@ -49,6 +49,8 @@ function createControlApp() {
     "/fixtures",
     asyncRoute((req) => fixtures.createFixture(req.body || {})),
   );
+  app.post("/deal-fixtures", asyncRoute((req) => fixtures.createDealFixture(req.body || {})));
+  app.get("/deal-state/:orderId", asyncRoute((req) => fixtures.getDealOrderState(req.params.orderId)));
   app.get(
     "/emails",
     asyncRoute(async () => ({ emails: global.__E2E_EMAIL_OUTBOX__ || [] })),

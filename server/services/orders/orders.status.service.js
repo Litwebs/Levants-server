@@ -3,6 +3,7 @@
 const mongoose = require("mongoose");
 const fs = require("fs/promises");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
 
 const Order = require("../../models/order.model");
@@ -290,7 +291,7 @@ async function UpdateOrderStatus({
 
       const ext = mimeType.split("/")[1] || "jpg";
       const filename = `${crypto.randomUUID()}.${ext}`;
-      const localPath = path.join("/tmp", filename);
+      const localPath = path.join(os.tmpdir(), filename);
       const buffer = deliveryProofFile.buffer;
       await fs.writeFile(localPath, buffer);
 

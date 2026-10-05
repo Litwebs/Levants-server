@@ -61,6 +61,8 @@ function configureSafeEnvironment() {
     if (!process.env[name] && source[name]) process.env[name] = source[name];
   }
 
+  process.env.JWT_ACCESS_EXPIRES_IN ||= "15m";
+  process.env.JWT_REFRESH_EXPIRES_IN ||= "7d";
   process.env.STRIPE_SECRET_KEY = secretKey;
   process.env.STRIPE_PUBLISHABLE_KEY = publishableKey;
   process.env.STRIPE_WEBHOOK_SECRET =
@@ -69,7 +71,7 @@ function configureSafeEnvironment() {
     "whsec_e2e_listener_not_started";
   process.env.NODE_ENV = "development";
   process.env.PORT = String(API_PORT);
-  process.env.FRONTEND_URL_DEV = CLIENT_ORIGIN;
+  process.env.FRONTEND_URL_DEV = "http://127.0.0.1:4174";
   process.env.CLIENT_FRONT_URL_DEV = CLIENT_ORIGIN;
   process.env.RATE_LIMIT_LOGIN_MAX = "1000";
   process.env.RATE_LIMIT_AUTH_MAX = "5000";
