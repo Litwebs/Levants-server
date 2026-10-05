@@ -18,6 +18,14 @@ const { seedBusinessInfo } = require("../scripts/seedBusinessInfo"); // ✅ ADD
 // Keep test output clean (opt-out by setting JEST_SHOW_CONSOLE=1)
 const showConsole = process.env.JEST_SHOW_CONSOLE === "1";
 
+// Integration tests exercise email rendering/auditing without contacting an
+// external provider or sending notifications to fixture customer addresses.
+jest.mock("resend", () => ({
+  Resend: jest.fn(() => ({
+    emails: { send: jest.fn(async () => ({ data: { id: "email_test_never_sent" }, error: null })) },
+  })),
+}));
+
 // Starting a replica set and building every unique index can exceed Jest's
 // five-second default on CI or a busy development machine.
 jest.setTimeout(30_000);
@@ -132,6 +140,7 @@ async function clearDatabase() {
 beforeAll(async () => {
   mongo = await MongoMemoryReplSet.create({
     replSet: { count: 1 },
+    instanceOpts: [{ args: ["--nounixsocket", "--setParameter", "diagnosticDataCollectionEnabled=false"] }],
   });
   const uri = mongo.getUri();
   await mongoose.connect(uri);
@@ -152,6 +161,7 @@ beforeAll(async () => {
     require("../models/variant.model").init(),
     require("../models/discount.model").init(),
     require("../models/discountRedemption.model").init(),
+    require("../models/deal.model").init(),
     require("../models/order.model").init(),
     require("../models/subscription.model").init(),
     require("../models/subscriptionDelivery.model").init(),

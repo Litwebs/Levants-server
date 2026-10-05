@@ -208,6 +208,9 @@ const connectDb = async () => {
     await ensureSubscriptionOrderInvoiceUniqueIndex();
     await ensureAnalyticsOrderIndexes();
     await ensureAnalyticsSubscriptionIndexes();
+    // Production disables autoIndex. Create only this new model's indexes;
+    // createIndexes preserves existing indexes and is safe to run at startup.
+    await require("../models/deal.model").createIndexes();
 
     if (env !== "test") {
       logger.db("MongoDB connected");
