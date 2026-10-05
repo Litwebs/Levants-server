@@ -39,7 +39,7 @@ describe("customer payment method attachment", () => {
     expect(stripe.paymentMethods.attach).not.toHaveBeenCalled();
     expect(stripe.customers.update).toHaveBeenCalledWith("cus_existing", {
       invoice_settings: { default_payment_method: "pm_attached" },
-    });
+    }, expect.objectContaining({ idempotencyKey: expect.any(String) }));
     const saved = await PaymentMethod.findOne({ customer: customer._id })
       .select("+providerReference")
       .lean();
@@ -107,8 +107,60 @@ describe("customer payment method attachment", () => {
     const customer = await createCustomer();
     const method = await PaymentMethod.create({ customer: customer._id, provider: "stripe", providerReference: "pm_old", type: "card" });
     stripe.paymentMethods.detach.mockRejectedValueOnce(new Error("Stripe unavailable"));
-    await expect(paymentService.DeletePaymentMethod({ customerId: customer._id, paymentMethodId: method._id })).rejects.toThrow("Stripe unavailable");
+    const result = await paymentService.DeletePaymentMethod({ customerId: customer._id, paymentMethodId: method._id });
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("Stripe unavailable");
     expect(await PaymentMethod.findById(method._id)).toBeTruthy();
+  });
+
+  test("refresh recovers a default-card change after the local transaction fails", async () => {
+    const customer = await createCustomer();
+    const old = await PaymentMethod.create({ customer: customer._id, provider: "stripe", providerReference: "pm_old", type: "card", isDefault: true });
+    const next = await PaymentMethod.create({ customer: customer._id, provider: "stripe", providerReference: "pm_next", type: "card" });
+    stripe.paymentMethods.retrieve.mockResolvedValue({ id: "pm_next", type: "card", customer: "cus_existing" });
+    const write = jest.spyOn(PaymentMethod, "updateMany").mockRejectedValueOnce(new Error("database unavailable"));
+    try {
+      await expect(paymentService.SetDefaultPaymentMethod({ customerId: customer._id, paymentMethodId: next._id })).rejects.toThrow("database unavailable");
+    } finally { write.mockRestore(); }
+    const interrupted = await Customer.findById(customer._id).select("+paymentMethodOperation");
+    expect(interrupted.paymentMethodOperation.targetId).toBe(String(next._id));
+    expect((await PaymentMethod.findById(old._id)).isDefault).toBe(true);
+    const originalCommand = stripe.customers.update.mock.calls.at(-1);
+    const conflict = await paymentService.DeletePaymentMethod({ customerId: customer._id, paymentMethodId: old._id });
+    expect(conflict.success).toBe(false);
+    expect(conflict.message).toMatch(/unfinished/);
+    expect((await paymentService.ListPaymentMethods({ customerId: customer._id })).success).toBe(true);
+    expect(stripe.customers.update.mock.calls.at(-1)).toEqual(originalCommand);
+    expect((await PaymentMethod.findById(next._id)).isDefault).toBe(true);
+    expect((await PaymentMethod.findById(old._id)).isDefault).toBe(false);
+    expect((await Customer.findById(customer._id).select("+paymentMethodOperation")).paymentMethodOperation).toBeNull();
+  });
+
+  test("delete retries a detached card after a database failure using the same Stripe command", async () => {
+    const customer = await createCustomer();
+    const method = await PaymentMethod.create({ customer: customer._id, provider: "stripe", providerReference: "pm_unused", type: "card" });
+    const write = jest.spyOn(PaymentMethod, "deleteOne").mockRejectedValueOnce(new Error("database unavailable"));
+    try {
+      expect((await paymentService.DeletePaymentMethod({ customerId: customer._id, paymentMethodId: method._id })).success).toBe(false);
+    } finally { write.mockRestore(); }
+    const originalCommand = stripe.paymentMethods.detach.mock.calls.at(-1);
+    expect(await PaymentMethod.findById(method._id)).toBeTruthy();
+    expect((await paymentService.DeletePaymentMethod({ customerId: customer._id, paymentMethodId: method._id })).success).toBe(true);
+    expect(stripe.paymentMethods.detach.mock.calls.at(-1)).toEqual(originalCommand);
+    expect(await PaymentMethod.findById(method._id)).toBeNull();
+  });
+
+  test("a held customer card lease blocks changing and deleting cards", async () => {
+    const customer = await createCustomer();
+    const method = await PaymentMethod.create({ customer: customer._id, provider: "stripe", providerReference: "pm_busy", type: "card" });
+    await Customer.updateOne({ _id: customer._id }, { $set: { paymentMethodLock: { token: "worker", expiresAt: new Date(Date.now() + 120000) } } });
+    await expect(paymentService.SetDefaultPaymentMethod({ customerId: customer._id, paymentMethodId: method._id })).rejects.toThrow("in progress");
+    expect((await paymentService.DeletePaymentMethod({ customerId: customer._id, paymentMethodId: method._id })).success).toBe(false);
+    expect(stripe.customers.update).not.toHaveBeenCalled();
+    expect(stripe.paymentMethods.detach).not.toHaveBeenCalled();
+    await Customer.updateOne({ _id: customer._id }, { $set: { "paymentMethodLock.expiresAt": new Date(0) } });
+    stripe.paymentMethods.retrieve.mockResolvedValueOnce({ type: "card", customer: "cus_existing" });
+    expect((await paymentService.SetDefaultPaymentMethod({ customerId: customer._id, paymentMethodId: method._id })).success).toBe(true);
   });
 
 });

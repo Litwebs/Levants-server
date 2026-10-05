@@ -5,16 +5,27 @@ jest.mock("../../utils/stripe.util", () => ({
   paymentMethods: { retrieve: jest.fn() },
 }));
 const mongoose = require("mongoose");
+const Customer = require("../../models/customer.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const Subscription = require("../../models/subscription.model");
 const stripe = require("../../utils/stripe.util");
 const { setCustomerDefaultCard: setDefault, cardIsUsedBySubscription: used } = require("../../services/customerPortal/subscriptionPaymentMethod.service");
-let customer, method, session;
+let customer, method, session, pending;
 beforeEach(() => {
   jest.clearAllMocks();
+  pending = null;
   customer = { _id: "customer", stripeCustomerId: "cus" };
   method = { _id: "new", provider: "stripe", providerReference: "pm_new", isDefault: false };
-  session = { withTransaction: async fn => fn(), endSession: jest.fn() };
+  session = { withTransaction: async fn => {
+    const before = pending;
+    try { await fn(); } catch (error) { pending = before; throw error; }
+  }, endSession: jest.fn() };
+  jest.spyOn(Customer, 'findOneAndUpdate').mockImplementation(() => ({ select: async () => ({ paymentMethodOperation: pending }) }));
+  jest.spyOn(Customer, 'updateOne').mockImplementation(async (filter, update) => {
+    if (Object.hasOwn(update.$set, 'paymentMethodOperation')) pending = update.$set.paymentMethodOperation;
+    return { matchedCount: 1 };
+  });
+  jest.spyOn(PaymentMethod, 'findOne').mockImplementation(() => ({ select: async () => method }));
   jest.spyOn(mongoose, "startSession").mockResolvedValue(session);
   jest.spyOn(PaymentMethod, "updateMany").mockResolvedValue({});
   jest.spyOn(PaymentMethod, "updateOne").mockResolvedValue({ matchedCount: 1 });
@@ -81,4 +92,62 @@ it("allows removal when only cancelled subscriptions reference a card", async ()
 it("fails closed if live billing references cannot be checked", async () => {
   stripe.subscriptions.list.mockRejectedValueOnce(new Error("Stripe unavailable"));
   await expect(used(customer, method)).rejects.toThrow("Stripe unavailable");
+});
+it('retains a durable intent after a local transaction failure and retries identical Stripe commands', async () => {
+  PaymentMethod.updateMany.mockRejectedValueOnce(new Error('database unavailable'));
+  await expect(setDefault(customer, method)).rejects.toThrow('database unavailable');
+  expect(pending).toMatchObject({ kind: 'set_default', methodId: 'new', targetId: 'new' });
+  const first = stripe.customers.update.mock.calls[0];
+  await setDefault(customer, method);
+  expect(stripe.customers.update.mock.calls[1]).toEqual(first);
+  expect(pending).toBeNull();
+  expect(method.isDefault).toBe(true);
+});
+it('blocks another target and deletion until the interrupted update finishes', async () => {
+  stripe.customers.update.mockRejectedValueOnce(new Error('response lost'));
+  await expect(setDefault(customer, method)).rejects.toThrow('response lost');
+  await expect(setDefault(customer, { ...method, _id: 'other' })).rejects.toThrow('earlier card update');
+  const { deleteCustomerCard } = require('../../services/customerPortal/subscriptionPaymentMethod.service');
+  await expect(deleteCustomerCard(customer, method)).rejects.toThrow('earlier card update');
+  expect(stripe.customers.update).toHaveBeenCalledTimes(1);
+});
+it('blocks concurrent workers before any Stripe writes', async () => {
+  Customer.findOneAndUpdate.mockReturnValueOnce({ select: async () => null });
+  await expect(setDefault(customer, method)).rejects.toThrow('in progress');
+  expect(stripe.customers.update).not.toHaveBeenCalled();
+});
+it('fails closed outside the safe replay window', async () => {
+  pending = { kind: 'set_default', methodId: 'new', startedAt: new Date(Date.now() - 24 * 3600000).toISOString(),
+    commands: [{ resource: 'customers', id: 'cus', params: {} }] };
+  await expect(setDefault(customer, method)).rejects.toThrow('support reconciliation');
+  expect(stripe.customers.update).not.toHaveBeenCalled();
+});
+it('fences a worker whose lease was taken over before its next remote command', async () => {
+  Customer.updateOne.mockResolvedValueOnce({ matchedCount: 1 }).mockResolvedValueOnce({ matchedCount: 0 });
+  await expect(setDefault(customer, method)).rejects.toThrow('lock expired');
+  expect(stripe.customers.update).not.toHaveBeenCalled();
+});
+it('does not write to Stripe unless the operation is durable', async () => {
+  Customer.updateOne.mockRejectedValueOnce(new Error('intent write failed'));
+  await expect(setDefault(customer, method)).rejects.toThrow('intent write failed');
+  expect(stripe.customers.update).not.toHaveBeenCalled();
+});
+it('does not commit local pointers after losing its lease during the Stripe request', async () => {
+  Customer.updateOne.mockResolvedValueOnce({ matchedCount: 1 })
+    .mockResolvedValueOnce({ matchedCount: 1 }).mockResolvedValueOnce({ matchedCount: 0 });
+  await expect(setDefault(customer, method)).rejects.toThrow('lock expired');
+  expect(stripe.customers.update).toHaveBeenCalledTimes(1);
+  expect(PaymentMethod.updateMany).not.toHaveBeenCalled();
+});
+it('keeps the frozen remote command list after a partial migration', async () => {
+  stripe.subscriptions.list.mockResolvedValueOnce({ data: [
+    { id: 'sub_a', status: 'active', default_payment_method: 'old_a' },
+    { id: 'sub_b', status: 'active', default_payment_method: 'old_b' },
+  ] });
+  stripe.subscriptions.update.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('response lost'));
+  await expect(setDefault(customer, method)).rejects.toThrow('response lost');
+  const commands = stripe.subscriptions.update.mock.calls.slice();
+  await setDefault(customer, method);
+  expect(stripe.subscriptions.update.mock.calls.slice(2)).toEqual(commands);
+  expect(stripe.subscriptions.list).toHaveBeenCalledTimes(1);
 });
