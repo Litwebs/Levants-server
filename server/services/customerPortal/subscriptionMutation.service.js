@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("crypto");
+const { startSubscriptionLockHeartbeat } = require("../subscriptions/subscriptionLifecycleLock.service");
 const mongoose = require("mongoose");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
@@ -238,6 +239,7 @@ async function executeSubscriptionConcurrencyGuard({
     operationId,
   });
   if (!claim.ok) return claim.response;
+  const heartbeat = startSubscriptionLockHeartbeat(subscriptionId, claim.lockOperationId);
 
   try {
     // An accepted charge must finish its saved fulfillment change before another
@@ -262,6 +264,7 @@ async function executeSubscriptionConcurrencyGuard({
     }
     return await execute();
   } finally {
+    clearInterval(heartbeat);
     await releaseSubscriptionMutationLock({
       customerId,
       subscriptionId,

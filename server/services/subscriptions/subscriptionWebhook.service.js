@@ -9,6 +9,7 @@
  * and reflected back via webhooks for idempotent sync.
  */
 
+const { withSubscriptionLifecycleLock } = require("./subscriptionLifecycleLock.service");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
@@ -196,7 +197,7 @@ async function findDeliverySlot(subscriptionId, deliveryDate) {
  * Fires when Stripe successfully charges a subscription invoice.
  * We create an Order in our DB for fulfillment.
  */
-async function HandleSubscriptionInvoicePaid(eventInvoice) {
+async function HandleSubscriptionInvoicePaidUnlocked(eventInvoice) {
   const invoice = await resolveLegacyInvoice(eventInvoice);
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
   if (!stripeSubscriptionId) return; // Not a subscription invoice
@@ -585,7 +586,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
  *
  * Stripe couldn't charge the subscription. Pause it immediately and notify the customer.
  */
-async function HandleSubscriptionInvoiceFailed(eventInvoice) {
+async function HandleSubscriptionInvoiceFailedUnlocked(eventInvoice) {
   // Event payloads are historical snapshots, including the legacy shape.
   // Fail closed if Stripe is unavailable so it retries instead of applying stale state.
   const invoice = await stripe.invoices.retrieve(eventInvoice.id);
@@ -655,7 +656,7 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
  * This is a safety net — status changes should already be applied
  * by our API before Stripe reflects them, but this ensures consistency.
  */
-async function HandleStripeSubscriptionUpdated(eventSubscription) {
+async function HandleStripeSubscriptionUpdatedUnlocked(eventSubscription) {
   // Always use the current provider state, never a delayed event snapshot.
   const stripeSub = await stripe.subscriptions.retrieve(eventSubscription.id);
   const subscription = await Subscription.findOne({
@@ -707,7 +708,7 @@ async function HandleStripeSubscriptionUpdated(eventSubscription) {
  *
  * Stripe subscription was deleted (cancelled and past end of period).
  */
-async function HandleStripeSubscriptionDeleted(stripeSub) {
+async function HandleStripeSubscriptionDeletedUnlocked(stripeSub) {
   const subscription = await Subscription.findOne({
     stripeSubscriptionId: stripeSub.id,
   });
@@ -823,6 +824,26 @@ async function VerifySubscriptionWebhookConfiguration() {
     );
   }
   return { ok: missingEvents.length === 0, missingEvents };
+}
+
+// Resolve the identity first; all state reads and writes happen after the
+// shared lock is held. In particular, failed invoices are re-read inside it.
+async function HandleSubscriptionInvoicePaid(eventInvoice) {
+  const invoice = await resolveLegacyInvoice(eventInvoice);
+  return withSubscriptionLifecycleLock(resolveInvoiceSubscriptionId(invoice),
+    () => HandleSubscriptionInvoicePaidUnlocked(invoice));
+}
+async function HandleSubscriptionInvoiceFailed(eventInvoice) {
+  const invoice = await stripe.invoices.retrieve(eventInvoice.id);
+  if (invoice.paid || ["paid", "void", "uncollectible"].includes(invoice.status)) return;
+  return withSubscriptionLifecycleLock(resolveInvoiceSubscriptionId(invoice),
+    () => HandleSubscriptionInvoiceFailedUnlocked(eventInvoice));
+}
+async function HandleStripeSubscriptionUpdated(event) {
+  return withSubscriptionLifecycleLock(event.id, () => HandleStripeSubscriptionUpdatedUnlocked(event), { ignoreMissing: true });
+}
+async function HandleStripeSubscriptionDeleted(event) {
+  return withSubscriptionLifecycleLock(event.id, () => HandleStripeSubscriptionDeletedUnlocked(event), { ignoreMissing: true });
 }
 
 module.exports = {

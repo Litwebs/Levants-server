@@ -1,3 +1,4 @@
+jest.mock("../../services/subscriptions/subscriptionLifecycleLock.service", () => ({ withSubscriptionLifecycleLock: async (_id, execute) => execute() }));
 "use strict";
 jest.mock("../../utils/stripe.util", () => ({
   invoices: { retrieve: jest.fn() },
@@ -91,4 +92,11 @@ it("does not acknowledge a failed Stripe billing pause as successful", async () 
   await expect(fail({ id: "invoice" })).rejects.toThrow("Stripe unavailable");
   expect(local.status).toBe("active");
   expect(Notification.create).not.toHaveBeenCalled();
+});
+it('rechecks invoice state after entering the lifecycle lock', async () => {
+  stripe.invoices.retrieve.mockResolvedValueOnce({ id: 'invoice', subscription: 'sub', status: 'open', paid: false })
+    .mockResolvedValueOnce({ id: 'invoice', subscription: 'sub', status: 'paid', paid: true });
+  await fail({ id: 'invoice' });
+  expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+  expect(local.save).not.toHaveBeenCalled();
 });

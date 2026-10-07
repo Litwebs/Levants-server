@@ -1,3 +1,4 @@
+jest.mock("../../services/subscriptions/subscriptionLifecycleLock.service", () => ({ withSubscriptionLifecycleLock: async (_id, execute) => execute() }));
 "use strict";
 jest.mock("../../utils/stripe.util", () => ({}));
 jest.mock("../../services/customerPortal/customerSubscriptions.service", () => ({

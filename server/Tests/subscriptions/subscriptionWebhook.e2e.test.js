@@ -138,6 +138,33 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(result.missingEvents).toContain("invoice.payment_failed");
   });
 
+  it("webhooks retry behind a portal lifecycle change and preserve the completed customer pause", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const subscription = await createSubscriptionFixture({ customer: customer._id,
+      stripeSubscriptionId: "sub_portal_race", nextDeliveryDate: new Date(Date.now() + 2 * 86400000),
+      items: [buildSubscriptionItem(product, variant, 1)] });
+    const invoice = { id: "in_portal_race", subscription: subscription.stripeSubscriptionId, status: "open", paid: false };
+    stripe.invoices.retrieve.mockResolvedValue(invoice);
+    const { executeSubscriptionConcurrencyGuard } = require("../../services/customerPortal/subscriptionMutation.service");
+    await executeSubscriptionConcurrencyGuard({ customerId: customer._id, subscriptionId: subscription._id,
+      operationId: "portal-pause-race", execute: async () => {
+        await expect(subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice)).rejects.toThrow(/lifecycle is busy/);
+        await expect(subscriptionWebhookService.HandleSubscriptionInvoicePaid({ ...invoice, paid: true })).rejects.toThrow(/lifecycle is busy/);
+        subscription.status = "paused";
+        subscription.pauseReason = "customer";
+        subscription.pausedUntil = new Date(Date.now() + 21 * 86400000);
+        await subscription.save();
+        return { success: true };
+      },
+    });
+    await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
+    const saved = await Subscription.findById(subscription._id);
+    expect(saved.status).toBe("paused");
+    expect(saved.pauseReason).toBe("customer");
+    expect(saved.paymentFailureInvoiceId).toBeNull();
+  });
+
   it("concurrent invoice recovery creates one payment record for the same order", async () => {
     await Payment.init();
     const customer = await createCustomer();
@@ -152,22 +179,16 @@ describe("Subscription Stripe webhook E2E", () => {
       payment_intent: "pi_concurrent_ledger", paid: true, currency: "gbp", created: Math.floor(Date.now() / 1000) };
     await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
     await Payment.deleteMany({ subscription: subscription._id });
-    // Force both real handler calls to observe a missing ledger before either
-    // can insert, then let the database's unique index choose one record.
-    let release;
-    let readers = 0;
-    const barrier = new Promise(resolve => { release = resolve; });
-    const exists = jest.spyOn(Payment, "exists").mockImplementation(async () => {
-      if (++readers === 2) release();
-      await barrier;
-      return null;
-    });
-    try {
-      await Promise.all([
-        subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
-        subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
-      ]);
-    } finally { exists.mockRestore(); }
+    // One worker may request a retry while the other holds the lifecycle lock.
+    const outcomes = await Promise.allSettled([
+      subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+      subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+    ]);
+    expect(outcomes.some(result => result.status === "fulfilled")).toBe(true);
+    for (const result of outcomes) {
+      if (result.status === "rejected") expect(result.reason.message).toMatch(/lifecycle is busy/);
+    }
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
     expect(await Payment.countDocuments({ subscription: subscription._id })).toBe(1);
     expect(await Order.countDocuments({ subscription: subscription._id, stripeInvoiceId: invoice.id })).toBe(1);
     const saved = await Payment.findOne({ subscription: subscription._id }).lean();
@@ -479,7 +500,8 @@ describe("Subscription Stripe webhook E2E", () => {
       postStripeEvent(eventBody),
       postStripeEvent(eventBody),
     ]);
-    expect(concurrent.map((response) => response.status)).toEqual([200, 200]);
+    expect(concurrent.some(response => response.status === 200)).toBe(true);
+    expect(concurrent.every(response => [200, 500].includes(response.status))).toBe(true);
 
     const retry = await postStripeEvent(eventBody);
     expect(retry.status).toBe(200);
