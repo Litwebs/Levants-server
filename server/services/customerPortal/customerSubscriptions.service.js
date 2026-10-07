@@ -1,6 +1,7 @@
 "use strict";
 
 const mongoose = require("mongoose");
+const { assertAddOnFulfillmentEligible } = require("./subscriptionAddOnFulfillment.service");
 const { prepareSingleDayTransition } = require("./subscriptionSingleDayTransition.service");
 const subscriptionClock = require("../../utils/subscriptionClock.util");
 const Subscription = require("../../models/subscription.model");
@@ -1071,6 +1072,7 @@ async function attachDeliveryAddOnToOrder({
   delivery,
   subscription,
   addOn,
+  session,
 }) {
   if (!delivery?.order || !addOn) return null;
   const orderId = delivery.order?._id || delivery.order;
@@ -1081,8 +1083,8 @@ async function attachDeliveryAddOnToOrder({
     customer: subscription.customer,
     status: { $in: ["paid", "partially_paid", "partially_refunded"] },
     deliveryStatus: "ordered",
-  });
-  if (!order) return null;
+  }).session(session);
+  if (!order) throw Object.assign(new Error("The paid add-on order is no longer editable"), { code: "ADD_ON_FULFILLMENT_CLOSED" });
 
   const allocationKey = `delivery-add-on:${addOn.operationId}`;
   const alreadyAttached = (order.paymentAllocations || []).some(
@@ -1112,7 +1114,7 @@ async function attachDeliveryAddOnToOrder({
       amountMinor: addOn.amountMinor,
       idempotencyKey: allocationKey,
     });
-    await order.save();
+    await order.save({ session });
   }
 
   await Payment.findOneAndUpdate(
@@ -1133,7 +1135,7 @@ async function attachDeliveryAddOnToOrder({
         notes: `One-time add-on for delivery ${deliveryDateKey(delivery.scheduledDate)}`,
       },
     },
-    { upsert: true, new: true },
+    { upsert: true, new: true, session },
   );
 
   return order;
@@ -4074,6 +4076,10 @@ async function AddNextDeliveryAddOn({
 }
 
 async function resumeDeliveryAddOn({ subscription, nextDelivery, mutation }) {
+  if (mutation.addOnSnapshot?.paymentIntent?.status === "succeeded" && nextDelivery) {
+    return finishDeliveryAddOn({ subscription, nextDelivery, mutation,
+      snapshot: mutation.addOnSnapshot, paymentIntent: mutation.addOnSnapshot.paymentIntent });
+  }
   const settings = await subscriptionSettingsService.getOrCreateSettings();
   const cutoffAt = nextDelivery && computeCutoffDate(nextDelivery.scheduledDate, settings);
   const editable = nextDelivery && (nextDelivery.status === "scheduled" ||
@@ -4099,50 +4105,51 @@ async function finishDeliveryAddOn({ subscription, nextDelivery, mutation, snaps
     stripePaymentIntentId: paymentIntent.id,
     paidAt: new Date(subscriptionClock.now()),
   };
-  let savedDelivery = (nextDelivery.addOns || []).some(addOn => addOn.operationId === operationId)
-    ? nextDelivery : await SubscriptionDelivery.findOneAndUpdate(
-    {
-      _id: nextDelivery._id,
-      "addOns.operationId": { $ne: operationId },
-    },
-    { $push: { addOns: addOn } },
-    { new: true },
-  );
-  if (!savedDelivery) {
-    savedDelivery = await SubscriptionDelivery.findById(nextDelivery._id);
-  }
-  const savedAddOn = (savedDelivery?.addOns || []).find(
-    (candidate) => candidate.operationId === operationId,
-  );
-  if (!savedDelivery || !savedAddOn) {
-    throw new Error("The payment succeeded but the delivery add-on was not saved");
-  }
-
+  // Keep the captured payment visible even when fulfillment must be reconciled.
   await Payment.findOneAndUpdate(
-    {
-      subscription: subscription._id,
-      providerReference: savedAddOn.stripePaymentIntentId,
-    },
-    {
-      $setOnInsert: {
-        customer: customerId,
-        subscription: subscription._id,
-        amount: amountMinor / 100,
-        currency: "gbp",
-        status: "paid",
-        providerReference: savedAddOn.stripePaymentIntentId,
-        paidAt: savedAddOn.paidAt,
-        notes: `One-time add-on for delivery ${deliveryDateKey(savedDelivery.scheduledDate)}`,
-      },
-    },
+    { subscription: subscription._id, providerReference: paymentIntent.id },
+    { $setOnInsert: { customer: customerId, subscription: subscription._id,
+      amount: amountMinor / 100, currency: "gbp", status: "paid",
+      providerReference: paymentIntent.id, paidAt: addOn.paidAt,
+      notes: `One-time add-on for delivery ${deliveryDateKey(nextDelivery.scheduledDate)}` } },
     { upsert: true, new: true },
   );
-
-  const order = await attachDeliveryAddOnToOrder({
-    delivery: savedDelivery,
-    subscription,
-    addOn: savedAddOn,
-  });
+  const settings = await subscriptionSettingsService.getOrCreateSettings();
+  let savedDelivery, order;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      savedDelivery = await SubscriptionDelivery.findById(nextDelivery._id).session(session);
+      const existingOrder = savedDelivery?.order ? await Order.findOne({
+        _id: savedDelivery.order, subscription: subscription._id, customer: customerId,
+      }).session(session) : null;
+      assertAddOnFulfillmentEligible({ subscription, delivery: savedDelivery, order: existingOrder,
+        operationId, cutoffAt: savedDelivery && computeCutoffDate(savedDelivery.scheduledDate, settings),
+        now: subscriptionClock.now() });
+      const alreadyAllocated = existingOrder?.paymentAllocations?.some(
+        allocation => allocation.idempotencyKey === `delivery-add-on:${operationId}`);
+      let savedAddOn = savedDelivery.addOns.find(candidate => candidate.operationId === operationId);
+      if (!savedAddOn) {
+        savedDelivery.addOns.push(addOn);
+        await savedDelivery.save({ session });
+        savedAddOn = savedDelivery.addOns.find(candidate => candidate.operationId === operationId);
+      }
+      // Reading and writing the order in this transaction conflicts with a
+      // concurrent dispatch; Mongo retries against the new fulfillment state.
+      order = alreadyAllocated ? existingOrder : await attachDeliveryAddOnToOrder({
+        delivery: savedDelivery, subscription, addOn: savedAddOn, session,
+      });
+      if (alreadyAllocated) {
+        await Payment.updateOne({ subscription: subscription._id, providerReference: savedAddOn.stripePaymentIntentId },
+          { $set: { order: existingOrder._id } }, { session });
+      }
+    });
+  } catch (error) {
+    if (error.code !== "ADD_ON_FULFILLMENT_CLOSED") throw error;
+    return Response(false,
+      "Your payment succeeded, but the original delivery can no longer accept the add-on. Please contact support to reconcile or refund this payment.",
+      { reconciliationRequired: true, paymentOutcome: "succeeded", chargedMinor: amountMinor });
+  } finally { await session.endSession(); }
 
   await CustomerNotification.create({
     customer: customerId,

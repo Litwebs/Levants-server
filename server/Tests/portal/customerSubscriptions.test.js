@@ -4186,6 +4186,38 @@ describe("Portal Subscriptions", () => {
     expect(later.addOns).toHaveLength(0);
   });
 
+  it.each(["dispatch", "order-write-failure"])("keeps a paid add-on recoverable when %s wins before fulfillment", async failure => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const order = await createPaidOrderFor(sub);
+    order.deliveryDate = deliveries[0].scheduledDate;
+    await order.save();
+    await SubscriptionDelivery.findByIdAndUpdate(deliveries[0]._id, { order: order._id, status: "generated" });
+    const originalItems = order.items.map(item => item.toObject());
+    const payload = { operationId: crypto.randomUUID(), items: [{ variantId, quantity: 1 }] };
+    const send = () => request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    stripe.paymentIntents.create.mockClear();
+    stripe.paymentIntents.create.mockImplementationOnce(async () => {
+      if (failure === "dispatch") await Order.updateOne({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } });
+      return { id: `pi_fulfillment_${payload.operationId}`, status: "succeeded", amount_received: 250 };
+    });
+    const write = failure === "order-write-failure" ? jest.spyOn(Order.prototype, "save")
+      .mockRejectedValueOnce(new Error("Injected add-on order write failure")) : null;
+    let first;
+    try { first = await send(); } finally { write?.mockRestore(); }
+    expect(first.status).toBe(failure === "dispatch" ? 400 : 500);
+    if (failure === "dispatch") expect(first.body.data).toMatchObject({ reconciliationRequired: true, paymentOutcome: "succeeded", chargedMinor: 250 });
+    expect((await SubscriptionDelivery.findById(deliveries[0]._id)).addOns).toHaveLength(0);
+    expect((await Order.findById(order._id)).items.map(item => item.toObject())).toEqual(originalItems);
+    expect(await Payment.countDocuments({ providerReference: `pi_fulfillment_${payload.operationId}` })).toBe(1);
+    const retry = await send();
+    expect(retry.status).toBe(failure === "dispatch" ? 400 : 200);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    expect((await SubscriptionDelivery.findById(deliveries[0]._id)).addOns).toHaveLength(failure === "dispatch" ? 0 : 1);
+    if (failure === "dispatch") expect(retry.body.data.paymentOutcome).toBe("succeeded");
+  });
+
   it("charges a one-time item for only the next scheduled delivery", async () => {
     const sub = await createBasicSubscription();
     const deliveries = await prepareUpcomingDeliveries(sub._id);
