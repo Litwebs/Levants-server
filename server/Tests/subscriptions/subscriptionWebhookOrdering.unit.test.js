@@ -100,3 +100,9 @@ it('rechecks invoice state after entering the lifecycle lock', async () => {
   expect(stripe.subscriptions.update).not.toHaveBeenCalled();
   expect(local.save).not.toHaveBeenCalled();
 });
+it('retrieves a legacy failed invoice once, inside the lifecycle handler', async () => {
+  await fail({ id: 'invoice', subscription: 'sub' });
+  expect(stripe.invoices.retrieve).toHaveBeenCalledTimes(1);
+  expect(local.status).toBe('paused');
+  expect(local.pauseReason).toBe('payment_failed');
+});

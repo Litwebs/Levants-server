@@ -145,7 +145,9 @@ describe("Subscription Stripe webhook E2E", () => {
       stripeSubscriptionId: "sub_portal_race", nextDeliveryDate: new Date(Date.now() + 2 * 86400000),
       items: [buildSubscriptionItem(product, variant, 1)] });
     const invoice = { id: "in_portal_race", subscription: subscription.stripeSubscriptionId, status: "open", paid: false };
+    const retrieveBefore = stripe.invoices.retrieve.getMockImplementation();
     stripe.invoices.retrieve.mockResolvedValue(invoice);
+    try {
     const { executeSubscriptionConcurrencyGuard } = require("../../services/customerPortal/subscriptionMutation.service");
     await executeSubscriptionConcurrencyGuard({ customerId: customer._id, subscriptionId: subscription._id,
       operationId: "portal-pause-race", execute: async () => {
@@ -163,6 +165,9 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(saved.status).toBe("paused");
     expect(saved.pauseReason).toBe("customer");
     expect(saved.paymentFailureInvoiceId).toBeNull();
+    } finally {
+      stripe.invoices.retrieve.mockReset().mockImplementation(retrieveBefore);
+    }
   });
 
   it("concurrent invoice recovery creates one payment record for the same order", async () => {

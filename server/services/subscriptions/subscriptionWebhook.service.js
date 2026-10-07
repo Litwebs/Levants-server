@@ -197,8 +197,7 @@ async function findDeliverySlot(subscriptionId, deliveryDate) {
  * Fires when Stripe successfully charges a subscription invoice.
  * We create an Order in our DB for fulfillment.
  */
-async function HandleSubscriptionInvoicePaidUnlocked(eventInvoice) {
-  const invoice = await resolveLegacyInvoice(eventInvoice);
+async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
   if (!stripeSubscriptionId) return; // Not a subscription invoice
 
@@ -834,9 +833,15 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
     () => HandleSubscriptionInvoicePaidUnlocked(invoice));
 }
 async function HandleSubscriptionInvoiceFailed(eventInvoice) {
-  const invoice = await stripe.invoices.retrieve(eventInvoice.id);
-  if (invoice.paid || ["paid", "void", "uncollectible"].includes(invoice.status)) return;
-  return withSubscriptionLifecycleLock(resolveInvoiceSubscriptionId(invoice),
+  // Most event shapes already identify the subscription. Retrieve here only
+  // when needed to locate the lock; the handler verifies current state inside it.
+  let stripeSubscriptionId = resolveInvoiceSubscriptionId(eventInvoice);
+  if (!stripeSubscriptionId) {
+    const invoice = await stripe.invoices.retrieve(eventInvoice.id);
+    if (invoice.paid || ["paid", "void", "uncollectible"].includes(invoice.status)) return;
+    stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
+  }
+  return withSubscriptionLifecycleLock(stripeSubscriptionId,
     () => HandleSubscriptionInvoiceFailedUnlocked(eventInvoice));
 }
 async function HandleStripeSubscriptionUpdated(event) {

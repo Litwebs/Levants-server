@@ -49,3 +49,20 @@ it("still repairs a genuinely missing paid ledger", async () => {
   expect(Payment.findOneAndUpdate).toHaveBeenCalledWith(expect.any(Object), { $setOnInsert: expect.objectContaining({ status: "paid", amount: 11 }) }, expect.any(Object));
   expect(Payment.updateMany).not.toHaveBeenCalled();
 });
+it('normalizes a Clover invoice once and preserves its subscription parent', async () => {
+  const invoice = setup('paid', true);
+  const stripe = require('../../utils/stripe.util');
+  stripe.invoices = { retrieve: jest.fn(async () => ({ id: invoice.id })) };
+  const { subscription, ...event } = invoice;
+  await paid({ ...event, parent: { subscription_details: { subscription } } });
+  expect(stripe.invoices.retrieve).toHaveBeenCalledTimes(1);
+  expect(Payment.exists).toHaveBeenCalled();
+});
+it('ignores a normalized non-subscription invoice without reading a subscription', async () => {
+  const stripe = require('../../utils/stripe.util');
+  stripe.invoices = { retrieve: jest.fn(async () => ({ id: 'one-time' })) };
+  jest.spyOn(Subscription, 'findOne');
+  await paid({ id: 'one-time' });
+  expect(stripe.invoices.retrieve).toHaveBeenCalledTimes(1);
+  expect(Subscription.findOne).not.toHaveBeenCalled();
+});
