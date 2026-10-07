@@ -87,7 +87,7 @@ function mapPublicDeal(deal) {
     });
   }
 
-  if (!Number.isFinite(maxPackages) || maxPackages <= 0) return null;
+  if (!Number.isFinite(maxPackages)) return null;
 
   const packagePrice = Number(deal.packagePrice || 0);
   const savings = originalValue - packagePrice;

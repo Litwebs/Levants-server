@@ -68,7 +68,7 @@ describe("deals and product packages", () => {
     });
   });
 
-  test("out-of-stock packages are not exposed by the public deals API", async () => {
+  test("out-of-stock packages are shown as unavailable by the public deals API", async () => {
     const product = await createProduct();
     const variant = await createVariant({ product, stock: 1, price: 5 });
     await createDealFixture({ variant, quantity: 2, packagePrice: 8 });
@@ -76,7 +76,8 @@ describe("deals and product packages", () => {
     const result = await listActiveDeals({ page: 1, pageSize: 10 });
 
     expect(result.success).toBe(true);
-    expect(result.data.deals).toHaveLength(0);
+    expect(result.data.deals).toHaveLength(1);
+    expect(result.data.deals[0].maxPackages).toBe(0);
   });
 
   test("deal validation rejects tampered component quantities", async () => {

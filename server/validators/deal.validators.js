@@ -57,6 +57,13 @@ const listDealsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).optional(),
   pageSize: Joi.number().integer().min(1).max(100).optional(),
   featured: Joi.boolean().optional(),
+  search: Joi.string().trim().max(100).allow("").optional(),
+  status: Joi.string()
+    .valid("all", "active", "inactive", "featured", "archived")
+    .optional(),
+  sort: Joi.string()
+    .valid("newest", "oldest", "name", "price-high", "price-low")
+    .optional(),
 }).unknown(false);
 
 const dealIdParamSchema = Joi.object({
@@ -71,8 +78,15 @@ module.exports = {
   catalogQuerySchema: Joi.object({
     q: Joi.string().trim().max(100).allow("").default(""),
     page: Joi.number().integer().min(1).default(1),
-    pageSize: Joi.number().integer().min(1).max(24).default(8),
+    pageSize: Joi.number().integer().min(1).max(50).default(20),
     inStock: Joi.boolean().default(false),
+    category: Joi.string().trim().max(120).allow("").default(""),
+    stock: Joi.string()
+      .valid("all", "in_stock", "low_stock", "out_of_stock")
+      .default("all"),
+    sort: Joi.string()
+      .valid("newest", "name_asc", "price_asc", "price_desc", "stock_desc")
+      .default("newest"),
   }).unknown(false),
   createDealSchema,
   updateDealSchema,

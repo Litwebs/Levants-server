@@ -321,7 +321,7 @@ describe("deals admin and public lifecycle", () => {
     ).toBe(true);
   });
 
-  test("public list exposes only active, in-window, in-stock packages", async () => {
+  test("public list shows active in-window packages, including sold-out deals", async () => {
     const product = await createProduct();
     const variant = await createVariant({ product, stock: 20, price: 5 });
     const now = Date.now();
@@ -369,8 +369,12 @@ describe("deals admin and public lifecycle", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.data.deals.map((deal) => deal.slug)).toEqual(["visible"]);
-    expect(res.body.meta.total).toBe(1);
+    expect(res.body.data.deals.map((deal) => deal.slug).sort()).toEqual(["no-stock", "visible"]);
+    expect(res.body.data.deals.find((deal) => deal.slug === "no-stock").maxPackages).toBe(0);
+    expect(res.body.meta.total).toBe(2);
+    const soldOutDetail = await request(app).get("/api/deals/no-stock");
+    expect(soldOutDetail.status).toBe(200);
+    expect(soldOutDetail.body.data.deal.maxPackages).toBe(0);
   });
 
   test("public list honours featured filtering and sort order", async () => {

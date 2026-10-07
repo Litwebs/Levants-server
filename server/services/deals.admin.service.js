@@ -326,7 +326,14 @@ async function createDeal({ body, userId }) {
   };
 }
 
-async function listDeals({ page = 1, pageSize = 20, featured } = {}) {
+async function listDeals({
+  page = 1,
+  pageSize = 20,
+  featured,
+  search = "",
+  status = "all",
+  sort = "newest",
+} = {}) {
   const safePage = Math.max(1, Number(page) || 1);
   const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 20));
   const skip = (safePage - 1) * safePageSize;
@@ -337,11 +344,32 @@ async function listDeals({ page = 1, pageSize = 20, featured } = {}) {
         ? { isFeatured: false }
         : {};
 
+  const normalizedSearch = String(search || "").trim();
+  if (normalizedSearch) {
+    const escaped = normalizedSearch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    filter.$or = [
+      { name: { $regex: escaped, $options: "i" } },
+      { slug: { $regex: escaped, $options: "i" } },
+    ];
+  }
+  if (status === "active") Object.assign(filter, { isActive: true, archivedAt: null });
+  if (status === "inactive") Object.assign(filter, { isActive: false, archivedAt: null });
+  if (status === "featured") Object.assign(filter, { isFeatured: true, archivedAt: null });
+  if (status === "archived") filter.archivedAt = { $ne: null };
+
+  const sortBy = {
+    newest: { createdAt: -1, _id: -1 },
+    oldest: { createdAt: 1, _id: 1 },
+    name: { name: 1, _id: 1 },
+    "price-high": { packagePrice: -1, _id: -1 },
+    "price-low": { packagePrice: 1, _id: 1 },
+  }[sort] || { createdAt: -1, _id: -1 };
+
   const [total, deals] = await Promise.all([
     Deal.countDocuments(filter),
     Deal.find(filter)
       .populate("image")
-      .sort({ isFeatured: -1, sortOrder: 1, createdAt: -1, _id: -1 })
+      .sort(sortBy)
       .skip(skip)
       .limit(safePageSize)
       .lean(),

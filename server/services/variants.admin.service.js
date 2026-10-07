@@ -300,11 +300,24 @@ async function DeleteVariant({ variantId }) {
 /**
  * Search variants globally (admin autocomplete)
  */
-async function SearchVariants({ q, page = 1, pageSize = 8, inStock = false, browse = false, limit } = {}) {
+async function SearchVariants({
+  q,
+  page = 1,
+  pageSize = 20,
+  inStock = false,
+  stock = "all",
+  category = "",
+  sort = "newest",
+  browse = false,
+  limit,
+} = {}) {
   const queryText = String(q || "").trim();
   if (!browse && !queryText) return { success: true, data: { variants: [] } };
   const safePage = Math.max(Number(page) || 1, 1);
-  const safePageSize = Math.min(Math.max(Number(limit ?? pageSize) || 8, 1), 25);
+  const safePageSize = Math.min(Math.max(Number(limit ?? pageSize) || 20, 1), 50);
+  const categoryFilter = String(category || "").trim();
+  const stockFilter = String(stock || "all").trim();
+  const legacyInStock = inStock === true || String(inStock).toLowerCase() === "true";
   const rx = queryText
     ? new RegExp(queryText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
     : null;
@@ -331,18 +344,43 @@ async function SearchVariants({ q, page = 1, pageSize = 8, inStock = false, brow
           ],
         }
       : {}),
-    ...(inStock
+    ...(legacyInStock || stockFilter === "in_stock"
       ? { $expr: { $gt: [{ $subtract: [{ $ifNull: ["$stockQuantity", 0] }, { $ifNull: ["$reservedQuantity", 0] }] }, 0] } }
+      : stockFilter === "out_of_stock"
+        ? { $expr: { $lte: [{ $subtract: [{ $ifNull: ["$stockQuantity", 0] }, { $ifNull: ["$reservedQuantity", 0] }] }, 0] } }
+        : stockFilter === "low_stock"
+          ? {
+              $expr: {
+                $and: [
+                  { $gt: [{ $subtract: [{ $ifNull: ["$stockQuantity", 0] }, { $ifNull: ["$reservedQuantity", 0] }] }, 0] },
+                  { $lte: [{ $subtract: [{ $ifNull: ["$stockQuantity", 0] }, { $ifNull: ["$reservedQuantity", 0] }] }, 5] },
+                ],
+              },
+            }
       : {}),
   };
 
   if (browse) {
-    const activeProducts = await Product.find({ status: "active" }).select("_id").lean();
+    const activeProducts = await Product.find({
+      status: "active",
+      ...(categoryFilter ? { category: categoryFilter } : {}),
+    })
+      .select("_id")
+      .lean();
     variantQuery.status = "active";
     variantQuery.product = { $in: activeProducts.map((product) => product._id) };
   }
 
-  const [total, variants] = await Promise.all([
+  const sortOptions = {
+    newest: { createdAt: -1 },
+    name_asc: { name: 1, createdAt: -1 },
+    price_asc: { price: 1, createdAt: -1 },
+    price_desc: { price: -1, createdAt: -1 },
+    stock_desc: { stockQuantity: -1, createdAt: -1 },
+  };
+  const variantSort = sortOptions[sort] || sortOptions.newest;
+
+  const [total, variants, categories] = await Promise.all([
     Variant.countDocuments(variantQuery),
     Variant.find(variantQuery)
     .select(
@@ -354,10 +392,11 @@ async function SearchVariants({ q, page = 1, pageSize = 8, inStock = false, brow
       select: "name category status thumbnailImage",
       populate: { path: "thumbnailImage", select: "url" },
     })
-    .sort({ createdAt: -1 })
+    .sort(variantSort)
     .skip((safePage - 1) * safePageSize)
     .limit(safePageSize)
     .lean(),
+    Product.distinct("category", { status: "active", category: { $ne: "" } }),
   ]);
 
   const shaped = variants.map((v) => ({
@@ -393,6 +432,9 @@ async function SearchVariants({ q, page = 1, pageSize = 8, inStock = false, brow
         pageSize: safePageSize,
         total,
         totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+      },
+      filters: {
+        categories: categories.filter(Boolean).sort((a, b) => a.localeCompare(b)),
       },
     },
   };

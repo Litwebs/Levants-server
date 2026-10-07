@@ -22,6 +22,9 @@ const ListDeals = async (req, res) => {
     page: Number(req.query.page || 1),
     pageSize: Number(req.query.pageSize || 20),
     featured: req.query.featured,
+    search: req.query.search,
+    status: req.query.status,
+    sort: req.query.sort,
   });
 
   return sendOk(res, result.data, { meta: result.meta });
