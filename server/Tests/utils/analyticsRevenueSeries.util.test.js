@@ -1,117 +1,288 @@
 const {
+  MAX_REVENUE_SERIES_BUCKETS,
+  normalizeRevenueInterval,
+  estimateRevenueSeriesBucketCount,
   buildRevenueSeriesStages,
+  buildExpectedSeriesLabels,
+  fillRevenueSeriesPoints,
+  summarizeRevenueSeries,
 } = require("../../utils/analyticsRevenueSeries.util");
 
-describe("buildRevenueSeriesStages", () => {
-  // -------------------------------------------------------------------------
-  // interval: "year"
-  // -------------------------------------------------------------------------
-  describe('interval = "year"', () => {
-    test("groups by year only", () => {
-      const { groupId, sortStage, projectStage } = buildRevenueSeriesStages(
-        "year",
-        "last12Months",
-      );
+describe("analyticsRevenueSeries.util", () => {
+  const paidAt = { $ifNull: ["$paidAt", "$createdAt"] };
 
-      expect(groupId).toEqual({ year: { $year: "$createdAt" } });
-    });
-
-    test("sorts by year ascending", () => {
-      const { sortStage } = buildRevenueSeriesStages("year", "all");
-      expect(sortStage).toEqual({ "_id.year": 1 });
-    });
-
-    test("projects label as string year", () => {
-      const { projectStage } = buildRevenueSeriesStages("year", "all");
-      expect(projectStage.label).toEqual({ $toString: "$_id.year" });
-      expect(projectStage._id).toBe(0);
-      expect(projectStage.revenue).toBe(1);
-      expect(projectStage.orders).toBe(1);
-    });
+  test("supports explicit day/week/month/year intervals", () => {
+    expect(normalizeRevenueInterval("DAY")).toBe("day");
+    expect(normalizeRevenueInterval("week")).toBe("week");
+    expect(normalizeRevenueInterval("month")).toBe("month");
+    expect(normalizeRevenueInterval("year")).toBe("year");
+    expect(normalizeRevenueInterval("hour")).toBe("week");
   });
 
-  // -------------------------------------------------------------------------
-  // interval: "month"
-  // -------------------------------------------------------------------------
-  describe('interval = "month"', () => {
-    test("groups by year and month", () => {
-      const { groupId } = buildRevenueSeriesStages("month", "last12Months");
-      expect(groupId).toMatchObject({
-        year: { $year: "$createdAt" },
-        month: { $month: "$createdAt" },
-      });
+  test("day interval always groups by local calendar day", () => {
+    const { groupId, sortStage } = buildRevenueSeriesStages("day", "last30", {
+      dateExpression: paidAt,
+      timeZone: "Europe/London",
     });
 
-    test("sorts by year then month ascending", () => {
-      const { sortStage } = buildRevenueSeriesStages("month", "all");
-      expect(sortStage).toEqual({ "_id.year": 1, "_id.month": 1 });
+    expect(groupId.day.$dateToString).toEqual({
+      format: "%Y-%m-%d",
+      date: paidAt,
+      timezone: "Europe/London",
     });
-
-    test("project label is zero-padded YYYY-MM", () => {
-      const { projectStage } = buildRevenueSeriesStages("month", "all");
-      // label is a $concat expression
-      expect(projectStage.label.$concat).toBeDefined();
-      expect(projectStage.label.$concat[1]).toBe("-");
-    });
+    expect(sortStage).toEqual({ "_id.day": 1 });
   });
 
-  // -------------------------------------------------------------------------
-  // interval: "week" with short ranges (daily grouping)
-  // -------------------------------------------------------------------------
-  describe('interval = "week" on short ranges (daily)', () => {
-    test.each(["today", "yesterday", "last7"])(
-      "uses daily grouping for range=%s",
-      (range) => {
-        const { groupId, sortStage, projectStage } = buildRevenueSeriesStages(
-          "week",
-          range,
-        );
+  test("week interval remains weekly even for a short date range", () => {
+    const { groupId, projectStage } = buildRevenueSeriesStages("week", "last7", {
+      dateExpression: paidAt,
+      timeZone: "Europe/London",
+    });
 
-        expect(groupId.day).toBeDefined();
-        expect(groupId.day.$dateToString.format).toBe("%Y-%m-%d");
-        expect(sortStage).toEqual({ "_id.day": 1 });
-        expect(projectStage.label).toBe("$_id.day");
+    expect(groupId.year.$isoWeekYear).toEqual({
+      date: paidAt,
+      timezone: "Europe/London",
+    });
+    expect(groupId.week.$isoWeek).toEqual({
+      date: paidAt,
+      timezone: "Europe/London",
+    });
+    expect(projectStage.label.$concat[1]).toBe("-W");
+  });
+
+  test("groups monthly using the supplied event date and timezone", () => {
+    const { groupId, sortStage } = buildRevenueSeriesStages("month", "all", {
+      dateExpression: paidAt,
+      timeZone: "Europe/London",
+    });
+
+    expect(groupId.year.$year.date).toEqual(paidAt);
+    expect(groupId.year.$year.timezone).toBe("Europe/London");
+    expect(groupId.month.$month.date).toEqual(paidAt);
+    expect(sortStage).toEqual({ "_id.year": 1, "_id.month": 1 });
+  });
+
+  test("groups yearly using the supplied event date and timezone", () => {
+    const { groupId, sortStage } = buildRevenueSeriesStages("year", "all", {
+      dateExpression: paidAt,
+      timeZone: "Europe/London",
+    });
+
+    expect(groupId).toEqual({
+      year: {
+        $year: { date: paidAt, timezone: "Europe/London" },
       },
+    });
+    expect(sortStage).toEqual({ "_id.year": 1 });
+  });
+
+  test("builds every daily label in a custom range", () => {
+    expect(
+      buildExpectedSeriesLabels({
+        interval: "day",
+        from: "2026-06-10",
+        to: "2026-06-12",
+        timeZone: "Europe/London",
+      }),
+    ).toEqual(["2026-06-10", "2026-06-11", "2026-06-12"]);
+  });
+
+  test("builds every ISO week intersecting a custom range", () => {
+    expect(
+      buildExpectedSeriesLabels({
+        interval: "week",
+        from: "2026-06-01",
+        to: "2026-06-14",
+        timeZone: "Europe/London",
+      }),
+    ).toEqual(["2026-W23", "2026-W24"]);
+  });
+
+  test("ISO week labels use week-year rather than calendar year", () => {
+    expect(
+      buildExpectedSeriesLabels({
+        interval: "week",
+        from: "2025-12-29",
+        to: "2026-01-04",
+        timeZone: "Europe/London",
+      }),
+    ).toEqual(["2026-W01"]);
+  });
+
+  test("builds complete month and year buckets across boundaries", () => {
+    expect(
+      buildExpectedSeriesLabels({
+        interval: "month",
+        from: "2025-11-15",
+        to: "2026-02-10",
+      }),
+    ).toEqual(["2025-11", "2025-12", "2026-01", "2026-02"]);
+
+    expect(
+      buildExpectedSeriesLabels({
+        interval: "year",
+        from: "2024-11-15",
+        to: "2026-02-10",
+      }),
+    ).toEqual(["2024", "2025", "2026"]);
+  });
+
+  test("zero-fills missing periods without changing real values", () => {
+    const points = fillRevenueSeriesPoints({
+      interval: "day",
+      from: "2026-06-10",
+      to: "2026-06-12",
+      points: [
+        {
+          label: "2026-06-10",
+          grossRevenue: 20,
+          refunds: 0,
+          netRevenue: 20,
+          revenue: 20,
+          orders: 1,
+        },
+        {
+          label: "2026-06-12",
+          grossRevenue: 0,
+          refunds: 5,
+          netRevenue: -5,
+          revenue: -5,
+          orders: 0,
+        },
+      ],
+    });
+
+    expect(points).toEqual([
+      {
+        label: "2026-06-10",
+        grossRevenue: 20,
+        refunds: 0,
+        netRevenue: 20,
+        revenue: 20,
+        orders: 1,
+      },
+      {
+        label: "2026-06-11",
+        grossRevenue: 0,
+        refunds: 0,
+        netRevenue: 0,
+        revenue: 0,
+        orders: 0,
+      },
+      {
+        label: "2026-06-12",
+        grossRevenue: 0,
+        refunds: 5,
+        netRevenue: -5,
+        revenue: -5,
+        orders: 0,
+      },
+    ]);
+  });
+
+  test("all-time remains sparse because it has no bounded start/end", () => {
+    const points = fillRevenueSeriesPoints({
+      interval: "month",
+      range: "all",
+      points: [
+        { label: "2025-01", revenue: 10, orders: 1 },
+        { label: "2026-03", revenue: 20, orders: 2 },
+      ],
+    });
+
+    expect(points).toHaveLength(2);
+    expect(points[0]).toEqual(
+      expect.objectContaining({
+        label: "2025-01",
+        revenue: 10,
+        orders: 1,
+        grossRevenue: 0,
+        refunds: 0,
+        netRevenue: 0,
+      }),
     );
   });
 
-  // -------------------------------------------------------------------------
-  // interval: "week" with longer ranges (ISO week grouping)
-  // -------------------------------------------------------------------------
-  describe('interval = "week" on longer ranges (ISO week)', () => {
-    test.each(["last30", "last90", "all", "last12Months", "thisMonth"])(
-      "uses ISO week grouping for range=%s",
-      (range) => {
-        const { groupId, sortStage, projectStage } = buildRevenueSeriesStages(
-          "week",
-          range,
-        );
-
-        expect(groupId.year).toBeDefined();
-        expect(groupId.week).toBeDefined();
-        expect(groupId.year.$isoWeekYear).toBe("$createdAt");
-        expect(sortStage).toEqual({ "_id.year": 1, "_id.week": 1 });
-      },
-    );
-  });
-
-  // -------------------------------------------------------------------------
-  // Default: non-string interval falls back to "week"
-  // -------------------------------------------------------------------------
-  describe("invalid / missing interval defaults to week", () => {
-    test.each([null, undefined, 42, {}, []])(
-      "defaults to ISO week grouping for interval=%p",
-      (interval) => {
-        const { groupId } = buildRevenueSeriesStages(interval, "last30");
-        // Should be week (ISO) grouping
-        expect(groupId.year).toBeDefined();
-        expect(groupId.week).toBeDefined();
-      },
-    );
-
-    test("defaults to daily grouping when interval invalid and range is short", () => {
-      const { groupId } = buildRevenueSeriesStages(undefined, "today");
-      expect(groupId.day).toBeDefined();
+  test("series totals include sales, refunds, net revenue and orders", () => {
+    expect(
+      summarizeRevenueSeries([
+        {
+          label: "a",
+          grossRevenue: 100,
+          refunds: 10,
+          netRevenue: 90,
+          revenue: 90,
+          orders: 2,
+        },
+        {
+          label: "b",
+          grossRevenue: 40,
+          refunds: 5,
+          netRevenue: 35,
+          revenue: 35,
+          orders: 1,
+        },
+      ]),
+    ).toEqual({
+      grossRevenue: 140,
+      refunds: 15,
+      netRevenue: 125,
+      revenue: 125,
+      orders: 3,
     });
   });
+
+  test.each([null, undefined, 42, {}, []])(
+    "invalid interval=%p defaults to week",
+    (interval) => {
+      const { groupId } = buildRevenueSeriesStages(interval, "last30");
+      expect(groupId.year).toBeDefined();
+      expect(groupId.week).toBeDefined();
+    },
+  );
+  test("estimates bucket counts without materializing huge ranges", () => {
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "day",
+        from: "2026-01-01",
+        to: "2026-01-31",
+      }),
+    ).toBe(31);
+
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "week",
+        from: "2025-12-29",
+        to: "2026-01-11",
+      }),
+    ).toBe(2);
+
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "month",
+        from: "2025-11-01",
+        to: "2026-02-28",
+      }),
+    ).toBe(4);
+
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "year",
+        from: "2024-01-01",
+        to: "2026-12-31",
+      }),
+    ).toBe(3);
+  });
+
+  test("series bucket safety limit is intentionally bounded", () => {
+    expect(MAX_REVENUE_SERIES_BUCKETS).toBe(1000);
+    expect(
+      estimateRevenueSeriesBucketCount({
+        interval: "day",
+        from: "2020-01-01",
+        to: "2026-01-01",
+      }),
+    ).toBeGreaterThan(MAX_REVENUE_SERIES_BUCKETS);
+  });
+
 });

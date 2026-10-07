@@ -40,6 +40,8 @@ const publicOrderRoutes = require("./routes/orders.public.routes");
 const adminAnalyticsRoutes = require("./routes/analytics.admin.routes");
 const adminDiscountRoutes = require("./routes/discounts.admin.routes");
 const publicDiscountRoutes = require("./routes/discounts.public.routes");
+const adminDealRoutes = require("./routes/deals.admin.routes");
+const publicDealRoutes = require("./routes/deals.public.routes");
 const deliveryRoutes = require("./routes/delivery.routes");
 const publicDeliveryRoutes = require("./routes/delivery.public.routes");
 const adminAnnouncementRoutes = require("./routes/announcements.admin.routes");
@@ -196,6 +198,8 @@ app.use("/api/admin/analytics", adminAnalyticsRoutes);
 
 // Discounts / Promotions
 app.use("/api/admin/discounts", adminDiscountRoutes);
+app.use("/api/admin/deals", adminDealRoutes);
+app.use("/api/deals", publicDealRoutes);
 
 // Delivery
 app.use("/api/admin/delivery", deliveryRoutes);

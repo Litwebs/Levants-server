@@ -14,6 +14,9 @@ const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
 const CustomerNotification = require("../../models/customerNotification.model");
+const {
+  attachProductNameSnapshots,
+} = require("../../utils/orderItemSnapshot.util");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
 const {
@@ -349,6 +352,7 @@ async function HandleSubscriptionInvoicePaid(eventInvoice) {
       })),
     );
     const orderItems = [...subscriptionOrderItems, ...addOnOrderItems];
+    await attachProductNameSnapshots(orderItems);
 
     const subscriptionSubtotal = subscriptionOrderItems.reduce(
       (sum, item) => sum + item.subtotal,

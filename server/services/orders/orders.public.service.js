@@ -1,10 +1,14 @@
 const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
+const {
+  attachProductNameSnapshots,
+} = require("../../utils/orderItemSnapshot.util");
 const stripe = require("../../utils/stripe.util");
 const Customer = require("../../models/customer.model");
 const { geocodeAddress } = require("../../Integration/google.geocode");
 const { validateDiscountForOrder } = require("../discounts.public.service");
+const { validateDealsForOrder } = require("../deals.public.service");
 const {
   processInventoryAlertsForVariants,
 } = require("../inventory.notifications.service");
@@ -78,6 +82,7 @@ function isTransientTransactionError(err) {
 async function CreateOrder({
   customerId,
   items,
+  deals,
   discountCode,
   creditToApplyMinor,
   deliveryAddress,
@@ -105,6 +110,14 @@ async function CreateOrder({
   }
   if (!Array.isArray(items) || items.length === 0) {
     return { success: false, message: "items is required" };
+  }
+
+  const hasDeals = Array.isArray(deals) && deals.length > 0;
+  if (hasDeals && discountCode) {
+    return {
+      success: false,
+      message: "Deal packages can't be combined with a discount code.",
+    };
   }
 
   const customer = await Customer.findById(customerId)
@@ -142,7 +155,7 @@ async function CreateOrder({
 
       for (const item of items) {
         const quantity = Number(item.quantity);
-        if (!Number.isFinite(quantity) || quantity <= 0) {
+        if (!Number.isInteger(quantity) || quantity <= 0) {
           await session.abortTransaction();
           session.endSession();
           return { success: false, message: "Invalid quantity" };
@@ -202,11 +215,28 @@ async function CreateOrder({
         subtotal += lineSubtotal;
       }
 
+      await attachProductNameSnapshots(resolvedItems, { session });
+      const dealValidation = await validateDealsForOrder({
+        dealClaims: deals,
+        resolvedItems,
+        session,
+      });
+      if (!dealValidation.success) {
+        await session.abortTransaction();
+        session.endSession();
+        return { success: false, message: dealValidation.message };
+      }
+
+      const dealSnapshots = dealValidation.data.snapshots || [];
+      const dealDiscountAmount = Number(
+        dealValidation.data.discountAmount || 0,
+      );
+
       const deliveryFee = 1;
       const totalBeforeDiscount = subtotal + deliveryFee;
 
       let appliedDiscount = null;
-      let discountAmount = 0;
+      let discountAmount = dealDiscountAmount;
       if (discountCode) {
         const validation = await validateDiscountForOrder({
           code: discountCode,
@@ -223,7 +253,9 @@ async function CreateOrder({
         appliedDiscount = validation.data.discount;
 
         const amount = Number(validation.data.discountAmount || 0);
-        discountAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
+        const codeDiscountAmount =
+          Number.isFinite(amount) && amount > 0 ? amount : 0;
+        discountAmount += codeDiscountAmount;
       }
 
       const total = Math.max(0, totalBeforeDiscount - discountAmount);
@@ -277,6 +309,13 @@ async function CreateOrder({
             customerInstructions,
             deliveryAddress,
             location,
+            metadata:
+              dealSnapshots.length > 0
+                ? {
+                    deals: dealSnapshots,
+                    dealDiscountAmount,
+                  }
+                : {},
             ...(deliveryDate ? { deliveryDate } : {}),
           },
         ],
@@ -381,14 +420,27 @@ async function CreateOrder({
         };
       }
 
-      // Partial credit: a one-time Stripe coupon reduces the card charge.
-      let creditCoupon = null;
-      if (creditAppliedMinor > 0) {
-        creditCoupon = await stripe.coupons.create({
-          amount_off: creditAppliedMinor,
+      // Deal savings and store credit are both fixed-amount adjustments.
+      // Stripe Checkout accepts one coupon here, so combine the two into a
+      // single temporary coupon while keeping them separate in our order
+      // accounting (discountAmount vs creditApplied).
+      const dealDiscountMinor = Math.max(
+        0,
+        Math.round(dealDiscountAmount * 100),
+      );
+      const fixedAdjustmentMinor = dealDiscountMinor + creditAppliedMinor;
+      let adjustmentCoupon = null;
+      if (fixedAdjustmentMinor > 0) {
+        adjustmentCoupon = await stripe.coupons.create({
+          amount_off: fixedAdjustmentMinor,
           currency: "gbp",
           duration: "once",
-          name: "Store credit",
+          name:
+            dealDiscountMinor > 0 && creditAppliedMinor > 0
+              ? "Deal saving + store credit"
+              : dealDiscountMinor > 0
+                ? "Deal package saving"
+                : "Store credit",
         });
       }
 
@@ -424,8 +476,8 @@ async function CreateOrder({
             quantity: 1,
           },
         ],
-        ...(creditCoupon
-          ? { discounts: [{ coupon: creditCoupon.id }] }
+        ...(adjustmentCoupon
+          ? { discounts: [{ coupon: adjustmentCoupon.id }] }
           : appliedDiscount?.stripePromotionCodeId ||
               appliedDiscount?.stripeCouponId
             ? {
@@ -440,6 +492,12 @@ async function CreateOrder({
           orderId: order._id.toString(), // 🔑 webhook anchor
           ...(creditAppliedMinor > 0
             ? { creditAppliedMinor: String(creditAppliedMinor) }
+            : {}),
+          ...(dealSnapshots.length > 0
+            ? {
+                dealIds: dealSnapshots.map((deal) => deal.dealId).join(","),
+                dealDiscountMinor: String(dealDiscountMinor),
+              }
             : {}),
           ...(appliedDiscount
             ? {
@@ -459,6 +517,14 @@ async function CreateOrder({
         order.metadata = {
           ...(order.metadata || {}),
           creditAppliedMinor: String(creditAppliedMinor),
+        };
+      }
+
+      if (dealSnapshots.length > 0) {
+        order.metadata = {
+          ...(order.metadata || {}),
+          deals: dealSnapshots,
+          dealDiscountAmount,
         };
       }
 

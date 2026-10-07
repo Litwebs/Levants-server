@@ -114,10 +114,10 @@ export const CategoriesPage = () => {
       await create(body);
       setCreateOpen(false);
       setDraft(emptyDraft());
-      showToast({ message: "Category created", type: "success" });
+      showToast({ title: "Category created", type: "success" });
     } catch (err: any) {
       showToast({
-        message: err?.response?.data?.message || "Failed to create category",
+        title: err?.response?.data?.message || "Failed to create category",
         type: "error",
       });
     }
@@ -151,10 +151,10 @@ export const CategoriesPage = () => {
     try {
       await update(editTarget._id, body);
       setEditTarget(null);
-      showToast({ message: "Category updated", type: "success" });
+      showToast({ title: "Category updated", type: "success" });
     } catch (err: any) {
       showToast({
-        message: err?.response?.data?.message || "Failed to update category",
+        title: err?.response?.data?.message || "Failed to update category",
         type: "error",
       });
     }
@@ -165,10 +165,10 @@ export const CategoriesPage = () => {
     try {
       await remove(deleteTargetId);
       setDeleteTargetId(null);
-      showToast({ message: "Category deleted", type: "success" });
+      showToast({ title: "Category deleted", type: "success" });
     } catch (err: any) {
       showToast({
-        message: err?.response?.data?.message || "Failed to delete category",
+        title: err?.response?.data?.message || "Failed to delete category",
         type: "error",
       });
     }

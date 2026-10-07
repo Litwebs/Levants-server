@@ -1,6 +1,7 @@
 const fs = require("fs/promises");
 const path = require("path");
 const crypto = require("crypto");
+const os = require("os");
 
 module.exports = async function base64ToTempFile(base64, originalName) {
   const match = base64.match(/^data:(.+);base64,(.+)$/);
@@ -11,7 +12,7 @@ module.exports = async function base64ToTempFile(base64, originalName) {
 
   const ext = mimeType.split("/")[1] || "bin";
   const generatedName = `${crypto.randomUUID()}.${ext}`;
-  const localPath = path.join("/tmp", generatedName);
+  const localPath = path.join(os.tmpdir(), generatedName);
 
   await fs.writeFile(localPath, buffer);
 

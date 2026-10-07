@@ -321,6 +321,18 @@ subscriptionSchema.pre("validate", async function () {
 
 subscriptionSchema.index({ customer: 1, status: 1 });
 subscriptionSchema.index({ nextDeliveryDate: 1, status: 1 });
+subscriptionSchema.index(
+  { status: 1, isCancellationScheduled: 1 },
+  { name: "analytics_subscription_status_scheduledCancellation" },
+);
+subscriptionSchema.index(
+  { createdAt: 1 },
+  { name: "analytics_subscription_createdAt" },
+);
+subscriptionSchema.index(
+  { status: 1, cancelledAt: 1 },
+  { name: "analytics_subscription_status_cancelledAt" },
+);
 
 subscriptionSchema.method("toJSON", function () {
   const obj = this.toObject();

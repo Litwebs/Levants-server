@@ -22,7 +22,11 @@
     "seed-portal": "node scripts/seedPortalData.js",
     "seed-portal:fresh": "node scripts/seedPortalData.js --fresh",
     "seed-orders:bradford": "node scripts/generateBradfordOrders.js",
-    "stripe:recreate-products": "node scripts/recreateStripeProducts.js"
+    "stripe:recreate-products": "node scripts/recreateStripeProducts.js",
+    "test:e2e:analytics": "playwright test --config=playwright.analytics.config.js",
+    "test:analytics:performance": "NODE_OPTIONS=--max-old-space-size=4096 jest Tests/Analytics/analyticsPerformance.service.test.js --runInBand --no-watchman",
+    "test:e2e:deals": "playwright test deals.spec.js",
+    "test:e2e:deals:ci": "E2E_USE_STRIPE_CLI=1 playwright test deals.spec.js"
   },
   "keywords": [],
   "author": "",

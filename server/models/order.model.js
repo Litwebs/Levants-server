@@ -1,5 +1,31 @@
 const mongoose = require("mongoose");
 
+const orderStatusAuditSchema = new mongoose.Schema(
+  {
+    from: { type: String, default: null },
+    to: { type: String, required: true },
+    changedAt: { type: Date, default: Date.now, required: true },
+    actor: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    actorName: { type: String, default: "System" },
+    actorRole: { type: String, default: null },
+    source: { type: String, default: "admin" },
+    effects: { type: [String], default: [] },
+  },
+  { _id: true },
+);
+
+const orderEmailLogSchema = new mongoose.Schema(
+  {
+    template: { type: String, required: true },
+    providerId: { type: String, default: null, index: true },
+    subject: { type: String, required: true },
+    to: { type: String, required: true },
+    sentAt: { type: Date, default: Date.now, required: true },
+    trigger: { type: String, default: null },
+  },
+  { _id: true },
+);
+
 /**
  * Individual item snapshot
  * (NEVER recomputed after creation)
@@ -10,6 +36,12 @@ const orderItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
       required: true,
+    },
+
+    productName: {
+      type: String,
+      trim: true,
+      default: null,
     },
 
     variant: {
@@ -195,6 +227,9 @@ const orderSchema = new mongoose.Schema(
       default: "ordered",
       index: true,
     },
+
+    statusAudit: { type: [orderStatusAuditSchema], default: [] },
+    emailLog: { type: [orderEmailLogSchema], default: [] },
 
     reservationExpiresAt: {
       type: Date,
@@ -450,5 +485,40 @@ orderSchema.method("toJSON", function () {
 
 orderSchema.index({ "location.lat": 1, "location.lng": 1 });
 orderSchema.index({ deliveryDate: 1, status: 1 });
+
+// Analytics read-path indexes. Production disables Mongoose autoIndex, so these
+// are also enforced explicitly during DB startup in config/db.js.
+orderSchema.index(
+  { status: 1, paidAt: 1 },
+  { name: "analytics_status_paidAt" },
+);
+orderSchema.index(
+  { status: 1, createdAt: 1 },
+  { name: "analytics_status_createdAt" },
+);
+orderSchema.index(
+  { orderType: 1, status: 1, paidAt: 1 },
+  { name: "analytics_orderType_status_paidAt" },
+);
+orderSchema.index(
+  { "metadata.manualImport": 1, status: 1, paidAt: 1 },
+  { name: "analytics_import_status_paidAt" },
+);
+orderSchema.index(
+  { subscription: 1, status: 1, paidAt: 1 },
+  { name: "analytics_subscription_status_paidAt" },
+);
+orderSchema.index(
+  { "refunds.status": 1, "refunds.refundedAt": 1 },
+  { name: "analytics_refund_status_refundedAt" },
+);
+orderSchema.index(
+  { "items.product": 1, status: 1, paidAt: 1 },
+  { name: "analytics_product_status_paidAt" },
+);
+orderSchema.index(
+  { "items.variant": 1, status: 1, paidAt: 1 },
+  { name: "analytics_variant_status_paidAt" },
+);
 
 module.exports = mongoose.model("Order", orderSchema);

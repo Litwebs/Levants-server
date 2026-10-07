@@ -87,10 +87,10 @@ export const AnnouncementsPage = () => {
       await create(body);
       setCreateOpen(false);
       setDraft(emptyDraft);
-      showToast({ message: "Announcement created", type: "success" });
+      showToast({ title: "Announcement created", type: "success" });
     } catch (err: any) {
       showToast({
-        message:
+        title:
           err?.response?.data?.message || "Failed to create announcement",
         type: "error",
       });
@@ -101,14 +101,14 @@ export const AnnouncementsPage = () => {
     try {
       await update(id, { isActive: !currentActive });
       showToast({
-        message: currentActive
+        title: currentActive
           ? "Announcement deactivated"
           : "Announcement activated",
         type: "success",
       });
     } catch (err: any) {
       showToast({
-        message:
+        title:
           err?.response?.data?.message || "Failed to update announcement",
         type: "error",
       });
@@ -120,10 +120,10 @@ export const AnnouncementsPage = () => {
     try {
       await remove(deleteTargetId);
       setDeleteTargetId(null);
-      showToast({ message: "Announcement deleted", type: "success" });
+      showToast({ title: "Announcement deleted", type: "success" });
     } catch (err: any) {
       showToast({
-        message:
+        title:
           err?.response?.data?.message || "Failed to delete announcement",
         type: "error",
       });
@@ -235,7 +235,7 @@ export const AnnouncementsPage = () => {
                             {canUpdate && !expired && (
                               <Button
                                 size="sm"
-                                variant={a.isActive ? "outline" : "default"}
+                                variant={a.isActive ? "outline" : "primary"}
                                 disabled={isUpdating || isDeleting}
                                 onClick={() =>
                                   handleToggleActive(a._id, a.isActive)

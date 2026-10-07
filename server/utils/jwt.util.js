@@ -50,7 +50,18 @@ function signRefreshToken(user, { rememberMe = false, sessionId } = {}) {
 }
 
 function verifyAccessToken(token) {
-  return jwt.verify(token, ACCESS_SECRET);
+  const decoded = jwt.verify(token, ACCESS_SECRET);
+  // Admin access tokens have no customer or temporary/refresh-token purpose.
+  // Reject other token classes even when deployments share signing secrets.
+  if (
+    !decoded ||
+    typeof decoded !== "object" ||
+    decoded.type !== undefined ||
+    decoded.tokenType !== undefined
+  ) {
+    throw new jwt.JsonWebTokenError("Invalid administrator access token type");
+  }
+  return decoded;
 }
 
 function verifyRefreshToken(token) {
@@ -137,7 +148,7 @@ function signCustomerRefreshToken(customer, { sessionId } = {}) {
 
 function verifyCustomerAccessToken(token) {
   const decoded = jwt.verify(token, CUSTOMER_ACCESS_SECRET);
-  if (decoded.type !== "customer") {
+  if (decoded.type !== "customer" || decoded.tokenType !== undefined) {
     const err = new Error("Invalid customer token type");
     err.name = "JsonWebTokenError";
     throw err;
