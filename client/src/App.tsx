@@ -329,6 +329,14 @@ const App = () => (
                             }
                           />
                           <Route
+                            path="/deals/:dealId/edit"
+                            element={
+                              <RequirePermission permission="promotions.update">
+                                <CreateDealPage />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
                             path="/discounts"
                             element={
                               <RequirePermission permission="promotions.read">

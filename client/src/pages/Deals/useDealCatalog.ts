@@ -5,12 +5,15 @@ import type { VariantSearchItem } from "@/context/Discounts";
 export function useDealCatalog() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
-  const [inStock, setInStock] = useState(false);
+  const [pageSize, setPageSize] = useState(20);
+  const [category, setCategory] = useState("");
+  const [stock, setStock] = useState("all");
+  const [sort, setSort] = useState("newest");
+  const [categories, setCategories] = useState<string[]>([]);
   const [results, setResults] = useState<VariantSearchItem[]>([]);
   const [pagination, setPagination] = useState({
     page: 1,
-    pageSize: 8,
+    pageSize: 20,
     total: 0,
     totalPages: 1,
   });
@@ -23,12 +26,13 @@ export function useDealCatalog() {
       setError(null);
       try {
         const res = await api.get("/admin/deals/catalog", {
-          params: { q: query, page, pageSize, inStock },
+          params: { q: query, page, pageSize, category, stock, sort },
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
         setResults(res.data.data.variants);
         setPagination(res.data.data.pagination);
+        setCategories(res.data.data.filters?.categories || []);
       } catch (err: unknown) {
         if (controller.signal.aborted) return;
         setResults([]);
@@ -43,7 +47,7 @@ export function useDealCatalog() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, page, pageSize, inStock]);
+  }, [query, page, pageSize, category, stock, sort]);
   return {
     query,
     setQuery: (value: string) => {
@@ -54,11 +58,22 @@ export function useDealCatalog() {
     setPage,
     pageSize,
     setPageSize,
-    inStock,
-    setInStock: (value: boolean) => {
-      setInStock(value);
+    category,
+    setCategory: (value: string) => {
+      setCategory(value);
       setPage(1);
     },
+    stock,
+    setStock: (value: string) => {
+      setStock(value);
+      setPage(1);
+    },
+    sort,
+    setSort: (value: string) => {
+      setSort(value);
+      setPage(1);
+    },
+    categories,
     results,
     pagination,
     loading,

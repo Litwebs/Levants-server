@@ -1,13 +1,14 @@
 import {
   type ChangeEvent,
-  type CSSProperties,
   type DragEvent,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,16 +16,22 @@ import {
   Check,
   Info,
   PoundSterling,
-  Sparkles,
   Store,
   Upload,
   X,
 } from "lucide-react";
-import { Badge, Button, Input } from "@/components/common";
+import { Button, Input, Toggle } from "@/components/common";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/common/Toast";
-import { Switch } from "@/components/ui/switch";
-import { createDeal, type DealDraft } from "@/context/Deals";
+import {
+  createDeal,
+  getDeal,
+  updateDeal,
+  type Deal,
+  type DealDraft,
+} from "@/context/Deals";
 import { DealProductPicker } from "./DealProductPicker";
+import { DealStorefrontPreview } from "./DealStorefrontPreview";
 import { navigateWithDealTransition } from "./dealNavigation";
 import {
   createEmptyDealDraft,
@@ -43,7 +50,16 @@ type FieldErrors = Partial<
     string
   >
 >;
-const steps = ["Contents", "Details", "Pricing", "Publish"];
+const steps = ["Contents", "Details & Pricing", "Publish"];
+
+const localDateTime = (value?: string | null) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+};
 
 const apiError = (error: unknown) => {
   if (error && typeof error === "object" && "response" in error) {
@@ -59,6 +75,8 @@ const apiError = (error: unknown) => {
 
 export function CreateDealPage() {
   const navigate = useNavigate();
+  const { dealId } = useParams<{ dealId: string }>();
+  const editing = Boolean(dealId);
   const { showToast } = useToast();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -68,26 +86,71 @@ export function CreateDealPage() {
   const [slugEdited, setSlugEdited] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(editing);
   const [dragging, setDragging] = useState(false);
+  const [imageChanged, setImageChanged] = useState(false);
+  const initialState = useRef("");
   const totals = useMemo(
     () => dealTotals(items, draft.packagePrice),
     [items, draft.packagePrice],
   );
-  const dirty = Boolean(
-    draft.name ||
-      draft.description ||
-      draft.packagePrice ||
-      draft.image ||
-      items.length ||
-      draft.startsAt ||
-      draft.endsAt ||
-      draft.isFeatured ||
-      !draft.isActive,
-  );
+  const serializedState = JSON.stringify({ draft, items });
+  const dirty = initialState.current
+    ? serializedState !== initialState.current
+    : Boolean(draft.name || draft.description || draft.packagePrice || draft.image || items.length);
+
+  const populateDeal = useCallback((deal: Deal) => {
+    const nextDraft: DealFormDraft = {
+      name: deal.name || "",
+      slug: deal.slug || "",
+      description: deal.description || "",
+      image: deal.image?.url || deal.imageUrl || "",
+      packagePrice: String(deal.packagePrice ?? ""),
+      isActive: Boolean(deal.isActive),
+      isFeatured: Boolean(deal.isFeatured),
+      startsAt: localDateTime(deal.startsAt),
+      endsAt: localDateTime(deal.endsAt),
+      sortOrder: String(deal.sortOrder ?? 0),
+    };
+    const nextItems: SelectedDealItem[] = (deal.items || []).map((item) => ({
+      variantId: item.variantId,
+      variantName: item.variant?.name || "Variant",
+      productName: item.product?.name || "Product",
+      category: item.product?.category,
+      sku: item.variant?.sku || "",
+      pricePence: Math.round(Number(item.variant?.price || 0) * 100),
+      quantity: Number(item.quantity || 1),
+      availableQuantity: Math.max(0, Number(item.variant?.stockQuantity || 0) - Number(item.variant?.reservedQuantity || 0)),
+      imageUrl: item.variant?.thumbnailImage?.url || item.product?.thumbnailImage?.url || "",
+    }));
+    setDraft(nextDraft);
+    setItems(nextItems);
+    setSlugEdited(true);
+    initialState.current = JSON.stringify({ draft: nextDraft, items: nextItems });
+  }, []);
 
   useEffect(() => {
-    titleRef.current?.focus();
-  }, []);
+    if (!dealId) {
+      initialState.current = JSON.stringify({ draft: createEmptyDealDraft(), items: [] });
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    void getDeal(dealId)
+      .then((deal) => { if (active) populateDeal(deal); })
+      .catch((error) => {
+        if (!active) return;
+        showToast({ type: "error", title: "Deal could not be loaded", message: apiError(error) });
+        navigateWithDealTransition(navigate, "/deals", "back");
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [dealId, navigate, populateDeal, showToast]);
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    if (!loading) titleRef.current?.focus({ preventScroll: true });
+  }, [dealId, loading]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (!dirty || saving) return;
@@ -124,7 +187,10 @@ export function CreateDealPage() {
         image: "Choose a JPG, PNG or WEBP image up to 5 MB.",
       }));
     const reader = new FileReader();
-    reader.onloadend = () => update("image", String(reader.result || ""));
+    reader.onloadend = () => {
+      setImageChanged(true);
+      update("image", String(reader.result || ""));
+    };
     reader.onerror = () =>
       setErrors((current) => ({
         ...current,
@@ -148,7 +214,7 @@ export function CreateDealPage() {
       if (!draft.slug || !isValidDealSlug(draft.slug))
         next.slug = "Use lowercase letters, numbers and single hyphens only.";
     }
-    if (!onlyStep || onlyStep === 3) {
+    if (!onlyStep || onlyStep === 2) {
       const price = Number(draft.packagePrice);
       if (!draft.packagePrice || !Number.isFinite(price) || price <= 0)
         next.packagePrice = "Enter a package price greater than £0.00.";
@@ -156,7 +222,7 @@ export function CreateDealPage() {
         next.packagePrice = "Package price must be below the combined value.";
     }
     if (
-      (!onlyStep || onlyStep === 4) &&
+      (!onlyStep || onlyStep === 3) &&
       draft.startsAt &&
       draft.endsAt &&
       new Date(draft.endsAt) <= new Date(draft.startsAt)
@@ -194,7 +260,7 @@ export function CreateDealPage() {
       name: draft.name.trim(),
       slug: draft.slug.trim(),
       description: draft.description.trim(),
-      ...(draft.image ? { image: draft.image } : {}),
+      ...(!editing || imageChanged ? { image: draft.image || null } : {}),
       items: items.map((item) => ({
         variantId: item.variantId,
         quantity: item.quantity,
@@ -209,13 +275,15 @@ export function CreateDealPage() {
     };
     setSaving(true);
     try {
-      await createDeal(body);
-      showToast({ type: "success", title: "Product package created" });
-      navigate("/deals", { replace: true });
+      if (editing && dealId) await updateDeal(dealId, body);
+      else await createDeal(body);
+      initialState.current = serializedState;
+      showToast({ type: "success", title: editing ? "Deal updated" : "Product package created" });
+      navigateWithDealTransition(navigate, "/deals", "back");
     } catch (error) {
       showToast({
         type: "error",
-        title: "Product package was not created",
+        title: editing ? "Deal was not updated" : "Product package was not created",
         message: apiError(error),
       });
     } finally {
@@ -223,8 +291,10 @@ export function CreateDealPage() {
     }
   };
 
+  if (loading) return <div className={styles.loading}>Loading deal…</div>;
+
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${step === 1 ? styles.cataloguePage : ""}`}>
       <header className={styles.pageHeader}>
         <Button
           type="button"
@@ -240,9 +310,9 @@ export function CreateDealPage() {
         <div className={styles.titleRow}>
           <div>
             <h1 ref={titleRef} tabIndex={-1}>
-              Create product package
+              {editing ? "Edit deal" : "Create product package"}
             </h1>
-            <p>Bundle products into one compelling offer.</p>
+            <p>{editing ? "Update this offer, its products and availability." : "Bundle products into one compelling offer."}</p>
           </div>
         </div>
         <div className={styles.progressRow}>
@@ -278,7 +348,7 @@ export function CreateDealPage() {
             })}
           </nav>
           <div className={styles.headerControls}>
-            <span className={styles.progressCopy}>Step {step} of 4</span>
+            <span className={styles.progressCopy}>Step {step} of 3</span>
             <div className={styles.headerActions}>
               {step > 1 && (
                 <Button
@@ -292,18 +362,14 @@ export function CreateDealPage() {
                   Back
                 </Button>
               )}
-              {step < 4 ? (
+              {step < 3 ? (
                 <Button
                   type="button"
                   size="sm"
                   rightIcon={<ArrowRight />}
                   onClick={next}
                 >
-                  {step === 1
-                    ? "Continue to details"
-                    : step === 2
-                      ? "Set pricing"
-                      : "Review & publish"}
+                  {step === 1 ? "Details & pricing" : "Review & publish"}
                 </Button>
               ) : (
                 <Button
@@ -313,7 +379,7 @@ export function CreateDealPage() {
                   onClick={() => void submit()}
                   isLoading={saving}
                 >
-                  Create product package
+                  {editing ? "Save changes" : "Create product package"}
                 </Button>
               )}
             </div>
@@ -325,6 +391,7 @@ export function CreateDealPage() {
         disabled={saving}
         className={`${styles.workspace} ${step === 1 ? styles.catalogueWorkspace : ""}`}
       >
+        <div className={styles.stepPanel} key={step}>
         {step === 1 && (
           <DealProductPicker
             items={items}
@@ -336,66 +403,94 @@ export function CreateDealPage() {
           />
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <div className={styles.offerStep}>
             <div className={styles.offerForm}>
               <div className={styles.stepIntro}>
                 <div>
-                  <span className={styles.eyebrow}>Step 2</span>
-                  <h2>Shape the offer</h2>
-                  <p>
-                    Give the package a clear identity and a price customers
-                    understand.
-                  </p>
+                  <span className={styles.eyebrow}>Step 3</span>
+                  <h2>Review &amp; publish</h2>
+                  <p>Choose the package image, availability and storefront visibility.</p>
                 </div>
               </div>
-              <div className={styles.formGrid}>
-                <Input
-                  id="deal-name"
-                  label="Deal name *"
-                  value={draft.name}
-                  maxLength={140}
-                  onChange={(event) => updateName(event.target.value)}
-                  placeholder="Family Dairy Bundle"
-                  error={errors.name}
-                  aria-invalid={Boolean(errors.name)}
-                  fullWidth
-                />
-                <div className={styles.slugField}>
-                  <label htmlFor="deal-slug">Storefront URL</label>
-                  <div
-                    className={`${styles.slugInput} ${errors.slug ? styles.invalid : ""}`}
-                  >
-                    <span>/deals/</span>
-                    <input
-                      id="deal-slug"
-                      value={draft.slug}
-                      onChange={(event) => {
-                        setSlugEdited(true);
-                        update("slug", event.target.value.toLowerCase());
-                      }}
-                      placeholder="family-dairy-bundle"
-                      aria-invalid={Boolean(errors.slug)}
+              <section className={styles.group}>
+                <div className={styles.groupTitle}>
+                  <CalendarDays size={19} />
+                  <div>
+                    <h3>Availability</h3>
+                    <p>Leave blank to make the package available without a schedule.</p>
+                  </div>
+                </div>
+                <div className={styles.formGrid}>
+                  <Input
+                    id="starts-at"
+                    label="Starts at"
+                    type="datetime-local"
+                    value={draft.startsAt}
+                    onChange={(event) => update("startsAt", event.target.value)}
+                    fullWidth
+                  />
+                  <Input
+                    id="ends-at"
+                    label="Ends at"
+                    type="datetime-local"
+                    min={draft.startsAt || undefined}
+                    value={draft.endsAt}
+                    onChange={(event) => update("endsAt", event.target.value)}
+                    error={errors.endsAt}
+                    aria-invalid={Boolean(errors.endsAt)}
+                    fullWidth
+                  />
+                </div>
+              </section>
+              <section className={styles.group}>
+                <div className={styles.groupTitle}>
+                  <Store size={19} />
+                  <div>
+                    <h3>Merchandising</h3>
+                    <p>Control visibility and storefront priority.</p>
+                  </div>
+                </div>
+                <div className={styles.settings}>
+                  <div className={styles.settingRow}>
+                    <label htmlFor="deal-active">
+                      <strong>Active on storefront</strong>
+                      <small>Customers can find and buy this package.</small>
+                    </label>
+                    <Toggle
+                      id="deal-active"
+                      checked={draft.isActive}
+                      onChange={(event) => update("isActive", event.target.checked)}
                     />
                   </div>
-                  <small className={errors.slug ? styles.fieldError : ""}>
-                    {errors.slug || "Generated until you edit it."}
-                  </small>
+                  <div className={styles.settingRow}>
+                    <label htmlFor="deal-featured">
+                      <strong>Feature this deal</strong>
+                      <small>Give it extra prominence on the storefront.</small>
+                    </label>
+                    <Toggle
+                      id="deal-featured"
+                      checked={draft.isFeatured}
+                      onChange={(event) => update("isFeatured", event.target.checked)}
+                    />
+                  </div>
+                  <div className={styles.settingRow}>
+                    <label htmlFor="display-order">
+                      <strong>Display order</strong>
+                      <small>Lower numbers appear first.</small>
+                    </label>
+                    <Input
+                      id="display-order"
+                      aria-label="Display order"
+                      type="number"
+                      min="0"
+                      max="9999"
+                      value={draft.sortOrder}
+                      onChange={(event) => update("sortOrder", event.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className={styles.full}>
-                  <label htmlFor="deal-description">Description</label>
-                  <textarea
-                    id="deal-description"
-                    value={draft.description}
-                    onChange={(event) =>
-                      update("description", event.target.value)
-                    }
-                    maxLength={3000}
-                    placeholder="What makes this package worth choosing?"
-                  />
-                  <small>{draft.description.length}/3000</small>
-                </div>
-              </div>
+              </section>
             </div>
             <aside className={styles.offerPreview}>
               <span className={styles.previewLabel}>Storefront preview</span>
@@ -409,6 +504,7 @@ export function CreateDealPage() {
                       variant="ghost"
                       aria-label="Remove package image"
                       onClick={() => {
+                        setImageChanged(true);
                         update("image", "");
                         if (fileRef.current) fileRef.current.value = "";
                       }}
@@ -452,48 +548,63 @@ export function CreateDealPage() {
                   }
                 />
               </div>
-              <div className={styles.previewBody}>
-                <Badge variant="success">Package deal</Badge>
-                <h3>{draft.name || "Your package name"}</h3>
-                <p>
-                  {draft.description ||
-                    "A short description will appear here for customers."}
-                </p>
-                <div>
-                  <strong>
-                    {totals.packagePricePence > 0
-                      ? formatPence(totals.packagePricePence)
-                      : "Set package price"}
-                  </strong>
-                  {totals.packagePricePence > 0 &&
-                    totals.originalValuePence > 0 && (
-                      <span>{formatPence(totals.originalValuePence)}</span>
-                    )}
-                </div>
-                <small>
-                  {totals.totalUnits} item{totals.totalUnits === 1 ? "" : "s"}{" "}
-                  across {totals.uniqueVariants} variant
-                  {totals.uniqueVariants === 1 ? "" : "s"}
-                </small>
-              </div>
-              {errors.image && (
-                <div className={styles.fieldError}>{errors.image}</div>
-              )}
+              {errors.image && <div className={styles.fieldError}>{errors.image}</div>}
+              <DealStorefrontPreview draft={draft} items={items} />
             </aside>
           </div>
         )}
 
-        {step === 3 && (
+        {step === 2 && (
           <div className={styles.pricingStep}>
             <div className={styles.pricingEditor}>
               <div className={styles.stepIntro}>
                 <div>
-                  <span className={styles.eyebrow}>Step 3</span>
-                  <h2>Price the package</h2>
+                  <span className={styles.eyebrow}>Step 2</span>
+                  <h2>Describe and price your package</h2>
                   <p>
-                    Choose a compelling price and see the customer value update
-                    instantly.
+                    Add the offer details and choose the price customers will pay.
                   </p>
+                </div>
+              </div>
+              <div className={styles.formGrid}>
+                <Input
+                  id="deal-name"
+                  label="Deal name *"
+                  autoFocus
+                  value={draft.name}
+                  maxLength={140}
+                  onChange={(event) => updateName(event.target.value)}
+                  placeholder="Family Dairy Bundle"
+                  error={errors.name}
+                  aria-invalid={Boolean(errors.name)}
+                  fullWidth
+                />
+                <Input
+                  id="deal-slug"
+                  label="Storefront URL *"
+                  value={draft.slug}
+                  onChange={(event) => {
+                    setSlugEdited(true);
+                    update("slug", event.target.value.toLowerCase());
+                  }}
+                  placeholder="family-dairy-bundle"
+                  error={errors.slug}
+                  hint="Appears after /deals/ and is generated until you edit it."
+                  aria-invalid={Boolean(errors.slug)}
+                  fullWidth
+                />
+                <div className={styles.full}>
+                  <label htmlFor="deal-description">Description</label>
+                  <Textarea
+                    id="deal-description"
+                    value={draft.description}
+                    onChange={(event) =>
+                      update("description", event.target.value)
+                    }
+                    maxLength={3000}
+                    placeholder="What makes this package worth choosing?"
+                  />
+                  <small>{draft.description.length}/3000</small>
                 </div>
               </div>
               <div className={styles.pricingInputBlock}>
@@ -511,7 +622,6 @@ export function CreateDealPage() {
                   error={errors.packagePrice}
                   aria-invalid={Boolean(errors.packagePrice)}
                   fullWidth
-                  autoFocus
                 />
                 <div className={styles.discountPresets}>
                   <span>Quick discount</span>
@@ -561,177 +671,27 @@ export function CreateDealPage() {
                 )}
             </div>
             <aside className={styles.valuePreview}>
-              <span className={styles.previewLabel}>Customer value</span>
-              <div
-                className={styles.valueRing}
-                style={
-                  {
-                    "--discount": `${Math.min(100, totals.discountPercent) * 3.6}deg`,
-                  } as CSSProperties
-                }
-              >
-                <div>
-                  <strong>{totals.discountPercent}%</strong>
-                  <span>saving</span>
-                </div>
-              </div>
+              <span className={styles.previewLabel}>Package summary</span>
               <h3>{draft.name || "Your package"}</h3>
-              <div className={styles.valuePrice}>
-                <strong>{formatPence(totals.packagePricePence)}</strong>
-                <span>{formatPence(totals.originalValuePence)}</span>
+              <p>{totals.totalUnits} items across {totals.uniqueVariants} variants</p>
+              <div className={styles.summaryItems}>
+                {items.map((item) => (
+                  <div key={item.variantId}>
+                    <span><strong>{item.productName}</strong><small>{item.variantName} · Qty {item.quantity}</small></span>
+                    <strong>{formatPence(item.pricePence * item.quantity)}</strong>
+                  </div>
+                ))}
               </div>
-              <p>
-                {totals.totalUnits} items · {totals.uniqueVariants} variants ·
-                save {formatPence(totals.savingsPence)}
-              </p>
+              <div className={styles.reviewMoney}>
+                <span><small>Combined value</small>{formatPence(totals.originalValuePence)}</span>
+                <span><small>Package price</small>{formatPence(totals.packagePricePence)}</span>
+                <span className={styles.savings}><small>Customer saves</small>{formatPence(totals.savingsPence)} ({totals.discountPercent}%)</span>
+              </div>
             </aside>
           </div>
         )}
 
-        {step === 4 && (
-          <div className={styles.publishStep}>
-            <div className={styles.publishForm}>
-              <div className={styles.stepIntro}>
-                <div>
-                  <span className={styles.eyebrow}>Step 4</span>
-                  <h2>Choose when and where it appears</h2>
-                  <p>Review the package, set availability, then publish.</p>
-                </div>
-              </div>
-              <section className={styles.group}>
-                <div className={styles.groupTitle}>
-                  <CalendarDays size={19} />
-                  <div>
-                    <h3>Availability</h3>
-                    <p>
-                      Leave blank to make the package available without a
-                      schedule.
-                    </p>
-                  </div>
-                </div>
-                <div className={styles.formGrid}>
-                  <Input
-                    id="starts-at"
-                    label="Starts at"
-                    type="datetime-local"
-                    value={draft.startsAt}
-                    onChange={(event) => update("startsAt", event.target.value)}
-                    fullWidth
-                  />
-                  <Input
-                    id="ends-at"
-                    label="Ends at"
-                    type="datetime-local"
-                    min={draft.startsAt || undefined}
-                    value={draft.endsAt}
-                    onChange={(event) => update("endsAt", event.target.value)}
-                    error={errors.endsAt}
-                    aria-invalid={Boolean(errors.endsAt)}
-                    fullWidth
-                  />
-                </div>
-              </section>
-              <section className={styles.group}>
-                <div className={styles.groupTitle}>
-                  <Store size={19} />
-                  <div>
-                    <h3>Merchandising</h3>
-                    <p>Control visibility and storefront priority.</p>
-                  </div>
-                </div>
-                <div className={styles.settings}>
-                  <label>
-                    <span>
-                      <strong>Active on storefront</strong>
-                      <small>Customers can find and buy this package.</small>
-                    </span>
-                    <Switch
-                      checked={draft.isActive}
-                      onCheckedChange={(checked) => update("isActive", checked)}
-                      aria-label="Active on storefront"
-                    />
-                  </label>
-                  <label>
-                    <span>
-                      <strong>Feature this deal</strong>
-                      <small>Give it extra prominence on the storefront.</small>
-                    </span>
-                    <Switch
-                      checked={draft.isFeatured}
-                      onCheckedChange={(checked) =>
-                        update("isFeatured", checked)
-                      }
-                      aria-label="Featured deal"
-                    />
-                  </label>
-                  <div>
-                    <span>
-                      <strong>Display order</strong>
-                      <small>Lower numbers appear first.</small>
-                    </span>
-                    <Input
-                      id="display-order"
-                      aria-label="Display order"
-                      type="number"
-                      min="0"
-                      max="9999"
-                      value={draft.sortOrder}
-                      onChange={(event) =>
-                        update("sortOrder", event.target.value)
-                      }
-                    />
-                  </div>
-                </div>
-              </section>
-            </div>
-            <aside className={styles.review}>
-              <div className={styles.reviewHeader}>
-                <span>
-                  <Sparkles size={17} /> Ready to publish
-                </span>
-                <Badge variant={draft.isActive ? "success" : "default"}>
-                  {draft.isActive ? "Active" : "Inactive"}
-                </Badge>
-              </div>
-              <h3>{draft.name}</h3>
-              <p>
-                {items.length} variants · {totals.totalUnits} total items
-              </p>
-              <div className={styles.reviewMoney}>
-                <span>
-                  <small>Combined value</small>
-                  {formatPence(totals.originalValuePence)}
-                </span>
-                <span>
-                  <small>Package price</small>
-                  {formatPence(totals.packagePricePence)}
-                </span>
-                <span className={styles.savings}>
-                  <small>Customer saves</small>
-                  {formatPence(totals.savingsPence)} ({totals.discountPercent}%)
-                </span>
-              </div>
-              <div className={styles.reviewChecklist}>
-                <span>
-                  <Check size={15} /> Products selected
-                </span>
-                <span>
-                  <Check size={15} /> Offer details complete
-                </span>
-                <span>
-                  <Check size={15} />{" "}
-                  {draft.isActive
-                    ? "Visible after publishing"
-                    : "Saved as inactive"}
-                </span>
-              </div>
-              <div className={styles.reviewNote}>
-                <Info size={15} /> You can edit, deactivate or archive this
-                package later.
-              </div>
-            </aside>
-          </div>
-        )}
+        </div>
       </fieldset>
     </div>
   );

@@ -9,7 +9,13 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { Badge, Button, Input, Select } from "@/components/common";
+import {
+  Badge,
+  Button,
+  DataTableCard,
+  Input,
+  Select,
+} from "@/components/common";
 import type { VariantSearchItem } from "@/context/Discounts";
 import { useDealCatalog as useVariantSearch } from "./useDealCatalog";
 import {
@@ -26,6 +32,11 @@ type Props = {
   error?: string;
   onChange: (items: SelectedDealItem[]) => void;
 };
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50].map((size) => ({
+  value: String(size),
+  label: `${size} / page`,
+}));
 
 const Thumb = ({ src, name }: { src?: string; name: string }) =>
   src ? (
@@ -48,8 +59,13 @@ export function DealProductPicker({ items, error, onChange }: Props) {
     setPage,
     pageSize,
     setPageSize,
-    inStock,
-    setInStock,
+    category,
+    setCategory,
+    stock,
+    setStock,
+    sort,
+    setSort,
+    categories,
     pagination,
   } = useVariantSearch();
   const [contentsOpen, setContentsOpen] = useState(true);
@@ -102,11 +118,6 @@ export function DealProductPicker({ items, error, onChange }: Props) {
       }),
     );
 
-  const firstResult = pagination.total
-    ? (page - 1) * pagination.pageSize + 1
-    : 0;
-  const lastResult = Math.min(page * pagination.pageSize, pagination.total);
-
   return (
     <div className={styles.productStep} aria-invalid={Boolean(error)}>
       <div className={styles.stepIntro}>
@@ -123,17 +134,12 @@ export function DealProductPicker({ items, error, onChange }: Props) {
         </Badge>
       </div>
 
+      <div className={styles.productWorkspace}>
       <div
         className={`${styles.contents} ${!items.length ? styles.contentsEmptyState : ""} ${error ? styles.contentsError : ""}`}
         ref={selectedRef}
       >
-        <Button
-          type="button"
-          variant="ghost"
-          className={styles.contentsToggle}
-          onClick={() => items.length && setContentsOpen((open) => !open)}
-          aria-expanded={items.length ? contentsOpen : undefined}
-        >
+        <div className={styles.basketHeader}>
           <span className={styles.basketIdentity}>
             <span className={styles.basketIcon}>
               <PackageOpen size={19} />
@@ -148,7 +154,7 @@ export function DealProductPicker({ items, error, onChange }: Props) {
             </span>
           </span>
           {items.length > 0 && (
-            <span className={styles.basketMetrics}>
+            <div className={styles.basketMetrics}>
               <span>
                 <small>Units</small>
                 <strong>{totals.totalUnits}</strong>
@@ -163,15 +169,22 @@ export function DealProductPicker({ items, error, onChange }: Props) {
                   {Number.isFinite(packageCapacity) ? packageCapacity : "—"}
                 </strong>
               </span>
-            </span>
+            </div>
           )}
-          {items.length > 0 &&
-            (contentsOpen ? (
-              <ChevronUp size={18} />
-            ) : (
-              <ChevronDown size={18} />
-            ))}
-        </Button>
+          {items.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className={styles.basketToggle}
+              onClick={() => setContentsOpen((open) => !open)}
+              aria-expanded={contentsOpen}
+              aria-label={contentsOpen ? "Collapse package basket" : "Expand package basket"}
+            >
+              {contentsOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            </Button>
+          )}
+        </div>
         {error && (
           <div className={styles.fieldError} role="alert">
             {error}
@@ -211,7 +224,8 @@ export function DealProductPicker({ items, error, onChange }: Props) {
                   >
                     −
                   </Button>
-                  <input
+                  <Input
+                    className={styles.stepperInput}
                     type="number"
                     min="1"
                     max={Math.min(999, item.availableQuantity || 999)}
@@ -274,46 +288,40 @@ export function DealProductPicker({ items, error, onChange }: Props) {
             fullWidth
             autoFocus
           />
-          <div className={styles.filterGroup} aria-label="Stock filter">
-            <Button
-              type="button"
-              size="sm"
-              variant={!inStock ? "primary" : "ghost"}
-              className={!inStock ? styles.filterActive : ""}
-              aria-pressed={!inStock}
-              onClick={() => setInStock(false)}
-            >
-              All products
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={inStock ? "primary" : "ghost"}
-              className={inStock ? styles.filterActive : ""}
-              aria-pressed={inStock}
-              onClick={() => setInStock(true)}
-            >
-              In stock
-            </Button>
+          <div className={styles.catalogueFilters} aria-label="Catalogue filters">
+            <Select
+              aria-label="Filter by category"
+              value={category}
+              options={[
+                { value: "", label: "All categories" },
+                ...categories.map((value) => ({ value, label: value })),
+              ]}
+              onChange={setCategory}
+            />
+            <Select
+              aria-label="Filter by stock"
+              value={stock}
+              options={[
+                { value: "all", label: "All stock" },
+                { value: "in_stock", label: "In stock" },
+                { value: "low_stock", label: "Low stock (1–5)" },
+                { value: "out_of_stock", label: "Out of stock" },
+              ]}
+              onChange={setStock}
+            />
+            <Select
+              aria-label="Sort catalogue"
+              value={sort}
+              options={[
+                { value: "newest", label: "Newest" },
+                { value: "name_asc", label: "Variant name A–Z" },
+                { value: "price_asc", label: "Price: low to high" },
+                { value: "price_desc", label: "Price: high to low" },
+                { value: "stock_desc", label: "Most stock" },
+              ]}
+              onChange={setSort}
+            />
           </div>
-        </div>
-        <div className={styles.catalogueHeading}>
-          <div>
-            <strong>
-              {hasQuery
-                ? `Results for “${query.trim()}”`
-                : "Browse your catalogue"}
-            </strong>
-            <span>
-              {pagination.total}{" "}
-              {pagination.total === 1 ? "variant" : "variants"} available
-            </span>
-          </div>
-          {pagination.total > 0 && (
-            <span>
-              Showing {firstResult}–{lastResult} of {pagination.total}
-            </span>
-          )}
         </div>
         <div
           id="catalogue-grid"
@@ -337,127 +345,114 @@ export function DealProductPicker({ items, error, onChange }: Props) {
               <strong>
                 {hasQuery
                   ? "No matching products"
-                  : inStock
+                  : stock === "in_stock"
                     ? "No products are in stock"
                     : "Your catalogue is empty"}
               </strong>
               <small>
                 {hasQuery
                   ? "Try a broader product name, category or SKU."
-                  : inStock
+                  : stock === "in_stock"
                     ? "Switch to all products to browse unavailable variants."
                     : "Create a product variant before building a package."}
               </small>
             </div>
           )}
-          {!loading && results.length > 0 && (
-            <div className={styles.productGrid}>
-              {results.map((variant) => {
-                const selected = items.some(
-                  (item) => item.variantId === variant._id,
-                );
-                const out = (variant.availableQuantity ?? 1) < 1;
-                const productName = variant.product?.name || "Product";
-                return (
-                  <article
-                    className={`${styles.productCard} ${selected ? styles.productCardSelected : ""}`}
-                    key={variant._id}
-                  >
-                    <div className={styles.productImage}>
-                      {variantImageUrl(variant) ? (
-                        <img src={variantImageUrl(variant)} alt={productName} />
-                      ) : (
-                        <span aria-label={`${productName} has no image`}>
-                          <ImageIcon size={24} />
-                        </span>
-                      )}
-                      <span
-                        className={out ? styles.stockPillOut : styles.stockPill}
+          {!searchError && pagination.total > 0 && (
+            <DataTableCard
+              className={styles.catalogueTableCard}
+              tableAreaClassName={styles.catalogueTableArea}
+              tableWrapperClassName={styles.catalogueTableWrap}
+              loading={loading}
+              loadingText="Loading variants…"
+              pagination={{
+                page,
+                pageSize,
+                total: pagination.total,
+                totalPages: pagination.totalPages,
+                setPage,
+                setPageSize,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
+                loading,
+              }}
+            >
+              <table className={styles.catalogueTable}>
+                <thead>
+                  <tr>
+                    <th scope="col">Product &amp; variant</th>
+                    <th scope="col">Category</th>
+                    <th scope="col">SKU</th>
+                    <th scope="col">Price</th>
+                    <th scope="col">Available</th>
+                    <th scope="col" className={styles.actionColumn}>Add</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.map((variant) => {
+                    const selected = items.some(
+                      (item) => item.variantId === variant._id,
+                    );
+                    const out = (variant.availableQuantity ?? 1) < 1;
+                    const productName = variant.product?.name || "Product";
+                    return (
+                      <tr
+                        className={selected ? styles.catalogueRowSelected : ""}
+                        key={variant._id}
                       >
-                        {out
-                          ? "Out of stock"
-                          : `${variant.availableQuantity ?? "—"} in stock`}
-                      </span>
-                      {selected && (
-                        <span className={styles.selectedPill}>
-                          <Check size={13} /> Selected
-                        </span>
-                      )}
-                    </div>
-                    <div className={styles.productCardBody}>
-                      <span className={styles.productCategory}>
-                        {variant.product?.category || "Uncategorised"}
-                      </span>
-                      <h3>{productName}</h3>
-                      <p>{variant.name}</p>
-                      <div className={styles.productMeta}>
-                        <span>SKU {variant.sku || "—"}</span>
-                        <strong>
+                        <td>
+                          <div className={styles.tableProduct}>
+                            <Thumb
+                              src={variantImageUrl(variant)}
+                              name={productName}
+                            />
+                            <span>
+                              <strong>{productName}</strong>
+                              <small>{variant.name}</small>
+                            </span>
+                          </div>
+                        </td>
+                        <td>{variant.product?.category || "Uncategorised"}</td>
+                        <td className={styles.tableSku}>{variant.sku || "—"}</td>
+                        <td className={styles.tablePrice}>
                           {formatPence(
                             Math.round(Number(variant.price || 0) * 100),
                           )}
-                        </strong>
-                      </div>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className={
-                        selected ? styles.cardButtonSelected : styles.cardButton
-                      }
-                      disabled={out || (!selected && items.length >= 30)}
-                      aria-label={
-                        selected
-                          ? `View selected ${variant.name}`
-                          : `Add variant ${variant.name}`
-                      }
-                      leftIcon={selected ? <Check /> : <Plus />}
-                      onClick={() => add(variant)}
-                    >
-                      {selected ? "Added to package" : "Add to package"}
-                    </Button>
-                  </article>
-                );
-              })}
-            </div>
+                        </td>
+                        <td>
+                          <span
+                            className={out ? styles.stockTextOut : styles.stockText}
+                          >
+                            {out
+                              ? "Out of stock"
+                              : `${variant.availableQuantity ?? "—"} in stock`}
+                          </span>
+                        </td>
+                        <td className={styles.actionColumn}>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={selected ? "ghost" : "outline"}
+                            disabled={out || (!selected && items.length >= 30)}
+                            aria-label={
+                              selected
+                                ? `View selected ${variant.name}`
+                                : `Add variant ${variant.name}`
+                            }
+                            leftIcon={selected ? <Check /> : <Plus />}
+                            onClick={() => add(variant)}
+                          >
+                            {selected ? "Selected" : "Add"}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </DataTableCard>
           )}
         </div>
-        {!searchError && pagination.total > 0 && (
-          <div className={styles.cataloguePagination}>
-            <Select
-              aria-label="Products per page"
-              value={String(pageSize)}
-              options={[8, 16, 24].map((size) => ({
-                value: String(size),
-                label: `${size} per page`,
-              }))}
-              onChange={(value) => {
-                setPageSize(Number(value));
-                setPage(1);
-              }}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading || page <= 1}
-              onClick={() => setPage(page - 1)}
-            >
-              Previous
-            </Button>
-            <span>
-              Page {page} of {pagination.totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={loading || page >= pagination.totalPages}
-              onClick={() => setPage(page + 1)}
-            >
-              Next
-            </Button>
-          </div>
-        )}
+      </div>
       </div>
     </div>
   );

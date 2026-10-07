@@ -14,13 +14,26 @@ const unwrap = <T>(payload: unknown): T | null => {
   return "data" in envelope ? (envelope.data ?? null) : (payload as T);
 };
 
-export async function listDeals(params?: { page?: number; pageSize?: number }) {
+export async function listDeals(params?: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+  sort?: string;
+}) {
   const res = await api.get("/admin/deals", { params });
   const data = unwrap<{ deals: Deal[] }>(res.data);
   return {
     deals: data?.deals ?? [],
     meta: (res.data as Envelope<unknown>)?.meta,
   };
+}
+
+export async function getDeal(id: string) {
+  const res = await api.get("/admin/deals/" + id);
+  const data = unwrap<{ deal: Deal }>(res.data);
+  if (!data?.deal) throw new Error("Failed to load deal");
+  return data.deal;
 }
 
 export async function createDeal(body: DealDraft) {
