@@ -1676,6 +1676,43 @@ describe("Portal Subscriptions", () => {
     notifSpy.mockRestore();
   });
 
+  it("auto-resume respects an active portal worker and rechecks an extended pause after the candidate read", async () => {
+    const sub = await createBasicSubscription();
+    const due = new Date(Date.now() - 60000);
+    await Subscription.findByIdAndUpdate(sub._id, { status: "paused", pausedUntil: due });
+    const guard = require("../../services/customerPortal/subscriptionMutation.service").executeSubscriptionConcurrencyGuard;
+    stripe.subscriptions.update.mockClear();
+    await guard({ customerId: customer._id, subscriptionId: sub._id, operationId: "long-portal-edit", execute: async () => {
+      expect(await subscriptionService.AutoResumePausedSubscriptions({ subscriptionId: sub._id })).toBe(0);
+      expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+      return { success: true };
+    } });
+    const original = Subscription.find;
+    const future = new Date(Date.now() + 7 * 86400000);
+    const queued = jest.spyOn(Subscription, "find").mockImplementation(async function (filter, ...rest) {
+      const candidates = await original.call(this, filter, ...rest);
+      if (filter.status === "paused") await Subscription.updateOne({ _id: sub._id }, { $set: { pausedUntil: future } });
+      return candidates;
+    });
+    try {
+      expect(await subscriptionService.AutoResumePausedSubscriptions({ subscriptionId: sub._id })).toBe(0);
+      expect((await Subscription.findById(sub._id)).pausedUntil).toEqual(future);
+      expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+    } finally { queued.mockRestore(); }
+  });
+
+  it("a long-running operation cannot reenter its own active subscription lock", async () => {
+    const sub = await createBasicSubscription();
+    const guard = require("../../services/customerPortal/subscriptionMutation.service").executeSubscriptionConcurrencyGuard;
+    await guard({ customerId: customer._id, subscriptionId: sub._id, operationId: "same-operation", execute: async () => {
+      const second = jest.fn(async () => ({ success: true }));
+      const retried = await guard({ customerId: customer._id, subscriptionId: sub._id, operationId: "same-operation", execute: second });
+      expect(retried.data.subscriptionBusy).toBe(true);
+      expect(second).not.toHaveBeenCalled();
+      return { success: true };
+    } });
+  });
+
   it("auto-resume isolates a Stripe failure and continues with other customers", async () => {
     const first = await createBasicSubscription();
     const second = await createBasicSubscription();

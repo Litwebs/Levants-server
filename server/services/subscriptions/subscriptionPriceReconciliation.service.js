@@ -3,6 +3,7 @@
 const Subscription = require("../../models/subscription.model");
 const stripe = require("../../utils/stripe.util");
 const logger = require("../../utils/logger.util");
+const { withSubscriptionLifecycleLock } = require("./subscriptionLifecycleLock.service");
 
 const STRIPE_INTERVALS = {
   weekly: { interval: "week", interval_count: 1 },
@@ -152,7 +153,21 @@ function isSubscriptionRecord(value) {
  * reuses the same Stripe idempotency keys, so a lost response cannot create a
  * second logical price transition.
  */
-async function reconcileSubscriptionPrice(subscriptionOrId) {
+async function reconcileSubscriptionPrice(subscriptionOrId, { lockHeld = false } = {}) {
+  if (lockHeld) return reconcileSubscriptionPriceUnlocked(subscriptionOrId);
+  const subscriptionId = isSubscriptionRecord(subscriptionOrId) ? subscriptionOrId._id : subscriptionOrId;
+  try {
+    // Batch snapshots can be stale after a portal edit. Acquire first, then
+    // reload so an older reconciliation cannot restore the old Stripe price.
+    return await withSubscriptionLifecycleLock(null,
+      () => reconcileSubscriptionPriceUnlocked(subscriptionId), { subscriptionId });
+  } catch (error) {
+    // Busy work is retried by the next pass; do not save an old snapshot.
+    return { ok: false, action: "pending", pending: true, message: error.message };
+  }
+}
+
+async function reconcileSubscriptionPriceUnlocked(subscriptionOrId) {
   const subscription = isSubscriptionRecord(subscriptionOrId)
     ? subscriptionOrId
     : await Subscription.findById(subscriptionOrId);

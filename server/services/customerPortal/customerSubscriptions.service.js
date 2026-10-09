@@ -1,6 +1,7 @@
 "use strict";
 
 const mongoose = require("mongoose");
+const { withSubscriptionLifecycleLock } = require("../subscriptions/subscriptionLifecycleLock.service");
 const { assertAddOnFulfillmentEligible } = require("./subscriptionAddOnFulfillment.service");
 const { prepareSingleDayTransition } = require("./subscriptionSingleDayTransition.service");
 const { settleDetachedAddOns } = require("./subscriptionDetachedAddOnSettlement.service");
@@ -890,13 +891,20 @@ async function AutoResumePausedSubscriptions({
 
   for (const subscription of pausedSubscriptions) {
     try {
-      await activatePausedSubscription(subscription, {
-        notificationType: "subscription_auto_resumed",
-        notificationTitle: "Subscription resumed automatically",
-        notificationMessage:
-          "Your pause period has ended, so your subscription has resumed automatically.",
-      });
-      resumed += 1;
+      const activated = await withSubscriptionLifecycleLock(null, async () => {
+        // The candidate may have been cancelled or its pause extended while
+        // this job waited. Use the current state after acquiring the lock.
+        const fresh = await Subscription.findOne({ ...filter, _id: subscription._id });
+        if (!fresh || fresh.isCancellationScheduled) return false;
+        await activatePausedSubscription(fresh, {
+          notificationType: "subscription_auto_resumed",
+          notificationTitle: "Subscription resumed automatically",
+          notificationMessage:
+            "Your pause period has ended, so your subscription has resumed automatically.",
+        });
+        return true;
+      }, { subscriptionId: subscription._id, ignoreMissing: true });
+      if (activated) resumed += 1;
     } catch (error) {
       // A declined card or a transient Stripe failure for one customer must not
       // prevent other due subscriptions from resuming. The failed subscription
@@ -942,35 +950,26 @@ async function FinalizeScheduledCancellations({
         continue;
       }
 
-      // Cancel dependent slots first. If the subsequent conditional update
-      // fails, the candidate remains eligible and the next run safely retries.
-      await SubscriptionDelivery.updateMany(
-        {
-          subscription: candidate._id,
-          status: { $in: ["scheduled", "generated"] },
-          scheduledDate: { $gt: candidate.cancellationEffectiveAfter },
-        },
-        { $set: { status: "cancelled" } },
-      );
-
-      const updated = await Subscription.findOneAndUpdate(
-        {
-          _id: candidate._id,
-          status: "active",
-          isCancellationScheduled: true,
-          cancellationEffectiveAfter: candidate.cancellationEffectiveAfter,
-        },
-        {
-          $set: {
-            status: "cancelled",
-            cancelledAt: referenceDate,
-            isCancellationScheduled: false,
-            cancellationEffectiveAfter: null,
-            nextDeliveryDate: null,
-          },
-        },
-        { new: true },
-      );
+      const updated = await withSubscriptionLifecycleLock(null, async () => {
+        let completed;
+        await mongoose.connection.transaction(async session => {
+          const current = await Subscription.findOne({ ...filter, _id: candidate._id,
+            cancellationEffectiveAfter: candidate.cancellationEffectiveAfter }).session(session);
+          if (!current) return;
+          await SubscriptionDelivery.updateMany({ subscription: current._id,
+            status: { $in: ["scheduled", "generated"] },
+            scheduledDate: { $gt: current.cancellationEffectiveAfter },
+          }, { $set: { status: "cancelled" } }, { session });
+          completed = await Subscription.findOneAndUpdate({ _id: current._id,
+            status: "active", isCancellationScheduled: true,
+            cancellationEffectiveAfter: current.cancellationEffectiveAfter,
+          }, { $set: { status: "cancelled", cancelledAt: referenceDate,
+            isCancellationScheduled: false, cancellationEffectiveAfter: null, nextDeliveryDate: null },
+            $inc: { customerVersion: 1 },
+          }, { new: true, session });
+        });
+        return completed;
+      }, { subscriptionId: candidate._id, ignoreMissing: true });
       if (updated) {
         finalized += 1;
         await sendSubscriptionUpdateEmail({

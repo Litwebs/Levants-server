@@ -11,6 +11,7 @@
 
 const cron = require("node-cron");
 const Subscription = require("../models/subscription.model");
+const { withSubscriptionLifecycleLock } = require("../services/subscriptions/subscriptionLifecycleLock.service");
 const logger = require("../utils/logger.util");
 const {
   SUBSCRIPTION_TIME_ZONE,
@@ -74,8 +75,14 @@ async function ScheduleUpcomingSlots({ renewLease } = {}) {
 
     for (const sub of subscriptions) {
       try {
-        await scheduleUpcomingDeliveries(sub);
-        scheduled += 1;
+        const generated = await withSubscriptionLifecycleLock(null, async () => {
+          const current = await Subscription.findOne({ _id: sub._id, status: "active",
+            isCancellationScheduled: { $ne: true } });
+          if (!current) return false;
+          await scheduleUpcomingDeliveries(current);
+          return true;
+        }, { subscriptionId: sub._id, ignoreMissing: true });
+        if (generated) scheduled += 1;
       } catch (err) {
         logger.error(
           `[SubscriptionCron] Failed to schedule slots for ${sub.subscriptionNumber}: ${err.message}`,

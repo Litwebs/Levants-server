@@ -15,7 +15,8 @@ async function reconcileBillingForMutation(result) {
   const subscriptionId = result?.data?.subscription?._id;
   if (!result?.success || !subscriptionId) return result;
 
-  const sync = await reconcileSubscriptionPrice(subscriptionId);
+  // runMutation holds this subscription's lock through billing convergence.
+  const sync = await reconcileSubscriptionPrice(subscriptionId, { lockHeld: true });
   result.data.billingSync = {
     status: sync.ok ? "synced" : "pending",
     action: sync.action,

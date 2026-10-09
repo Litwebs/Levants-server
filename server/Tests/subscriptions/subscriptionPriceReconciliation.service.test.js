@@ -1,4 +1,7 @@
 "use strict";
+jest.mock("../../services/subscriptions/subscriptionLifecycleLock.service", () => ({
+  withSubscriptionLifecycleLock: jest.fn(async (_stripe, execute) => execute()),
+}));
 
 jest.mock("../../utils/stripe.util", () => ({
   subscriptions: {
@@ -156,6 +159,28 @@ describe("subscription recurring price reconciliation", () => {
     expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith("sub_test");
   });
 
+  test("reloads a stale batch snapshot after acquiring the shared lock", async () => {
+    const stale = makeSubscription();
+    const current = makeSubscription({ items: [{ unitPrice: 2.5, quantity: 3 }] });
+    const find = jest.spyOn(Subscription, "findById").mockResolvedValue(current);
+    stripe.subscriptions.retrieve.mockResolvedValue(remoteSubscription(remotePrice({ amount: 850 })));
+    const result = await reconcileSubscriptionPrice(stale);
+    expect(result.expected.amountMinor).toBe(850);
+    const lock = require("../../services/subscriptions/subscriptionLifecycleLock.service").withSubscriptionLifecycleLock;
+    expect(lock.mock.invocationCallOrder[0]).toBeLessThan(find.mock.invocationCallOrder[0]);
+    expect(stale.save).not.toHaveBeenCalled();
+    expect(stripe.prices.create).not.toHaveBeenCalled();
+  });
+
+  test("defers a busy price job without sending Stripe commands or saving its stale snapshot", async () => {
+    const stale = makeSubscription();
+    const lock = require("../../services/subscriptions/subscriptionLifecycleLock.service").withSubscriptionLifecycleLock;
+    lock.mockRejectedValueOnce(Object.assign(new Error("busy"), { statusCode: 503 }));
+    expect(await reconcileSubscriptionPrice(stale)).toMatchObject({ ok: false, action: "pending" });
+    expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
+    expect(stale.save).not.toHaveBeenCalled();
+  });
+
   test("matching remote price clears only the reliability retry marker and preserves deferred sync state", async () => {
     const subscription = makeSubscription({
       pendingPriceSync: true,
@@ -166,7 +191,7 @@ describe("subscription recurring price reconciliation", () => {
       remoteSubscription(remotePrice({ id: "price_remote", amount: 600 })),
     );
 
-    const result = await reconcileSubscriptionPrice(subscription);
+    const result = await reconcileSubscriptionPrice(subscription, { lockHeld: true });
 
     expect(result).toMatchObject({
       ok: true,
@@ -192,7 +217,7 @@ describe("subscription recurring price reconciliation", () => {
     stripe.subscriptions.update.mockResolvedValue({ id: "sub_test" });
     stripe.prices.update.mockResolvedValue({ id: "price_old", active: false });
 
-    const failed = await reconcileSubscriptionPrice(subscription);
+    const failed = await reconcileSubscriptionPrice(subscription, { lockHeld: true });
 
     expect(failed).toMatchObject({
       ok: false,
@@ -203,7 +228,7 @@ describe("subscription recurring price reconciliation", () => {
     expect(subscription.pendingPriceSync).toBe(false);
     expect(subscription.stripePriceId).toBe("price_old");
 
-    const repaired = await reconcileSubscriptionPrice(subscription);
+    const repaired = await reconcileSubscriptionPrice(subscription, { lockHeld: true });
 
     expect(repaired).toMatchObject({
       ok: true,
@@ -243,8 +268,8 @@ describe("subscription recurring price reconciliation", () => {
     stripe.subscriptions.update.mockResolvedValue({ id: "sub_test" });
     stripe.prices.update.mockResolvedValue({ id: "price_old", active: false });
 
-    const first = await reconcileSubscriptionPrice(subscription);
-    const second = await reconcileSubscriptionPrice(subscription);
+    const first = await reconcileSubscriptionPrice(subscription, { lockHeld: true });
+    const second = await reconcileSubscriptionPrice(subscription, { lockHeld: true });
 
     expect(first.action).toBe("repaired");
     expect(second.action).toBe("synced");
@@ -261,6 +286,9 @@ describe("subscription recurring price reconciliation", () => {
         stripeSubscriptionId: `sub_page_${index + 1}`,
       }),
     );
+
+    jest.spyOn(Subscription, "findById").mockImplementation(async id =>
+      subscriptions.find(subscription => String(subscription._id) === String(id)));
 
     jest.spyOn(Subscription, "find").mockImplementation((filter) => {
       let startIndex = 0;

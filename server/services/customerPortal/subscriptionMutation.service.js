@@ -120,8 +120,9 @@ async function claimSubscriptionMutationLock({
 
   const now = new Date();
   const staleBefore = new Date(now.getTime() - CUSTOMER_MUTATION_LEASE_MS);
-  const lockOperationId =
-    operationId || `legacy:${crypto.randomUUID()}`;
+  // A request ID identifies a logical operation, not the worker lease. A
+  // retry of the same operation must not enter while its first worker lives.
+  const lockOperationId = `portal:${crypto.randomUUID()}`;
   const activeLock = current.customerMutationLock;
   const lockIsFresh =
     activeLock?.lockedAt &&
@@ -129,8 +130,7 @@ async function claimSubscriptionMutationLock({
 
   if (
     lockIsFresh &&
-    activeLock.operationId &&
-    activeLock.operationId !== lockOperationId
+    activeLock.operationId
   ) {
     return {
       ok: false,
@@ -159,7 +159,6 @@ async function claimSubscriptionMutationLock({
             { customerMutationLock: null },
             { customerMutationLock: { $exists: false } },
             { "customerMutationLock.lockedAt": { $lte: staleBefore } },
-            { "customerMutationLock.operationId": lockOperationId },
           ],
         },
       ],
