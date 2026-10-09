@@ -96,11 +96,12 @@ function leaseFencingPlugin(schema, { guardSubscriptionOrders = false } = {}) {
         }
         for (const subscriptionId of subscriptionIds) {
           const id = new mongoose.Types.ObjectId(String(subscriptionId));
-          const subscription = mongoose.model("Subscription").collection;
+          const subscription = (mongoose.models.Subscription || require("../models/subscription.model")).collection;
           const touched = await subscription.updateOne({ _id: id, $or: [
             { customerMutationLock: null }, { "customerMutationLock.lockedAt": { $lte: new Date(Date.now() - LEASE_MS) } },
           ] }, { $inc: { orderWriteRevision: 1 } }, { session });
-          const unfinished = await mongoose.model("SubscriptionMutation").collection.findOne({ subscription: id,
+          const mutationModel = mongoose.models.SubscriptionMutation || require("../models/subscriptionMutation.model");
+          const unfinished = await mutationModel.collection.findOne({ subscription: id,
             status: { $ne: "completed" }, $or: [{ itemIncreaseSnapshot: { $ne: null } },
               { decreaseRefundSnapshot: { $ne: null } }, { "addOnSnapshot.paymentIntent.status": { $in: ["succeeded", "processing"] } }],
           }, { session, projection: { _id: 1 } });

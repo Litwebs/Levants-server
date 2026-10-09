@@ -77,7 +77,8 @@ jest.mock("../../utils/stripe.util", () => {
     },
     paymentIntents: {
       retrieve: jest.fn(async id => ({ id, status: "succeeded", amount_received: 100000 })),
-      create: jest.fn(async () => ({
+      create: jest.fn(async params => ({
+        ...params, amount_received: params.amount,
         id: `pi_test_${++paymentIntentCounter}`,
         status: "succeeded",
       })),
@@ -4371,9 +4372,9 @@ describe("Portal Subscriptions", () => {
     const originalRetrieve = stripe.paymentIntents.retrieve.getMockImplementation();
     stripe.paymentIntents.retrieve.mockImplementation(async id => id === `pi_fulfillment_${payload.operationId}`
       ? { id, status: "succeeded", amount_received: 250, customer: customer.stripeCustomerId, currency: "gbp" } : originalRetrieve(id));
-    stripe.paymentIntents.create.mockImplementationOnce(async () => {
+    stripe.paymentIntents.create.mockImplementationOnce(async params => {
       if (failure === "dispatch") await Order.updateOne({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } });
-      return { id: `pi_fulfillment_${payload.operationId}`, status: "succeeded", amount_received: 250 };
+      return { ...params, id: `pi_fulfillment_${payload.operationId}`, status: "succeeded", amount_received: 250 };
     });
     const write = failure === "order-write-failure" ? jest.spyOn(Order.prototype, "save")
       .mockRejectedValueOnce(new Error("Injected add-on order write failure")) : null;
@@ -5226,6 +5227,28 @@ describe("Portal Subscriptions", () => {
     expect(await Subscription.countDocuments({ customer: customer._id })).toBe(0);
   });
 
+  it("retries a definitive creation decline with a saved fresh key and releases unpaid stock", async () => {
+    const payload = { operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0,
+      deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }] };
+    const send = () => request(app).post("/api/portal/subscriptions").set("Authorization", `Bearer ${accessToken}`).send(payload);
+    stripe.subscriptions.create.mockClear();
+    stripe.products.create.mockClear();
+    stripe.prices.create.mockClear();
+    stripe.subscriptions.create.mockRejectedValueOnce(Object.assign(new Error("Card declined"), { type: "StripeCardError", statusCode: 402 }));
+    const declined = await send();
+    expect(declined.status).toBe(400);
+    expect(declined.body.data.paymentOutcome).toBe("declined");
+    expect((await ProductVariant.findById(variantId)).reservedQuantity).toBe(0);
+    const originalKey = stripe.subscriptions.create.mock.calls[0][1].idempotencyKey;
+    stripe.customers.retrieve.mockResolvedValue({ invoice_settings: { default_payment_method: "pm_replacement" } });
+    expect((await send()).status).toBe(201);
+    expect(stripe.subscriptions.create.mock.calls[1][1].idempotencyKey).toBe(`${originalKey}:attempt:2`);
+    expect(stripe.subscriptions.create.mock.calls[1][0]).toEqual({ ...stripe.subscriptions.create.mock.calls[0][0],
+      default_payment_method: "pm_replacement" });
+    expect(stripe.products.create).toHaveBeenCalledTimes(1);
+    expect(stripe.prices.create).toHaveBeenCalledTimes(1);
+  });
+
   it.each([false, true])("refunds remaining captured balance after a decrease (allocations: %s)", async (withAllocations) => {
     const sub = await createBasicSubscription();
     const order = await createPaidOrderFor(sub);
@@ -5758,7 +5781,7 @@ describe("Portal Subscriptions", () => {
         currency: "gbp", status: "succeeded" }; refunds.set(result.id, result); return result;
     });
     stripe.refunds.retrieve.mockImplementation(async id => refunds.get(id));
-    const payload = { operationId: crypto.randomUUID(), quantity: 1, refundMethod: "card" };
+    const payload = { operationId: crypto.randomUUID(), quantity: 1, refundMethod: "refund" };
     const send = () => request(app).patch(`/api/portal/subscriptions/${sub._id}/items/${sub.items[0]._id}`)
       .set("Authorization", `Bearer ${accessToken}`).send(payload);
     const failure = jest.spyOn(Order.prototype, "save").mockRejectedValueOnce(new Error("local write failed"));

@@ -4,6 +4,7 @@ const Subscription = require("../../models/subscription.model");
 const Plan = require("../../models/subscriptionInvoiceFulfillment.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
+const Notification = require("../../models/customerNotification.model");
 const stripe = require("../../utils/stripe.util");
 const { listRefunds } = require("../customerPortal/subscriptionRefundSettlement.service");
 const { releaseStock } = require("./subscriptionStock.service");
@@ -76,10 +77,15 @@ async function refundUnfulfilledInvoice(invoice, reason) {
     }
     if (plan.inventoryKey) await releaseStock({ key: plan.inventoryKey, session });
     await Payment.updateOne({ subscriptionInvoiceKey: ledgerKey }, { $set: { status: "refunded", refundedAt: new Date() } }, { session });
-    await Plan.updateOne({ _id: plan._id }, { $set: { refundedAt: new Date(), completedAt: new Date() } }, { session });
+    await Plan.updateOne({ _id: plan._id }, { $set: { refundedAt: new Date(), completedAt: new Date(), legacyReviewRequired: false } }, { session });
     await Subscription.updateOne({ _id: subscription._id }, {
       $set: { status: "paused", pauseReason: "reconciliation", pausedAt: new Date() },
     }, { session });
+    await Notification.create([{
+      customer: subscription.customer._id, relatedSubscription: subscription._id,
+      type: "subscription_paused", title: "Subscription payment refunded",
+      message: `We could not fulfil this subscription payment. £${(invoice.amount_paid / 100).toFixed(2)} has been refunded to your card and your subscription is paused. Please contact support before resuming.`,
+    }], { session });
   });
   return { refundedMinor: invoice.amount_paid, stripeRefundId: refund.id };
 }

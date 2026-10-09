@@ -100,3 +100,16 @@ test("cancelling an unfulfilled order restores recurring and add-on stock exactl
   expect((await Variant.findById(variant._id)).stockQuantity).toBe(2);
   expect((await Order.findById(order._id)).subscriptionStockToRestore).toHaveLength(2);
 });
+
+test("repeated equal-price transitions without a request ID conserve inventory", async () => {
+  await Variant.updateOne({ _id: variant._id }, { $set: { stockQuantity: 4 } });
+  const order = { _id: new mongoose.Types.ObjectId(), subscription, items: [], subscriptionStockItems: [] };
+  const next = [{ variant: variant._id, quantity: 1 }];
+  const edit = async items => {
+    await mongoose.connection.transaction(session => updateRecurringInventory(order, items, { session }));
+    order.items = items;
+  };
+  await edit(next); await edit([]); await edit(next);
+  expect((await Variant.findById(variant._id)).stockQuantity).toBe(3);
+  expect(order.subscriptionStockItems).toEqual([{ variant: String(variant._id), quantity: 1 }]);
+});

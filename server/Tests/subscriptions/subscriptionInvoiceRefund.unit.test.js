@@ -7,6 +7,7 @@ const Subscription = require("../../models/subscription.model");
 const Plan = require("../../models/subscriptionInvoiceFulfillment.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
+const Notification = require("../../models/customerNotification.model");
 const stripe = require("../../utils/stripe.util");
 const { refundUnfulfilledInvoice: refund } = require("../../services/subscriptions/subscriptionInvoiceRefund.service");
 const query = value => ({ then: (ok, fail) => Promise.resolve(value).then(ok, fail),
@@ -34,6 +35,7 @@ beforeEach(() => {
   });
   jest.spyOn(Payment, "findOneAndUpdate").mockResolvedValue({});
   jest.spyOn(Payment, "updateOne").mockResolvedValue({ matchedCount: 1 });
+  jest.spyOn(Notification, "create").mockResolvedValue([]);
   jest.spyOn(mongoose.connection, "transaction").mockImplementation(async execute => execute("session"));
   stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 350 });
   stripe.refunds.list.mockResolvedValue({ data: [], has_more: false });
@@ -49,6 +51,10 @@ test("an unallocated paid invoice is refunded once and future billing is paused"
     $set: expect.objectContaining({ status: "paused", pauseReason: "reconciliation" }) }), { session: "session" });
   expect((await run()).stripeRefundId).toBe("re");
   expect(stripe.refunds.create).toHaveBeenCalledTimes(1);
+  expect(Notification.create).toHaveBeenCalledTimes(1);
+  expect(Notification.create).toHaveBeenCalledWith([expect.objectContaining({
+    relatedSubscription: "s", message: expect.stringContaining("£3.50"),
+  })], { session: "session" });
 });
 test("a lost refund response reuses the frozen request and key", async () => {
   stripe.refunds.create.mockRejectedValueOnce(new Error("response lost"));

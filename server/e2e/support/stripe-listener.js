@@ -12,6 +12,7 @@ const EVENTS = [
   "charge.refunded",
   "refund.created",
   "refund.updated",
+  "refund.failed",
 ].join(",");
 
 async function startStripeListener({ secretKey, forwardTo }) {

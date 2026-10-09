@@ -1287,11 +1287,19 @@ async function prepareSubscriptionItemIncrease({ subscription, customer, operati
   for (const edit of orderEdits) {
     const order = await Order.findById(edit.orderId).select("items").lean();
     if (!order) throw new Error("The delivery order is missing. No new payment was started.");
-    const before = new Map((order.items || []).filter(item => !item.isSubscriptionAddOn)
-      .map(item => [String(item.variant), Number(item.quantity)]));
-    for (const item of edit.items) {
-      const quantity = Number(item.quantity) - (before.get(String(item.variant)) || 0);
-      if (quantity > 0) inventoryItems.push({ variant: item.variant, quantity });
+    const totals = items => {
+      const result = new Map();
+      for (const item of items || []) {
+        if (item.isSubscriptionAddOn) continue;
+        const key = String(item.variant);
+        result.set(key, (result.get(key) || 0) + Number(item.quantity));
+      }
+      return result;
+    };
+    const before = totals(order.items);
+    for (const [variant, total] of totals(edit.items)) {
+      const quantity = total - (before.get(variant) || 0);
+      if (quantity > 0) inventoryItems.push({ variant, quantity });
     }
   }
   if (inventoryItems.length) {
@@ -1351,6 +1359,10 @@ async function completeSubscriptionItemIncrease(mutation) {
   }
   if (paymentIntent.status !== "succeeded") {
     return Response(false, "The payment has not completed. Please contact support before making another change.", { reconciliationRequired: true });
+  }
+  if (!require("./subscriptionPaymentRecovery.service").matchesFrozenCapture(paymentIntent, snapshot.chargeParams)) {
+    return Response(false, "The original payment does not match its saved customer, currency and amount. Support reconciliation is required.",
+      { reconciliationRequired: true });
   }
 
   let result;
@@ -1766,6 +1778,7 @@ async function CreateSubscription(args = {}) {
   try {
     if (await SubscriptionMutation.exists({ customer: args.customerId, status: { $ne: "completed" },
       operationId: { $ne: args.operationId }, creationSnapshot: { $ne: null },
+      "creationSnapshot.declined": { $ne: true },
     })) return Response(false, "An earlier subscription payment needs confirmation. Retry the original creation before starting another subscription.",
       { subscriptionBusy: true, retryable: true });
     return await require("../../utils/subscriptionLease.util").withLease({ kind: "customer",
@@ -2079,11 +2092,26 @@ async function CreateSubscriptionUnlocked({
 }
 
 async function completeSubscriptionCreation(customer, snapshot, mutation) {
+  if (snapshot.declined) {
+    const remoteCustomer = await stripe.customers.retrieve(customer.stripeCustomerId);
+    const defaultMethod = remoteCustomer?.invoice_settings?.default_payment_method;
+    if (!defaultMethod) return Response(false, "Please add a default card first", { paymentOutcome: "declined" });
+    const next = { ...snapshot, declined: false, startedAt: new Date(subscriptionClock.now()),
+      stripeSubscription: { ...snapshot.stripeSubscription,
+        default_payment_method: typeof defaultMethod === "string" ? defaultMethod : defaultMethod.id },
+      subscriptionAttempt: Number(snapshot.subscriptionAttempt || 1) + 1 };
+    const saved = await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { creationSnapshot: next } });
+    if (!saved.matchedCount) throw new Error("The replacement card attempt could not be saved.");
+    Object.assign(snapshot, next);
+  }
   if (snapshot.inventoryKey) {
     try { await require("../subscriptions/subscriptionStock.service").reserveStock({ key: snapshot.inventoryKey,
       subscriptionId: snapshot.subscription._id, items: snapshot.subscription.items }); }
     catch (error) {
       if (error.code !== "SUBSCRIPTION_OUT_OF_STOCK") throw error;
+      if (snapshot.remotePrice || snapshot.remoteSubscription) return Response(false,
+        "The original subscription inventory needs reconciliation before its payment can be retried.", { reconciliationRequired: true });
+      await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { creationSnapshot: null } });
       return Response(false, error.message, { paymentOutcome: "not_charged" });
     }
   }
@@ -2118,7 +2146,7 @@ async function completeSubscriptionCreation(customer, snapshot, mutation) {
     return value;
   };
   const options = (step) => snapshot.operationId
-    ? { idempotencyKey: `portal-subscription:${customer._id}:${snapshot.operationId}:${step}` }
+    ? { idempotencyKey: `portal-subscription:${customer._id}:${snapshot.operationId}:${step}${step === "subscription" && snapshot.subscriptionAttempt ? `:attempt:${snapshot.subscriptionAttempt}` : ""}` }
     : undefined;
   const stripeProduct = snapshot.remoteProduct || await persistRemote(
     "remoteProduct", await stripe.products.create(snapshot.product, options("product")),
@@ -2140,6 +2168,11 @@ async function completeSubscriptionCreation(customer, snapshot, mutation) {
     } catch (error) {
       if (error.type === "StripeCardError" && snapshot.inventoryKey) {
         await require("../subscriptions/subscriptionStock.service").releaseStock({ key: snapshot.inventoryKey });
+      }
+      if (error.type === "StripeCardError" && mutation) {
+        const saved = await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { "creationSnapshot.declined": true } });
+        if (!saved.matchedCount) throw new Error("The confirmed subscription decline could not be saved.");
+        return Response(false, error.message || "Your card was declined.", { paymentOutcome: "declined" });
       }
       return Response(false, error?.message || "We couldn't create your subscription", null);
     }

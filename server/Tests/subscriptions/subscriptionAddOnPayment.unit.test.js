@@ -6,8 +6,8 @@ const { recoverAddOnPayment } = require("../../services/customerPortal/subscript
 let mutation;
 beforeEach(() => {
   mutation = { _id: "m", addOnSnapshot: { startedAt: new Date(), deliveryId: "original", items: [],
-    chargeParams: { amount: 500, payment_method: "pm_original" }, idempotencyKey: "original-key" } };
-  stripe.paymentIntents.create.mockReset().mockResolvedValue({ id: "pi_original", status: "succeeded" });
+    chargeParams: { customer: "cus", currency: "gbp", amount: 500, payment_method: "pm_original" }, idempotencyKey: "original-key" } };
+  stripe.paymentIntents.create.mockReset().mockResolvedValue({ id: "pi_original", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 500 });
   stripe.paymentIntents.retrieve.mockReset();
   stripe.customers.retrieve.mockReset().mockResolvedValue({ invoice_settings: { default_payment_method: "pm_replacement" } });
   jest.spyOn(Mutation, "updateOne").mockResolvedValue({ matchedCount: 1 });
@@ -27,7 +27,7 @@ it("does not charge again when payment was recorded before fulfillment failed", 
 });
 it("retrieves a known processing intent without creating a new charge", async () => {
   mutation.addOnSnapshot.paymentIntent = { id: "pi_pending", status: "processing" };
-  stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_pending", status: "succeeded" });
+  stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_pending", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 500 });
   expect((await recoverAddOnPayment(mutation)).ok).toBe(true);
   expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
 });
@@ -38,7 +38,7 @@ it("refuses to reuse an expired key when the payment outcome is unknown", async 
 });
 it("recovers a recorded success even after the key retention window", async () => {
   mutation.addOnSnapshot.startedAt = new Date(0);
-  mutation.addOnSnapshot.paymentIntent = { id: "pi_original", status: "succeeded" };
+  mutation.addOnSnapshot.paymentIntent = { id: "pi_original", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 500 };
   expect((await recoverAddOnPayment(mutation)).ok).toBe(true);
   expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
 });
@@ -62,7 +62,7 @@ it("retries a confirmed unpaid decline with a new saved key and current card", a
   stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_declined", status: "requires_payment_method", amount_received: 0 });
   expect((await recoverAddOnPayment(mutation)).ok).toBe(true);
   expect(stripe.paymentIntents.create).toHaveBeenCalledWith(
-    { amount: 500, payment_method: "pm_replacement" }, { idempotencyKey: "original-key:retry:2" });
+    { customer: "cus", currency: "gbp", amount: 500, payment_method: "pm_replacement" }, { idempotencyKey: "original-key:retry:2" });
   expect(mutation.addOnSnapshot.deliveryId).toBe("original");
   expect(Mutation.updateOne.mock.invocationCallOrder[0]).toBeLessThan(stripe.paymentIntents.create.mock.invocationCallOrder[0]);
 });
@@ -89,3 +89,10 @@ it("reports a confirmed unpaid decline as safe to replace", async () => {
   } });
   expect((await recoverAddOnPayment(mutation)).paymentOutcome).toBe("declined");
 });
+
+it.each([{ customer: "foreign" }, { currency: "usd" }, { amount_received: 499 }])(
+  "rejects a successful add-on payment that differs from the saved purchase: %j", async mismatch => {
+    stripe.paymentIntents.create.mockResolvedValueOnce({ id: "pi_wrong", status: "succeeded",
+      customer: "cus", currency: "gbp", amount_received: 500, ...mismatch });
+    expect((await recoverAddOnPayment(mutation)).ok).toBe(false);
+  });

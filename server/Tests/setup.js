@@ -105,7 +105,14 @@ jest.mock("stripe", () => {
       },
     },
     refunds: {
-      create: jest.fn(async () => ({ id: "re_test_789", status: "succeeded" })),
+      create: jest.fn(async params => ({ id: "re_test_789", status: "succeeded", amount: params.amount })),
+      retrieve: jest.fn(async id => ({ id, status: "succeeded" })),
+      list: jest.fn(async () => ({ data: [], has_more: false })),
+    },
+    paymentIntents: {
+      retrieve: jest.fn(async id => ({ id, status: "succeeded", amount_received: 100000, currency: "gbp", customer: "cus_test" })),
+      create: jest.fn(async params => ({ id: "pi_test_created", ...params, amount_received: params.amount, status: "succeeded" })),
+      list: jest.fn(async () => ({ data: [], has_more: false })),
     },
 
     coupons: {
@@ -157,6 +164,7 @@ beforeAll(async () => {
     require("../models/order.model").init(),
     require("../models/subscription.model").init(),
     require("../models/subscriptionDelivery.model").init(),
+    require("../models/subscriptionMutation.model").init(),
     require("../models/subscriptionInvoiceFulfillment.model").init(),
     require("../models/subscriptionStockReservation.model").init(),
     require("../models/payment.model").init(),

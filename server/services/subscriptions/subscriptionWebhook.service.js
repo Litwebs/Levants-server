@@ -751,31 +751,13 @@ async function ReconcileRecentPaidSubscriptionInvoices({
 }
 
 async function VerifySubscriptionWebhookConfiguration() {
-  const requiredEvents = [
-    "invoice.created", "invoice.voided", "invoice.marked_uncollectible",
-    "invoice.payment_succeeded",
-    "invoice.payment_failed",
-    "customer.subscription.updated",
-    "customer.subscription.deleted",
-  ];
-  const endpoints = await stripe.webhookEndpoints.list({ limit: 100 });
-  const enabled = (endpoints.data || []).filter(
-    (endpoint) => endpoint.status === "enabled",
-  );
-  const missingEvents = requiredEvents.filter(
-    (eventType) =>
-      !enabled.some(
-        (endpoint) =>
-          endpoint.enabled_events?.includes("*") ||
-          endpoint.enabled_events?.includes(eventType),
-      ),
-  );
-  if (missingEvents.length > 0) {
-    logger.error(
-      `[SubscriptionWebhook] No enabled Stripe endpoint subscribes to: ${missingEvents.join(", ")}`,
-    );
+  const { checkSubscriptionEndpoints } = require("../../utils/subscriptionWebhookConfiguration.util");
+  const endpoints = await listAllStripePages(params => stripe.webhookEndpoints.list(params), {});
+  const result = checkSubscriptionEndpoints(endpoints, process.env.STRIPE_SUBSCRIPTION_WEBHOOK_ENDPOINT_ID);
+  if (!result.ok) {
+    logger.error("[SubscriptionWebhook] Endpoint selection or required event subscriptions need review", result);
   }
-  return { ok: missingEvents.length === 0, missingEvents };
+  return result;
 }
 
 // Resolve the identity first; all state reads and writes happen after the

@@ -1,5 +1,7 @@
 "use strict";
 
+const { randomUUID } = require("crypto");
+
 const { test, expect } = require("@playwright/test");
 const {
   API_ORIGIN,
@@ -104,6 +106,7 @@ test("weekly multi-day creation picks the nearest selected weekday and keeps ste
     {
       headers: portalHeaders(token),
       data: {
+        operationId: randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: selectedDays[0],
         preferredDeliveryDays: selectedDays,

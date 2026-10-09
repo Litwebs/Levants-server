@@ -2,7 +2,7 @@
 const stripe = require("../../utils/stripe.util");
 const Mutation = require("../../models/subscriptionMutation.model");
 const clock = require("../../utils/subscriptionClock.util");
-const { findFrozenPayment } = require("./subscriptionPaymentRecovery.service");
+const { findFrozenPayment, matchesFrozenCapture } = require("./subscriptionPaymentRecovery.service");
 
 async function recoverAddOnPayment(mutation, { allowCreate = true } = {}) {
   const snapshot = mutation.addOnSnapshot;
@@ -40,6 +40,9 @@ async function recoverAddOnPayment(mutation, { allowCreate = true } = {}) {
   snapshot.paymentIntent = intent;
   if (intent.status === "requires_payment_method" && intent.amount_received === 0) {
     return { ok: false, paymentOutcome: "declined", message: "Your card was declined. Please check your funds or default card and retry." };
+  }
+  if (intent.status === "succeeded" && !matchesFrozenCapture(intent, snapshot.chargeParams)) {
+    return { ok: false, message: "The original payment does not match its saved customer, currency and amount. Support reconciliation is required." };
   }
   return intent.status === "succeeded"
     ? { ok: true, paymentIntent: intent }

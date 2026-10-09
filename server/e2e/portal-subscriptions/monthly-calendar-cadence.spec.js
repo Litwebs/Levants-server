@@ -1,5 +1,7 @@
 "use strict";
 
+const { randomUUID } = require("crypto");
+
 const { test, expect } = require("@playwright/test");
 const {
   API_ORIGIN,
@@ -58,6 +60,7 @@ test("monthly subscription schedules one selected-weekday delivery per calendar 
     {
       headers: portalHeaders(token),
       data: {
+        operationId: randomUUID(),
         frequency: "monthly",
         preferredDeliveryDay: preferredDay,
         preferredDeliveryDays: [preferredDay],

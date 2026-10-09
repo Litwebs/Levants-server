@@ -7,6 +7,10 @@ const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
 const stripe = require("../../utils/stripe.util");
 const { withLease } = require("../../utils/subscriptionLease.util");
+const Batch = require("../../models/deliveryBatch.model");
+const Route = require("../../models/route.model");
+const Stop = require("../../models/stop.model");
+const { dispatchBatch, dispatchRoute } = require("../../services/delivery/delivery.dispatch.service");
 
 let customer, subscription;
 beforeEach(async () => {
@@ -91,7 +95,7 @@ test("dispatch cannot commit across a live subscription payment lease", async ()
   const order = await Order.create({ customer: customer._id, subscription: subscription._id,
     orderType: "subscription_generated", deliveryAddress: customer.addresses[0].toObject(),
     customerInstructions: "", location: { lat: 51, lng: 0 }, deliveryDate: new Date(), deliveryStatus: "ordered",
-    items: [{ product: id(), variant: id(), name: "Milk", sku: "milk", price: 2, quantity: 1, subtotal: 2 }],
+    items: [{ product: new mongoose.Types.ObjectId(), variant: new mongoose.Types.ObjectId(), name: "Milk", sku: "milk", price: 2, quantity: 1, subtotal: 2 }],
     subtotal: 2, total: 2, amountPaid: 2, status: "paid", reservationExpiresAt: new Date() });
   await expect(Order.updateMany({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } }))
     .rejects.toMatchObject({ code: "SUBSCRIPTION_DELIVERY_BUSY" });
@@ -99,4 +103,23 @@ test("dispatch cannot commit across a live subscription payment lease", async ()
   await Subscription.collection.updateOne({ _id: subscription._id }, { $unset: { customerMutationLock: 1 } });
   await Order.updateMany({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } });
   expect((await Order.findById(order._id)).deliveryStatus).toBe("dispatched");
+});
+
+test.each(["batch", "route"])("a busy subscription rolls back the entire %s dispatch", async mode => {
+  const order = await Order.create({ customer: customer._id, subscription: subscription._id,
+    orderType: "subscription_generated", deliveryAddress: customer.addresses[0].toObject(),
+    customerInstructions: "", location: { lat: 51, lng: 0 }, deliveryDate: new Date(), deliveryStatus: "ordered",
+    items: [{ product: new mongoose.Types.ObjectId(), variant: new mongoose.Types.ObjectId(), name: "Milk", sku: "milk", price: 2, quantity: 1, subtotal: 2 }],
+    subtotal: 2, total: 2, amountPaid: 2, status: "paid", reservationExpiresAt: new Date() });
+  const batch = await Batch.create({ deliveryDate: new Date(), status: "routes_generated", orders: [order._id] });
+  const route = await Route.create({ batch: batch._id, driver: new mongoose.Types.ObjectId(), status: "planned" });
+  batch.routes = [route._id]; await batch.save();
+  await Stop.create({ route: route._id, order: order._id, sequence: 1 });
+  const dispatch = mode === "batch" ? () => dispatchBatch({ batchId: batch._id }) :
+    () => dispatchRoute({ batchId: batch._id, routeId: route._id });
+  await expect(dispatch()).rejects.toMatchObject({ code: "SUBSCRIPTION_DELIVERY_BUSY" });
+  expect((await Order.findById(order._id)).deliveryStatus).toBe("ordered");
+  expect((await Batch.findById(batch._id)).status).toBe("routes_generated");
+  expect((await Batch.findById(batch._id)).dispatchedAt).toBeUndefined();
+  expect((await Route.findById(route._id)).status).toBe("planned");
 });

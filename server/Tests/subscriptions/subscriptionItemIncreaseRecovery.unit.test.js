@@ -13,7 +13,7 @@ let mutation, session, updated;
 beforeEach(() => {
   mutation = { _id: "m", customer: "c", subscription: "s", operationId: "op", status: "failed",
     itemIncreaseSnapshot: { startedAt: new Date(), baseVersion: 2, fields: { items: [] },
-      orderEdits: [], amountMinor: 250, chargeParams: { amount: 250, payment_method: "pm_original" } } };
+      orderEdits: [], amountMinor: 250, chargeParams: { customer: "cus", currency: "gbp", amount: 250, payment_method: "pm_original" } } };
   updated = { _id: "s", toObject: () => ({ _id: "s", customerVersion: 3 }) };
   session = { withTransaction: jest.fn(async fn => fn()), endSession: jest.fn(async () => {}) };
   jest.spyOn(mongoose, "startSession").mockResolvedValue(session);
@@ -23,14 +23,14 @@ beforeEach(() => {
     return { matchedCount: 1 };
   });
   jest.spyOn(Subscription, "findOneAndUpdate").mockImplementation(async () => updated);
-  stripe.paymentIntents.create.mockReset().mockResolvedValue({ id: "pi_saved", status: "succeeded" });
+  stripe.paymentIntents.create.mockReset().mockResolvedValue({ id: "pi_saved", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 250 });
 });
 afterEach(() => jest.restoreAllMocks());
 const run = () => recover({ customerId: "c", subscriptionId: "s", operationId: "op" });
 
 it("uses frozen Stripe parameters and commits replay response in the same transaction", async () => {
   expect((await run()).success).toBe(true);
-  expect(stripe.paymentIntents.create).toHaveBeenCalledWith({ amount: 250, payment_method: "pm_original" }, { idempotencyKey: "subscription:s:mutation:op:charge" });
+  expect(stripe.paymentIntents.create).toHaveBeenCalledWith({ customer: "cus", currency: "gbp", amount: 250, payment_method: "pm_original" }, { idempotencyKey: "subscription:s:mutation:op:charge" });
   expect(Subscription.findOneAndUpdate.mock.calls[0][0]).toMatchObject({ customerVersion: 2 });
   expect(Subscription.findOneAndUpdate.mock.calls[0][2].session).toBe(session);
   expect(Mutation.updateOne.mock.calls.at(-1)[2].session).toBe(session);
@@ -59,7 +59,7 @@ it("refuses an expired ambiguous payment attempt", async () => {
 
 it("recovers a known paid attempt even after the idempotency retention window", async () => {
   mutation.itemIncreaseSnapshot.startedAt = new Date(0);
-  mutation.itemIncreaseSnapshot.paymentIntent = { id: "pi_known", status: "succeeded" };
+  mutation.itemIncreaseSnapshot.paymentIntent = { id: "pi_known", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 250 };
   expect((await run()).success).toBe(true);
   expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
 });
@@ -82,7 +82,7 @@ it("does not complete a payment against a missing fulfillment target", async () 
 it("recovers a processing payment by retrieving the same intent", async () => {
   stripe.paymentIntents.create.mockResolvedValueOnce({ id: "pi_processing", status: "processing" });
   expect((await run()).success).toBe(false);
-  stripe.paymentIntents.retrieve.mockResolvedValueOnce({ id: "pi_processing", status: "succeeded" });
+  stripe.paymentIntents.retrieve.mockResolvedValueOnce({ id: "pi_processing", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 250 });
   expect((await run()).success).toBe(true);
   expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith("pi_processing");
   expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
@@ -96,3 +96,11 @@ it("releases a definitively declined attempt so a replacement card can be used",
   expect(Mutation.updateOne).toHaveBeenCalledWith({ _id: "m" }, { $set: { itemIncreaseSnapshot: null } });
   expect(Subscription.findOneAndUpdate).not.toHaveBeenCalled();
 });
+
+it.each([{ customer: "foreign" }, { currency: "usd" }, { amount_received: 249 }])(
+  "rejects a successful item payment that differs from the saved purchase: %j", async mismatch => {
+    stripe.paymentIntents.create.mockResolvedValueOnce({ id: "pi_wrong", status: "succeeded",
+      customer: "cus", currency: "gbp", amount_received: 250, ...mismatch });
+    expect((await run()).data.reconciliationRequired).toBe(true);
+    expect(Subscription.findOneAndUpdate).not.toHaveBeenCalled();
+  });

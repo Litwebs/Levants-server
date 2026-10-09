@@ -3,6 +3,12 @@ const stripe = require("../../utils/stripe.util");
 const { listAllStripePages } = require("../../utils/stripePagination.util");
 const idOf = value => typeof value === "string" ? value : value?.id;
 
+function matchesFrozenCapture(intent, params) {
+  return Boolean(intent?.id && params?.customer && params.currency && Number.isSafeInteger(params.amount) &&
+    intent.status === "succeeded" && idOf(intent.customer) === params.customer &&
+    intent.currency === params.currency && intent.amount_received === params.amount);
+}
+
 async function findFrozenPayment(snapshot) {
   const params = snapshot.chargeParams;
   const identity = params?.metadata;
@@ -24,4 +30,4 @@ async function findFrozenPayment(snapshot) {
   }
   return intent;
 }
-module.exports = { findFrozenPayment };
+module.exports = { findFrozenPayment, matchesFrozenCapture };

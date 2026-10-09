@@ -11,6 +11,12 @@ const Subscription = require("../models/subscription.model");
 const SubscriptionDelivery = require("../models/subscriptionDelivery.model");
 const Order = require("../models/order.model");
 const DeliveryBatch = require("../models/deliveryBatch.model");
+const Mutation = require("../models/subscriptionMutation.model");
+const InvoicePlan = require("../models/subscriptionInvoiceFulfillment.model");
+const Reservation = require("../models/subscriptionStockReservation.model");
+const Customer = require("../models/customer.model");
+const Variant = require("../models/variant.model");
+const { checkSubscriptionEndpoints } = require("../utils/subscriptionWebhookConfiguration.util");
 const { listAllStripePages } = require("../utils/stripePagination.util");
 
 const stripe = new Stripe(env.stripe.secretKey, {
@@ -46,35 +52,80 @@ function effectiveDays(subscription) {
 }
 
 async function main() {
-  await mongoose.connect(env.mongoUri);
-  const [deliveryIndexes, orderIndexes] = await Promise.all([
-    mongoose.connection.db.collection("subscriptiondeliveries").indexes(),
-    mongoose.connection.db.collection("orders").indexes(),
+  await mongoose.connect(env.mongoUri, { autoIndex: false, autoCreate: false });
+  const requiredIndexes = [
+    ["subscriptiondeliveries", { subscription: 1, scheduledDate: 1 }],
+    ["orders", { stripeInvoiceId: 1, subscription: 1, deliveryDate: 1 }, "stripeInvoiceId"],
+    ["subscriptionmutations", { customer: 1, operationId: 1 }],
+    ["subscriptioninvoicefulfillments", { subscription: 1, invoiceId: 1 }],
+    ["subscriptionstockreservations", { key: 1 }],
+    ["payments", { subscriptionInvoiceKey: 1 }, "subscriptionInvoiceKey"],
+    ["storecredittransactions", { customer: 1, idempotencyKey: 1 }, "idempotencyKey"],
+  ];
+  const indexResults = await Promise.all(requiredIndexes.map(async ([collection, keys, partialField]) => {
+    let indexes;
+    try { indexes = await mongoose.connection.db.collection(collection).indexes(); }
+    catch (error) { if (error.code !== 26) throw error; indexes = []; }
+    const ok = indexes.some(index => index.unique &&
+      Object.keys(index.key).length === Object.keys(keys).length &&
+      Object.entries(keys).every(([key, value]) => index.key[key] === value) &&
+      (!partialField || index.partialFilterExpression?.[partialField]?.$type === "string"));
+    return { collection, keys, ok };
+  }));
+  console.log("INDEX_INTEGRITY", JSON.stringify(indexResults));
+  const now = Date.now();
+  const stale = new Date(now - 120000);
+  const [mutations, plans, reservations, cards, resumes, endpoints] = await Promise.all([
+    Mutation.find({ status: { $ne: "completed" }, updatedAt: { $lte: stale }, $or: [
+      { creationSnapshot: { $ne: null }, "creationSnapshot.declined": { $ne: true } },
+      { itemIncreaseSnapshot: { $ne: null } }, { decreaseRefundSnapshot: { $ne: null } },
+      { addOnSnapshot: { $ne: null }, "addOnSnapshot.paymentIntent.status": { $ne: "requires_payment_method" } },
+    ] })
+      .select("_id operationId mutationType status createdAt lockedAt").lean(),
+    InvoicePlan.find({ $or: [{ legacyReviewRequired: true }, { inventoryBlocked: true },
+      { completedAt: null, createdAt: { $lte: new Date(now - 7200000) } }] })
+      .select("_id subscription invoiceId inventoryBlocked legacyReviewRequired completedAt createdAt").lean(),
+    Reservation.find({ state: "held" }).select("key subscription remaining createdAt").lean(),
+    Customer.find({ paymentMethodOperation: { $ne: null }, updatedAt: { $lte: stale } }).select("_id +paymentMethodOperation").lean(),
+    Subscription.find({ "resumePaymentPlan.id": { $exists: true }, "resumePaymentPlan.completedAt": null,
+      "resumePaymentPlan.startedAt": { $lte: stale } })
+      .select("_id subscriptionNumber +resumePaymentPlan").lean(),
+    listAllStripePages(params => stripe.webhookEndpoints.list(params), {}),
   ]);
-  console.log(
-    "INDEX_INTEGRITY",
-    JSON.stringify({
-      subscriptionDeliveryUnique: deliveryIndexes.some(
-        (index) =>
-          index.unique &&
-          index.key?.subscription === 1 &&
-          index.key?.scheduledDate === 1,
-      ),
-      subscriptionOrderInvoiceUnique: orderIndexes.some(
-        (index) =>
-          index.unique &&
-          index.key?.stripeInvoiceId === 1 &&
-          index.key?.subscription === 1 &&
-          index.key?.deliveryDate === 1,
-      ),
-    }),
-  );
+  const endpointArg = process.argv.indexOf("--endpoint");
+  const endpointCheck = checkSubscriptionEndpoints(endpoints, endpointArg >= 0 ? process.argv[endpointArg + 1] :
+    process.env.STRIPE_SUBSCRIPTION_WEBHOOK_ENDPOINT_ID);
+  console.log("RECOVERY_INTEGRITY", JSON.stringify({
+    unresolvedOperations: mutations, invoicePlansNeedingReview: plans,
+    heldInventory: reservations, savedCardOperations: cards.map(customer => ({ customerId: customer._id,
+      operationId: customer.paymentMethodOperation.id, startedAt: customer.paymentMethodOperation.startedAt })),
+    unfinishedResumes: resumes.map(subscription => ({ subscriptionId: subscription._id,
+      planId: subscription.resumePaymentPlan.id, startedAt: subscription.resumePaymentPlan.startedAt })),
+    webhookConfiguration: endpointCheck,
+  }));
+  let issues = mutations.length + plans.length + cards.length + resumes.length +
+    Number(!endpointCheck.ok) + indexResults.filter(index => !index.ok).length;
+  const pendingOrders = await Order.find({ status: "pending", archived: { $ne: true } }).select("items").lean();
+  const expectedReserved = new Map();
+  const add = item => expectedReserved.set(String(item.variant),
+    (expectedReserved.get(String(item.variant)) || 0) + Number(item.quantity));
+  for (const order of pendingOrders) for (const item of order.items || []) add(item);
+  for (const reservation of reservations) for (const item of reservation.remaining || []) add(item);
+  const variants = await Variant.find({}).select("_id stockQuantity reservedQuantity").lean();
+  const stockDrift = variants.filter(variant => Number(variant.reservedQuantity || 0) !==
+    (expectedReserved.get(String(variant._id)) || 0) || Number(variant.stockQuantity) < Number(variant.reservedQuantity || 0))
+    .map(variant => ({ variantId: variant._id, stock: variant.stockQuantity, reserved: variant.reservedQuantity,
+      expectedReserved: expectedReserved.get(String(variant._id)) || 0 }));
+  const variantIds = new Set(variants.map(variant => String(variant._id)));
+  const missingStockVariants = [...expectedReserved.keys()].filter(id => !variantIds.has(id));
+  console.log("STOCK_INTEGRITY", JSON.stringify({ stockDrift, missingStockVariants }));
+  issues += stockDrift.length + missingStockVariants.length;
   const subscriptions = await Subscription.find({})
     .sort({ createdAt: 1 })
     .lean();
 
   for (const subscription of subscriptions) {
-    const [orders, deliveries, invoices] = await Promise.all([
+    const [orders, deliveries, invoices, refundedPlans] = await Promise.all([
       Order.find({ subscription: subscription._id })
         .sort({ deliveryDate: 1 })
         .lean(),
@@ -86,6 +137,7 @@ async function main() {
             subscription: subscription.stripeSubscriptionId,
           })
         : Promise.resolve([]),
+      InvoicePlan.find({ subscription: subscription._id, refundedAt: { $ne: null } }).select("invoiceId").lean(),
     ]);
 
     const days = effectiveDays(subscription);
@@ -99,8 +151,9 @@ async function main() {
     const linkedInvoiceIds = new Set(
       orders.map((order) => order.stripeInvoiceId).filter(Boolean),
     );
+    const refundedInvoiceIds = new Set(refundedPlans.map(plan => plan.invoiceId));
     const unlinkedPaidInvoices = paidInvoices.filter(
-      (invoice) => !linkedInvoiceIds.has(invoice.id),
+      (invoice) => Number(invoice.amount_paid) > 0 && !linkedInvoiceIds.has(invoice.id) && !refundedInvoiceIds.has(invoice.id),
     );
     const duplicateSlotDates = [];
     const slotCounts = new Map();
@@ -111,6 +164,13 @@ async function main() {
     for (const [date, count] of slotCounts) {
       if (count > 1) duplicateSlotDates.push({ date, count });
     }
+
+    const unaccountedSubscriptionOrderIds = orders.filter(order => order.deliveryStatus === "ordered" &&
+      ["paid", "partially_refunded"].includes(order.status) &&
+      !(order.subscriptionStockItems || []).length && !(order.subscriptionAddOnStockItems || []).length)
+      .map(order => String(order._id));
+    const heldDraftInvoiceIds = invoices.filter(invoice => invoice.status === "draft" && invoice.auto_advance === false &&
+      Number(invoice.created) < now / 1000 - 7200).map(invoice => invoice.id);
 
     console.log(
       JSON.stringify({
@@ -131,8 +191,11 @@ async function main() {
           }),
         ),
         duplicateSlotDates,
+        unaccountedSubscriptionOrderIds,
+        heldDraftInvoiceIds,
       }),
     );
+    issues += unlinkedPaidInvoices.length + duplicateSlotDates.length + unaccountedSubscriptionOrderIds.length + heldDraftInvoiceIds.length;
   }
 
   const batches = await DeliveryBatch.find({}).populate("orders").lean();
@@ -144,6 +207,7 @@ async function main() {
       const orderDay = londonDateKey(order.deliveryDate);
       return orderDay !== batchDay;
     });
+    issues += mismatches.length;
     console.log(
       JSON.stringify({
         batchId: String(batch._id),
@@ -159,10 +223,11 @@ async function main() {
     );
   }
 
-  await mongoose.disconnect();
+  console.log("AUDIT_RESULT", JSON.stringify({ ok: issues === 0, issues }));
+  if (issues) process.exitCode = 2;
 }
 
 main().catch((error) => {
-  console.error(error);
+  console.error("Subscription integrity audit failed:", error.code || error.name);
   process.exitCode = 1;
-});
+}).finally(() => mongoose.disconnect());

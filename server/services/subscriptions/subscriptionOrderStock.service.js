@@ -34,8 +34,11 @@ async function updateRecurringInventory(order, items, { operationId, session, in
   order.subscriptionStockItems = [...tracked].filter(([, quantity]) => quantity > 0).map(([variant, quantity]) => ({ variant, quantity }));
   if (additions.length) {
     if (!inventoryAlreadyConsumed) {
-      const digest = require("crypto").createHash("sha256").update(JSON.stringify([...after].sort())).digest("hex");
-      await consumeStock({ key: `subscription-order-edit:${order._id}:${operationId || digest}`,
+      // Without a request ID, each committed transition needs its own key:
+      // A -> B -> A -> B must consume B again. Stock and order still commit
+      // together, so a failed transaction cannot leave this key consumed.
+      const transitionId = operationId || require("crypto").randomUUID();
+      await consumeStock({ key: `subscription-order-edit:${order._id}:${transitionId}`,
         subscriptionId: order.subscription, items: additions, session });
     }
     recordConsumed(order, additions);

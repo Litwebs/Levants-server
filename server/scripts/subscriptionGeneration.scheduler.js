@@ -117,6 +117,7 @@ function startSubscriptionGenerationCron() {
         "subscription-reconciliation",
         async ({ renew }) => {
           await ReconcileRecentPaidSubscriptionInvoices();
+          await require("../services/subscriptions/subscriptionRecoveryAudit.service").auditUnresolvedSubscriptionOperations();
           await renew();
           const priceReconciliation = await reconcileSubscriptionPrices({
             onlyPending: true,
