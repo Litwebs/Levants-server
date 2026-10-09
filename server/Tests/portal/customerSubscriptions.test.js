@@ -91,6 +91,9 @@ jest.mock("../../utils/stripe.util", () => {
       retrieve: jest.fn(async id => ({ id, status: "succeeded" })),
       create: jest.fn(async params => ({ id: `re_test_${++refundCounter}`, status: "succeeded", amount: params.amount })),
     },
+    invoices: {
+      retrieve: jest.fn(),
+    },
     testHelpers: {
       testClocks: {
         retrieve: jest.fn(async () => ({
