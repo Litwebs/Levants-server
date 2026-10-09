@@ -1784,7 +1784,33 @@ async function promotePendingChanges(subscription) {
  * on each billing cycle and fire invoice.payment_succeeded, which we use
  * to create the fulfillment Order in our DB.
  */
-async function CreateSubscription({
+async function CreateSubscription(args = {}) {
+  // Creation and card deletion/default changes share a customer lease. A
+  // payment must not start with a card that another request is detaching.
+  const token = require("crypto").randomUUID();
+  const owned = { _id: args.customerId, "paymentMethodLock.token": token };
+  const now = new Date();
+  const claimed = await Customer.findOneAndUpdate({ _id: args.customerId, paymentMethodOperation: null,
+    $or: [{ paymentMethodLock: null }, { "paymentMethodLock.expiresAt": { $lte: now } }],
+  }, { $set: { paymentMethodLock: { token, expiresAt: new Date(now.getTime() + 120000) } } });
+  if (!claimed) return Response(false, "A card or subscription creation is still being processed. Retry it before starting another purchase.",
+    { subscriptionBusy: true, retryable: true });
+  const heartbeat = setInterval(() => Customer.updateOne(owned,
+    { $set: { "paymentMethodLock.expiresAt": new Date(Date.now() + 120000) } }).catch(() => {}), 20000);
+  heartbeat.unref();
+  try {
+    if (await SubscriptionMutation.exists({ customer: args.customerId, status: { $ne: "completed" },
+      operationId: { $ne: args.operationId }, creationSnapshot: { $ne: null },
+    })) return Response(false, "An earlier subscription payment needs confirmation. Retry the original creation before starting another subscription.",
+      { subscriptionBusy: true, retryable: true });
+    return await CreateSubscriptionUnlocked(args);
+  } finally {
+    clearInterval(heartbeat);
+    await Customer.updateOne(owned, { $set: { paymentMethodLock: null } });
+  }
+}
+
+async function CreateSubscriptionUnlocked({
   customerId,
   frequency,
   preferredDeliveryDay,

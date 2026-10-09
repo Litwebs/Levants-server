@@ -5012,6 +5012,35 @@ describe("Portal Subscriptions", () => {
     expect(await Subscription.countDocuments({ customer: customer._id })).toBe(1);
   });
 
+  it("blocks a replacement creation after a lost provider response and permits the original retry", async () => {
+    const payload = { operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0,
+      deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }] };
+    const send = body => request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`).send(body);
+    stripe.subscriptions.create.mockClear();
+    stripe.subscriptions.create.mockRejectedValueOnce(new Error("provider response lost"));
+    expect((await send(payload)).status).toBe(400);
+    const replacement = await send({ ...payload, operationId: crypto.randomUUID(), items: [{ variantId, quantity: 2 }] });
+    expect(replacement.status).toBe(409);
+    expect(stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    expect((await send(payload)).status).toBe(201);
+    expect(await Subscription.countDocuments({ customer: customer._id })).toBe(1);
+    expect((await Customer.findById(customer._id).select("+paymentMethodLock")).paymentMethodLock).toBeNull();
+  });
+
+  it("blocks subscription creation while a card deletion or default change owns the customer lease", async () => {
+    await Customer.updateOne({ _id: customer._id }, { $set: { paymentMethodLock: {
+      token: "card-worker", expiresAt: new Date(Date.now() + 120000),
+    } } });
+    stripe.subscriptions.create.mockClear();
+    const response = await request(app).post("/api/portal/subscriptions").set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0,
+        deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }] });
+    expect(response.status).toBe(409);
+    expect(stripe.subscriptions.create).not.toHaveBeenCalled();
+    expect((await Customer.findById(customer._id).select("+paymentMethodLock")).paymentMethodLock.token).toBe("card-worker");
+  });
+
   it("does not resubmit an ambiguous creation after Stripe's retry window", async () => {
     const operationId = crypto.randomUUID();
     const payload = { operationId, frequency: "weekly", preferredDeliveryDay: 0,
