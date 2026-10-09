@@ -4304,6 +4304,10 @@ describe("Portal Subscriptions", () => {
     const send = () => request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
       .set("Authorization", `Bearer ${accessToken}`).send(payload);
     stripe.paymentIntents.create.mockClear();
+    stripe.refunds.create.mockClear();
+    const originalRetrieve = stripe.paymentIntents.retrieve.getMockImplementation();
+    stripe.paymentIntents.retrieve.mockImplementation(async id => id === `pi_fulfillment_${payload.operationId}`
+      ? { id, status: "succeeded", amount_received: 250, customer: customer.stripeCustomerId, currency: "gbp" } : originalRetrieve(id));
     stripe.paymentIntents.create.mockImplementationOnce(async () => {
       if (failure === "dispatch") await Order.updateOne({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } });
       return { id: `pi_fulfillment_${payload.operationId}`, status: "succeeded", amount_received: 250 };
@@ -4312,16 +4316,20 @@ describe("Portal Subscriptions", () => {
       .mockRejectedValueOnce(new Error("Injected add-on order write failure")) : null;
     let first;
     try { first = await send(); } finally { write?.mockRestore(); }
-    expect(first.status).toBe(failure === "dispatch" ? 400 : 500);
-    if (failure === "dispatch") expect(first.body.data).toMatchObject({ reconciliationRequired: true, paymentOutcome: "succeeded", chargedMinor: 250 });
+    expect(first.status).toBe(failure === "dispatch" ? 200 : 500);
+    if (failure === "dispatch") expect(first.body.data).toMatchObject({ paymentOutcome: "refunded", refundedMinor: 250 });
     expect((await SubscriptionDelivery.findById(deliveries[0]._id)).addOns).toHaveLength(0);
     expect((await Order.findById(order._id)).items.map(item => item.toObject())).toEqual(originalItems);
     expect(await Payment.countDocuments({ providerReference: `pi_fulfillment_${payload.operationId}` })).toBe(1);
     const retry = await send();
-    expect(retry.status).toBe(failure === "dispatch" ? 400 : 200);
+    expect(retry.status).toBe(200);
     expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
     expect((await SubscriptionDelivery.findById(deliveries[0]._id)).addOns).toHaveLength(failure === "dispatch" ? 0 : 1);
-    if (failure === "dispatch") expect(retry.body.data.paymentOutcome).toBe("succeeded");
+    if (failure === "dispatch") {
+      expect(retry.body.data.paymentOutcome).toBe("refunded");
+      expect(stripe.refunds.create).toHaveBeenCalledTimes(1);
+      expect((await Payment.findOne({ providerReference: `pi_fulfillment_${payload.operationId}` })).status).toBe("refunded");
+    }
   });
 
   it("charges a one-time item for only the next scheduled delivery", async () => {

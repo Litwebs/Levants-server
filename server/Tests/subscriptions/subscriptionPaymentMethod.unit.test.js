@@ -122,6 +122,27 @@ it('fails closed outside the safe replay window', async () => {
   await expect(setDefault(customer, method)).rejects.toThrow('support reconciliation');
   expect(stripe.customers.update).not.toHaveBeenCalled();
 });
+it('finishes an aged card change when the exact remote state is already applied', async () => {
+  pending = { id: 'old', kind: 'set_default', methodId: 'new', targetId: 'new',
+    startedAt: new Date(0).toISOString(), commands: [{ resource: 'customers', id: 'cus',
+      params: { invoice_settings: { default_payment_method: 'pm_new' } } }] };
+  await setDefault(customer, method);
+  expect(stripe.customers.update).not.toHaveBeenCalled();
+  expect(pending).toBeNull();
+  expect(method.isDefault).toBe(true);
+});
+it('checkpoints a new key before completing an aged unapplied card command', async () => {
+  pending = { id: 'old', kind: 'set_default', methodId: 'new', targetId: 'new',
+    startedAt: new Date(0).toISOString(), commands: [{ resource: 'customers', id: 'cus',
+      params: { invoice_settings: { default_payment_method: 'pm_new' } } }] };
+  stripe.customers.retrieve.mockResolvedValue({ invoice_settings: { default_payment_method: 'pm_old' } });
+  await setDefault(customer, method);
+  const checkpoint = Customer.updateOne.mock.calls.findIndex(([, update]) =>
+    update.$set['paymentMethodOperation.commands.0.recoveryKey']);
+  expect(checkpoint).toBeGreaterThanOrEqual(0);
+  expect(Customer.updateOne.mock.invocationCallOrder[checkpoint]).toBeLessThan(stripe.customers.update.mock.invocationCallOrder[0]);
+  expect(stripe.customers.update.mock.calls[0][2].idempotencyKey).toMatch(/^customer-card:old:0:/);
+});
 it('fences a worker whose lease was taken over before its next remote command', async () => {
   Customer.updateOne.mockResolvedValueOnce({ matchedCount: 1 }).mockResolvedValueOnce({ matchedCount: 0 });
   await expect(setDefault(customer, method)).rejects.toThrow('lock expired');

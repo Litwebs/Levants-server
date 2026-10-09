@@ -38,6 +38,37 @@ async function cardIsUsedBySubscription(customer, method) {
 const RECOVERY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const LEASE_MS = 2 * 60 * 1000;
 
+async function cardCommandAlreadyApplied(command, customer) {
+  if (command.resource === 'customers' && command.id === customer.stripeCustomerId &&
+      Object.hasOwn(command.params?.invoice_settings || {}, 'default_payment_method')) {
+    const desired = command.params.invoice_settings.default_payment_method;
+    if (desired) {
+      const card = await stripe.paymentMethods.retrieve(desired);
+      if (card.type !== 'card' || idOf(card.customer) !== customer.stripeCustomerId) {
+        throw new Error('The saved recovery card is no longer attached to this customer; support reconciliation is required.');
+      }
+    }
+    const remote = await stripe.customers.retrieve(command.id);
+    return idOf(remote.invoice_settings?.default_payment_method) === (desired || null);
+  }
+  if (command.resource === 'subscriptions' && command.params?.default_payment_method === '' &&
+      command.params?.default_source === '') {
+    const remote = await stripe.subscriptions.retrieve(command.id);
+    if (idOf(remote.customer) !== customer.stripeCustomerId) throw new Error('Recovery subscription owner mismatch.');
+    return ['canceled', 'incomplete_expired'].includes(remote.status) ||
+      (!idOf(remote.default_payment_method) && !idOf(remote.default_source));
+  }
+  if (command.resource === 'detach') {
+    try {
+      const card = await stripe.paymentMethods.retrieve(command.id);
+      if (!idOf(card.customer)) return true;
+      if (idOf(card.customer) !== customer.stripeCustomerId) throw new Error('Recovery card owner mismatch.');
+      return false;
+    } catch (error) { if (error.code === 'resource_missing') return true; throw error; }
+  }
+  throw new Error('This card update needs support reconciliation before another change can be made.');
+}
+
 async function runCardOperation(customer, method, kind, verifiedStripeMethod) {
   const token = crypto.randomUUID();
   const now = new Date();
@@ -98,15 +129,23 @@ async function runCardOperation(customer, method, kind, verifiedStripeMethod) {
     // A replacement worker repeats exactly the same commands and Stripe keys.
     // Never replay beyond Stripe's guaranteed idempotency retention window.
     for (let index = 0; index < operation.commands.length; index++) {
-      if (Date.now() - Date.parse(operation.startedAt) >= RECOVERY_WINDOW_MS) {
-        throw new Error('This card update needs support reconciliation before another change can be made.');
-      }
       const renewed = await Customer.updateOne(owned, { $set: {
         'paymentMethodLock.expiresAt': new Date(Date.now() + LEASE_MS),
       } });
       if (!renewed.matchedCount) throw new Error('Card update lock expired. Please retry.');
       const command = operation.commands[index];
-      const options = { idempotencyKey: `customer-card:${operation.id}:${index}` };
+      if (Date.now() - Date.parse(command.recoveryStartedAt || operation.startedAt) >= RECOVERY_WINDOW_MS) {
+        // Card commands set a desired state; they never collect money. Inspect
+        // that exact state, then checkpoint a fresh key only if still needed.
+        if (await cardCommandAlreadyApplied(command, customer)) continue;
+        const recovery = { recoveryStartedAt: new Date().toISOString(), recoveryKey: crypto.randomUUID() };
+        const saved = await Customer.updateOne({ ...owned, 'paymentMethodOperation.id': operation.id },
+          { $set: { [`paymentMethodOperation.commands.${index}.recoveryStartedAt`]: recovery.recoveryStartedAt,
+            [`paymentMethodOperation.commands.${index}.recoveryKey`]: recovery.recoveryKey } });
+        if (!saved.matchedCount) throw new Error('Card recovery checkpoint could not be saved.');
+        Object.assign(command, recovery);
+      }
+      const options = { idempotencyKey: `customer-card:${operation.id}:${index}${command.recoveryKey ? `:${command.recoveryKey}` : ''}` };
       if (command.resource === 'detach') {
         try { await stripe.paymentMethods.detach(command.id, {}, options); }
         catch (error) { if (error.code !== 'resource_missing') throw error; }

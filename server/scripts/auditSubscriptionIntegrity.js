@@ -11,6 +11,7 @@ const Subscription = require("../models/subscription.model");
 const SubscriptionDelivery = require("../models/subscriptionDelivery.model");
 const Order = require("../models/order.model");
 const DeliveryBatch = require("../models/deliveryBatch.model");
+const { listAllStripePages } = require("../utils/stripePagination.util");
 
 const stripe = new Stripe(env.stripe.secretKey, {
   apiVersion: env.stripe.apiVersion,
@@ -73,7 +74,7 @@ async function main() {
     .lean();
 
   for (const subscription of subscriptions) {
-    const [orders, deliveries, invoicePage] = await Promise.all([
+    const [orders, deliveries, invoices] = await Promise.all([
       Order.find({ subscription: subscription._id })
         .sort({ deliveryDate: 1 })
         .lean(),
@@ -81,11 +82,10 @@ async function main() {
         .sort({ scheduledDate: 1 })
         .lean(),
       subscription.stripeSubscriptionId
-        ? stripe.invoices.list({
+        ? listAllStripePages(params => stripe.invoices.list(params), {
             subscription: subscription.stripeSubscriptionId,
-            limit: 100,
           })
-        : Promise.resolve({ data: [] }),
+        : Promise.resolve([]),
     ]);
 
     const days = effectiveDays(subscription);
@@ -93,7 +93,7 @@ async function main() {
       (order) =>
         order.deliveryDate && !days.includes(londonWeekday(order.deliveryDate)),
     );
-    const paidInvoices = (invoicePage.data || []).filter(
+    const paidInvoices = invoices.filter(
       (invoice) => invoice.paid || invoice.status === "paid",
     );
     const linkedInvoiceIds = new Set(
@@ -105,7 +105,7 @@ async function main() {
     const duplicateSlotDates = [];
     const slotCounts = new Map();
     for (const delivery of deliveries) {
-      const key = new Date(delivery.scheduledDate).toISOString();
+      const key = londonDateKey(delivery.scheduledDate);
       slotCounts.set(key, (slotCounts.get(key) || 0) + 1);
     }
     for (const [date, count] of slotCounts) {

@@ -2,14 +2,16 @@
 const stripe = require("../../utils/stripe.util");
 const Mutation = require("../../models/subscriptionMutation.model");
 const clock = require("../../utils/subscriptionClock.util");
+const { findFrozenPayment } = require("./subscriptionPaymentRecovery.service");
 
-async function recoverAddOnPayment(mutation) {
+async function recoverAddOnPayment(mutation, { allowCreate = true } = {}) {
   const snapshot = mutation.addOnSnapshot;
   let intent = snapshot.paymentIntent;
   try {
     if (intent && intent.status !== "succeeded") {
       intent = await stripe.paymentIntents.retrieve(intent.id);
       if (intent.status === "requires_payment_method" && intent.amount_received === 0) {
+        if (!allowCreate) return { ok: false, paymentOutcome: "declined", message: "The original card payment was not captured." };
         // Only a confirmed unpaid decline may start another attempt. Keep the
         // original delivery/items/amount; checkpoint the new key before Stripe.
         const customer = await stripe.customers.retrieve(snapshot.chargeParams.customer);
@@ -24,10 +26,9 @@ async function recoverAddOnPayment(mutation) {
       }
     }
     if (!intent) {
-      if (clock.now() - new Date(snapshot.startedAt).getTime() >= 23 * 3600000) {
-        return { ok: false, message: "This add-on payment needs reconciliation. Please contact support before trying another purchase." };
-      }
-      intent = await stripe.paymentIntents.create(snapshot.chargeParams, { idempotencyKey: snapshot.idempotencyKey });
+      if (!allowCreate || clock.now() - new Date(snapshot.startedAt).getTime() >= 23 * 3600000) {
+        intent = await findFrozenPayment(snapshot);
+      } else intent = await stripe.paymentIntents.create(snapshot.chargeParams, { idempotencyKey: snapshot.idempotencyKey });
     }
   } catch (error) {
     // Preserve a known intent even when Stripe reports its status as an error.

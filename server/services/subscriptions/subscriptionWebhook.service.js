@@ -22,6 +22,7 @@ const CustomerNotification = require("../../models/customerNotification.model");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
 const { selectInvoicesForRecovery } = require("./subscriptionInvoiceRecovery.util");
+const { listAllStripePages } = require("../../utils/stripePagination.util");
 const {
   addCalendarMonthPreservingWeekdayOccurrence,
 } = require("../../utils/subscriptionCadence.util");
@@ -663,7 +664,7 @@ async function ReconcileRecentPaidSubscriptionInvoices({
 } = {}) {
   const cutoffSeconds = Math.floor((Date.now() - recentWindowMs) / 1000);
   const subscriptions = await Subscription.find({
-    status: "active",
+    $or: [{ status: "active" }, { status: "paused", pauseReason: "payment_failed" }],
     stripeSubscriptionId: { $type: "string", $ne: "" },
   }).select("_id subscriptionNumber stripeSubscriptionId");
 
@@ -671,11 +672,10 @@ async function ReconcileRecentPaidSubscriptionInvoices({
   for (const subscription of subscriptions) {
     result.checked += 1;
     try {
-      const invoicePage = await stripe.invoices.list({
+      const invoices = await listAllStripePages(params => stripe.invoices.list(params), {
         subscription: subscription.stripeSubscriptionId,
-        limit: 100,
       });
-      const paidInvoices = (invoicePage.data || [])
+      const paidInvoices = invoices
         .filter((invoice) => invoice.paid || invoice.status === "paid")
         .sort((left, right) => Number(left.created) - Number(right.created));
       const linkedIds = new Set(

@@ -1282,12 +1282,14 @@ async function completeSubscriptionItemIncrease(mutation) {
     // After Stripe's retention window an ambiguous request must be reconciled,
     // not sent again with a potentially expired idempotency key.
     if (subscriptionClock.now() - new Date(snapshot.startedAt).getTime() >= 23 * 60 * 60 * 1000) {
-      return Response(false, "This payment attempt needs reconciliation. Please contact support before making another change.", { reconciliationRequired: true });
+      try { paymentIntent = await require("./subscriptionPaymentRecovery.service").findFrozenPayment(snapshot); }
+      catch (error) { return Response(false, error.message, { reconciliationRequired: true }); }
     }
-    try {
+    try { if (!paymentIntent) {
       paymentIntent = await stripe.paymentIntents.create(snapshot.chargeParams, {
         idempotencyKey: snapshot.idempotencyKey || `subscription:${mutation.subscription}:mutation:${mutation.operationId}:charge`,
       });
+    }
     } catch (error) {
       // A definitive card decline has not collected money. Allow selecting a
       // replacement card; ambiguous transport errors keep the frozen request.
@@ -2020,10 +2022,19 @@ async function completeSubscriptionCreation(customer, snapshot, mutation) {
   const startedAt = snapshot.startedAt || mutation?.createdAt;
   if (mutation && !snapshot.remoteSubscription && startedAt &&
       subscriptionClock.now() - new Date(startedAt).getTime() >= 23 * 60 * 60 * 1000) {
-    return Response(false,
-      "This payment attempt needs reconciliation. Please contact support before starting another subscription.",
-      { reconciliationRequired: true },
-    );
+    const { listAllStripePages } = require("../../utils/stripePagination.util");
+    const history = await listAllStripePages(params => stripe.subscriptions.list(params),
+      { customer: customer.stripeCustomerId, status: "all", expand: ["data.latest_invoice.payment_intent"] });
+    const matches = history.filter(remote => remote.metadata?.subscriptionId === String(snapshot.subscription._id));
+    if (matches.length !== 1 || !["active", "trialing"].includes(matches[0].status) ||
+        (snapshot.remotePrice && matches[0].items?.data?.[0]?.price?.id !== snapshot.remotePrice.id)) {
+      return Response(false, "The original subscription payment needs support reconciliation. Another subscription will not be charged.",
+        { reconciliationRequired: true });
+    }
+    snapshot.remoteSubscription = matches[0];
+    const saved = await SubscriptionMutation.updateOne({ _id: mutation._id },
+      { $set: { "creationSnapshot.remoteSubscription": matches[0] } });
+    if (!saved.matchedCount) throw new Error("The recovered subscription checkpoint could not be saved.");
   }
   const persistRemote = async (field, value) => {
     snapshot[field] = value;
@@ -4044,6 +4055,9 @@ async function resumeDeliveryAddOn({ subscription, nextDelivery, mutation }) {
     (nextDelivery.status === "generated" && nextDelivery.order?.deliveryStatus === "ordered" &&
       ["paid", "partially_paid", "partially_refunded"].includes(nextDelivery.order?.status)));
   if (subscription.status !== "active" || !editable || !cutoffAt || subscriptionClock.now() >= cutoffAt.getTime()) {
+    const payment = await recoverAddOnPayment(mutation, { allowCreate: false });
+    if (payment.ok) return finishDeliveryAddOn({ subscription, nextDelivery, mutation,
+      snapshot: mutation.addOnSnapshot, paymentIntent: payment.paymentIntent });
     return Response(false, "The original add-on delivery is no longer editable. Please contact support to reconcile this payment; it will not move to another delivery.", { reconciliationRequired: true, paymentOutcome: "unknown" });
   }
   const payment = await recoverAddOnPayment(mutation);
@@ -4069,7 +4083,7 @@ async function finishDeliveryAddOn({ subscription, nextDelivery, mutation, snaps
     { $setOnInsert: { customer: customerId, subscription: subscription._id,
       amount: amountMinor / 100, currency: "gbp", status: "paid",
       providerReference: paymentIntent.id, paidAt: addOn.paidAt,
-      notes: `One-time add-on for delivery ${deliveryDateKey(nextDelivery.scheduledDate)}` } },
+      notes: `One-time add-on for delivery ${nextDelivery ? deliveryDateKey(nextDelivery.scheduledDate) : snapshot.deliveryId}` } },
     { upsert: true, new: true },
   );
   const settings = await subscriptionSettingsService.getOrCreateSettings();
@@ -4077,7 +4091,7 @@ async function finishDeliveryAddOn({ subscription, nextDelivery, mutation, snaps
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      savedDelivery = await SubscriptionDelivery.findById(nextDelivery._id).session(session);
+      savedDelivery = nextDelivery ? await SubscriptionDelivery.findById(nextDelivery._id).session(session) : null;
       const existingOrder = savedDelivery?.order ? await Order.findOne({
         _id: savedDelivery.order, subscription: subscription._id, customer: customerId,
       }).session(session) : null;
@@ -4104,9 +4118,12 @@ async function finishDeliveryAddOn({ subscription, nextDelivery, mutation, snaps
     });
   } catch (error) {
     if (error.code !== "ADD_ON_FULFILLMENT_CLOSED") throw error;
+    try { return await require("./subscriptionUnfulfilledAddOnRefund.service").refundUnfulfilledAddOn(subscription, mutation); }
+    catch (refundError) {
     return Response(false,
-      "Your payment succeeded, but the original delivery can no longer accept the add-on. Please contact support to reconcile or refund this payment.",
+      refundError.message,
       { reconciliationRequired: true, paymentOutcome: "succeeded", chargedMinor: amountMinor });
+    }
   } finally { await session.endSession(); }
 
   await CustomerNotification.create({
