@@ -871,7 +871,7 @@ async function deliverSignedInvoiceEvent(subscriptionId, type, invoiceId) {
     },
     body: payload,
   }), async response => response.status === 503 &&
-    /Subscription lifecycle is busy/.test((await response.clone().json()).message || ""));
+    (await response.clone().json()).error?.code === "SUBSCRIPTION_LIFECYCLE_BUSY");
   if (!response.ok) {
     throw new Error(
       `Signed ${type} delivery failed (${response.status}): ${await response.text()}`,

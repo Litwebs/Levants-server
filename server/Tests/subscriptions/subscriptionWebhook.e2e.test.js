@@ -352,7 +352,7 @@ describe("Subscription Stripe webhook E2E", () => {
     });
 
     expect(res.status).toBe(503);
-    expect(res.body.message).toMatch(/retry this webhook/);
+    expect(res.body.error.code).toBe("SUBSCRIPTION_LIFECYCLE_BUSY");
     expect(await Order.countDocuments({})).toBe(0);
   });
 

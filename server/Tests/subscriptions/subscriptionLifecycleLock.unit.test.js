@@ -4,7 +4,7 @@ afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 it('rejects a held portal lock before reading or changing lifecycle state', async () => {
   jest.spyOn(Subscription, 'findOneAndUpdate').mockReturnValue({ select: async () => null });
   const execute = jest.fn();
-  await expect(run('stripe', execute)).rejects.toMatchObject({ statusCode: 503, message: expect.stringContaining('retry this webhook') });
+  await expect(run('stripe', execute)).rejects.toMatchObject({ statusCode: 503, code: 'SUBSCRIPTION_LIFECYCLE_BUSY', message: expect.stringContaining('retry this webhook') });
   expect(execute).not.toHaveBeenCalled();
 });
 it('holds the shared lock until the handler finishes and releases only its own token', async () => {
