@@ -1,6 +1,7 @@
 jest.mock("../../services/subscriptions/subscriptionLifecycleLock.service", () => ({ withSubscriptionLifecycleLock: async (_id, execute) => execute() }));
 "use strict";
 jest.mock("../../models/subscriptionInvoiceFulfillment.model", () => ({
+  init: async () => {},
   findOne: jest.fn(() => ({ lean: async () => null })),
   findOneAndUpdate: jest.fn((_filter, update) => ({ lean: async () => ({ _id: "plan", ...update.$setOnInsert }) })),
   updateOne: jest.fn(async () => ({ matchedCount: 1 })),

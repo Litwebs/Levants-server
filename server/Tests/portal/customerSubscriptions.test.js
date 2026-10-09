@@ -97,6 +97,12 @@ jest.mock("../../utils/stripe.util", () => {
   };
 });
 
+// Preserve the baseline provider behavior, including counter closures. Clear
+// one-off outcomes and per-test implementations before every scenario.
+const stripeMockDefaults = Object.values(stripe).flatMap(group =>
+  Object.values(group).filter(value => jest.isMockFunction(value))
+    .map(mock => ({ mock, implementation: mock.getMockImplementation() })));
+
 async function createTestProduct() {
   const product = await Product.create({
     name: `Test Product ${crypto.randomUUID()}`,
@@ -129,6 +135,7 @@ describe("Portal Subscriptions", () => {
   afterEach(() => jest.useRealTimers());
 
   beforeEach(async () => {
+    for (const { mock, implementation } of stripeMockDefaults) mock.mockReset().mockImplementation(implementation);
     stripe.customers.retrieve.mockResolvedValue({
       id: "cus_test_mock",
       deleted: false,
@@ -1671,7 +1678,7 @@ describe("Portal Subscriptions", () => {
         return original.apply(this, args);
       });
     }
-    const operationId = `resume-${crypto.randomUUID()}`;
+    const operationId = crypto.randomUUID();
     const resume = () => request(app).post(`/api/portal/subscriptions/${sub._id}/resume`)
       .set("Authorization", `Bearer ${accessToken}`).send({ operationId });
     try {
