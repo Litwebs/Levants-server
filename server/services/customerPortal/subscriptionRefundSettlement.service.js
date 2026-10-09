@@ -150,4 +150,4 @@ async function refundAcrossSubscriptionPayments(subscription, customer, primaryI
   }
 }
 
-module.exports = { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure };
+module.exports = { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure, listRefunds };

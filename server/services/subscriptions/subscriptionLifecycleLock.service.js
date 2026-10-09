@@ -1,6 +1,7 @@
 "use strict";
 const crypto = require('crypto');
 const Subscription = require('../../models/subscription.model');
+const Mutation = require('../../models/subscriptionMutation.model');
 
 // Use the portal's lock field so provider events and customer changes cannot
 // simultaneously read and replace the same lifecycle state.
@@ -22,7 +23,14 @@ async function withSubscriptionLifecycleLock(stripeSubscriptionId, execute, { ig
   }
   const owned = { _id: claimed._id, 'customerMutationLock.operationId': operationId };
   const heartbeat = startSubscriptionLockHeartbeat(claimed._id, operationId);
-  try { return await execute(); }
+  try {
+    if (await Mutation.exists({ subscription: claimed._id,
+      'addOnSnapshot.settlement': { $ne: null }, 'addOnSnapshot.settlement.completedAt': null,
+    })) throw Object.assign(new Error('A paid add-on settlement is unfinished; retry this webhook.'), {
+      statusCode: 503, code: 'SUBSCRIPTION_LIFECYCLE_BUSY',
+    });
+    return await execute();
+  }
   finally {
     clearInterval(heartbeat);
     await Subscription.updateOne(owned, { $unset: { customerMutationLock: 1 } }, { timestamps: false });

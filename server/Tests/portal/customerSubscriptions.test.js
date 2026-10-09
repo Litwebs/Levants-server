@@ -4565,6 +4565,67 @@ describe("Portal Subscriptions", () => {
     });
   }
 
+  it.each(["pause", "cancel", "remove-day"].flatMap(action => ["credit", "refund"].map(method => [action, method])))(
+    "settles a paid add-on with no order exactly once when %s uses %s, including a failed local commit", async (action, method) => {
+      const sub = await createBasicSubscription();
+      const deliveries = await prepareUpcomingDeliveries(sub._id);
+      const { variant } = await createTestProduct();
+      const addOnOperation = crypto.randomUUID();
+      const purchased = await request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+        .set("Authorization", `Bearer ${accessToken}`).send({ operationId: addOnOperation,
+          items: [{ variantId: String(variant._id), quantity: 1 }] });
+      expect(purchased.status).toBe(200);
+      expect(purchased.body.data.order).toBeNull();
+      const mutation = await require("../../models/subscriptionMutation.model").findOne({ operationId: addOnOperation }).lean();
+      const intent = mutation.addOnSnapshot.paymentIntent;
+      const originalRetrieve = stripe.paymentIntents.retrieve.getMockImplementation();
+      const originalRefundRetrieve = stripe.refunds.retrieve.getMockImplementation();
+      let fail;
+      try {
+        stripe.paymentIntents.retrieve.mockImplementation(async id => id === intent.id ? {
+          ...intent, customer: mutation.addOnSnapshot.chargeParams.customer, currency: "gbp", amount_received: 250,
+        } : originalRetrieve(id));
+        stripe.refunds.retrieve.mockImplementation(async id => ({ id, amount: 250, status: "succeeded" }));
+        const payload = { operationId: crypto.randomUUID(), refundMethod: method };
+        if (action === "pause") payload.resumeOn = new Date(Date.now() + 21 * 86400000).toISOString();
+        if (action === "remove-day") {
+          const target = (weekdayInTimeZone(deliveries[0].scheduledDate, SUBSCRIPTION_TIME_ZONE) + 1) % 7;
+          payload.preferredDeliveryDay = target;
+          payload.preferredDeliveryDays = [target];
+        }
+        const send = () => (action === "remove-day"
+          ? request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+          : request(app).post(`/api/portal/subscriptions/${sub._id}/${action}`))
+          .set("Authorization", `Bearer ${accessToken}`).send(payload);
+        stripe.refunds.create.mockClear();
+        fail = jest.spyOn(Payment, "updateOne").mockRejectedValueOnce(new Error("settlement ledger unavailable"));
+        expect((await send()).status).toBe(400);
+        fail.mockRestore();
+        expect((await Subscription.findById(sub._id)).status).toBe("active");
+        expect((await SubscriptionDelivery.findById(deliveries[0]._id)).addOns).toHaveLength(1);
+        expect((await Payment.findOne({ providerReference: intent.id })).status).toBe("paid");
+        const conflict = await request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+          .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID(), notes: "conflicting edit" });
+        expect(conflict.status).toBe(409);
+        const retried = await send();
+        expect(retried.status).toBe(200);
+        expect(retried.body.data[method === "credit" ? "creditedMinor" : "refundedMinor"]).toBe(250);
+        expect((await Payment.findOne({ providerReference: intent.id })).status).toBe("refunded");
+        expect((await Customer.findById(customer._id)).creditBalance).toBe(method === "credit" ? 250 : 0);
+        expect(stripe.refunds.create).toHaveBeenCalledTimes(method === "refund" ? 1 : 0);
+        const after = await SubscriptionDelivery.findById(deliveries[0]._id);
+        expect(after?.addOns.length || 0).toBe(0);
+        expect((await send()).status).toBe(200);
+        expect(stripe.refunds.create).toHaveBeenCalledTimes(method === "refund" ? 1 : 0);
+        expect(await StoreCreditTransaction.countDocuments({ customer: customer._id })).toBe(method === "credit" ? 1 : 0);
+      } finally {
+        fail?.mockRestore();
+        stripe.paymentIntents.retrieve.mockImplementation(originalRetrieve);
+        stripe.refunds.retrieve.mockImplementation(originalRefundRetrieve);
+      }
+    },
+  );
+
   it.each(["pause", "cancel", "remove-day"])("recovers a split card refund without duplicate money (%s)", async action => {
     const sub = await createBasicSubscription();
     const deliveries = await prepareUpcomingDeliveries(sub._id);

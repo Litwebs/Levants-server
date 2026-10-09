@@ -3,6 +3,7 @@
 const mongoose = require("mongoose");
 const { assertAddOnFulfillmentEligible } = require("./subscriptionAddOnFulfillment.service");
 const { prepareSingleDayTransition } = require("./subscriptionSingleDayTransition.service");
+const { settleDetachedAddOns } = require("./subscriptionDetachedAddOnSettlement.service");
 const subscriptionClock = require("../../utils/subscriptionClock.util");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
@@ -2800,6 +2801,24 @@ async function UpdateSubscription({
   let dayPlanPaymentIntent = null;
   let updateMessage = "Subscription updated";
 
+  if (scheduleChangeRequested) {
+    const detached = await SubscriptionDelivery.find({ subscription: subscription._id,
+      order: null, status: "scheduled", "addOns.0": { $exists: true },
+      scheduledDate: { $gte: startOfDay(new Date(subscriptionClock.now())) },
+    });
+    const removed = detached.filter(delivery => targetFrequency !== subscription.frequency ||
+      !resolvedDays.days.includes(weekdayInTimeZone(delivery.scheduledDate, SUBSCRIPTION_TIME_ZONE)));
+    if (removed.some(delivery => {
+      const cutoff = computeCutoffDate(delivery.scheduledDate, settings);
+      return cutoff && subscriptionClock.now() >= cutoff.getTime();
+    })) return Response(false, "A paid add-on delivery is past cut-off. Keep that delivery day until it is fulfilled.", null);
+    try {
+      const settled = await settleDetachedAddOns({ subscription, deliveries: removed, refundMethod, operationId });
+      removedDayCreditedMinor += settled.creditedMinor;
+      removedDayRefundedMinor += settled.refundedMinor;
+    } catch (error) { return Response(false, error.message, { reconciliationRequired: true }); }
+  }
+
   if (
     dayPlanChangeRequested &&
     openChangedDeliveryDays.length > 0 &&
@@ -3141,6 +3160,7 @@ async function UpdateSubscription({
       // Otherwise an existing unlinked target can violate the date unique key.
       await SubscriptionDelivery.deleteMany({
         subscription: subscription._id, order: null, status: "scheduled",
+        "addOns.0": { $exists: false },
         scheduledDate: { $gte: startOfDay(now) },
       }, { session });
 
@@ -3346,6 +3366,7 @@ async function PauseSubscription({
   subscriptionId,
   resumeOn,
   refundMethod = "refund",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -3421,6 +3442,12 @@ async function PauseSubscription({
       null,
     );
   }
+
+  try {
+    const settled = await settleDetachedAddOns({ subscription, deliveries: openDeliveries, refundMethod: settlementMethod, operationId });
+    refundedMinor += settled.refundedMinor;
+    creditedMinor += settled.creditedMinor;
+  } catch (error) { return Response(false, error.message, { reconciliationRequired: true }); }
 
   let stripeWasPaused = false;
   if (subscription.stripeSubscriptionId) {
@@ -3573,6 +3600,7 @@ async function CancelSubscription({
   subscriptionId,
   reason,
   refundMethod = "refund",
+  operationId,
 } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
@@ -3668,6 +3696,12 @@ async function CancelSubscription({
   if (await hasUnfinishedCardRefund(subscription._id, refundableOrders.map(order => order._id))) {
     return Response(false, "An unfinished card refund is outside the eligible deliveries. Please contact support to reconcile it.", null);
   }
+
+  try {
+    const settled = await settleDetachedAddOns({ subscription, deliveries: openDeliveries, refundMethod: settlementMethod, operationId });
+    refundedMinor += settled.refundedMinor;
+    creditedMinor += settled.creditedMinor;
+  } catch (error) { return Response(false, error.message, { reconciliationRequired: true }); }
 
   // Refund each open (before cut-off) delivery order. Locked deliveries are
   // kept and cancellation is scheduled to apply after they are delivered.
@@ -3790,7 +3824,7 @@ async function CancelSubscription({
             `subscription:${subscription._id}:cancel:${deliveryDateKey(refundableOrder.deliveryDate)}:${refundableOrder._id}`,
             refundableOrder._id,
           );
-          refundedMinor = refundAmountMinor;
+          refundedMinor += refundAmountMinor;
           stripeRefundId = refunds.at(-1)?.id || null;
         } catch (err) {
           return refundFailure(err);
@@ -3812,7 +3846,7 @@ async function CancelSubscription({
           return Response(false, creditResult.message, null);
         }
 
-        creditedMinor = refundAmountMinor;
+        creditedMinor += refundAmountMinor;
       }
 
       refundableOrder.status = "refunded";

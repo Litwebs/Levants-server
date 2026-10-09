@@ -1,4 +1,6 @@
 const Subscription = require('../../models/subscription.model');
+const Mutation = require('../../models/subscriptionMutation.model');
+beforeEach(() => jest.spyOn(Mutation, 'exists').mockResolvedValue(false));
 const { withSubscriptionLifecycleLock: run } = require('../../services/subscriptions/subscriptionLifecycleLock.service');
 afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 it('rejects a held portal lock before reading or changing lifecycle state', async () => {
@@ -27,4 +29,13 @@ it('renews a long-running handler lease', async () => {
   jest.spyOn(Subscription, 'updateOne').mockResolvedValue({ matchedCount: 1 });
   await run('stripe', async () => { await jest.advanceTimersByTimeAsync(21000); });
   expect(Subscription.updateOne.mock.calls[0][1].$set['customerMutationLock.lockedAt']).toBeInstanceOf(Date);
+});
+it('defers provider events while a paid add-on refund is unfinished', async () => {
+  jest.spyOn(Subscription, 'findOneAndUpdate').mockReturnValue({ select: async () => ({ _id: 's' }) });
+  jest.spyOn(Subscription, 'updateOne').mockResolvedValue({ matchedCount: 1 });
+  Mutation.exists.mockResolvedValue(true);
+  const execute = jest.fn();
+  await expect(run('stripe', execute)).rejects.toMatchObject({ statusCode: 503, code: 'SUBSCRIPTION_LIFECYCLE_BUSY' });
+  expect(execute).not.toHaveBeenCalled();
+  expect(Subscription.updateOne).toHaveBeenCalledTimes(1);
 });

@@ -246,10 +246,17 @@ async function executeSubscriptionConcurrencyGuard({
     // customer mutation can replace the baseline or cancel the target delivery.
     const pending = subscriptionId ? await SubscriptionMutation.find({
       customer: customerId, subscription: subscriptionId,
-      status: { $ne: "completed" }, operationId: { $ne: operationId },
-      $or: [{ itemIncreaseSnapshot: { $ne: null } }, { addOnSnapshot: { $ne: null } }],
-    }).select("itemIncreaseSnapshot addOnSnapshot").lean() : [];
+      $or: [
+        { status: { $ne: "completed" }, operationId: { $ne: operationId },
+          $or: [{ itemIncreaseSnapshot: { $ne: null } }, { addOnSnapshot: { $ne: null } }] },
+        { "addOnSnapshot.settlement": { $ne: null }, "addOnSnapshot.settlement.completedAt": null,
+          "addOnSnapshot.settlement.operationId": { $ne: operationId || null } },
+      ],
+    }).select("status itemIncreaseSnapshot addOnSnapshot").lean() : [];
     const unresolved = pending.some(mutation => {
+      const settlement = mutation.addOnSnapshot?.settlement;
+      if (settlement && !settlement.completedAt && settlement.operationId !== (operationId || null)) return true;
+      if (mutation.status === "completed") return false;
       if (mutation.itemIncreaseSnapshot) return true;
       const intent = mutation.addOnSnapshot?.paymentIntent;
       // A confirmed unpaid decline is safe to replace. Missing/processing or

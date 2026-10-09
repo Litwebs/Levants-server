@@ -39,5 +39,12 @@ it("continues blocking unfinished recurring increases", async () => {
 it("allows operations without pending payments and scopes out the original retry", async () => {
   expect((await run(null)).success).toBe(true);
   expect(Mutation.find).toHaveBeenCalledWith(expect.objectContaining({ customer: "c", subscription: "s",
-    status: { $ne: "completed" }, operationId: { $ne: "new-operation" } }));
+    $or: expect.arrayContaining([expect.objectContaining({ status: { $ne: "completed" }, operationId: { $ne: "new-operation" } })]) }));
+});
+it("blocks conflicts while a completed purchase is being refunded", async () => {
+  expect((await run({ status: "completed", addOnSnapshot: { settlement: { operationId: "original-removal" } } })).success).toBe(false);
+  expect(execute).not.toHaveBeenCalled();
+});
+it("lets the original removal finish its saved settlement", async () => {
+  expect((await run({ status: "completed", addOnSnapshot: { settlement: { operationId: "new-operation" } } })).success).toBe(true);
 });
