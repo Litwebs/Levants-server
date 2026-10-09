@@ -910,10 +910,12 @@ async function crossCutoff(subscriptionId) {
 }
 
 async function autoResume(subscriptionId) {
+  let subscriptionBusy = false;
   const resumed = await subscriptionService.AutoResumePausedSubscriptions({
     subscriptionId,
+    onError: error => { if (error.code === "SUBSCRIPTION_LIFECYCLE_BUSY") subscriptionBusy = true; },
   });
-  return { resumed };
+  return { resumed, subscriptionBusy };
 }
 
 async function finalizeCancellation(subscriptionId, referenceDate) {

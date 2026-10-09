@@ -1,4 +1,5 @@
 "use strict";
+const { retryTransientResponse } = require("./retry-transient-response");
 
 const {
   API_ORIGIN,
@@ -118,10 +119,10 @@ async function crossCutoff(request, subscriptionId) {
 }
 
 async function autoResume(request, subscriptionId) {
-  const response = await request.post(
+  const response = await retryTransientResponse(() => request.post(
     `${CONTROL_ORIGIN}/state/${subscriptionId}/auto-resume`,
     { headers: controlHeaders, timeout: 30_000 },
-  );
+  ), async response => response.ok() && Boolean((await response.json())?.data?.subscriptionBusy));
   const body = await response.json().catch(() => ({}));
   return {
     ok: response.ok(),

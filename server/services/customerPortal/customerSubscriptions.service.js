@@ -827,6 +827,7 @@ async function activatePausedSubscription(
 async function AutoResumePausedSubscriptions({
   subscriptionId,
   customerId,
+  onError,
 } = {}) {
   const filter = {
     status: "paused",
@@ -856,6 +857,7 @@ async function AutoResumePausedSubscriptions({
       }, { subscriptionId: subscription._id, ignoreMissing: true, allowResumeRecovery: true });
       if (activated) resumed += 1;
     } catch (error) {
+      if (onError) onError(error, subscription._id);
       // A declined card or a transient Stripe failure for one customer must not
       // prevent other due subscriptions from resuming. The failed subscription
       // remains paused and will be retried by the next scheduler run.
