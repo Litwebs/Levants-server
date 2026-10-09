@@ -166,6 +166,48 @@ function productCard(page, productName) {
     .locator("xpath=ancestor::article[1]");
 }
 
+for (const days of [[0], [0, 3]]) {
+  for (const notes of ["Updated delivery note", ""]) {
+    test(`admin notes-only save sends no schedule fields (${days.length} days, ${notes ? "update" : "clear"})`, async ({ page }) => {
+      await mockAdminApi(page, () => {});
+      const subscription = {
+        _id: "notes-test", subscriptionNumber: "SUB-NOTES-TEST", status: "active",
+        frequency: "weekly", preferredDeliveryDay: 0, preferredDeliveryDays: days,
+        notes: "Original note", customerVersion: 7,
+        customer: { _id: "customer-test", firstName: "Test", lastName: "Customer", email: "test@example.com" },
+        items: [], deliveryDayPlans: [], nextDeliveryDate: "2026-10-18T08:00:00Z",
+        deliveryAddress: { line1: "1 Test Street", city: "Bradford", postcode: "BD1 1AA", country: "GB" },
+      };
+      let payload;
+      await page.route(`${ADMIN_API}/admin/subscriptions/notes-test`, async route => {
+        if (route.request().method() === "OPTIONS") {
+          await route.fulfill({ status: 204, headers: corsHeaders(), body: "" });
+          return;
+        }
+        if (route.request().method() === "PATCH") {
+          payload = route.request().postDataJSON();
+          subscription.notes = payload.notes;
+          subscription.customerVersion += 1;
+        }
+        await route.fulfill({ status: 200, headers: corsHeaders(),
+          body: JSON.stringify({ success: true, data: { subscription } }) });
+      });
+      await page.goto(`${ADMIN_ORIGIN}/subscriptions/notes-test`);
+      await expect(page.getByRole("heading", { name: "SUB-NOTES-TEST", exact: true })).toBeVisible();
+      const save = page.getByRole("button", { name: "Save Changes", exact: true });
+      await expect(save).toBeDisabled();
+      await page.getByPlaceholder("Subscription notes").fill(notes);
+      await expect(save).toBeEnabled();
+      await save.click();
+      await expect.poll(() => payload).toEqual({ notes: notes || null, expectedVersion: 7 });
+      await expect(save).toBeDisabled();
+      await page.reload();
+      await expect(page.getByPlaceholder("Subscription notes")).toHaveValue(notes);
+      await expect(save).toBeDisabled();
+    });
+  }
+}
+
 test("admin keeps independent per-day baskets, reviews exact totals, preserves storefront order, and submits deliveryDayPlans", async ({
   page,
 }) => {

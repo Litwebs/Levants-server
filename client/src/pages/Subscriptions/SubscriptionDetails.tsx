@@ -27,6 +27,7 @@ import {
   Trash2,
 } from "lucide-react";
 import styles from "./SubscriptionDetails.module.css";
+import { buildSubscriptionSettingsPatch } from "./subscriptionSettingsPatch";
 
 const DAY_OPTIONS = [
   { value: "0", label: "Sunday" },
@@ -223,10 +224,9 @@ export default function SubscriptionDetailsPage() {
   const hasFormChanges = useMemo(() => {
     if (!subscription || subscription.isPendingSetup) return false;
     return (
-      frequency !== subscription.frequency ||
-      Number(preferredDeliveryDay) !==
-        Number(subscription.preferredDeliveryDay) ||
-      notes.trim() !== String(subscription.notes || "").trim() ||
+      Object.keys(buildSubscriptionSettingsPatch(subscription, {
+        frequency, preferredDeliveryDay, notes,
+      })).length > 0 ||
       statusDraft !== subscription.status
     );
   }, [frequency, preferredDeliveryDay, notes, statusDraft, subscription]);
@@ -424,20 +424,14 @@ export default function SubscriptionDetailsPage() {
     try {
       let next = subscription;
 
-      const hasSettingsChanges =
-        frequency !== subscription.frequency ||
-        Number(preferredDeliveryDay) !==
-          Number(subscription.preferredDeliveryDay) ||
-        notes.trim() !== String(subscription.notes || "").trim();
+      const settingsPatch = buildSubscriptionSettingsPatch(subscription, {
+        frequency, preferredDeliveryDay, notes,
+      });
 
-      if (hasSettingsChanges) {
+      if (Object.keys(settingsPatch).length > 0) {
         next = await updateSubscription(
           subscription._id,
-          {
-            frequency,
-            preferredDeliveryDay: Number(preferredDeliveryDay),
-            notes: notes.trim() || null,
-          },
+          settingsPatch,
           Number(subscription.customerVersion || 0),
         );
       }

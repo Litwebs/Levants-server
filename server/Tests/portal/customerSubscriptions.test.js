@@ -687,6 +687,46 @@ describe("Portal Subscriptions", () => {
     expect(new Set(weekdays).size).toBeGreaterThan(1);
   });
 
+  it.each([
+    [[0], "Updated admin note"], [[0], null],
+    [[0, 3], "Updated admin note"], [[0, 3], null],
+  ])("admin notes-only PATCH preserves schedule and finances for days %j and note %j", async (days, notes) => {
+    const created = await request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`).send({
+        operationId: crypto.randomUUID(), frequency: "weekly",
+        preferredDeliveryDay: days[0], preferredDeliveryDays: days,
+        deliveryAddressId: addressId, notes: "Original note",
+        deliveryDayPlans: days.map((day, index) => ({ day, items: [{ variantId, quantity: index + 1 }] })),
+      });
+    expect(created.status).toBe(201);
+    const sub = created.body.data.subscription;
+    const fields = "status frequency preferredDeliveryDay preferredDeliveryDays items deliveryDayPlans pendingChanges nextDeliveryDate stripeSubscriptionId stripePriceId deliveryAddress";
+    const before = await Subscription.findById(sub._id).select(fields).lean();
+    const deliveries = await SubscriptionDelivery.find({ subscription: sub._id }).sort({ _id: 1 }).lean();
+    const payments = await Payment.find({ subscription: sub._id }).sort({ _id: 1 }).lean();
+    const Order = require("../../models/order.model");
+    const CreditTransaction = require("../../models/storeCreditTransaction.model");
+    const orders = await Order.find({ subscription: sub._id }).sort({ _id: 1 }).lean();
+    const creditTransactions = await CreditTransaction.find({ customer: customer._id }).sort({ _id: 1 }).lean();
+    const balance = (await Customer.findById(customer._id)).creditBalance;
+    const providerCalls = [stripe.subscriptions.update, stripe.paymentIntents.create, stripe.refunds.create]
+      .map(mock => mock.mock.calls.length);
+    const admin = await createUser({ role: "admin" });
+    const auth = await request(app).post("/api/auth/login").send({ email: admin.email, password: "secret123" });
+    const response = await request(app).patch(`/api/admin/subscriptions/${sub._id}`)
+      .set("Cookie", getSetCookieHeader(auth)).send({ notes, expectedVersion: sub.customerVersion });
+    expect(response.status).toBe(200);
+    expect((await Subscription.findById(sub._id)).notes).toBe(notes);
+    expect(await Subscription.findById(sub._id).select(fields).lean()).toEqual(before);
+    expect(await SubscriptionDelivery.find({ subscription: sub._id }).sort({ _id: 1 }).lean()).toEqual(deliveries);
+    expect(await Payment.find({ subscription: sub._id }).sort({ _id: 1 }).lean()).toEqual(payments);
+    expect(await Order.find({ subscription: sub._id }).sort({ _id: 1 }).lean()).toEqual(orders);
+    expect(await CreditTransaction.find({ customer: customer._id }).sort({ _id: 1 }).lean()).toEqual(creditTransactions);
+    expect((await Customer.findById(customer._id)).creditBalance).toBe(balance);
+    expect([stripe.subscriptions.update, stripe.paymentIntents.create, stripe.refunds.create]
+      .map(mock => mock.mock.calls.length)).toEqual(providerCalls);
+  });
+
   it.each([0, 1])("extends three upcoming slots from a stale date (%i days after Sunday)", async (daysAfterSunday) => {
     const sub = await createBasicSubscription();
     // Exercise both a delivery day and the following day using fixed absolute
