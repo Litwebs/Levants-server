@@ -40,8 +40,11 @@ async function withSubscriptionLifecycleLock(stripeSubscriptionId, execute, { ig
     if (await Mutation.exists({ subscription: claimed._id, $or: [
       { 'addOnSnapshot.settlement': { $ne: null }, 'addOnSnapshot.settlement.completedAt': null },
       { status: { $ne: 'completed' }, decreaseRefundSnapshot: { $ne: null } },
+      // Accepted or ambiguous item-increase payments must finish against their
+      // frozen active/version baseline before provider or scheduler work runs.
+      { status: { $ne: 'completed' }, itemIncreaseSnapshot: { $ne: null } },
     ],
-    })) throw Object.assign(new Error('A paid add-on settlement is unfinished; retry this webhook.'), {
+    })) throw Object.assign(new Error('A subscription payment or settlement is unfinished; retry this webhook.'), {
       statusCode: 503, code: 'SUBSCRIPTION_LIFECYCLE_BUSY',
     });
     return await withLease({ kind: 'subscription', id: claimed._id, token: operationId }, execute);

@@ -10,6 +10,7 @@ const Product = require("../../models/product.model");
 const ProductVariant = require("../../models/variant.model");
 const Customer = require("../../models/customer.model");
 const Subscription = require("../../models/subscription.model");
+const SubscriptionMutation = require("../../models/subscriptionMutation.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const Order = require("../../models/order.model");
@@ -206,6 +207,41 @@ describe("Portal Subscriptions", () => {
     });
     return deliveries;
   }
+
+  it.each(["updated", "failed-invoice"])("defers %s lifecycle events until a paid item increase is recovered", async eventType => {
+    const sub = await createBasicSubscription();
+    const mutation = await SubscriptionMutation.create({
+      customer: customer._id, subscription: sub._id, operationId: crypto.randomUUID(),
+      mutationType: "update_subscription_item", requestHash: "frozen-increase", status: "failed",
+      itemIncreaseSnapshot: { baseVersion: sub.customerVersion, amountMinor: 250,
+        paymentIntent: { id: "pi_paid_awaiting_local_commit", status: "succeeded", amount_received: 250 } },
+    });
+    const fields = "status customerVersion pausedAt pausedUntil pauseReason items deliveryDayPlans nextDeliveryDate";
+    const before = await Subscription.findById(sub._id).select(fields).lean();
+    const payments = await Payment.find({ subscription: sub._id }).lean();
+    const providerWrites = stripe.subscriptions.update.mock.calls.length;
+    const charges = stripe.paymentIntents.create.mock.calls.length;
+    const refunds = stripe.refunds.create.mock.calls.length;
+    stripe.subscriptions.retrieve.mockResolvedValue({ id: sub.stripeSubscriptionId,
+      status: "active", pause_collection: { behavior: "void" } });
+    stripe.invoices.retrieve.mockResolvedValue({ id: "in_pending_increase", subscription: sub.stripeSubscriptionId,
+      status: "open", paid: false });
+    const webhook = require("../../services/subscriptions/subscriptionWebhook.service");
+    const invoke = () => eventType === "updated"
+      ? webhook.HandleStripeSubscriptionUpdated({ id: sub.stripeSubscriptionId })
+      : webhook.HandleSubscriptionInvoiceFailed({ id: "in_pending_increase", subscription: sub.stripeSubscriptionId });
+    await expect(invoke()).rejects.toMatchObject({ statusCode: 503, code: "SUBSCRIPTION_LIFECYCLE_BUSY" });
+    expect(await Subscription.findById(sub._id).select(fields).lean()).toEqual(before);
+    expect(await Payment.find({ subscription: sub._id }).lean()).toEqual(payments);
+    expect(stripe.subscriptions.update.mock.calls).toHaveLength(providerWrites);
+    expect(stripe.paymentIntents.create.mock.calls).toHaveLength(charges);
+    expect(stripe.refunds.create.mock.calls).toHaveLength(refunds);
+    expect((await SubscriptionMutation.findById(mutation._id)).itemIncreaseSnapshot.paymentIntent.id)
+      .toBe("pi_paid_awaiting_local_commit");
+    await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { status: "completed" } });
+    await invoke();
+    expect((await Subscription.findById(sub._id)).status).toBe("paused");
+  });
 
   it("creates a subscription", async () => {
     const res = await request(app)
