@@ -391,4 +391,6 @@ subscriptionSchema.method("toJSON", function () {
   return obj;
 });
 
+require("../utils/subscriptionLease.util").leaseFencingPlugin(subscriptionSchema);
+
 module.exports = mongoose.model("Subscription", subscriptionSchema);

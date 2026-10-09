@@ -30,6 +30,7 @@ const subscriptionMutationSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    workerToken: { type: String, default: null },
     requestHash: {
       type: String,
       required: true,
@@ -75,5 +76,7 @@ subscriptionMutationSchema.index(
   { unique: true },
 );
 subscriptionMutationSchema.index({ status: 1, lockedAt: 1 });
+
+require("../utils/subscriptionLease.util").leaseFencingPlugin(subscriptionMutationSchema);
 
 module.exports = mongoose.model("SubscriptionMutation", subscriptionMutationSchema);

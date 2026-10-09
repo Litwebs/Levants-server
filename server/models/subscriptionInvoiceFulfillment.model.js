@@ -12,4 +12,6 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 schema.index({ subscription: 1, invoiceId: 1 }, { unique: true });
 schema.index({ subscription: 1, completedAt: 1 });
+require("../utils/subscriptionLease.util").leaseFencingPlugin(schema);
+
 module.exports = mongoose.model("SubscriptionInvoiceFulfillment", schema);

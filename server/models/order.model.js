@@ -453,4 +453,6 @@ orderSchema.method("toJSON", function () {
 orderSchema.index({ "location.lat": 1, "location.lng": 1 });
 orderSchema.index({ deliveryDate: 1, status: 1 });
 
+require("../utils/subscriptionLease.util").leaseFencingPlugin(orderSchema);
+
 module.exports = mongoose.model("Order", orderSchema);

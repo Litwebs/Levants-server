@@ -48,6 +48,7 @@ async function runCardOperation(customer, method, kind, verifiedStripeMethod) {
   if (!locked) throw new Error('Another card update is in progress. Please retry shortly.');
   const owned = { _id: customer._id, 'paymentMethodLock.token': token };
   try {
+    await require("../../utils/subscriptionLease.util").withLease({ kind: "customer", id: locked._id, token }, async () => {
     let operation = locked.paymentMethodOperation;
     if (operation && (operation.kind !== kind || operation.methodId !== String(method._id))) {
       throw new Error('An earlier card update is unfinished. Retry that card update before changing or deleting another card.');
@@ -134,6 +135,7 @@ async function runCardOperation(customer, method, kind, verifiedStripeMethod) {
       });
     } finally { await session.endSession(); }
     if (kind === 'set_default') method.isDefault = true;
+    });
   } finally {
     await Customer.updateOne(owned, { $set: { paymentMethodLock: null } });
   }

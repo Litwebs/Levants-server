@@ -238,4 +238,6 @@ customerSchema.method("toJSON", function () {
   return obj;
 });
 
+require("../utils/subscriptionLease.util").leaseFencingPlugin(customerSchema);
+
 module.exports = mongoose.model("Customer", customerSchema);

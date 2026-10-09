@@ -1696,7 +1696,7 @@ async function CreateSubscription(args = {}) {
   }, { $set: { paymentMethodLock: { token, expiresAt: new Date(now.getTime() + 120000) } } });
   if (!claimed) return Response(false, "A card or subscription creation is still being processed. Retry it before starting another purchase.",
     { subscriptionBusy: true, retryable: true });
-  const heartbeat = setInterval(() => Customer.updateOne(owned,
+  const heartbeat = setInterval(() => Customer.updateOne({ ...owned, "paymentMethodLock.expiresAt": { $gt: new Date() } },
     { $set: { "paymentMethodLock.expiresAt": new Date(Date.now() + 120000) } }).catch(() => {}), 20000);
   heartbeat.unref();
   try {
@@ -1704,7 +1704,8 @@ async function CreateSubscription(args = {}) {
       operationId: { $ne: args.operationId }, creationSnapshot: { $ne: null },
     })) return Response(false, "An earlier subscription payment needs confirmation. Retry the original creation before starting another subscription.",
       { subscriptionBusy: true, retryable: true });
-    return await CreateSubscriptionUnlocked(args);
+    return await require("../../utils/subscriptionLease.util").withLease({ kind: "customer",
+      id: claimed._id, token }, () => CreateSubscriptionUnlocked(args));
   } finally {
     clearInterval(heartbeat);
     await Customer.updateOne(owned, { $set: { paymentMethodLock: null } });

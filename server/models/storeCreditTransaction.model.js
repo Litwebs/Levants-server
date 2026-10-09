@@ -90,6 +90,8 @@ storeCreditTransactionSchema.index(
   },
 );
 
+require("../utils/subscriptionLease.util").leaseFencingPlugin(storeCreditTransactionSchema);
+
 module.exports = mongoose.model(
   "StoreCreditTransaction",
   storeCreditTransactionSchema,

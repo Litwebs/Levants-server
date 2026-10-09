@@ -113,4 +113,6 @@ paymentSchema.method("toJSON", function () {
   return obj;
 });
 
+require("../utils/subscriptionLease.util").leaseFencingPlugin(paymentSchema);
+
 module.exports = mongoose.model("Payment", paymentSchema);

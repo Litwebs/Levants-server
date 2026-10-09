@@ -7,6 +7,7 @@ const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
 const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
 const { Response } = require("../../utils/response.util");
+const { withLease } = require("../../utils/subscriptionLease.util");
 
 const PROCESSING_LEASE_MS = 2 * 60 * 1000;
 const CUSTOMER_MUTATION_LEASE_MS = 2 * 60 * 1000;
@@ -279,7 +280,8 @@ async function executeSubscriptionConcurrencyGuard({
         "An earlier payment still needs confirmation. Retry the original purchase before changing this subscription or placing another purchase.",
         { subscriptionBusy: true, retryable: true, currentVersion: claim.currentVersion });
     }
-    return await execute();
+    return subscriptionId ? await withLease({ kind: "subscription", id: subscriptionId,
+      token: claim.lockOperationId }, execute) : await execute();
   } finally {
     clearInterval(heartbeat);
     await releaseSubscriptionMutationLock({
@@ -324,6 +326,7 @@ async function executeIdempotentSubscriptionMutation({
       ? new mongoose.Types.ObjectId()
       : null;
 
+  const workerToken = crypto.randomUUID();
   let mutation;
   let createdNew = false;
   try {
@@ -334,6 +337,7 @@ async function executeIdempotentSubscriptionMutation({
       operationId,
       mutationType,
       requestHash: hash,
+      workerToken,
       status: "processing",
       lockedAt: now,
     });
@@ -381,6 +385,7 @@ async function executeIdempotentSubscriptionMutation({
       {
         $set: {
           status: "processing",
+          workerToken,
           lockedAt: now,
           lastError: null,
         },
@@ -399,6 +404,7 @@ async function executeIdempotentSubscriptionMutation({
   }
 
   try {
+    return await withLease({ kind: "mutation", id: mutation._id, token: workerToken }, async () => {
     const result = await executeSubscriptionConcurrencyGuard({
       customerId,
       subscriptionId,
@@ -440,9 +446,10 @@ async function executeIdempotentSubscriptionMutation({
     }
 
     return result;
+    });
   } catch (error) {
     await SubscriptionMutation.updateOne(
-      { _id: mutation._id, status: { $ne: "completed" } },
+      { _id: mutation._id, workerToken, status: { $ne: "completed" } },
       {
         $set: {
           status: "failed",

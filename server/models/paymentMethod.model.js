@@ -59,4 +59,6 @@ paymentMethodSchema.method("toJSON", function () {
   return obj;
 });
 
+require("../utils/subscriptionLease.util").leaseFencingPlugin(paymentMethodSchema);
+
 module.exports = mongoose.model("PaymentMethod", paymentMethodSchema);
