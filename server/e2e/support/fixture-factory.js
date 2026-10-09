@@ -7,6 +7,7 @@ const mongoose = require("mongoose");
 const Customer = require("../../models/customer.model");
 const Order = require("../../models/order.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
+const Payment = require("../../models/payment.model");
 const Product = require("../../models/product.model");
 const ProductVariant = require("../../models/variant.model");
 const Review = require("../../models/review.model");
@@ -665,7 +666,7 @@ async function createFixture(options = {}) {
     });
     resumeFundingRefundId = refund.id;
   }
-  const createPaidOrders = options.lifecycle !== "resume";
+  const createPaidOrders = options.lifecycle !== "resume" || options.resumeRequiresPayment === true;
   const { deliveries, orders } = await replaceDeliverySchedule({
     subscription,
     config,
@@ -996,7 +997,7 @@ async function stripeState(subscription, customer) {
 async function getState(subscriptionId) {
   const subscription = await Subscription.findById(subscriptionId).lean();
   if (!subscription) throw new Error("Subscription fixture not found");
-  const [customer, deliveries, orders, credits] = await Promise.all([
+  const [customer, deliveries, orders, credits, payments] = await Promise.all([
     Customer.findById(subscription.customer).lean(),
     SubscriptionDelivery.find({ subscription: subscription._id })
       .sort({ scheduledDate: 1 })
@@ -1007,6 +1008,7 @@ async function getState(subscriptionId) {
     StoreCreditTransaction.find({ subscription: subscription._id })
       .sort({ createdAt: 1 })
       .lean(),
+    Payment.find({ subscription: subscription._id }).sort({ createdAt: 1 }).lean(),
   ]);
   const remote = await stripeState(subscription, customer);
 
@@ -1021,6 +1023,7 @@ async function getState(subscriptionId) {
       deliveries,
       orders,
       credits,
+      payments,
       stripe: remote,
     }),
   );

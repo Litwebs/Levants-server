@@ -6,6 +6,7 @@ const { assertAddOnFulfillmentEligible } = require("./subscriptionAddOnFulfillme
 const { prepareSingleDayTransition } = require("./subscriptionSingleDayTransition.service");
 const { refundItemDecrease } = require("./subscriptionItemDecreaseRefund.service");
 const { settleDetachedAddOns } = require("./subscriptionDetachedAddOnSettlement.service");
+const { prepareResumePayment, recoverResumePayment } = require("./subscriptionResumePayment.service");
 const subscriptionClock = require("../../utils/subscriptionClock.util");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
@@ -17,7 +18,7 @@ const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const stripe = require("../../utils/stripe.util");
-const { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure } = require("./subscriptionRefundSettlement.service");
+const { refundAcrossSubscriptionPayments, hasUnfinishedCardRefund, refundFailure, listRefunds } = require("./subscriptionRefundSettlement.service");
 const { Response } = require("../../utils/response.util");
 const { recoverAddOnPayment } = require("./subscriptionAddOnPayment.service");
 const { locateDeliveryAddress, saveSubscriptionDeliveryAddress } = require("./subscriptionDeliveryAddress.service");
@@ -679,7 +680,7 @@ async function getResumeNextDeliveryDate(
   );
   const retainedDeliveries = await SubscriptionDelivery.find({
     subscription: subscription._id,
-    status: "scheduled",
+    status: { $in: ["scheduled", "generated"] },
     scheduledDate: { $gte: eligibilityStart },
   })
     .sort({ scheduledDate: 1 })
@@ -720,158 +721,106 @@ async function getResumeNextDeliveryDate(
   );
 }
 
-async function getResumeRequiredMinor(subscription, nextDeliveryDate) {
-  if (!subscription.stripeSubscriptionId || !stripe.invoices?.list) return 0;
-
-  // Prefer the payment that backs the actual delivery being resumed. This is
-  // essential for multi-day subscriptions where each delivery can have a
-  // different cut-off while billing remains consolidated.
+async function getResumeFunding(subscription, nextDeliveryDate) {
   const deliveryStart = startOfDay(nextDeliveryDate);
-  const deliveryEnd = addCalendarDaysInTimeZone(
-    deliveryStart,
-    1,
-    SUBSCRIPTION_TIME_ZONE,
-  );
-  const order = await Order.findOne({
-    subscription: subscription._id,
+  const deliveryEnd = addCalendarDaysInTimeZone(deliveryStart, 1, SUBSCRIPTION_TIME_ZONE);
+  const order = await Order.findOne({ subscription: subscription._id,
     deliveryDate: { $gte: deliveryStart, $lt: deliveryEnd },
-    stripePaymentIntentId: { $ne: null },
+    deliveryStatus: "ordered", stripePaymentIntentId: { $ne: null },
   }).lean();
-
-  if (order?.stripePaymentIntentId && stripe.refunds?.list) {
-    const refunds = await stripe.refunds.list({
-      payment_intent: order.stripePaymentIntentId,
-      limit: 100,
-    });
-    const succeededRefunds = (refunds.data || []).filter(
-      (refund) => refund.status === "succeeded",
-    );
-    const deliveryTaggedRefunds = succeededRefunds.filter(
-      (refund) => String(refund.metadata?.orderId || "") === String(order._id),
-    );
-    const hasOrderTaggedRefunds = succeededRefunds.some(
-      (refund) => refund.metadata?.orderId,
-    );
-    const relevantRefunds = hasOrderTaggedRefunds
-      ? deliveryTaggedRefunds
-      : succeededRefunds;
-    const refundedMinor = relevantRefunds.reduce(
-      (sum, refund) => sum + Number(refund.amount || 0),
-      0,
-    );
-    const deliveryMinor = Math.max(
-      0,
-      Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
-    );
-    return Math.min(deliveryMinor, refundedMinor);
+  // A new slot will be funded by its own recurring invoice. Historical refunds
+  // are not a debt for an unrelated future delivery.
+  if (!order) return { amountMinor: 0, orderId: null };
+  const allocations = order.paymentAllocations?.length ? order.paymentAllocations : [{
+    paymentIntentId: order.stripePaymentIntentId,
+    amountMinor: Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100),
+  }];
+  let availableMinor = 0;
+  for (const allocation of allocations) {
+    const history = (await listRefunds(allocation.paymentIntentId)).filter(refund => refund.status === "succeeded");
+    let relevant = history.filter(refund => String(refund.metadata?.orderId || "") === String(order._id));
+    const untagged = history.filter(refund => !refund.metadata?.orderId);
+    if (untagged.length) {
+      const sharedOrders = await Order.countDocuments({ subscription: subscription._id,
+        stripePaymentIntentId: allocation.paymentIntentId });
+      if (sharedOrders !== 1) throw new Error("An unallocated refund needs reconciliation before this delivery can resume.");
+      relevant = [...relevant, ...untagged];
+    }
+    availableMinor += Math.max(0, Number(allocation.amountMinor || 0) -
+      relevant.reduce((sum, refund) => sum + Number(refund.amount || 0), 0));
   }
-
-  const invoices = await stripe.invoices.list({
-    subscription: subscription.stripeSubscriptionId,
-    status: "paid",
-    limit: 10,
-  });
-
-  for (const invoice of invoices.data || []) {
-    const paymentIntentId =
-      typeof invoice.payment_intent === "string"
-        ? invoice.payment_intent
-        : invoice.payment_intent?.id;
-    const paidMinor = Number(invoice.amount_paid || 0);
-    if (!paymentIntentId || paidMinor <= 0) continue;
-
-    const refunds = await stripe.refunds.list({
-      payment_intent: paymentIntentId,
-      limit: 100,
-    });
-    const refundedMinor = (refunds.data || [])
-      .filter((refund) => refund.status === "succeeded")
-      .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
-
-    // Legacy orders may not yet identify their backing intent. Restore exactly
-    // the amount that was refunded (full or partial), capped at the invoice.
-    return Math.min(paidMinor, refundedMinor);
+  const totalMinor = Math.round(Number(order.total || 0) * 100);
+  if (!Number.isSafeInteger(totalMinor) || totalMinor < 0) throw new Error("Invalid resumed delivery value.");
+  if (order.status === "refunded" && availableMinor > 0) {
+    throw new Error("This refunded delivery has unresolved payment backing. Please contact support before resuming.");
   }
-
-  return 0;
+  return { amountMinor: Math.max(0, totalMinor - availableMinor), orderId: order._id };
 }
 
 async function activatePausedSubscription(
   subscription,
-  {
-    notificationType = "subscription_resumed",
-    notificationTitle = "Subscription resumed",
-    notificationMessage,
-  } = {},
+  { notificationType = "subscription_resumed", notificationTitle = "Subscription resumed",
+    notificationMessage, operationId } = {},
 ) {
-  const nextDeliveryDate = await getResumeNextDeliveryDate(subscription);
-  const resumeRequiredMinor = await getResumeRequiredMinor(
-    subscription,
-    nextDeliveryDate,
-  );
-
-  // Remote billing must be resumed before local state changes. A failed Stripe
-  // sync leaves the subscription paused and safe to retry.
+  let plan = subscription.resumePaymentPlan;
+  if (!plan || plan.completedAt) {
+    const nextDeliveryDate = await getResumeNextDeliveryDate(subscription);
+    const funding = await getResumeFunding(subscription, nextDeliveryDate);
+    plan = await prepareResumePayment(subscription, { nextDeliveryDate, ...funding, operationId });
+  }
+  // Keep recurring billing paused while the one-off outcome is unknown.
+  const intent = await recoverResumePayment(subscription, plan);
   if (subscription.stripeSubscriptionId) {
-    await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-      pause_collection: "",
-    });
+    await stripe.subscriptions.update(subscription.stripeSubscriptionId, { pause_collection: "" });
   }
-
-  if (resumeRequiredMinor > 0) {
-    const customer = await Customer.findById(subscription.customer);
-    const charge = await chargeDeltaNow(
-      subscription,
-      customer,
-      resumeRequiredMinor,
-      `Subscription resumed – ${subscription.subscriptionNumber}`,
-      `subscription:${subscription._id}:resume:${deliveryDateKey(nextDeliveryDate)}:${resumeRequiredMinor}`,
-    );
-    if (!charge.ok) {
-      if (subscription.stripeSubscriptionId) {
-        try {
-          await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-            pause_collection: { behavior: "void" },
-          });
-        } catch (rollbackError) {
-          console.error(
-            "[ResumeSubscription] Failed to restore Stripe pause after declined payment:",
-            rollbackError?.message || rollbackError,
-          );
-        }
+  const response = Response(true, "Subscription resumed", { subscription: null });
+  try { await mongoose.connection.transaction(async session => {
+    const fresh = await Subscription.findOne({ _id: subscription._id, status: "paused",
+      customerVersion: plan.baseVersion, "resumePaymentPlan.id": plan.id }).session(session);
+    if (!fresh) throw new Error("The subscription changed before resume activation. Please contact support to reconcile its payment.");
+    if (plan.orderId && intent) {
+      const order = await Order.findOne({ _id: plan.orderId, subscription: subscription._id,
+        deliveryStatus: "ordered" }).session(session);
+      if (!order) throw new Error("The resumed delivery is no longer available. Its payment needs reconciliation.");
+      if (!order.paymentAllocations.length && order.stripePaymentIntentId) {
+        order.paymentAllocations.push({ paymentIntentId: order.stripePaymentIntentId,
+          stripeInvoiceId: order.stripeInvoiceId, source: "subscription_invoice",
+          amountMinor: Math.round(Number(order.amountPaid ?? order.total ?? 0) * 100) });
       }
-      throw new Error(charge.message || "Payment is required to resume");
+      const key = `resume:${plan.id}`;
+      if (!order.paymentAllocations.some(allocation => allocation.idempotencyKey === key)) {
+        order.paymentAllocations.push({ paymentIntentId: intent.id, source: "resume",
+          amountMinor: plan.amountMinor, idempotencyKey: key });
+      }
+      order.status = "paid";
+      order.amountPaid = order.total;
+      order.subscriptionRefundPlan = null;
+      await order.save({ session });
     }
+    fresh.status = "active";
+    fresh.pausedAt = null;
+    fresh.pausedUntil = null;
+    fresh.pauseReason = null;
+    fresh.nextDeliveryDate = new Date(plan.nextDeliveryDate);
+    fresh.resumePaymentPlan = { ...plan, completedAt: new Date(subscriptionClock.now()) };
+    await fresh.save({ session });
+    await scheduleUpcomingDeliveries(fresh, session);
+    response.data.subscription = JSON.parse(JSON.stringify(fresh));
+    if (operationId) await SubscriptionMutation.updateOne({ customer: subscription.customer, operationId },
+      { $set: { status: "completed", response, completedAt: new Date(), lastError: null } }, { session });
+    subscription = fresh;
+  }); } catch (error) {
+    if (subscription.stripeSubscriptionId) {
+      try { await stripe.subscriptions.update(subscription.stripeSubscriptionId, { pause_collection: { behavior: "void" } }); }
+      catch (rollbackError) { console.error("[ResumeSubscription] Billing pause restore failed:", rollbackError.message); }
+    }
+    throw error;
   }
-
-  subscription.status = "active";
-  subscription.pausedAt = null;
-  subscription.pausedUntil = null;
-  subscription.pauseReason = null;
-  subscription.nextDeliveryDate = nextDeliveryDate;
-  await subscription.save();
-
-  await scheduleUpcomingDeliveries(subscription);
-
-  await CustomerNotification.create({
-    customer: subscription.customer,
-    type: notificationType,
-    title: notificationTitle,
-    message:
-      notificationMessage ||
-      `Your subscription is active again. Next delivery: ${formatDateLabel(subscription.nextDeliveryDate)}.`,
-    relatedSubscription: subscription._id,
-  });
-
-  await sendSubscriptionUpdateEmail({
-    customerId: subscription.customer,
-    subscription,
-    title: notificationTitle,
-    message:
-      notificationMessage ||
-      `Your subscription is active again. Next delivery: ${formatDateLabel(subscription.nextDeliveryDate)}.`,
-  });
-
+  const message = notificationMessage || `Your subscription is active again. Next delivery: ${formatDateLabel(subscription.nextDeliveryDate)}.`;
+  await CustomerNotification.create({ customer: subscription.customer, type: notificationType,
+    title: notificationTitle, message, relatedSubscription: subscription._id });
+  await sendSubscriptionUpdateEmail({ customerId: subscription.customer, subscription,
+    title: notificationTitle, message });
   return subscription;
 }
 
@@ -895,7 +844,7 @@ async function AutoResumePausedSubscriptions({
       const activated = await withSubscriptionLifecycleLock(null, async () => {
         // The candidate may have been cancelled or its pause extended while
         // this job waited. Use the current state after acquiring the lock.
-        const fresh = await Subscription.findOne({ ...filter, _id: subscription._id });
+        const fresh = await Subscription.findOne({ ...filter, _id: subscription._id }).select("+resumePaymentPlan");
         if (!fresh || fresh.isCancellationScheduled) return false;
         await activatePausedSubscription(fresh, {
           notificationType: "subscription_auto_resumed",
@@ -904,7 +853,7 @@ async function AutoResumePausedSubscriptions({
             "Your pause period has ended, so your subscription has resumed automatically.",
         });
         return true;
-      }, { subscriptionId: subscription._id, ignoreMissing: true });
+      }, { subscriptionId: subscription._id, ignoreMissing: true, allowResumeRecovery: true });
       if (activated) resumed += 1;
     } catch (error) {
       // A declined card or a transient Stripe failure for one customer must not
@@ -1005,68 +954,6 @@ function itemsToPlain(items = []) {
     quantity: i.quantity,
     unitPrice: i.unitPrice,
   }));
-}
-
-/**
- * Charge a one-off amount immediately against the customer's default card.
- * Used when an increase is made before the cut-off so the extra is collected now.
- */
-async function chargeDeltaNow(
-  subscription,
-  customer,
-  amountMinor,
-  description,
-  idempotencyKey,
-  {
-    metadataType = "subscription_modification",
-    metadata = {},
-  } = {},
-) {
-  if (!amountMinor || amountMinor <= 0)
-    return { ok: true, paymentIntent: null };
-  if (!customer?.stripeCustomerId) {
-    return { ok: false, message: "No payment method on file" };
-  }
-
-  let stripeCustomer;
-  try {
-    stripeCustomer = await stripe.customers.retrieve(customer.stripeCustomerId);
-  } catch {
-    return { ok: false, message: "Could not verify your payment profile" };
-  }
-
-  const pmId = stripeCustomer?.invoice_settings?.default_payment_method;
-  if (!pmId) {
-    return { ok: false, message: "Please add a default card first" };
-  }
-
-  try {
-    const paymentIntent = await stripe.paymentIntents.create(
-      {
-        amount: amountMinor,
-        currency: "gbp",
-        customer: customer.stripeCustomerId,
-        payment_method: pmId,
-        off_session: true,
-        confirm: true,
-        description,
-        metadata: {
-          subscriptionId: String(subscription._id),
-          subscriptionNumber: subscription.subscriptionNumber,
-          type: metadataType,
-          ...metadata,
-        },
-      },
-      idempotencyKey ? { idempotencyKey } : undefined,
-    );
-    return { ok: true, paymentIntent };
-  } catch (err) {
-    return {
-      ok: false,
-      message:
-        err?.message || "We couldn't charge your card for the extra items",
-    };
-  }
 }
 
 async function attachDeliveryAddOnToOrder({
@@ -3565,19 +3452,21 @@ async function PauseSubscription({
 /**
  * Resume a paused subscription.
  */
-async function ResumeSubscription({ customerId, subscriptionId } = {}) {
+async function ResumeSubscription({ customerId, subscriptionId, operationId } = {}) {
   const subscription = await Subscription.findOne({
     _id: subscriptionId,
     customer: customerId,
-  });
+  }).select("+resumePaymentPlan");
   if (!subscription) return Response(false, "Subscription not found", null);
   if (subscription.status !== "paused") {
     return Response(false, "Only paused subscriptions can be resumed", null);
   }
 
-  await activatePausedSubscription(subscription);
+  let activated;
+  try { activated = await activatePausedSubscription(subscription, { operationId }); }
+  catch (error) { return Response(false, error.message, { paymentOutcome: "unconfirmed", reconciliationRequired: true }); }
 
-  const enriched = await enrichSubscriptionWithVariantImages(subscription);
+  const enriched = await enrichSubscriptionWithVariantImages(activated);
   return Response(true, "Subscription resumed", { subscription: enriched });
 }
 

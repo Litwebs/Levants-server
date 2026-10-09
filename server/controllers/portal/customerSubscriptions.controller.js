@@ -56,7 +56,7 @@ async function runMutation(
   // Older callers omit operationId. Keep their payment retries stable while
   // the local version is unchanged; modern callers retain their explicit ID.
   if (subscriptionId && !req.body?.operationId &&
-      ["add_subscription_item", "replace_subscription_items", "update_subscription_item", "remove_subscription_item", "update_subscription", "pause_subscription", "cancel_subscription"].includes(mutationType)) {
+      ["add_subscription_item", "replace_subscription_items", "update_subscription_item", "remove_subscription_item", "update_subscription", "pause_subscription", "cancel_subscription", "resume_subscription"].includes(mutationType)) {
     const current = await Subscription.findOne({ _id: subscriptionId, customer: req.customer._id })
       .select("customerVersion").lean();
     req.body = req.body || {};
@@ -196,6 +196,7 @@ const ResumeSubscription = async (req, res) => {
       service.ResumeSubscription({
         customerId: req.customer._id,
         subscriptionId: req.params.subscriptionId,
+        operationId: req.body?.operationId,
       }),
   });
   if (!result.success) return sendMutationError(res, result);

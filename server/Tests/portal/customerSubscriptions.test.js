@@ -1646,6 +1646,68 @@ describe("Portal Subscriptions", () => {
     expect(stored.status).toBe("active");
   });
 
+  it.each(["processing", "lost-response", "local-write"])("resume keeps one durable payment and activates atomically (%s)", async boundary => {
+    const sub = await createBasicSubscription();
+    const future = new Date(Date.now() + 7 * 86400000);
+    await SubscriptionDelivery.deleteMany({ subscription: sub._id });
+    await Subscription.updateOne({ _id: sub._id }, { $set: {
+      nextDeliveryDate: future, status: "paused", pausedUntil: new Date(Date.now() - 60000) } });
+    const order = await createPaidOrderFor({ ...sub, nextDeliveryDate: future });
+    await SubscriptionDelivery.create({ subscription: sub._id, customer: customer._id,
+      scheduledDate: future, status: "generated", order: order._id });
+    stripe.refunds.list.mockResolvedValue({ data: [{ id: "re_resume", status: "succeeded",
+      amount: 250, metadata: { orderId: String(order._id) } }], has_more: false });
+    const succeeded = { id: `pi_resume_${boundary}`, status: "succeeded", amount: 250,
+      amount_received: 250, customer: customer.stripeCustomerId, currency: "gbp" };
+    stripe.paymentIntents.create.mockResolvedValue(succeeded);
+    stripe.paymentIntents.retrieve.mockResolvedValue(succeeded);
+    if (boundary === "processing") stripe.paymentIntents.create.mockResolvedValueOnce({ ...succeeded, status: "processing", amount_received: 0 });
+    if (boundary === "lost-response") stripe.paymentIntents.create.mockRejectedValueOnce(new Error("provider response lost"));
+    let saveSpy;
+    if (boundary === "local-write") {
+      const original = Order.prototype.save;
+      saveSpy = jest.spyOn(Order.prototype, "save").mockImplementation(function (...args) {
+        if (this.paymentAllocations.some(allocation => allocation.source === "resume")) throw new Error("resume order write failed");
+        return original.apply(this, args);
+      });
+    }
+    const operationId = `resume-${crypto.randomUUID()}`;
+    const resume = () => request(app).post(`/api/portal/subscriptions/${sub._id}/resume`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ operationId });
+    try {
+      expect((await resume()).status).toBe(400);
+      const failed = await Subscription.findById(sub._id).select("+resumePaymentPlan").lean();
+      expect(failed.status).toBe("paused");
+      expect(failed.resumePaymentPlan.completedAt).toBeFalsy();
+      expect((await Order.findById(order._id)).paymentAllocations).toHaveLength(0);
+      const conflict = await request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+        .set("Authorization", `Bearer ${accessToken}`).send({ notes: "conflicting edit", operationId: crypto.randomUUID() });
+      expect(conflict.status).toBe(409);
+      if (saveSpy) { saveSpy.mockRestore(); saveSpy = null; }
+      expect((await resume()).status).toBe(200);
+      expect((await resume()).status).toBe(200);
+      const active = await Subscription.findById(sub._id).select("+resumePaymentPlan").lean();
+      expect(active.status).toBe("active");
+      expect(active.resumePaymentPlan.completedAt).toBeTruthy();
+      const restored = await Order.findById(order._id).lean();
+      expect(restored.paymentAllocations.filter(allocation => allocation.source === "resume")).toHaveLength(1);
+      expect(await Payment.countDocuments({ subscription: sub._id, providerReference: succeeded.id })).toBe(1);
+      if (boundary === "lost-response") expect(stripe.paymentIntents.create.mock.calls.at(-1)).toEqual(stripe.paymentIntents.create.mock.calls.at(-2));
+      else expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    } finally { if (saveSpy) saveSpy.mockRestore(); }
+  });
+
+  it("does not charge a historical refunded invoice for an unrelated new resume slot", async () => {
+    const sub = await createBasicSubscription();
+    await Subscription.updateOne({ _id: sub._id }, { $set: { status: "paused", pausedUntil: new Date(Date.now() - 60000) } });
+    stripe.refunds.list.mockResolvedValue({ data: [{ id: "re_old", status: "succeeded", amount: 250 }], has_more: false });
+    stripe.paymentIntents.create.mockClear();
+    const result = await request(app).post(`/api/portal/subscriptions/${sub._id}/resume`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID() });
+    expect(result.status).toBe(200);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+  });
+
   it("auto-resume resumes only due paused subscriptions", async () => {
     const due = await createBasicSubscription();
     const future = await createBasicSubscription();

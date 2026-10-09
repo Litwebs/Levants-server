@@ -996,6 +996,14 @@ test("automatic resume charges a delivery whose prior invoice was fully refunded
       0,
     ),
   ).toBe(fixture.resumeRequiredMinor);
+  for (const intent of resumeCharges) {
+    const ledger = after.payments.filter(payment => payment.providerReference === intent.id);
+    expect.soft(ledger).toHaveLength(1);
+    expect.soft(ledger[0]?.status).toBe("paid");
+    expect.soft(Math.round(Number(ledger[0]?.amount || 0) * 100)).toBe(Number(intent.amountReceived));
+    expect.soft(after.orders.some(order => order.paymentAllocations?.some(allocation =>
+      allocation.source === "resume" && allocation.paymentIntentId === intent.id))).toBe(true);
+  }
   expect.soft(after.subscription.status).toBe("active");
   expect.soft(after.stripe.remoteSubscription.pauseCollection).toBeNull();
 });

@@ -317,6 +317,8 @@ const subscriptionSchema = new mongoose.Schema(
       index: true,
     },
 
+    resumePaymentPlan: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+
     // Monotonic customer/admin edit revision used for stale-edit protection.
     customerVersion: {
       type: Number,
@@ -385,6 +387,7 @@ subscriptionSchema.index({ nextDeliveryDate: 1, status: 1 });
 subscriptionSchema.method("toJSON", function () {
   const obj = this.toObject();
   delete obj.__v;
+  delete obj.resumePaymentPlan;
   return obj;
 });
 

@@ -78,7 +78,7 @@ async function readSubscriptionConcurrencyState(customerId, subscriptionId) {
     _id: subscriptionId,
     customer: customerId,
   })
-    .select("customerVersion +customerMutationLock")
+    .select("customerVersion +customerMutationLock +resumePaymentPlan")
     .lean();
 }
 
@@ -204,6 +204,7 @@ async function claimSubscriptionMutationLock({
     ok: true,
     lockOperationId,
     currentVersion,
+    resumePaymentPlan: current.resumePaymentPlan,
   };
 }
 
@@ -229,6 +230,7 @@ async function executeSubscriptionConcurrencyGuard({
   subscriptionId,
   expectedVersion,
   operationId,
+  mutationType,
   execute,
 }) {
   const claim = await claimSubscriptionMutationLock({
@@ -241,6 +243,10 @@ async function executeSubscriptionConcurrencyGuard({
   const heartbeat = startSubscriptionLockHeartbeat(subscriptionId, claim.lockOperationId);
 
   try {
+    if (claim.resumePaymentPlan && !claim.resumePaymentPlan.completedAt && mutationType !== "resume_subscription") {
+      return Response(false, "An earlier resume payment still needs confirmation. Retry the original resume first.",
+        { subscriptionBusy: true, retryable: true, currentVersion: claim.currentVersion });
+    }
     // An accepted charge must finish its saved fulfillment change before another
     // customer mutation can replace the baseline or cancel the target delivery.
     const pending = subscriptionId ? await SubscriptionMutation.find({
@@ -295,6 +301,7 @@ async function executeIdempotentSubscriptionMutation({
       subscriptionId,
       expectedVersion,
       operationId: null,
+      mutationType,
       execute: () =>
         execute({
           resourceId: subscriptionId || null,
@@ -392,6 +399,7 @@ async function executeIdempotentSubscriptionMutation({
       subscriptionId,
       expectedVersion,
       operationId,
+      mutationType,
       execute: () =>
         execute({
           resourceId: mutation.resourceId || resourceId,
