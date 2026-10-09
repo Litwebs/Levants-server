@@ -487,6 +487,16 @@ async function AdminUpdateSubscription({
   expectedVersion,
   ...fields
 } = {}) {
+  // Product composition is customer-managed, including updates submitted
+  // through the general PATCH endpoint. Reject the whole request before any
+  // lookup, lease, settings edit, payment or refund can run.
+  if (["deliveryDayPlans", "items"].some(field =>
+    Object.prototype.hasOwnProperty.call(fields, field))) {
+    return {
+      ...Response(false, "Subscription products cannot be changed by admins", null),
+      statusCode: 403,
+    };
+  }
   const subscription = await Subscription.findById(subscriptionId);
   if (!subscription) return Response(false, "Subscription not found", null);
   return executeSubscriptionConcurrencyGuard({

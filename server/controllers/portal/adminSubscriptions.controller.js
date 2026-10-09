@@ -93,7 +93,7 @@ const UpdateSubscription = async (req, res) => {
     ...req.body,
   });
   if (!result.success)
-    return sendErr(res, { statusCode: adminMutationStatus(result), message: result.message });
+    return sendErr(res, { statusCode: result.statusCode || adminMutationStatus(result), message: result.message });
   return sendOk(res, result.data, { message: result.message });
 };
 
