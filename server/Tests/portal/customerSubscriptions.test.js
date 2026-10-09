@@ -5240,6 +5240,10 @@ describe("Portal Subscriptions", () => {
     expect(declined.body.data.paymentOutcome).toBe("declined");
     expect((await ProductVariant.findById(variantId)).reservedQuantity).toBe(0);
     const originalKey = stripe.subscriptions.create.mock.calls[0][1].idempotencyKey;
+    await ProductVariant.updateOne({ _id: variantId }, { $set: { stockQuantity: 0 } });
+    expect((await send()).body.data.paymentOutcome).toBe("declined");
+    expect(stripe.subscriptions.create).toHaveBeenCalledTimes(1);
+    await ProductVariant.updateOne({ _id: variantId }, { $set: { stockQuantity: 100 } });
     stripe.customers.retrieve.mockResolvedValue({ invoice_settings: { default_payment_method: "pm_replacement" } });
     expect((await send()).status).toBe(201);
     expect(stripe.subscriptions.create.mock.calls[1][1].idempotencyKey).toBe(`${originalKey}:attempt:2`);
@@ -5249,7 +5253,7 @@ describe("Portal Subscriptions", () => {
     expect(stripe.prices.create).toHaveBeenCalledTimes(1);
   });
 
-  it.each([false, true])("refunds remaining captured balance after a decrease (allocations: %s)", async (withAllocations) => {
+  it.each([false, true])("blocks a generic admin refund of a subscription after a decrease (allocations: %s)", async (withAllocations) => {
     const sub = await createBasicSubscription();
     const order = await createPaidOrderFor(sub);
     order.total = 3.5;
@@ -5261,15 +5265,14 @@ describe("Portal Subscriptions", () => {
       paymentIntentId: order.stripePaymentIntentId, source: "subscription_invoice", amountMinor: 850,
     }];
     await order.save();
-    stripe.refunds.create.mockResolvedValueOnce({ id: "re_second", status: "succeeded" });
-    const partial = await refundService.RefundOrder({ orderId: order._id, amount: 1 });
-    expect(partial.success).toBe(true);
-    expect(stripe.refunds.create.mock.calls.at(-1)[0].amount).toBe(100);
-    stripe.refunds.create.mockResolvedValueOnce({ id: "re_final", status: "succeeded" });
+    stripe.refunds.create.mockClear();
+    const partial = await refundService.RefundOrder({ orderId: order._id, amount: 1, restock: true });
+    expect(partial).toMatchObject({ success: false, statusCode: 409 });
+    expect(partial.message).toMatch(/subscription cancellation or item-adjustment/);
     const final = await refundService.RefundOrder({ orderId: order._id });
-    expect(final.success).toBe(true);
-    expect(stripe.refunds.create.mock.calls.at(-1)[0].amount).toBe(250);
-    expect((await Order.findById(order._id)).status).toBe("refunded");
+    expect(final).toMatchObject({ success: false, statusCode: 409 });
+    expect(stripe.refunds.create).not.toHaveBeenCalled();
+    expect((await Order.findById(order._id)).status).toBe("partially_refunded");
   });
 
   it("replays a completed subscription creation operation without creating or charging twice", async () => {

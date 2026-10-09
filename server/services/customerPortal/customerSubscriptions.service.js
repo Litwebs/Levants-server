@@ -2092,10 +2092,25 @@ async function CreateSubscriptionUnlocked({
 }
 
 async function completeSubscriptionCreation(customer, snapshot, mutation) {
+  if (snapshot.inventoryKey) {
+    try { await require("../subscriptions/subscriptionStock.service").reserveStock({ key: snapshot.inventoryKey,
+      subscriptionId: snapshot.subscription._id, items: snapshot.subscription.items }); }
+    catch (error) {
+      if (error.code !== "SUBSCRIPTION_OUT_OF_STOCK") throw error;
+      if (snapshot.declined) return Response(false, error.message, { paymentOutcome: "declined" });
+      if (snapshot.remotePrice || snapshot.remoteSubscription) return Response(false,
+        "The original subscription inventory needs reconciliation before its payment can be retried.", { reconciliationRequired: true });
+      await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { creationSnapshot: null } });
+      return Response(false, error.message, { paymentOutcome: "not_charged" });
+    }
+  }
   if (snapshot.declined) {
     const remoteCustomer = await stripe.customers.retrieve(customer.stripeCustomerId);
     const defaultMethod = remoteCustomer?.invoice_settings?.default_payment_method;
-    if (!defaultMethod) return Response(false, "Please add a default card first", { paymentOutcome: "declined" });
+    if (!defaultMethod) {
+      if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").releaseStock({ key: snapshot.inventoryKey });
+      return Response(false, "Please add a default card first", { paymentOutcome: "declined" });
+    }
     const next = { ...snapshot, declined: false, startedAt: new Date(subscriptionClock.now()),
       stripeSubscription: { ...snapshot.stripeSubscription,
         default_payment_method: typeof defaultMethod === "string" ? defaultMethod : defaultMethod.id },
@@ -2103,17 +2118,6 @@ async function completeSubscriptionCreation(customer, snapshot, mutation) {
     const saved = await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { creationSnapshot: next } });
     if (!saved.matchedCount) throw new Error("The replacement card attempt could not be saved.");
     Object.assign(snapshot, next);
-  }
-  if (snapshot.inventoryKey) {
-    try { await require("../subscriptions/subscriptionStock.service").reserveStock({ key: snapshot.inventoryKey,
-      subscriptionId: snapshot.subscription._id, items: snapshot.subscription.items }); }
-    catch (error) {
-      if (error.code !== "SUBSCRIPTION_OUT_OF_STOCK") throw error;
-      if (snapshot.remotePrice || snapshot.remoteSubscription) return Response(false,
-        "The original subscription inventory needs reconciliation before its payment can be retried.", { reconciliationRequired: true });
-      await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { creationSnapshot: null } });
-      return Response(false, error.message, { paymentOutcome: "not_charged" });
-    }
   }
   // Stripe may discard an idempotency key after 24 hours. If the remote
   // outcome was never durably recorded, do not risk another charge on an old

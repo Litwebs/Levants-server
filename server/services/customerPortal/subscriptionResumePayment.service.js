@@ -5,6 +5,7 @@ const Customer = require("../../models/customer.model");
 const Payment = require("../../models/payment.model");
 const stripe = require("../../utils/stripe.util");
 const clock = require("../../utils/subscriptionClock.util");
+const { listAllStripePages } = require("../../utils/stripePagination.util");
 
 const reference = value => typeof value === "string" ? value : value?.id;
 function validateIntent(intent, plan) {
@@ -70,17 +71,11 @@ async function recoverResumePayment(subscription, plan) {
     } else if (clock.now() - new Date(plan.startedAt).getTime() >= 23 * 3600000) {
       // The provider may have discarded the idempotency key. Search every page
       // for the exact saved operation; never create a second aged charge.
-      const matches = [];
-      let cursor;
-      do {
-        const page = await stripe.paymentIntents.list({ customer: plan.chargeParams.customer, limit: 100,
-          ...(cursor ? { starting_after: cursor } : {}) });
-        matches.push(...page.data.filter(candidate => candidate.metadata?.resumePlanId === plan.id));
-        if (!page.has_more) break;
-        const next = page.data.at(-1)?.id;
-        if (!next || next === cursor) throw new Error("Resume payment history pagination did not advance.");
-        cursor = next;
-      } while (true);
+      const history = await listAllStripePages(page => stripe.paymentIntents.list(page),
+        { customer: plan.chargeParams.customer });
+      const matches = history.filter(candidate => candidate.metadata?.resumePlanId === plan.id &&
+        candidate.status !== "canceled" &&
+        !(candidate.status === "requires_payment_method" && candidate.amount_received === 0));
       if (matches.length !== 1) throw new Error("The old resume payment needs reconciliation. Please contact support.");
       intent = matches[0];
     } else {

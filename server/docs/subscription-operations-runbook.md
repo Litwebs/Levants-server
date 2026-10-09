@@ -31,6 +31,10 @@ Unknown paid operations remain blocked until the original provider outcome is es
 
 An invoice recovery applies its original frozen delivery plan. A fully unallocated payment with unavailable stock or an unknown original agreement can be refunded once, with a durable ledger, paused billing and a portal notification. An invoice with existing allocations needs per-order reconciliation; this full-refund path refuses it. A paid add-on whose original target has closed is refunded using its original identity instead of attached to a different delivery.
 
+## Subscription refunds in administration
+
+The generic order refund endpoint and its admin button are restricted to independent orders. Subscription orders may share an invoice or have several backing captures, so use subscription cancellation, pause or item adjustment with its durable settlement instead. The API rejects direct generic refunds before any provider or stock command; the admin order view explains the supported workflow.
+
 ## Inventory and legacy findings
 
 For a draft blocked by stock, replenish through normal inventory administration, then apply recovery to that invoice. This reserves the frozen original quantities and resumes eligible billing. If the invoice is voided or marked uncollectible at Stripe, invoice recovery releases its unpaid hold. Never release an ambiguous paid hold merely because it is old.

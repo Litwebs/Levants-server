@@ -82,3 +82,19 @@ it("only replaces a confirmed unpaid decline, saving the new attempt first", asy
   expect(stripe.paymentIntents.create.mock.calls[0][0].payment_method).toBe("pm_new");
   expect(Subscription.updateOne.mock.invocationCallOrder.at(-2)).toBeLessThan(stripe.paymentIntents.create.mock.invocationCallOrder[0]);
 });
+
+it("an old unpaid decline does not hide the exact captured resume retry", async () => {
+  now += 25 * 3600000;
+  stripe.paymentIntents.list.mockResolvedValueOnce({ data: [
+    { ...intent, id: "declined", status: "requires_payment_method", amount_received: 0 }, intent,
+  ], has_more: false });
+  expect((await recover(sub, plan)).id).toBe("pi");
+  expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+});
+
+it("a cyclic resume history cannot trigger a new payment", async () => {
+  now += 25 * 3600000;
+  stripe.paymentIntents.list.mockResolvedValue({ data: [{ id: "loop" }], has_more: true });
+  await expect(recover(sub, plan)).rejects.toThrow(/advance|cycle/i);
+  expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+});

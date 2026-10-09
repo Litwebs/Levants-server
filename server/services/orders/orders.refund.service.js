@@ -113,6 +113,15 @@ async function RefundOrder({
       return { success: false, statusCode: 404, message: "Order not found" };
     }
 
+    // Generic admin refunds assume one independent capture and do not hold
+    // the subscription's durable mutation lease. Subscription orders can
+    // share an invoice and carry several captures; route their refunds through
+    // the subscription cancellation/item-adjustment settlement instead.
+    if (order.subscription || order.orderType === "subscription_generated") {
+      return { success: false, statusCode: 409,
+        message: "Refund subscription orders through the subscription cancellation or item-adjustment workflow so every backing payment and inventory change is reconciled." };
+    }
+
     if (order.status === "refunded") {
       return {
         success: false,
