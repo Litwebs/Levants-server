@@ -754,7 +754,8 @@ async function getResumeFunding(subscription, nextDeliveryDate) {
   if (order.status === "refunded" && availableMinor > 0) {
     throw new Error("This refunded delivery has unresolved payment backing. Please contact support before resuming.");
   }
-  return { amountMinor: Math.max(0, totalMinor - availableMinor), orderId: order._id };
+  return { amountMinor: Math.max(0, totalMinor - availableMinor), orderId: order._id,
+    inventoryItems: order.subscriptionStockToRestore || [] };
 }
 
 async function activatePausedSubscription(
@@ -769,6 +770,9 @@ async function activatePausedSubscription(
     plan = await prepareResumePayment(subscription, { nextDeliveryDate, ...funding, operationId });
   }
   // Keep recurring billing paused while the one-off outcome is unknown.
+  if (plan.inventoryItems?.length) await require("../subscriptions/subscriptionStock.service").reserveStock({
+    key: plan.inventoryKey, subscriptionId: subscription._id, items: plan.inventoryItems,
+  });
   const intent = await recoverResumePayment(subscription, plan);
   if (subscription.stripeSubscriptionId) {
     await stripe.subscriptions.update(subscription.stripeSubscriptionId, { pause_collection: "" });
@@ -782,6 +786,14 @@ async function activatePausedSubscription(
       const order = await Order.findOne({ _id: plan.orderId, subscription: subscription._id,
         deliveryStatus: "ordered" }).session(session);
       if (!order) throw new Error("The resumed delivery is no longer available. Its payment needs reconciliation.");
+      if (plan.inventoryItems?.length) {
+        await require("../subscriptions/subscriptionStock.service").consumeStock({ key: plan.inventoryKey,
+          subscriptionId: subscription._id, items: plan.inventoryItems, session });
+        const { recordConsumed } = require("../subscriptions/subscriptionOrderStock.service");
+        recordConsumed(order, plan.inventoryItems.filter(item => !item.isSubscriptionAddOn));
+        recordConsumed(order, plan.inventoryItems.filter(item => item.isSubscriptionAddOn), { addOn: true });
+        order.subscriptionStockToRestore = [];
+      }
       if (!order.paymentAllocations.length && order.stripePaymentIntentId) {
         order.paymentAllocations.push({ paymentIntentId: order.stripePaymentIntentId,
           stripeInvoiceId: order.stripeInvoiceId, source: "subscription_invoice",
@@ -963,6 +975,7 @@ async function attachDeliveryAddOnToOrder({
   subscription,
   addOn,
   session,
+  inventoryManaged = false,
 }) {
   if (!delivery?.order || !addOn) return null;
   const orderId = delivery.order?._id || delivery.order;
@@ -982,6 +995,7 @@ async function attachDeliveryAddOnToOrder({
   );
 
   if (!alreadyAttached) {
+    if (inventoryManaged) require("../subscriptions/subscriptionOrderStock.service").recordConsumed(order, addOn.items, { addOn: true });
     order.items.push(
       ...addOn.items.map((item) => ({
         product: item.product,
@@ -1066,6 +1080,8 @@ async function updateUpcomingSubscriptionOrder(
     session = null,
     orderId = null,
     refundRecord = null,
+    refundRecords = null,
+    inventoryAlreadyConsumed = false,
   } = {},
 ) {
   let orderQuery = Order.findOne({
@@ -1079,6 +1095,8 @@ async function updateUpcomingSubscriptionOrder(
 
   if (!order) return false;
 
+  await require("../subscriptions/subscriptionOrderStock.service").updateRecurringInventory(order, nextItems,
+    { operationId, session, inventoryAlreadyConsumed });
   replaceRecurringOrderItems(order, nextItems);
 
   if (!(order.paymentAllocations || []).length && order.stripePaymentIntentId) {
@@ -1114,19 +1132,21 @@ async function updateUpcomingSubscriptionOrder(
     });
   }
 
-  if (refundRecord?.stripeRefundId) {
+  for (const record of refundRecords || (refundRecord ? [{ ...refundRecord, refundedMinor }] : [])) {
+    if (record.orderId && record.orderId !== String(order._id)) continue;
+    if (!record.stripeRefundId) continue;
     order.refunds = Array.isArray(order.refunds) ? order.refunds : [];
     const exists = order.refunds.some(
-      (refund) => refund.stripeRefundId === refundRecord.stripeRefundId,
+      (refund) => refund.stripeRefundId === record.stripeRefundId,
     );
     if (!exists) {
       order.refunds.push({
-        stripeRefundId: refundRecord.stripeRefundId,
+        stripeRefundId: record.stripeRefundId,
         paymentIntentId:
-          refundRecord.paymentIntentId || order.stripePaymentIntentId,
-        currency: refundRecord.currency || order.currency || "GBP",
-        amountMinor: refundedMinor,
-        amount: refundedMinor / 100,
+          record.paymentIntentId || order.stripePaymentIntentId,
+        currency: record.currency || order.currency || "GBP",
+        amountMinor: record.refundedMinor,
+        amount: record.refundedMinor / 100,
         status: "succeeded",
         refundedAt: new Date(subscriptionClock.now()),
         createdAt: new Date(subscriptionClock.now()),
@@ -1135,7 +1155,7 @@ async function updateUpcomingSubscriptionOrder(
     }
     order.refund = {
       ...(order.refund || {}),
-      stripeRefundId: refundRecord.stripeRefundId,
+      stripeRefundId: record.stripeRefundId,
       refundedAt: order.refund?.refundedAt || new Date(subscriptionClock.now()),
     };
   }
@@ -1184,6 +1204,14 @@ async function updateUpcomingSubscriptionOrderForDay(
 
   if (!order) return false;
 
+  if (!(order.paymentAllocations || []).length && order.stripePaymentIntentId) {
+    const priorRefundMinor = (order.refunds || []).filter(refund => refund.status === "succeeded")
+      .reduce((sum, refund) => sum + Number(refund.amountMinor ?? Math.round((refund.amount || 0) * 100)), 0);
+    order.paymentAllocations.push({ paymentIntentId: order.stripePaymentIntentId,
+      source: "subscription_invoice", amountMinor: Math.round((order.amountPaid || 0) * 100) + priorRefundMinor });
+  }
+
+  await require("../subscriptions/subscriptionOrderStock.service").updateRecurringInventory(order, dayItems, { operationId, session });
   replaceRecurringOrderItems(order, dayItems);
 
   const allocationKey = operationId
@@ -1255,6 +1283,21 @@ async function prepareSubscriptionItemIncrease({ subscription, customer, operati
         type: "subscription_modification", operationId },
     },
   };
+  const inventoryItems = [];
+  for (const edit of orderEdits) {
+    const order = await Order.findById(edit.orderId).select("items").lean();
+    if (!order) throw new Error("The delivery order is missing. No new payment was started.");
+    const before = new Map((order.items || []).filter(item => !item.isSubscriptionAddOn)
+      .map(item => [String(item.variant), Number(item.quantity)]));
+    for (const item of edit.items) {
+      const quantity = Number(item.quantity) - (before.get(String(item.variant)) || 0);
+      if (quantity > 0) inventoryItems.push({ variant: item.variant, quantity });
+    }
+  }
+  if (inventoryItems.length) {
+    snapshot.inventoryKey = `subscription-increase:${mutation._id}`;
+    snapshot.inventoryItems = inventoryItems;
+  }
   mutation.itemIncreaseSnapshot = snapshot;
   await mutation.save();
   return completeSubscriptionItemIncrease(mutation);
@@ -1269,6 +1312,9 @@ async function RecoverSubscriptionItemIncrease({ customerId, subscriptionId, ope
 async function completeSubscriptionItemIncrease(mutation) {
   if (mutation.status === "completed" && mutation.response) return mutation.response;
   const snapshot = mutation.itemIncreaseSnapshot;
+  if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").reserveStock({
+    key: snapshot.inventoryKey, subscriptionId: mutation.subscription, items: snapshot.inventoryItems,
+  });
   let paymentIntent = snapshot.paymentIntent;
   if (paymentIntent && paymentIntent.status !== "succeeded") {
     // A known processing intent may have completed since the last response.
@@ -1294,6 +1340,7 @@ async function completeSubscriptionItemIncrease(mutation) {
       // A definitive card decline has not collected money. Allow selecting a
       // replacement card; ambiguous transport errors keep the frozen request.
       if (error.type === "StripeCardError" && error.payment_intent?.status === "requires_payment_method") {
+        if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").releaseStock({ key: snapshot.inventoryKey });
         await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { itemIncreaseSnapshot: null } });
       }
       return Response(false, error.message || "We couldn't charge your card", null);
@@ -1314,14 +1361,18 @@ async function completeSubscriptionItemIncrease(mutation) {
         _id: mutation.subscription, customer: mutation.customer, status: "active",
         customerVersion: snapshot.baseVersion,
       }, {
-        $set: { ...snapshot.fields, stripePriceSyncPending: true },
+        $set: { ...snapshot.fields, stripePriceSyncPending: true, billingStateUpdatedAt: new Date(subscriptionClock.now()) },
         $inc: { customerVersion: 1 },
       }, { new: true, runValidators: true, session });
       if (!updated) throw new Error("Paid item change needs reconciliation: subscription version changed");
+      if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").consumeStock({
+        key: snapshot.inventoryKey, subscriptionId: mutation.subscription, items: snapshot.inventoryItems, session,
+      });
       for (const edit of snapshot.orderEdits) {
         const saved = await updateUpcomingSubscriptionOrder(updated, edit.items, {
           orderId: edit.orderId, chargedMinor: edit.chargedMinor,
           paymentIntent, operationId: mutation.operationId, session,
+          inventoryAlreadyConsumed: Boolean(snapshot.inventoryKey),
         });
         if (!saved) throw new Error("Paid item change needs reconciliation: delivery order is no longer editable");
       }
@@ -1458,6 +1509,7 @@ async function applyItemChange(
     let refundOrderId = null;
     let refundPaymentIntentId = null;
     let refundCurrency = "gbp";
+    let refundRecords = null;
 
     if (refundMethod === "refund") {
       let refundResult;
@@ -1472,6 +1524,7 @@ async function applyItemChange(
       refundOrderId = refundResult.orderId || null;
       refundPaymentIntentId = refundResult.paymentIntentId || null;
       refundCurrency = refundResult.currency || "gbp";
+      refundRecords = refundResult.records;
     }
 
     const remainderMinor = owedMinor - refundedMinor;
@@ -1531,6 +1584,7 @@ async function applyItemChange(
             operationId,
             session,
             orderId: refundOrderId,
+            refundRecords,
             refundRecord: stripeRefundId
               ? {
                   stripeRefundId,
@@ -1688,6 +1742,14 @@ async function promotePendingChanges(subscription) {
  * to create the fulfillment Order in our DB.
  */
 async function CreateSubscription(args = {}) {
+  if (!args.operationId) return Response(false, "A durable operation ID is required before creating a subscription.", null);
+  if (!args.reservedSubscriptionId) {
+    const { customerId, operationId, ...payload } = args;
+    return require("./subscriptionMutation.service").executeIdempotentSubscriptionMutation({
+      customerId, operationId, mutationType: "create_subscription", reserveResourceId: true, payload,
+      execute: ({ resourceId }) => CreateSubscription({ ...args, reservedSubscriptionId: resourceId }),
+    });
+  }
   // Creation and card deletion/default changes share a customer lease. A
   // payment must not start with a card that another request is detaching.
   const token = require("crypto").randomUUID();
@@ -1990,6 +2052,7 @@ async function CreateSubscriptionUnlocked({
   const snapshot = {
     startedAt: new Date(subscriptionClock.now()),
     subscription: subscription.toObject(),
+    inventoryKey: `subscription-initial:${subscription._id}`,
     product: {
       name: `Levants Subscription – ${customerDisplayName}`.slice(0, 250),
       metadata: { customerId: String(customer._id) },
@@ -2016,6 +2079,14 @@ async function CreateSubscriptionUnlocked({
 }
 
 async function completeSubscriptionCreation(customer, snapshot, mutation) {
+  if (snapshot.inventoryKey) {
+    try { await require("../subscriptions/subscriptionStock.service").reserveStock({ key: snapshot.inventoryKey,
+      subscriptionId: snapshot.subscription._id, items: snapshot.subscription.items }); }
+    catch (error) {
+      if (error.code !== "SUBSCRIPTION_OUT_OF_STOCK") throw error;
+      return Response(false, error.message, { paymentOutcome: "not_charged" });
+    }
+  }
   // Stripe may discard an idempotency key after 24 hours. If the remote
   // outcome was never durably recorded, do not risk another charge on an old
   // attempt. A recorded success can always finish local recovery safely.
@@ -2067,6 +2138,9 @@ async function completeSubscriptionCreation(customer, snapshot, mutation) {
         options("subscription"),
       );
     } catch (error) {
+      if (error.type === "StripeCardError" && snapshot.inventoryKey) {
+        await require("../subscriptions/subscriptionStock.service").releaseStock({ key: snapshot.inventoryKey });
+      }
       return Response(false, error?.message || "We couldn't create your subscription", null);
     }
     await persistRemote("remoteSubscription", stripeSub);
@@ -2078,6 +2152,8 @@ async function completeSubscriptionCreation(customer, snapshot, mutation) {
       stripeProductId: stripeProduct.id,
       stripePriceId: stripePrice.id,
       stripeSubscriptionId: stripeSub.id,
+      initialInventoryKey: snapshot.inventoryKey || null,
+      initialInvoiceId: typeof stripeSub.latest_invoice === "string" ? stripeSub.latest_invoice : stripeSub.latest_invoice?.id || null,
     });
     await subscription.save();
   }
@@ -2943,7 +3019,7 @@ async function UpdateSubscription({
         reason: "Subscription delivery day removed before cut-off",
         stripeRefundId: removedDayStripeRefundId,
       };
-      await order.save();
+      await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(order);
       await SubscriptionDelivery.updateMany(
         {
           subscription: subscription._id,
@@ -3444,7 +3520,7 @@ async function PauseSubscription({
       reason: "Subscription paused before cut-off",
       stripeRefundId,
     };
-    await order.save();
+    await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(order);
     await markSubscriptionOrderPaymentRefunded({
       orderId: order._id,
       subscriptionId: subscription._id,
@@ -3692,7 +3768,7 @@ async function CancelSubscription({
         reason: reason || "Subscription cancelled before cut-off",
         stripeRefundId,
       };
-      await refundableOrder.save();
+      await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(refundableOrder);
       await markSubscriptionOrderPaymentRefunded({
         orderId: refundableOrder._id,
         subscriptionId: subscription._id,
@@ -3777,7 +3853,7 @@ async function CancelSubscription({
         reason: reason || "Subscription cancelled before cut-off",
         stripeRefundId,
       };
-      await refundableOrder.save();
+      await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(refundableOrder);
       await markSubscriptionOrderPaymentRefunded({
         orderId: refundableOrder._id,
         subscriptionId: subscription._id,
@@ -3917,7 +3993,7 @@ async function AddNextDeliveryAddOn({
   if (paidDelivery) {
     const existingAddOn = paidDelivery.addOns.find(addOn => addOn.operationId === operationId);
     return finishDeliveryAddOn({ subscription, nextDelivery: paidDelivery, mutation,
-      snapshot: { items: existingAddOn.items, amountMinor: existingAddOn.amountMinor },
+      snapshot: { ...mutation.addOnSnapshot, items: existingAddOn.items, amountMinor: existingAddOn.amountMinor },
       paymentIntent: { id: existingAddOn.stripePaymentIntentId, status: "succeeded" } });
   }
   if (mutation.addOnSnapshot) {
@@ -4028,6 +4104,7 @@ async function AddNextDeliveryAddOn({
   if (!paymentMethod) return rejectUnstartedAddOn("Please add a default card first", null);
   mutation.addOnSnapshot = {
     deliveryId: String(nextDelivery._id), items: addOnItems, amountMinor,
+    inventoryKey: `subscription-add-on:${mutation._id}`,
     startedAt: new Date(subscriptionClock.now()),
     idempotencyKey: `subscription:${subscription._id}:delivery-add-on:${nextDelivery._id}:${operationId}`,
     chargeParams: {
@@ -4060,8 +4137,22 @@ async function resumeDeliveryAddOn({ subscription, nextDelivery, mutation }) {
       snapshot: mutation.addOnSnapshot, paymentIntent: payment.paymentIntent });
     return Response(false, "The original add-on delivery is no longer editable. Please contact support to reconcile this payment; it will not move to another delivery.", { reconciliationRequired: true, paymentOutcome: "unknown" });
   }
+  if (mutation.addOnSnapshot.inventoryKey) {
+    try { await require("../subscriptions/subscriptionStock.service").reserveStock({
+      key: mutation.addOnSnapshot.inventoryKey, subscriptionId: subscription._id, items: mutation.addOnSnapshot.items,
+    }); } catch (error) {
+      if (error.code !== "SUBSCRIPTION_OUT_OF_STOCK") throw error;
+      await SubscriptionMutation.updateOne({ _id: mutation._id }, { $set: { addOnSnapshot: null } });
+      return Response(false, error.message, { paymentOutcome: "not_charged" });
+    }
+  }
   const payment = await recoverAddOnPayment(mutation);
-  if (!payment.ok) return Response(false, payment.message, { reconciliationRequired: payment.paymentOutcome !== "declined", paymentOutcome: payment.paymentOutcome || "unknown" });
+  if (!payment.ok) {
+    if (payment.paymentOutcome === "declined" && mutation.addOnSnapshot.inventoryKey) {
+      await require("../subscriptions/subscriptionStock.service").releaseStock({ key: mutation.addOnSnapshot.inventoryKey });
+    }
+    return Response(false, payment.message, { reconciliationRequired: payment.paymentOutcome !== "declined", paymentOutcome: payment.paymentOutcome || "unknown" });
+  }
   return finishDeliveryAddOn({ subscription, nextDelivery, mutation,
     snapshot: mutation.addOnSnapshot, paymentIntent: payment.paymentIntent });
 }
@@ -4098,6 +4189,9 @@ async function finishDeliveryAddOn({ subscription, nextDelivery, mutation, snaps
       assertAddOnFulfillmentEligible({ subscription, delivery: savedDelivery, order: existingOrder,
         operationId, cutoffAt: savedDelivery && computeCutoffDate(savedDelivery.scheduledDate, settings),
         now: subscriptionClock.now() });
+      if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").consumeStock({
+        key: snapshot.inventoryKey, subscriptionId: subscription._id, items: snapshot.items, session,
+      });
       const alreadyAllocated = existingOrder?.paymentAllocations?.some(
         allocation => allocation.idempotencyKey === `delivery-add-on:${operationId}`);
       let savedAddOn = savedDelivery.addOns.find(candidate => candidate.operationId === operationId);
@@ -4109,7 +4203,7 @@ async function finishDeliveryAddOn({ subscription, nextDelivery, mutation, snaps
       // Reading and writing the order in this transaction conflicts with a
       // concurrent dispatch; Mongo retries against the new fulfillment state.
       order = alreadyAllocated ? existingOrder : await attachDeliveryAddOnToOrder({
-        delivery: savedDelivery, subscription, addOn: savedAddOn, session,
+        delivery: savedDelivery, subscription, addOn: savedAddOn, session, inventoryManaged: Boolean(snapshot.inventoryKey),
       });
       if (alreadyAllocated) {
         await Payment.updateOne({ subscription: subscription._id, providerReference: savedAddOn.stripePaymentIntentId },

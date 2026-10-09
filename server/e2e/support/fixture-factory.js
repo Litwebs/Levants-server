@@ -615,6 +615,7 @@ async function createFixture(options = {}) {
   let result;
   try {
     result = await subscriptionService.CreateSubscription({
+      operationId: crypto.randomUUID(),
       customerId: customerData.customer._id,
       frequency: config.frequency,
       preferredDeliveryDay: config.deliveryDays[0],

@@ -80,6 +80,7 @@ jest.mock("stripe", () => {
       detach: jest.fn(async (id) => ({ id })),
     },
     invoices: {
+      update: jest.fn(async (id, values) => ({ id, ...values })),
       retrieve: jest.fn(async (id) => ({ id })),
       list: jest.fn(async () => ({ data: [] })),
     },
@@ -157,6 +158,7 @@ beforeAll(async () => {
     require("../models/subscription.model").init(),
     require("../models/subscriptionDelivery.model").init(),
     require("../models/subscriptionInvoiceFulfillment.model").init(),
+    require("../models/subscriptionStockReservation.model").init(),
     require("../models/payment.model").init(),
     require("../models/broadcast.model").init(),
     require("../models/deliveryBatch.model").init(),

@@ -21,6 +21,7 @@ const stripe = new Stripe(secretKey || process.env.STRIPE_SECRET_KEY, {
 const { fenceLease } = require("./subscriptionLease.util");
 for (const [resource, methods] of Object.entries({
   paymentIntents: ["create", "confirm", "cancel"], refunds: ["create"],
+  invoices: ["update", "voidInvoice", "finalizeInvoice"],
   subscriptions: ["create", "update", "cancel"], customers: ["update"],
   paymentMethods: ["attach", "detach"], products: ["create"], prices: ["create", "update"],
 })) {

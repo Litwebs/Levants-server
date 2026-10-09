@@ -337,6 +337,7 @@ async function executeIdempotentSubscriptionMutation({
       operationId,
       mutationType,
       requestHash: hash,
+      requestPayload: payload,
       workerToken,
       status: "processing",
       lockedAt: now,

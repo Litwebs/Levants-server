@@ -61,6 +61,7 @@ jest.mock("../../utils/stripe.util", () => {
       })),
     },
     subscriptions: {
+      list: jest.fn(async () => ({ data: [], has_more: false })),
       create: jest.fn(async () => ({
         id: `sub_test_${++subscriptionCounter}`,
       })),
@@ -148,6 +149,8 @@ describe("Portal Subscriptions", () => {
 
     const creds = await createPortalCustomer();
     customer = creds.customer;
+    stripe.paymentIntents.retrieve.mockImplementation(async id => ({ id, status: "succeeded",
+      amount_received: 100000, currency: "gbp", customer: customer.stripeCustomerId }));
     const auth = await loginPortalCustomer(creds);
     accessToken = auth.accessToken;
     addressId = creds.customer.addresses[0]._id.toString();
@@ -161,6 +164,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -205,6 +209,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -235,6 +240,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -250,6 +256,15 @@ describe("Portal Subscriptions", () => {
     expect(orders[0].status).toBe("paid");
   });
 
+  it("rejects creation without a durable operation identity before payment", async () => {
+    stripe.subscriptions.create.mockClear();
+    const response = await request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`).send({ frequency: "weekly", preferredDeliveryDay: 0,
+        deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }] });
+    expect(response.status).toBe(400);
+    expect(stripe.subscriptions.create).not.toHaveBeenCalled();
+  });
+
   it("rejects unauthenticated subscription requests", async () => {
     const res = await request(app).get("/api/portal/subscriptions");
     expect(res.status).toBe(401);
@@ -260,6 +275,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         deliveryAddressId: addressId,
         items: [{ variantId, quantity: 1 }],
@@ -273,6 +289,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -287,6 +304,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "every_two_weeks",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -302,6 +320,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -318,6 +337,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -404,6 +424,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: todayWeekday,
         deliveryAddressId: addressId,
@@ -446,6 +467,7 @@ describe("Portal Subscriptions", () => {
         .post("/api/portal/subscriptions")
         .set("Authorization", `Bearer ${accessToken}`)
         .send({
+        operationId: crypto.randomUUID(),
           frequency: "weekly",
           preferredDeliveryDay: 0,
           deliveryAddressId: addressId,
@@ -475,6 +497,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -496,6 +519,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -514,6 +538,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: randomAddressId,
@@ -532,6 +557,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -552,6 +578,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -571,6 +598,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -601,6 +629,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -624,6 +653,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         preferredDeliveryDays: [0, 3],
@@ -713,6 +743,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 3,
         deliveryAddressId: addressId,
@@ -764,6 +795,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         preferredDeliveryDays: [0, 3],
@@ -834,6 +866,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -857,6 +890,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 2,
         deliveryAddressId: addressId,
@@ -876,6 +910,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -893,6 +928,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -922,6 +958,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -944,6 +981,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -1137,6 +1175,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -1149,6 +1188,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "daily",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -1160,6 +1200,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 0],
         deliveryAddressId: addressId,
@@ -1180,6 +1221,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -1386,6 +1428,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "every_two_weeks",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -1563,6 +1606,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -2169,6 +2213,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         preferredDeliveryDays: [0, 3],
@@ -2316,6 +2361,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         preferredDeliveryDays: [0, 3],
@@ -2463,6 +2509,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         preferredDeliveryDays: [0, 3],
@@ -3014,6 +3061,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3032,6 +3080,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3050,6 +3099,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3071,6 +3121,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3083,6 +3134,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3118,6 +3170,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3179,6 +3232,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3254,6 +3308,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3322,6 +3377,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3472,6 +3528,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3563,6 +3620,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3658,6 +3716,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDays: [0, 3],
         preferredDeliveryDay: 0,
@@ -3906,6 +3965,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 3,
         deliveryAddressId: addressId,
@@ -3919,6 +3979,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -3990,6 +4051,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -4015,6 +4077,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -4332,6 +4395,25 @@ describe("Portal Subscriptions", () => {
     }
   });
 
+  it("charges only one of two concurrent subscriptions purchasing the last add-on unit", async () => {
+    const first = await createBasicSubscription();
+    const second = await createBasicSubscription();
+    await prepareUpcomingDeliveries(first._id);
+    await prepareUpcomingDeliveries(second._id);
+    const { variant } = await createTestProduct();
+    await ProductVariant.updateOne({ _id: variant._id }, { $set: { stockQuantity: 1, reservedQuantity: 0 } });
+    stripe.paymentIntents.create.mockClear();
+    const send = sub => request(app).post(`/api/portal/subscriptions/${sub._id}/next-delivery/add-ons`)
+      .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID(),
+        items: [{ variantId: String(variant._id), quantity: 1 }] });
+    const results = await Promise.all([send(first), send(second)]);
+    expect(results.map(result => result.status).sort()).toEqual([200, 400]);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    const saved = await ProductVariant.findById(variant._id);
+    expect(saved.stockQuantity).toBe(0);
+    expect(saved.reservedQuantity).toBe(0);
+  });
+
   it("charges a one-time item for only the next scheduled delivery", async () => {
     const sub = await createBasicSubscription();
     const deliveries = await prepareUpcomingDeliveries(sub._id);
@@ -4542,6 +4624,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -4616,7 +4699,8 @@ describe("Portal Subscriptions", () => {
     await SubscriptionSettings.findOneAndUpdate({ singletonKey: "subscription-settings" },
       { cutoffDaysBefore: 0, cutoffTime: "23:59" }, { upsert: true });
     const create = await request(app).post("/api/portal/subscriptions").set("Authorization", `Bearer ${accessToken}`)
-      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId, items: [{ variantId, quantity: 3 }] });
+      .send({
+        operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId, items: [{ variantId, quantity: 3 }] });
     expect(create.status).toBe(201);
     const sub = create.body.data.subscription;
     const order = await createPaidOrderFor(sub);
@@ -4656,6 +4740,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -5007,7 +5092,8 @@ describe("Portal Subscriptions", () => {
     const { variant: second } = await createTestProduct();
     const created = await request(app).post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+      .send({
+        operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
         items: [{ variantId, quantity: 2 }, { variantId: String(second._id), quantity: 1 }] });
     expect(created.status).toBe(201);
     const sub = created.body.data.subscription;
@@ -5322,7 +5408,8 @@ describe("Portal Subscriptions", () => {
   ])("recovers paid item increases atomically (%s, %s)", async (mode, failurePoint) => {
     const created = await request(app).post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+      .send({
+        operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
         items: [{ variantId, quantity: 3 }] });
     expect(created.status).toBe(201);
     const sub = created.body.data.subscription;
@@ -5416,7 +5503,8 @@ describe("Portal Subscriptions", () => {
   ])("settles only remaining value after credit decrease (%s, %s, add-on: %s)", async (action, refundMethod, withAddOn) => {
     const created = await request(app).post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
-      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+      .send({
+        operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
         items: [{ variantId, quantity: 3 }] });
     expect(created.status).toBe(201);
     const sub = created.body.data.subscription;
@@ -5488,6 +5576,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -5592,6 +5681,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -5646,11 +5736,55 @@ describe("Portal Subscriptions", () => {
   });
 
 
+  it("records and replays a decrease across invoice and increase payments", async () => {
+    const sub = await createBasicSubscription();
+    const slots = await prepareUpcomingDeliveries(sub._id);
+    await Subscription.findByIdAndUpdate(sub._id, { items: sub.items.map(item => ({ ...item, quantity: 3 })) });
+    const order = await Order.create({ customer: customer._id, subscription: sub._id, orderType: "subscription_generated",
+      items: sub.items.map(item => ({ product: item.product, variant: item.variant, name: item.name, sku: item.sku,
+        quantity: 3, price: 2.5, subtotal: 7.5 })),
+      deliveryAddress: sub.deliveryAddress, customerInstructions: "", location: { lat: 51.5, lng: 0 },
+      deliveryDate: slots[0].scheduledDate, deliveryFee: 0, subtotal: 7.5, total: 7.5, amountPaid: 7.5,
+      status: "paid", deliveryStatus: "ordered", reservationExpiresAt: new Date(Date.now() + 86400000),
+      stripePaymentIntentId: "pi_split_invoice", paymentAllocations: [
+        { paymentIntentId: "pi_split_invoice", source: "subscription_invoice", amountMinor: 250 },
+        { paymentIntentId: "pi_split_increase", source: "modification", amountMinor: 500 },
+      ] });
+    stripe.paymentIntents.retrieve.mockImplementation(async id => ({ id, customer: customer.stripeCustomerId,
+      currency: "gbp", status: "succeeded", amount_received: id === "pi_split_invoice" ? 250 : 500 }));
+    const refunds = new Map();
+    stripe.refunds.create.mockImplementation(async params => {
+      const result = { id: `re_${params.payment_intent}`, amount: params.amount, payment_intent: params.payment_intent,
+        currency: "gbp", status: "succeeded" }; refunds.set(result.id, result); return result;
+    });
+    stripe.refunds.retrieve.mockImplementation(async id => refunds.get(id));
+    const payload = { operationId: crypto.randomUUID(), quantity: 1, refundMethod: "card" };
+    const send = () => request(app).patch(`/api/portal/subscriptions/${sub._id}/items/${sub.items[0]._id}`)
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    const failure = jest.spyOn(Order.prototype, "save").mockRejectedValueOnce(new Error("local write failed"));
+    expect((await send()).status).toBe(500);
+    failure.mockRestore();
+    const retry = await send();
+    expect(retry.status).toBe(200);
+    expect(retry.body.data.refundedMinor).toBe(500);
+    expect(stripe.refunds.create).toHaveBeenCalledTimes(2);
+    const saved = await Order.findById(order._id);
+    expect(saved.amountPaid).toBe(2.5);
+    expect(saved.refunds.map(refund => refund.amountMinor)).toEqual([250, 250]);
+    await refundService.applyStripeRefundSucceeded({ paymentIntentId: "pi_split_increase", stripeRefundId: "re_pi_split_increase",
+      amountMinor: 250, currency: "gbp", orderId: order._id });
+    expect((await Order.findById(order._id)).refunds).toHaveLength(2);
+    expect((await Order.findById(order._id)).status).toBe("partially_refunded");
+    expect((await send()).status).toBe(200);
+    expect(stripe.refunds.create).toHaveBeenCalledTimes(2);
+  });
+
   it("automatically upgrades a legacy subscription with no customerVersion", async () => {
     const createRes = await request(app)
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,
@@ -5708,6 +5842,7 @@ describe("Portal Subscriptions", () => {
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
       .send({
+        operationId: crypto.randomUUID(),
         frequency: "weekly",
         preferredDeliveryDay: 0,
         deliveryAddressId: addressId,

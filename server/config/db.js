@@ -239,6 +239,7 @@ const connectDb = async () => {
     // Production disables Mongoose autoIndex, so financial/idempotency indexes
     // must be enforced explicitly before the app starts accepting traffic.
     await ensureSubscriptionMutationOperationIndex();
+    await mongoose.connection.db.collection("subscriptionstockreservations").createIndex({ key: 1 }, { unique: true });
     await ensureStoreCreditIdempotencyIndex();
     await mongoose.connection.db.collection("subscriptioninvoicefulfillments").createIndex(
       { subscription: 1, invoiceId: 1 }, { unique: true, name: "subscription_1_invoiceId_1" },

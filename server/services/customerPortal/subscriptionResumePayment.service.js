@@ -26,12 +26,13 @@ async function savePlan(subscription, plan) {
   if (!saved.matchedCount) throw new Error("The resume payment plan could not be saved.");
   subscription.resumePaymentPlan = plan;
 }
-async function prepareResumePayment(subscription, { nextDeliveryDate, amountMinor, orderId, operationId }) {
+async function prepareResumePayment(subscription, { nextDeliveryDate, amountMinor, orderId, operationId, inventoryItems = [] }) {
   if (subscription.resumePaymentPlan && !subscription.resumePaymentPlan.completedAt) return subscription.resumePaymentPlan;
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) throw new Error("Invalid resume payment amount.");
   const plan = { id: crypto.randomUUID(), nextDeliveryDate, amountMinor, orderId: orderId || null,
     operationId: operationId || null, baseVersion: Number(subscription.customerVersion || 0),
     startedAt: new Date(clock.now()) };
+  if (inventoryItems.length) { plan.inventoryItems = inventoryItems; plan.inventoryKey = `subscription-resume:${plan.id}`; }
   if (amountMinor) {
     const customer = await Customer.findById(subscription.customer);
     if (!customer?.stripeCustomerId) throw new Error("No payment method on file.");

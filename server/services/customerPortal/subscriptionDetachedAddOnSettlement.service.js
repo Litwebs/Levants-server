@@ -82,6 +82,9 @@ async function settleDetachedAddOns({ subscription, deliveries, refundMethod, op
         const ledger = await Payment.updateOne({ subscription: subscription._id, providerReference: intent.id },
           { $set: { status: "refunded", refundedAt: new Date() } }, { session });
         if (!ledger.matchedCount) throw new Error("The paid add-on ledger is missing; reconciliation is required.");
+        if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").releaseStock({
+          key: snapshot.inventoryKey, restockConsumed: true, session,
+        });
         const completed = await Mutation.updateOne({ _id: mutation._id },
           { $set: { "addOnSnapshot.settlement.completedAt": new Date() } }, { session });
         if (!completed.matchedCount) throw new Error("The add-on settlement completion could not be saved.");

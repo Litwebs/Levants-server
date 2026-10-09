@@ -35,6 +35,7 @@ const subscriptionMutationSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    requestPayload: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
     status: {
       type: String,
       enum: ["processing", "completed", "failed"],

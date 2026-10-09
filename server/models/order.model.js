@@ -293,6 +293,9 @@ const orderSchema = new mongoose.Schema(
     },
 
     subscriptionRefundPlan: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    subscriptionStockItems: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    subscriptionAddOnStockItems: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    subscriptionStockToRestore: { type: [mongoose.Schema.Types.Mixed], default: [] },
 
     refunds: {
       type: [
@@ -453,6 +456,6 @@ orderSchema.method("toJSON", function () {
 orderSchema.index({ "location.lat": 1, "location.lng": 1 });
 orderSchema.index({ deliveryDate: 1, status: 1 });
 
-require("../utils/subscriptionLease.util").leaseFencingPlugin(orderSchema);
+require("../utils/subscriptionLease.util").leaseFencingPlugin(orderSchema, { guardSubscriptionOrders: true });
 
 module.exports = mongoose.model("Order", orderSchema);

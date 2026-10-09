@@ -57,6 +57,9 @@ async function refundUnfulfilledAddOn(subscription, mutation) {
         order?.paymentAllocations?.some(allocation => allocation.idempotencyKey === `delivery-add-on:${mutation.operationId}`)) {
       throw new Error("The refunded purchase has a fulfillment allocation; support reconciliation is required.");
     }
+    if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").releaseStock({
+      key: snapshot.inventoryKey, session,
+    });
     const ledger = await Payment.updateOne({ subscription: subscription._id, providerReference: intent.id },
       { $set: { status: "refunded", refundedAt: new Date() } }, { session });
     if (!ledger.matchedCount) throw new Error("The refunded add-on payment ledger is missing.");

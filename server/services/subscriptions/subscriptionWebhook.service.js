@@ -201,7 +201,7 @@ async function findDeliverySlot(subscriptionId, deliveryDate) {
  * Fires when Stripe successfully charges a subscription invoice.
  * We create an Order in our DB for fulfillment.
  */
-async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
+async function HandleSubscriptionInvoicePaidUnlocked(invoice, { prepareOnly = false } = {}) {
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
   if (!stripeSubscriptionId) return; // Not a subscription invoice
 
@@ -229,6 +229,11 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
   const stripePaymentIntentId = resolveInvoicePaymentIntentId(invoice);
   const plan = await freezeInvoiceFulfillment({ subscriptionId: subscription._id, invoiceId: invoice.id,
     build: async () => {
+      if (!existingInvoiceOrders.length && invoice.created && subscription.billingStateUpdatedAt &&
+          Number(invoice.created) * 1000 + 1000 < new Date(subscription.billingStateUpdatedAt).getTime()) {
+        throw Object.assign(new Error("The invoice predates the current delivery agreement. Its original entitlement needs reconciliation."),
+          { code: "SUBSCRIPTION_INVOICE_PLAN_UNKNOWN" });
+      }
       const billingWindowStart = existingInvoiceOrders[0]?.deliveryDate
         ? new Date(existingInvoiceOrders[0].deliveryDate)
         : new Date(subscription.nextDeliveryDate || (invoice.period_start || Math.floor(Date.now() / 1000)) * 1000);
@@ -268,6 +273,11 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
           isSubscriptionAddOn: false,
         }));
         const addOns = Array.isArray(slot.addOns) ? slot.addOns : [];
+        const managedAddOnItems = [];
+        for (const addOn of addOns) {
+          if (await require("../../models/subscriptionMutation.model").exists({ subscription: subscription._id,
+            operationId: addOn.operationId, "addOnSnapshot.inventoryKey": { $type: "string" } })) managedAddOnItems.push(...addOn.items);
+        }
         const items = [...recurring, ...addOns.flatMap(addOn => (addOn.items || []).map(item => ({
           product: item.product, variant: item.variant, name: item.name, sku: item.sku,
           price: item.unitPrice, quantity: item.quantity, subtotal: item.subtotal, isSubscriptionAddOn: true,
@@ -278,6 +288,7 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
         deliveries.push({ scheduledDate: deliveryDate, deliveryId: slot._id || null,
           orderId: new mongoose.Types.ObjectId(), amountMinor, addOns,
           orderParams: { customer: subscription.customer._id, items, deliveryAddress: subscription.deliveryAddress,
+            subscriptionAddOnStockItems: managedAddOnItems.map(item => ({ variant: String(item.variant), quantity: item.quantity })),
             customerInstructions: subscription.deliveryAddress.deliveryInstructions || "", location, deliveryDate,
             deliveryFee: SUBSCRIPTION_DELIVERY_FEE, subtotal, total, amountPaid: total,
             status: "paid", deliveryStatus: "ordered", orderType: "subscription_generated",
@@ -291,12 +302,22 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
         });
       }
       const fundedMinor = deliveries.reduce((sum, delivery) => sum + delivery.amountMinor, 0);
-      if (invoice.amount_paid != null && Number(invoice.amount_paid) !== fundedMinor) {
+      const invoiceFundedMinor = prepareOnly ? invoice.total : invoice.amount_paid;
+      if (invoiceFundedMinor != null && Number(invoiceFundedMinor) !== fundedMinor) {
         throw new Error("The paid invoice does not match the delivery plan. Reconciliation is required before fulfillment.");
       }
-      return { paymentIntentId: stripePaymentIntentId, billingWindowStart, billingWindowEnd, deliveries };
+      return { paymentIntentId: stripePaymentIntentId, billingWindowStart, billingWindowEnd, deliveries,
+        inventoryKey: subscription.initialInvoiceId === invoice.id && subscription.initialInventoryKey
+          ? subscription.initialInventoryKey : `subscription-invoice:${subscription._id}:${invoice.id}` };
     },
   });
+  if (plan.refundedAt) return;
+  if (plan.inventoryKey && !plan.completedAt) {
+    const { reserveStock } = require("./subscriptionStock.service");
+    await reserveStock({ key: plan.inventoryKey, subscriptionId: subscription._id,
+      items: plan.deliveries.flatMap(delivery => (delivery.orderParams?.items || []).filter(item => !item.isSubscriptionAddOn)) });
+  }
+  if (prepareOnly) return;
   const billingWindowEnd = new Date(plan.billingWindowEnd);
   const deliverySlots = plan.deliveries;
 
@@ -375,7 +396,21 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
     const subscriptionInvoiceAmountMinor = slot.amountMinor;
     let order;
     try {
-      order = await Order.create({ ...slot.orderParams, _id: slot.orderId });
+      await mongoose.connection.transaction(async session => {
+        if (plan.inventoryKey) await require("./subscriptionStock.service").consumeStock({
+          key: plan.inventoryKey, consumptionKey: String(slot.orderId), subscriptionId: subscription._id,
+          items: slot.orderParams.items.filter(item => !item.isSubscriptionAddOn), session,
+        });
+        const allocations = [...(slot.orderParams.paymentAllocations || [])];
+        if (stripePaymentIntentId && !allocations.some(allocation => allocation.source === "subscription_invoice")) {
+          allocations.unshift({ paymentIntentId: stripePaymentIntentId, stripeInvoiceId: invoice.id,
+            source: "subscription_invoice", amountMinor: slot.amountMinor });
+        }
+        [order] = await Order.create([{ ...slot.orderParams, stripePaymentIntentId,
+          subscriptionStockItems: slot.orderParams.items.filter(item => !item.isSubscriptionAddOn)
+            .map(item => ({ variant: String(item.variant), quantity: item.quantity })),
+          paymentAllocations: allocations, _id: slot.orderId }], { session });
+      });
     } catch (error) {
       if (error.code !== 11000) throw error;
       order = await Order.findOne({ _id: slot.orderId, stripeInvoiceId: invoice.id, subscription: subscription._id });
@@ -717,6 +752,7 @@ async function ReconcileRecentPaidSubscriptionInvoices({
 
 async function VerifySubscriptionWebhookConfiguration() {
   const requiredEvents = [
+    "invoice.created", "invoice.voided", "invoice.marked_uncollectible",
     "invoice.payment_succeeded",
     "invoice.payment_failed",
     "customer.subscription.updated",
@@ -747,7 +783,61 @@ async function VerifySubscriptionWebhookConfiguration() {
 async function HandleSubscriptionInvoicePaid(eventInvoice) {
   const invoice = await resolveLegacyInvoice(eventInvoice);
   return withSubscriptionLifecycleLock(resolveInvoiceSubscriptionId(invoice),
-    () => HandleSubscriptionInvoicePaidUnlocked(invoice), { allowInvoiceRecovery: true });
+    async () => {
+      try { return await HandleSubscriptionInvoicePaidUnlocked(invoice); }
+      catch (error) {
+        if (!["SUBSCRIPTION_OUT_OF_STOCK", "SUBSCRIPTION_INVOICE_PLAN_UNKNOWN"].includes(error.code)) throw error;
+        return require("./subscriptionInvoiceRefund.service").refundUnfulfilledInvoice(invoice, error.message);
+      }
+    }, { allowInvoiceRecovery: true });
+}
+async function HandleSubscriptionInvoiceCreated(eventInvoice) {
+  // A delayed draft event must not reopen or re-enable a paid/void invoice.
+  const invoice = await stripe.invoices.retrieve(eventInvoice.id);
+  const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice) || resolveInvoiceSubscriptionId(eventInvoice);
+  if (!stripeSubscriptionId || invoice.status !== "draft") return;
+  invoice.subscription = stripeSubscriptionId;
+  return withSubscriptionLifecycleLock(stripeSubscriptionId, async () => {
+    try {
+      await HandleSubscriptionInvoicePaidUnlocked(invoice, { prepareOnly: true });
+      const plan = await InvoiceFulfillment.findOne({ invoiceId: invoice.id }).lean();
+      if (plan?.inventoryBlocked) {
+        await stripe.invoices.update(invoice.id, { auto_advance: true });
+        await stripe.subscriptions.update(stripeSubscriptionId, { pause_collection: "" });
+        await Subscription.updateOne({ stripeSubscriptionId, pauseReason: "inventory" }, {
+          $set: { status: "active", pausedAt: null, pauseReason: null },
+        });
+        await InvoiceFulfillment.updateOne({ _id: plan._id }, { $set: { inventoryBlocked: false } });
+      }
+    } catch (error) {
+      // Stop collection explicitly; a failed webhook alone only postpones it.
+      await stripe.invoices.update(invoice.id, { auto_advance: false });
+      if (error.code !== "SUBSCRIPTION_OUT_OF_STOCK") throw error;
+      await stripe.subscriptions.update(stripeSubscriptionId, { pause_collection: { behavior: "void" } });
+      await Subscription.updateOne({ stripeSubscriptionId }, {
+        $set: { status: "paused", pauseReason: "inventory", pausedAt: new Date() },
+      });
+      await InvoiceFulfillment.updateOne({ invoiceId: invoice.id }, { $set: { inventoryBlocked: true } });
+      logger.error(`[SubscriptionWebhook] Stock unavailable; invoice ${invoice.id} is held before collection`);
+    }
+  }, { allowInvoiceRecovery: true });
+}
+async function HandleSubscriptionInvoiceClosed(eventInvoice) {
+  const invoice = await stripe.invoices.retrieve(eventInvoice.id);
+  if (!["void", "uncollectible"].includes(invoice.status)) return;
+  const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice) || resolveInvoiceSubscriptionId(eventInvoice);
+  return withSubscriptionLifecycleLock(stripeSubscriptionId, async () => {
+    const subscription = await findLocalSubscription(stripeSubscriptionId);
+    const plan = await InvoiceFulfillment.findOne({ subscription: subscription._id, invoiceId: invoice.id });
+    if (!plan || plan.completedAt) return;
+    if (await Order.exists({ subscription: subscription._id, stripeInvoiceId: invoice.id })) {
+      throw new Error("A closed invoice has fulfillment orders; reconciliation is required before releasing inventory.");
+    }
+    await mongoose.connection.transaction(async session => {
+      if (plan.inventoryKey) await require("./subscriptionStock.service").releaseStock({ key: plan.inventoryKey, session });
+      await InvoiceFulfillment.updateOne({ _id: plan._id }, { $set: { completedAt: new Date() } }, { session });
+    });
+  }, { allowInvoiceRecovery: true });
 }
 async function HandleSubscriptionInvoiceFailed(eventInvoice) {
   // Most event shapes already identify the subscription. Retrieve here only
@@ -759,7 +849,7 @@ async function HandleSubscriptionInvoiceFailed(eventInvoice) {
     stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
   }
   return withSubscriptionLifecycleLock(stripeSubscriptionId,
-    () => HandleSubscriptionInvoiceFailedUnlocked(eventInvoice));
+    () => HandleSubscriptionInvoiceFailedUnlocked(eventInvoice), { allowInvoiceRecovery: true });
 }
 async function HandleStripeSubscriptionUpdated(event) {
   return withSubscriptionLifecycleLock(event.id, () => HandleStripeSubscriptionUpdatedUnlocked(event), { ignoreMissing: true });
@@ -772,6 +862,8 @@ module.exports = {
   resolveInvoiceSubscriptionId,
   resolveInvoicePaymentIntentId,
   HandleSubscriptionInvoicePaid,
+  HandleSubscriptionInvoiceCreated,
+  HandleSubscriptionInvoiceClosed,
   HandleSubscriptionInvoiceFailed,
   HandleStripeSubscriptionUpdated,
   HandleStripeSubscriptionDeleted,

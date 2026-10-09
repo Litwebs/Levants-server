@@ -24,7 +24,7 @@ const addressIdParamSchema = Joi.object({
 }).unknown(true);
 
 const createSubscriptionSchema = Joi.object({
-  operationId: Joi.string().guid({ version: "uuidv4" }).optional(),
+  operationId: Joi.string().guid({ version: "uuidv4" }).required(),
   frequency: Joi.string()
     .valid("weekly", "every_two_weeks", "monthly")
     .required(),

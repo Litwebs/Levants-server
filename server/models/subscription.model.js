@@ -194,7 +194,7 @@ const subscriptionSchema = new mongoose.Schema(
     // a pause intentionally requested by a customer or applied in Stripe.
     pauseReason: {
       type: String,
-      enum: ["customer", "payment_failed", "stripe"],
+      enum: ["customer", "payment_failed", "stripe", "inventory", "reconciliation"],
       default: null,
     },
 
@@ -318,6 +318,9 @@ const subscriptionSchema = new mongoose.Schema(
     },
 
     resumePaymentPlan: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    initialInventoryKey: { type: String, default: null },
+    initialInvoiceId: { type: String, default: null },
+    billingStateUpdatedAt: { type: Date, default: null },
 
     // Monotonic customer/admin edit revision used for stale-edit protection.
     customerVersion: {
@@ -366,9 +369,10 @@ const CUSTOMER_VERSIONED_PATHS = [
 ];
 
 subscriptionSchema.pre("save", function () {
-  if (this.isNew) return;
+  if (this.isNew) { this.billingStateUpdatedAt = this.billingStateUpdatedAt || this.startDate; return; }
   if (CUSTOMER_VERSIONED_PATHS.some((path) => this.isModified(path))) {
     this.customerVersion = Number(this.customerVersion || 0) + 1;
+    this.billingStateUpdatedAt = new Date(require("../utils/subscriptionClock.util").now());
   }
 });
 

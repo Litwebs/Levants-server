@@ -373,15 +373,14 @@ async function applyStripeRefundSucceeded({
 
   try {
     const exactFilter = {
-      stripePaymentIntentId: paymentIntentId,
-      $or: [
+      $and: [{ $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] }, { $or: [
         { "refunds.stripeRefundId": stripeRefundId },
         { "refund.stripeRefundId": stripeRefundId },
-      ],
+      ] }],
     };
     let order = await Order.findOne(
       orderId
-        ? { _id: orderId, stripePaymentIntentId: paymentIntentId }
+        ? { _id: orderId, $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] }
         : exactFilter,
     ).select("+subscriptionRefundPlan").session(session);
 
@@ -389,11 +388,11 @@ async function applyStripeRefundSucceeded({
     // A PaymentIntent is unambiguous for ordinary orders; subscription refunds
     // now always carry orderId to disambiguate shared invoice payments.
     if (!order && !orderId) {
-      order = await Order.findOne({
-        stripePaymentIntentId: paymentIntentId,
-      })
-        .sort({ deliveryDate: 1, createdAt: 1 })
-        .session(session);
+      const funding = { $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] };
+      if (await Order.countDocuments(funding).session(session) > 1) {
+        throw new Error("An unattributed refund on a shared payment requires reconciliation.");
+      }
+      order = await Order.findOne(funding).session(session);
     }
 
     if (!order) {
@@ -482,13 +481,14 @@ async function applyStripeRefundFailed({
   stripeRefundId,
   amountMinor,
   currency,
+  orderId,
 } = {}) {
   const order = await Order.findOne({
-    stripePaymentIntentId: paymentIntentId,
-    $or: [
+    ...(orderId ? { _id: orderId } : {}),
+    $and: [{ $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] }, { $or: [
       { "refunds.stripeRefundId": stripeRefundId },
       { "refund.stripeRefundId": stripeRefundId },
-    ],
+    ] }],
   });
 
   if (!order) return null;

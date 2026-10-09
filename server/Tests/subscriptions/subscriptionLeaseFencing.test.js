@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const { createPortalCustomer } = require("../portal/helpers");
 const Subscription = require("../../models/subscription.model");
 const Delivery = require("../../models/subscriptionDelivery.model");
+const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
 const stripe = require("../../utils/stripe.util");
 const { withLease } = require("../../utils/subscriptionLease.util");
@@ -84,4 +85,18 @@ test("a stale worker cannot send a new provider refund command", async () => {
   await expect(run("worker-a", () => stripe.refunds.create({ payment_intent: "pi", amount: 200 })))
     .rejects.toMatchObject({ code: "SUBSCRIPTION_LEASE_LOST" });
   expect(stripe.refunds.create).not.toHaveBeenCalled();
+});
+
+test("dispatch cannot commit across a live subscription payment lease", async () => {
+  const order = await Order.create({ customer: customer._id, subscription: subscription._id,
+    orderType: "subscription_generated", deliveryAddress: customer.addresses[0].toObject(),
+    customerInstructions: "", location: { lat: 51, lng: 0 }, deliveryDate: new Date(), deliveryStatus: "ordered",
+    items: [{ product: id(), variant: id(), name: "Milk", sku: "milk", price: 2, quantity: 1, subtotal: 2 }],
+    subtotal: 2, total: 2, amountPaid: 2, status: "paid", reservationExpiresAt: new Date() });
+  await expect(Order.updateMany({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } }))
+    .rejects.toMatchObject({ code: "SUBSCRIPTION_DELIVERY_BUSY" });
+  expect((await Order.findById(order._id)).deliveryStatus).toBe("ordered");
+  await Subscription.collection.updateOne({ _id: subscription._id }, { $unset: { customerMutationLock: 1 } });
+  await Order.updateMany({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } });
+  expect((await Order.findById(order._id)).deliveryStatus).toBe("dispatched");
 });

@@ -43,7 +43,7 @@ async function fenceLease(session) {
 // Existing explicit transactions retain their boundaries. A standalone write
 // gets a short transaction containing its lease fence and its actual write.
 // Reads and operations outside a leased workflow are unaffected.
-function leaseFencingPlugin(schema) {
+function leaseFencingPlugin(schema, { guardSubscriptionOrders = false } = {}) {
   const writes = new WeakMap();
   async function finish(target, error, result) {
     const state = writes.get(target);
@@ -64,7 +64,14 @@ function leaseFencingPlugin(schema) {
     }
   }
   async function begin() {
-    if (!ownership.getStore()?.length) return;
+    const leased = Boolean(ownership.getStore()?.length);
+    const document = typeof this.$session === "function";
+    const update = document ? null : this.getUpdate?.();
+    const guardedPaths = ["deliveryStatus", "deliveryDate", "status", "items"];
+    const externalOrderWrite = guardSubscriptionOrders && !leased && (document
+      ? !this.isNew && this.subscription && guardedPaths.some(path => this.isModified(path))
+      : guardedPaths.some(path => Object.hasOwn(update?.$set || update || {}, path)));
+    if (!leased && !externalOrderWrite) return;
     const previousSession = typeof this.$session === "function" ? this.$session() : this.getOptions().session;
     const ownsSession = !previousSession?.inTransaction();
     const session = ownsSession ? await mongoose.startSession() : previousSession;
@@ -72,7 +79,38 @@ function leaseFencingPlugin(schema) {
     writes.set(this, { session, ownsSession, previousSession });
     if (typeof this.$session === "function") this.$session(session);
     else this.session(session);
-    try { await fenceLease(session); }
+    try {
+      await fenceLease(session);
+      if (externalOrderWrite) {
+        // Dispatch/admin writes touch the same subscription row as the portal
+        // lease, in the order transaction. A financial edit cannot start in
+        // the gap between the dispatch check and its commit.
+        let subscriptionIds;
+        if (document) subscriptionIds = [this.subscription];
+        else {
+          const filter = this.cast(this.model);
+          const orders = await this.model.collection.find(filter, { session,
+            projection: { subscription: 1 } }).toArray();
+          subscriptionIds = [...new Map(orders.filter(order => order.subscription)
+            .map(order => [String(order.subscription), order.subscription])).values()];
+        }
+        for (const subscriptionId of subscriptionIds) {
+          const id = new mongoose.Types.ObjectId(String(subscriptionId));
+          const subscription = mongoose.model("Subscription").collection;
+          const touched = await subscription.updateOne({ _id: id, $or: [
+            { customerMutationLock: null }, { "customerMutationLock.lockedAt": { $lte: new Date(Date.now() - LEASE_MS) } },
+          ] }, { $inc: { orderWriteRevision: 1 } }, { session });
+          const unfinished = await mongoose.model("SubscriptionMutation").collection.findOne({ subscription: id,
+            status: { $ne: "completed" }, $or: [{ itemIncreaseSnapshot: { $ne: null } },
+              { decreaseRefundSnapshot: { $ne: null } }, { "addOnSnapshot.paymentIntent.status": { $in: ["succeeded", "processing"] } }],
+          }, { session, projection: { _id: 1 } });
+          const busy = !touched.matchedCount && await subscription.findOne({ _id: id }, { session, projection: { _id: 1 } });
+          if (busy || unfinished) throw Object.assign(
+            new Error("A subscription payment or edit is unfinished. Recover it before changing this delivery order."),
+            { statusCode: 409, code: "SUBSCRIPTION_DELIVERY_BUSY" });
+        }
+      }
+    }
     catch (error) { await finish(this, error); throw error; }
   }
   for (const method of ["save", "updateOne", "updateMany", "findOneAndUpdate", "deleteOne", "deleteMany", "findOneAndDelete", "replaceOne"]) {

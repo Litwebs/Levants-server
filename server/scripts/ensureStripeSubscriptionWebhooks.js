@@ -12,6 +12,7 @@ const stripe = new Stripe(env.stripe.secretKey, {
 });
 
 const REQUIRED_EVENTS = [
+  "invoice.created", "invoice.voided", "invoice.marked_uncollectible",
   "invoice.payment_succeeded",
   "invoice.payment_failed",
   "customer.subscription.updated",
