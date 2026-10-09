@@ -4,6 +4,8 @@ const request = require("supertest");
 const mongoose = require("mongoose");
 const app = require("../testApp");
 const { createPortalCustomer, loginPortalCustomer } = require("./helpers");
+const { createUser } = require("../helpers/authTestData");
+const { getSetCookieHeader } = require("../helpers/cookies");
 const Product = require("../../models/product.model");
 const ProductVariant = require("../../models/variant.model");
 const Customer = require("../../models/customer.model");
@@ -1849,13 +1851,13 @@ describe("Portal Subscriptions", () => {
     expect(stored.filter((sub) => sub.status === "paused")).toHaveLength(1);
   });
 
-  it("finalizes a scheduled cancellation after its locked delivery day exactly once", async () => {
+  it.each(["active", "paused"])("finalizes a %s scheduled cancellation after its locked delivery day exactly once", async status => {
     const sub = await createBasicSubscription();
     const lockedDate = new Date();
     lockedDate.setDate(lockedDate.getDate() + 2);
     lockedDate.setHours(9, 0, 0, 0);
     await Subscription.findByIdAndUpdate(sub._id, {
-      status: "active",
+      status,
       isCancellationScheduled: true,
       cancellationEffectiveAfter: lockedDate,
     });
@@ -1891,11 +1893,11 @@ describe("Portal Subscriptions", () => {
     expect(finalized.cancellationEffectiveAfter).toBeNull();
   });
 
-  it("finalizes scheduled cancellation at the end of the London business day, not host UTC day", async () => {
+  it.each(["active", "paused"])("finalizes %s scheduled cancellation at the end of the London business day, not host UTC day", async status => {
     const sub = await createBasicSubscription();
     const lockedDate = new Date("2026-07-05T08:00:00.000Z");
     await Subscription.findByIdAndUpdate(sub._id, {
-      status: "active",
+      status,
       isCancellationScheduled: true,
       cancellationEffectiveAfter: lockedDate,
     });
@@ -1915,6 +1917,86 @@ describe("Portal Subscriptions", () => {
         referenceDate: new Date("2026-07-05T23:00:00.000Z"),
       }),
     ).toBe(1);
+  });
+
+  it.each([
+    ["customer", "active", "pause"], ["admin", "active", "pause"],
+    ["customer", "paused", "resume"], ["admin", "paused", "resume"],
+  ])("blocks %s requests on %s scheduled-cancellation records through %s", async (actor, status, action) => {
+    const sub = await createBasicSubscription();
+    await Subscription.findByIdAndUpdate(sub._id, {
+      status, isCancellationScheduled: true,
+      cancellationEffectiveAfter: new Date(Date.now() + 2 * 86400000),
+    });
+    const fields = "status isCancellationScheduled cancellationEffectiveAfter nextDeliveryDate customerVersion pausedAt pausedUntil items deliveryDayPlans";
+    const before = await Subscription.findById(sub._id).select(fields).lean();
+    const beforePayments = await Payment.find({ subscription: sub._id }).lean();
+    const beforeBalance = (await Customer.findById(customer._id)).creditBalance;
+    const stripeUpdates = stripe.subscriptions.update.mock.calls.length;
+    const charges = stripe.paymentIntents.create.mock.calls.length;
+    const refunds = stripe.refunds.create.mock.calls.length;
+    let call;
+    if (actor === "customer") {
+      call = request(app).post(`/api/portal/subscriptions/${sub._id}/${action}`)
+        .set("Authorization", `Bearer ${accessToken}`);
+    } else {
+      const admin = await createUser({ role: "admin" });
+      const login = await request(app).post("/api/auth/login").send({ email: admin.email, password: "secret123" });
+      call = request(app).post(`/api/admin/subscriptions/${sub._id}/${action}`)
+        .set("Cookie", getSetCookieHeader(login));
+    }
+    const payload = { operationId: crypto.randomUUID(), expectedVersion: before.customerVersion };
+    if (action === "pause") Object.assign(payload, {
+      resumeOn: new Date(Date.now() + 7 * 86400000), refundMethod: "credit",
+    });
+    const res = await call.send(payload);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe("Subscription is already scheduled for cancellation");
+    expect(await Subscription.findById(sub._id).select(fields).lean()).toEqual(before);
+    expect(await Payment.find({ subscription: sub._id }).lean()).toEqual(beforePayments);
+    expect((await Customer.findById(customer._id)).creditBalance).toBe(beforeBalance);
+    expect(stripe.subscriptions.update.mock.calls).toHaveLength(stripeUpdates);
+    expect(stripe.paymentIntents.create.mock.calls).toHaveLength(charges);
+    expect(stripe.refunds.create.mock.calls).toHaveLength(refunds);
+  });
+
+  it("finalizes a legacy paused cancellation once under overlap and preserves its protected delivery and finances", async () => {
+    const sub = await createBasicSubscription();
+    const slots = await SubscriptionDelivery.find({ subscription: sub._id }).sort({ scheduledDate: 1 });
+    expect(slots.length).toBeGreaterThan(1);
+    const protectedSlot = slots[0];
+    const futureSlot = slots[1];
+    const protectedBefore = await SubscriptionDelivery.findById(protectedSlot._id).lean();
+    const protectedEnd = require("../../utils/subscriptionCutoff.util").endOfDayInTimeZone(
+      protectedSlot.scheduledDate, SUBSCRIPTION_TIME_ZONE,
+    );
+    await Subscription.findByIdAndUpdate(sub._id, { status: "paused", isCancellationScheduled: true,
+      cancellationEffectiveAfter: protectedSlot.scheduledDate });
+    const before = await Subscription.findById(sub._id).lean();
+    const beforePayments = await Payment.find({ subscription: sub._id }).lean();
+    const beforeBalance = (await Customer.findById(customer._id)).creditBalance;
+    const charges = stripe.paymentIntents.create.mock.calls.length;
+    const refunds = stripe.refunds.create.mock.calls.length;
+    const stripeUpdates = stripe.subscriptions.update.mock.calls.length;
+    expect(await subscriptionService.FinalizeScheduledCancellations({ subscriptionId: sub._id,
+      referenceDate: new Date(protectedEnd.getTime() - 60000) })).toBe(0);
+    const results = await Promise.all([1, 2].map(() => subscriptionService.FinalizeScheduledCancellations({
+      subscriptionId: sub._id, referenceDate: new Date(protectedEnd.getTime() + 1),
+    })));
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    const finalized = await Subscription.findById(sub._id).lean();
+    expect(finalized.status).toBe("cancelled");
+    expect(finalized.isCancellationScheduled).toBe(false);
+    expect(finalized.cancellationEffectiveAfter).toBeNull();
+    expect(finalized.nextDeliveryDate).toBeNull();
+    expect(finalized.customerVersion).toBe(before.customerVersion + 1);
+    expect(await SubscriptionDelivery.findById(protectedSlot._id).lean()).toEqual(protectedBefore);
+    expect((await SubscriptionDelivery.findById(futureSlot._id)).status).toBe("cancelled");
+    expect(await Payment.find({ subscription: sub._id }).lean()).toEqual(beforePayments);
+    expect((await Customer.findById(customer._id)).creditBalance).toBe(beforeBalance);
+    expect(stripe.paymentIntents.create.mock.calls).toHaveLength(charges);
+    expect(stripe.refunds.create.mock.calls).toHaveLength(refunds);
+    expect(stripe.subscriptions.update.mock.calls).toHaveLength(stripeUpdates);
   });
 
 

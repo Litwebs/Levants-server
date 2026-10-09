@@ -895,7 +895,9 @@ async function FinalizeScheduledCancellations({
   referenceDate = new Date(subscriptionClock.now()),
 } = {}) {
   const filter = {
-    status: "active",
+    // Older pause flows could leave a cancellation flag on a paused record.
+    // Both states still owe their protected delivery before becoming terminal.
+    status: { $in: ["active", "paused"] },
     isCancellationScheduled: true,
     cancellationEffectiveAfter: { $ne: null },
   };
@@ -924,8 +926,7 @@ async function FinalizeScheduledCancellations({
             status: { $in: ["scheduled", "generated"] },
             scheduledDate: { $gt: current.cancellationEffectiveAfter },
           }, { $set: { status: "cancelled" } }, { session });
-          completed = await Subscription.findOneAndUpdate({ _id: current._id,
-            status: "active", isCancellationScheduled: true,
+          completed = await Subscription.findOneAndUpdate({ ...filter, _id: current._id,
             cancellationEffectiveAfter: current.cancellationEffectiveAfter,
           }, { $set: { status: "cancelled", cancelledAt: referenceDate,
             isCancellationScheduled: false, cancellationEffectiveAfter: null, nextDeliveryDate: null },
@@ -3408,6 +3409,9 @@ async function PauseSubscription({
   if (subscription.status !== "active") {
     return Response(false, "Only active subscriptions can be paused", null);
   }
+  if (subscription.isCancellationScheduled) {
+    return Response(false, "Subscription is already scheduled for cancellation", null);
+  }
 
   const pauseResume = parsePauseResumeDate(resumeOn);
   if (!pauseResume.ok) {
@@ -3616,6 +3620,9 @@ async function ResumeSubscription({ customerId, subscriptionId, operationId } = 
   if (!subscription) return Response(false, "Subscription not found", null);
   if (subscription.status !== "paused") {
     return Response(false, "Only paused subscriptions can be resumed", null);
+  }
+  if (subscription.isCancellationScheduled) {
+    return Response(false, "Subscription is already scheduled for cancellation", null);
   }
 
   let activated;
