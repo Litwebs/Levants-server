@@ -687,9 +687,6 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
     "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' card-product ')][1]",
   );
   await productCard
-    .getByRole("button", { name: "Increase quantity", exact: true })
-    .click();
-  await productCard
     .getByRole("button", { name: `Add to ${deliveryDay}`, exact: true })
     .click();
   await expect(
@@ -698,6 +695,10 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
       exact: true,
     }),
   ).toBeVisible();
+
+  const dayOrder = page.locator("section").filter({ has: page.getByRole("heading", { name: `${deliveryDay} delivery`, exact: true }) });
+  await dayOrder.getByRole("button", { name: /^Increase .+ quantity$/ }).click();
+  await expect(dayOrder.locator("span").filter({ hasText: /^2$/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(

@@ -1,3 +1,4 @@
+const { retryTransientResponse } = require("./retry-transient-response");
 "use strict";
 
 const crypto = require("crypto");
@@ -862,14 +863,15 @@ async function deliverSignedInvoiceEvent(subscriptionId, type, invoiceId) {
     payload,
     secret: process.env.STRIPE_WEBHOOK_SECRET,
   });
-  const response = await fetch(`${API_ORIGIN}/api/webhooks/stripe`, {
+  const response = await retryTransientResponse(() => fetch(`${API_ORIGIN}/api/webhooks/stripe`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "stripe-signature": signature,
     },
     body: payload,
-  });
+  }), async response => response.status === 503 &&
+    /Subscription lifecycle is busy/.test((await response.clone().json()).message || ""));
   if (!response.ok) {
     throw new Error(
       `Signed ${type} delivery failed (${response.status}): ${await response.text()}`,

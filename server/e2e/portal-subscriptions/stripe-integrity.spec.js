@@ -1,3 +1,4 @@
+const { retryTransientResponse } = require("../support/retry-transient-response");
 "use strict";
 
 const crypto = require("crypto");
@@ -497,17 +498,19 @@ test("cut-off, paused-state, ownership, and payload guards reject add-ons withou
     funds: "sufficient",
   });
   const pausedToken = await login(request, pausedFixture.credentials);
-  const pausedResponse = await request.post(
+  const pausedOperationId = crypto.randomUUID();
+  const pausedResponse = await retryTransientResponse(() => request.post(
     `${API_ORIGIN}/api/portal/subscriptions/${pausedFixture.subscriptionId}/next-delivery/add-ons`,
     {
       headers: portalHeaders(pausedToken),
       data: {
-        operationId: crypto.randomUUID(),
+        operationId: pausedOperationId,
         items: [{ variantId: pausedFixture.variants.EGGS.id, quantity: 1 }],
       },
       timeout: 60_000,
     },
-  );
+  ), async response => response.status() === 409 &&
+    (await response.json()).data?.subscriptionBusy === true);
   expect(pausedResponse.status()).toBe(400);
   expect((await responseBody(pausedResponse)).message).toMatch(/active/i);
 

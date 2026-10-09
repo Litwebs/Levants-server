@@ -506,7 +506,7 @@ describe("Subscription Stripe webhook E2E", () => {
       postStripeEvent(eventBody),
     ]);
     expect(concurrent.some(response => response.status === 200)).toBe(true);
-    expect(concurrent.every(response => [200, 500].includes(response.status))).toBe(true);
+    expect(concurrent.every(response => [200, 503].includes(response.status))).toBe(true);
 
     const retry = await postStripeEvent(eventBody);
     expect(retry.status).toBe(200);
@@ -914,7 +914,7 @@ describe("Subscription Stripe webhook E2E", () => {
       },
     });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
     const orders = await Order.find({
       stripeInvoiceId: "in_test_unknown_sub_1",
     }).lean();

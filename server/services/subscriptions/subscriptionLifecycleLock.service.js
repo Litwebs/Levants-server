@@ -16,7 +16,7 @@ async function withSubscriptionLifecycleLock(stripeSubscriptionId, execute, { ig
   if (!claimed) {
     if (ignoreMissing && !await Subscription.exists({ stripeSubscriptionId })) return;
     // Do not acknowledge a competing event; Stripe/reconciliation must retry.
-    throw new Error('Subscription lifecycle is busy or not ready; retry this webhook.');
+    throw Object.assign(new Error('Subscription lifecycle is busy or not ready; retry this webhook.'), { statusCode: 503 });
   }
   const owned = { _id: claimed._id, 'customerMutationLock.operationId': operationId };
   const heartbeat = startSubscriptionLockHeartbeat(claimed._id, operationId);
