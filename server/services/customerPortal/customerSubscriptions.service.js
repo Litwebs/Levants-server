@@ -1038,9 +1038,9 @@ async function attachDeliveryAddOnToOrder({
  * refunded to the card (minor units). Any shortfall is the caller's
  * responsibility to handle (e.g. fall back to store credit).
  */
-async function refundSubscriptionToCard(subscription, amountMinor, operationId) {
+async function refundSubscriptionToCard(subscription, amountMinor, operationId, targets) {
   if (!amountMinor || amountMinor <= 0) return { refundedMinor: 0, stripeRefundId: null };
-  return refundItemDecrease(subscription, amountMinor, operationId);
+  return refundItemDecrease(subscription, amountMinor, operationId, targets);
 }
 
 function decreaseRefundFailure(error) {
@@ -1164,6 +1164,7 @@ async function updateUpcomingSubscriptionOrderForDay(
     paymentIntent = null,
     operationId = null,
     session = null,
+    refundRecords = [],
   } = {},
 ) {
   const orders = await Order.find({
@@ -1208,6 +1209,13 @@ async function updateUpcomingSubscriptionOrderForDay(
 
   if (refundedMinor > 0) {
     order.status = "partially_refunded";
+    for (const record of refundRecords.filter(record => record.orderId === String(order._id))) {
+      if (!(order.refunds || []).some(refund => refund.stripeRefundId === record.stripeRefundId)) {
+        order.refunds.push({ stripeRefundId: record.stripeRefundId, paymentIntentId: record.paymentIntentId,
+          currency: record.currency, amountMinor: record.refundedMinor, amount: record.refundedMinor / 100,
+          status: "succeeded", refundedAt: new Date(), createdAt: new Date(), restock: false });
+      }
+    }
   }
 
   await order.save(session ? { session } : undefined);
@@ -1451,7 +1459,11 @@ async function applyItemChange(
 
     if (refundMethod === "refund") {
       let refundResult;
-      try { refundResult = await refundSubscriptionToCard(subscription, owedMinor, operationId); }
+      const target = await Order.findOne({ subscription: subscription._id,
+        status: { $in: ["paid", "partially_refunded"] }, deliveryStatus: "ordered",
+      }).sort({ deliveryDate: -1, createdAt: -1 }).select("_id").lean();
+      try { refundResult = await refundSubscriptionToCard(subscription, owedMinor, operationId,
+        target ? [{ orderId: target._id, amountMinor: owedMinor }] : []); }
       catch (error) { return decreaseRefundFailure(error); }
       refundedMinor = refundResult.refundedMinor;
       stripeRefundId = refundResult.stripeRefundId;
@@ -2667,6 +2679,7 @@ async function UpdateSubscription({
   let dayPlanCreditedMinor = 0;
   let dayPlanRefundedMinor = 0;
   let dayPlanStripeRefundId = null;
+  let dayPlanRefundRecords = [];
   let removedDayCreditedMinor = 0;
   let removedDayRefundedMinor = 0;
   let removedDayStripeRefundId = null;
@@ -2761,10 +2774,25 @@ async function UpdateSubscription({
 
     if (refundMethod === "refund") {
       let refundResult;
-      try { refundResult = await refundSubscriptionToCard(subscription, dayPlanRefundOwedMinor, operationId); }
+      const orders = await Order.find({ subscription: subscription._id,
+        status: { $in: ["paid", "partially_refunded"] }, deliveryStatus: "ordered",
+      }).sort({ deliveryDate: 1 }).lean();
+      const targets = [];
+      for (const day of openChangedDeliveryDays) {
+        const previous = currentLiveDayPlans.find(plan => Number(plan.day) === Number(day))?.items || [];
+        const next = liveDeliveryDayPlans.find(plan => Number(plan.day) === Number(day))?.items || [];
+        const delta = calculateSubscriptionTotalMinor(previous) - calculateSubscriptionTotalMinor(next);
+        if (delta < 0) return Response(false, "Please save delivery-day increases and decreases separately.", null);
+        if (!delta) continue;
+        const order = orders.find(candidate => candidate.deliveryDate &&
+          weekdayInTimeZone(candidate.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(day));
+        if (order) targets.push({ orderId: order._id, amountMinor: delta });
+      }
+      try { refundResult = await refundSubscriptionToCard(subscription, dayPlanRefundOwedMinor, operationId, targets); }
       catch (error) { return decreaseRefundFailure(error); }
       dayPlanRefundedMinor = refundResult.refundedMinor;
       dayPlanStripeRefundId = refundResult.stripeRefundId;
+      dayPlanRefundRecords = refundResult.records;
     }
 
     const remainderMinor = dayPlanRefundOwedMinor - dayPlanRefundedMinor;
@@ -3151,6 +3179,7 @@ async function UpdateSubscription({
             paymentIntent: dayPlanPaymentIntent,
             operationId,
             session,
+            refundRecords: dayPlanRefundRecords,
           },
         );
       }

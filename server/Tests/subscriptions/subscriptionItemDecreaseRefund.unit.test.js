@@ -12,19 +12,35 @@ beforeEach(() => {
   jest.spyOn(Mutation, "updateOne").mockImplementation(async (_filter, update) => {
     if (update.$set.decreaseRefundSnapshot) mutation.decreaseRefundSnapshot = update.$set.decreaseRefundSnapshot;
     if (update.$set["decreaseRefundSnapshot.refund"]) mutation.decreaseRefundSnapshot.refund = update.$set["decreaseRefundSnapshot.refund"];
+    for (const [path, value] of Object.entries(update.$set)) {
+      const match = path.match(/^decreaseRefundSnapshot\.steps\.(\d+)\.refund$/);
+      if (match) mutation.decreaseRefundSnapshot.steps[Number(match[1])].refund = value;
+    }
     return { matchedCount: 1 };
   });
-  jest.spyOn(Order, "findOne").mockReturnValue({ sort: () => ({ select: () => ({ lean: async () => ({ _id: "order", stripePaymentIntentId: "pi" }) }) }) });
+  jest.spyOn(Order, "findOne").mockReturnValue({ select: () => ({ lean: async () => ({ _id: "order", stripePaymentIntentId: "pi" }) }) });
   stripe.refunds.create.mockReset().mockImplementation(async params => ({ id: "re", status: "succeeded", amount: params.amount }));
   stripe.refunds.retrieve.mockReset();
   stripe.refunds.list.mockResolvedValue({ data: [], has_more: false });
 });
 afterEach(() => jest.restoreAllMocks());
-const run = () => refund({ _id: "s", customer: "c", subscriptionNumber: "SUB" }, 500, "op");
+const run = () => refund({ _id: "s", customer: "c", subscriptionNumber: "SUB" }, 500, "op",
+  [{ orderId: "order", amountMinor: 500 }]);
 test("saves the immutable target before asking Stripe for a refund", async () => {
   expect((await run()).refundedMinor).toBe(500);
   expect(Mutation.updateOne.mock.invocationCallOrder[0]).toBeLessThan(stripe.refunds.create.mock.invocationCallOrder[0]);
   expect(Order.findOne).toHaveBeenCalledWith(expect.objectContaining({ deliveryStatus: "ordered" }));
+});
+test("targets the edited delivery even when another paid delivery is locked", async () => {
+  Order.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ _id: "open", stripePaymentIntentId: "shared_pi" }) }) });
+  const result = await refund({ _id: "s", customer: "c" }, 500, "op", [{ orderId: "open", amountMinor: 500 }]);
+  expect(Order.findOne).toHaveBeenCalledWith(expect.objectContaining({ _id: "open" }));
+  expect(stripe.refunds.create).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ orderId: "open" }) }), expect.any(Object));
+  expect(result.records[0].orderId).toBe("open");
+});
+test("an absent edited delivery cannot fall back to refunding a locked delivery", async () => {
+  await expect(refund({ _id: "s", customer: "c" }, 500, "op", [])).rejects.toThrow("targets are required");
+  expect(stripe.refunds.create).not.toHaveBeenCalled();
 });
 test("retries a lost response with exactly the saved refund request", async () => {
   stripe.refunds.create.mockRejectedValueOnce(new Error("response lost"));
