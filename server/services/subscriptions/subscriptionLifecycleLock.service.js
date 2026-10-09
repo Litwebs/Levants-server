@@ -25,8 +25,10 @@ async function withSubscriptionLifecycleLock(stripeSubscriptionId, execute, { ig
   const owned = { _id: claimed._id, 'customerMutationLock.operationId': operationId };
   const heartbeat = startSubscriptionLockHeartbeat(claimed._id, operationId);
   try {
-    if (await Mutation.exists({ subscription: claimed._id,
-      'addOnSnapshot.settlement': { $ne: null }, 'addOnSnapshot.settlement.completedAt': null,
+    if (await Mutation.exists({ subscription: claimed._id, $or: [
+      { 'addOnSnapshot.settlement': { $ne: null }, 'addOnSnapshot.settlement.completedAt': null },
+      { status: { $ne: 'completed' }, decreaseRefundSnapshot: { $ne: null } },
+    ],
     })) throw Object.assign(new Error('A paid add-on settlement is unfinished; retry this webhook.'), {
       statusCode: 503, code: 'SUBSCRIPTION_LIFECYCLE_BUSY',
     });

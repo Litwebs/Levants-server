@@ -4460,7 +4460,7 @@ describe("Portal Subscriptions", () => {
     expect(await Payment.countDocuments({ subscription: sub._id })).toBe(0);
   });
 
-  it("falls back to store credit when card refund cannot be processed", async () => {
+  it("blocks store credit when the requested card refund outcome is unknown", async () => {
     const createRes = await request(app)
       .post("/api/portal/subscriptions")
       .set("Authorization", `Bearer ${accessToken}`)
@@ -4521,19 +4521,56 @@ describe("Portal Subscriptions", () => {
       .set("Authorization", `Bearer ${accessToken}`)
       .send({ quantity: 1, refundMethod: "refund" });
 
-    expect(updateRes.status).toBe(200);
-    expect(updateRes.body.data.refundedMinor).toBe(0);
-    expect(updateRes.body.data.creditedMinor).toBe(500);
-    expect(updateRes.body.message).toMatch(/store credit/i);
+    expect(updateRes.status).toBe(400);
+    expect(updateRes.body.data.refundPending).toBe(true);
+    expect((await Subscription.findById(sub._id)).items[0].quantity).toBe(3);
 
     const refreshedCustomer = await Customer.findById(customer._id).lean();
-    expect(refreshedCustomer.creditBalance).toBe(500);
+    expect(refreshedCustomer.creditBalance).toBe(0);
 
     const creditTx = await StoreCreditTransaction.findOne({
       customer: customer._id,
       type: "subscription_refund",
     }).lean();
-    expect(creditTx).toBeTruthy();
+    expect(creditTx).toBeNull();
+  });
+
+  it.each(["lost-response", "pending", "local-write"])("recovers a decrease card refund without duplicate credit or a new target (%s)", async boundary => {
+    await SubscriptionSettings.findOneAndUpdate({ singletonKey: "subscription-settings" },
+      { cutoffDaysBefore: 0, cutoffTime: "23:59" }, { upsert: true });
+    const create = await request(app).post("/api/portal/subscriptions").set("Authorization", `Bearer ${accessToken}`)
+      .send({ frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId, items: [{ variantId, quantity: 3 }] });
+    expect(create.status).toBe(201);
+    const sub = create.body.data.subscription;
+    const order = await createPaidOrderFor(sub);
+    const payload = { operationId: crypto.randomUUID(), quantity: 1, refundMethod: "refund" };
+    const send = () => request(app).patch(`/api/portal/subscriptions/${sub._id}/items/${sub.items[0]._id}`)
+      .set("Authorization", `Bearer ${accessToken}`).send(payload);
+    const originalRetrieve = stripe.refunds.retrieve.getMockImplementation();
+    let fail;
+    try {
+      stripe.refunds.create.mockClear();
+      stripe.refunds.retrieve.mockImplementation(async id => ({ id, status: "succeeded", amount: 500 }));
+      if (boundary === "lost-response") stripe.refunds.create.mockRejectedValueOnce(new Error("accepted response lost"));
+      if (boundary === "pending") stripe.refunds.create.mockResolvedValueOnce({ id: "re_pending_decrease", status: "pending", amount: 500 });
+      if (boundary === "local-write") fail = jest.spyOn(Order.prototype, "save").mockRejectedValueOnce(new Error("fulfillment unavailable"));
+      expect((await send()).status).toBe(boundary === "local-write" ? 500 : 400);
+      fail?.mockRestore();
+      expect((await Customer.findById(customer._id)).creditBalance).toBe(0);
+      expect((await Subscription.findById(sub._id)).items[0].quantity).toBe(3);
+      const conflicting = await request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+        .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID(), notes: "new edit" });
+      expect(conflicting.status).toBe(409);
+      const completed = await send();
+      expect(completed.status).toBe(200);
+      expect(completed.body.data.refundedMinor).toBe(500);
+      expect((await Customer.findById(customer._id)).creditBalance).toBe(0);
+      expect((await Order.findById(order._id)).items[0].quantity).toBe(1);
+      expect(stripe.refunds.create).toHaveBeenCalledTimes(boundary === "lost-response" ? 2 : 1);
+      if (boundary === "lost-response") expect(stripe.refunds.create.mock.calls[0]).toEqual(stripe.refunds.create.mock.calls[1]);
+      expect((await send()).status).toBe(200);
+      expect(stripe.refunds.create).toHaveBeenCalledTimes(boundary === "lost-response" ? 2 : 1);
+    } finally { fail?.mockRestore(); stripe.refunds.retrieve.mockImplementation(originalRetrieve); }
   });
 
   it("replaces single-day product edits in one mutation and settles only the net decrease", async () => {

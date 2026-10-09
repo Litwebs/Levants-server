@@ -9,6 +9,7 @@ jest.mock('../../services/customerPortal/subscriptionRefundSettlement.service', 
 const Subscription = require('../../models/subscription.model');
 const Customer = require('../../models/customer.model');
 const Order = require('../../models/order.model');
+const Delivery = require('../../models/subscriptionDelivery.model');
 const settings = require('../../services/subscriptionSettings.service');
 const clock = require('../../utils/subscriptionClock.util');
 const settlement = require('../../services/customerPortal/subscriptionRefundSettlement.service');
@@ -29,6 +30,7 @@ beforeEach(() => {
     deliveryDayPlans: [{ day: 3, items: [{ variantId: 'v', quantity: 1 }] }],
   };
   jest.spyOn(Subscription, 'findOne').mockResolvedValue(subscription);
+  jest.spyOn(Delivery, 'find').mockResolvedValue([]);
   jest.spyOn(Customer, 'findById').mockResolvedValue({ addresses: { id: () => address } });
   jest.spyOn(settings, 'getOrCreateSettings').mockResolvedValue({ deliveryDays: [0, 3], cutoffDaysBefore: 1, cutoffTime: '10:00' });
   jest.spyOn(clock, 'now').mockReturnValue(Date.parse('2030-01-01T08:00:00Z'));

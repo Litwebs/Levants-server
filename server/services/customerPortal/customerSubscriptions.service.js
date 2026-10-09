@@ -4,6 +4,7 @@ const mongoose = require("mongoose");
 const { withSubscriptionLifecycleLock } = require("../subscriptions/subscriptionLifecycleLock.service");
 const { assertAddOnFulfillmentEligible } = require("./subscriptionAddOnFulfillment.service");
 const { prepareSingleDayTransition } = require("./subscriptionSingleDayTransition.service");
+const { refundItemDecrease } = require("./subscriptionItemDecreaseRefund.service");
 const { settleDetachedAddOns } = require("./subscriptionDetachedAddOnSettlement.service");
 const subscriptionClock = require("../../utils/subscriptionClock.util");
 const Subscription = require("../../models/subscription.model");
@@ -1148,63 +1149,14 @@ async function attachDeliveryAddOnToOrder({
  * refunded to the card (minor units). Any shortfall is the caller's
  * responsibility to handle (e.g. fall back to store credit).
  */
-async function refundSubscriptionToCard(
-  subscription,
-  amountMinor,
-  operationId,
-) {
-  if (!amountMinor || amountMinor <= 0) {
-    return { refundedMinor: 0, stripeRefundId: null };
-  }
+async function refundSubscriptionToCard(subscription, amountMinor, operationId) {
+  if (!amountMinor || amountMinor <= 0) return { refundedMinor: 0, stripeRefundId: null };
+  return refundItemDecrease(subscription, amountMinor, operationId);
+}
 
-  const lastPaidOrder = await Order.findOne({
-    subscription: subscription._id,
-    status: { $in: ["paid", "partially_refunded"] },
-    stripePaymentIntentId: { $ne: null },
-  })
-    .sort({ paidAt: -1, createdAt: -1 })
-    .select("_id stripePaymentIntentId deliveryDate")
-    .lean();
-
-  if (!lastPaidOrder?.stripePaymentIntentId) {
-    return { refundedMinor: 0, stripeRefundId: null, noOrder: true };
-  }
-
-  try {
-    const refund = await stripe.refunds.create(
-      {
-        payment_intent: lastPaidOrder.stripePaymentIntentId,
-        amount: amountMinor,
-        metadata: {
-          subscriptionId: String(subscription._id),
-          subscriptionNumber: subscription.subscriptionNumber,
-          type: "subscription_decrease_refund",
-          orderId: String(lastPaidOrder._id),
-        },
-      },
-      {
-        idempotencyKey: operationId
-          ? `subscription:${subscription._id}:mutation:${operationId}:refund:${lastPaidOrder._id}:${amountMinor}`
-          : `subscription:${subscription._id}:decrease:${lastPaidOrder._id}:${amountMinor}:${new Date(subscription.updatedAt || 0).getTime()}`,
-      },
-    );
-    return {
-      refundedMinor: amountMinor,
-      stripeRefundId: refund.id,
-      orderId: lastPaidOrder._id,
-      paymentIntentId: lastPaidOrder.stripePaymentIntentId,
-      currency: refund.currency || "gbp",
-    };
-  } catch (err) {
-    // Couldn't refund to card (no refundable balance, etc.) — caller falls back.
-    return {
-      refundedMinor: 0,
-      stripeRefundId: null,
-      orderId: lastPaidOrder._id,
-      paymentIntentId: lastPaidOrder.stripePaymentIntentId,
-      error: err,
-    };
-  }
+function decreaseRefundFailure(error) {
+  return Response(false, `${error.message} Retry the original card refund before choosing another settlement.`,
+    { refundPending: true, reconciliationRequired: true });
 }
 
 /**
@@ -1609,11 +1561,9 @@ async function applyItemChange(
     let refundCurrency = "gbp";
 
     if (refundMethod === "refund") {
-      const refundResult = await refundSubscriptionToCard(
-        subscription,
-        owedMinor,
-        operationId,
-      );
+      let refundResult;
+      try { refundResult = await refundSubscriptionToCard(subscription, owedMinor, operationId); }
+      catch (error) { return decreaseRefundFailure(error); }
       refundedMinor = refundResult.refundedMinor;
       stripeRefundId = refundResult.stripeRefundId;
       refundOrderId = refundResult.orderId || null;
@@ -1689,6 +1639,14 @@ async function applyItemChange(
         );
 
         committedSubscription = updatedSubscription;
+        if (operationId) await SubscriptionMutation.updateOne({ customer: customer._id, operationId }, { $set: {
+          status: "completed", completedAt: new Date(), lastError: null,
+          response: Response(true, refundedMinor > 0
+            ? `We've refunded ${formatMinor(refundedMinor)} to your card.`
+            : `We've added ${formatMinor(creditedMinor)} of store credit to your account.`, {
+            subscription: updatedSubscription.toObject(), appliedTo: "upcoming", refundedMinor, creditedMinor, stripeRefundId,
+          }),
+        } }, { session });
       });
     } finally {
       await session.endSession();
@@ -2887,11 +2845,9 @@ async function UpdateSubscription({
     }
 
     if (refundMethod === "refund") {
-      const refundResult = await refundSubscriptionToCard(
-        subscription,
-        dayPlanRefundOwedMinor,
-        operationId,
-      );
+      let refundResult;
+      try { refundResult = await refundSubscriptionToCard(subscription, dayPlanRefundOwedMinor, operationId); }
+      catch (error) { return decreaseRefundFailure(error); }
       dayPlanRefundedMinor = refundResult.refundedMinor;
       dayPlanStripeRefundId = refundResult.stripeRefundId;
     }
@@ -3284,6 +3240,14 @@ async function UpdateSubscription({
         );
       }
     }
+    if (operationId) await SubscriptionMutation.updateOne({ customer: customerId, operationId }, { $set: {
+      status: "completed", completedAt: new Date(), lastError: null,
+      response: Response(true, updateMessage, { subscription: subscription.toObject(),
+        refundedMinor: dayPlanRefundedMinor + removedDayRefundedMinor,
+        creditedMinor: dayPlanCreditedMinor + removedDayCreditedMinor,
+        stripeRefundId: dayPlanStripeRefundId || removedDayStripeRefundId,
+      }),
+    } }, { session });
   });
   if (dayPlanChangeRequested && shouldStageFutureDayPlan) {
     await syncStripeSubscriptionPrice(subscription, resolvedSubscriptionItems);
