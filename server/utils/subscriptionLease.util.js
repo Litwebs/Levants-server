@@ -76,9 +76,11 @@ function leaseFencingPlugin(schema) {
   for (const method of ["save", "updateOne", "updateMany", "findOneAndUpdate", "deleteOne", "deleteMany", "findOneAndDelete", "replaceOne"]) {
     schema.pre(method, begin);
     schema.post(method, async function (result) { await finish(this, null, result); });
-    schema.post(method, async function (error, result, next) {
-      try { await finish(this, error, result); next(error); }
-      catch (failure) { next(failure); }
+    schema.post(method, { errorHandler: true }, async function (error, result) {
+      // Mongoose 9 awaits an async hook's returned promise. Calling next(error)
+      // as well would reject a second, unobserved callback promise.
+      await finish(this, error, result);
+      throw error;
     });
   }
 }
