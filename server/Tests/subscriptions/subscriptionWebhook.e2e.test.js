@@ -351,7 +351,8 @@ describe("Subscription Stripe webhook E2E", () => {
       data: { object: { id: "in_test_create_race_1" } },
     });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
+    expect(res.body.message).toMatch(/retry this webhook/);
     expect(await Order.countDocuments({})).toBe(0);
   });
 
