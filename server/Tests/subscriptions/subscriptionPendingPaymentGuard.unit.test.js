@@ -1,9 +1,11 @@
 "use strict";
 const Subscription = require("../../models/subscription.model");
+const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
 const Mutation = require("../../models/subscriptionMutation.model");
 const { executeSubscriptionConcurrencyGuard: guard } = require("../../services/customerPortal/subscriptionMutation.service");
 let execute;
 beforeEach(() => {
+  jest.spyOn(InvoiceFulfillment, "exists").mockResolvedValue(false);
   const state = { customerVersion: 1 };
   jest.spyOn(Subscription, "findOne").mockReturnValue({ select: () => ({ lean: async () => state }) });
   jest.spyOn(Subscription, "findOneAndUpdate").mockReturnValue({ lean: async () => state });

@@ -1,5 +1,10 @@
 jest.mock("../../services/subscriptions/subscriptionLifecycleLock.service", () => ({ withSubscriptionLifecycleLock: async (_id, execute) => execute() }));
 "use strict";
+jest.mock("../../models/subscriptionInvoiceFulfillment.model", () => ({
+  findOne: jest.fn(() => ({ lean: async () => null })),
+  findOneAndUpdate: jest.fn((_filter, update) => ({ lean: async () => ({ _id: "plan", ...update.$setOnInsert }) })),
+  updateOne: jest.fn(async () => ({ matchedCount: 1 })),
+}));
 jest.mock("../../utils/stripe.util", () => ({}));
 jest.mock("../../services/customerPortal/customerSubscriptions.service", () => ({
   scheduleUpcomingDeliveries: jest.fn(async () => {}), promotePendingChanges: jest.fn(), syncStripeSubscriptionPrice: jest.fn(),

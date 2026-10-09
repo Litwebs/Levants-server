@@ -10,6 +10,9 @@
  */
 
 const { withSubscriptionLifecycleLock } = require("./subscriptionLifecycleLock.service");
+const mongoose = require("mongoose");
+const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
+const { freezeInvoiceFulfillment } = require("./subscriptionInvoiceFulfillment.service");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
@@ -220,50 +223,81 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
     subscription: subscription._id,
   }).sort({ deliveryDate: 1 });
 
-  // Try to geocode the delivery address; fall back to 0,0
-  let location = { lat: 0, lng: 0 };
-  try {
-    const { geocodeAddress } = require("../../Integration/google.geocode");
-    location = await geocodeAddress(subscription.deliveryAddress);
-  } catch {
-    // Non-fatal
-  }
-
-  const billingWindowStart = existingInvoiceOrders[0]?.deliveryDate
-    ? new Date(existingInvoiceOrders[0].deliveryDate)
-    : subscription.nextDeliveryDate
-      ? new Date(subscription.nextDeliveryDate)
-      : new Date(
-          (invoice.period_start || Math.floor(Date.now() / 1000)) * 1000,
-        );
-  const billingWindowEnd = addBillingWindowDays(
-    billingWindowStart,
-    subscription.frequency,
-    subscription.preferredDeliveryDay,
-  );
-
-  const deliverySlots = await SubscriptionDelivery.find({
-    subscription: subscription._id,
-    status: { $in: ["scheduled", "generated"] },
-    scheduledDate: {
-      $gte: startOfDay(billingWindowStart),
-      $lt: startOfDay(billingWindowEnd),
-    },
-  }).sort({ scheduledDate: 1 });
-
-  if (deliverySlots.length === 0) {
-    deliverySlots.push({
-      subscription: subscription._id,
-      customer: subscription.customer._id,
-      scheduledDate: new Date(billingWindowStart),
-      status: "scheduled",
-    });
-  }
-
   const paidAt = invoice.status_transitions?.paid_at
-    ? new Date(invoice.status_transitions.paid_at * 1000)
-    : new Date();
+    ? new Date(invoice.status_transitions.paid_at * 1000) : new Date();
   const stripePaymentIntentId = resolveInvoicePaymentIntentId(invoice);
+  const plan = await freezeInvoiceFulfillment({ subscriptionId: subscription._id, invoiceId: invoice.id,
+    build: async () => {
+      const billingWindowStart = existingInvoiceOrders[0]?.deliveryDate
+        ? new Date(existingInvoiceOrders[0].deliveryDate)
+        : new Date(subscription.nextDeliveryDate || (invoice.period_start || Math.floor(Date.now() / 1000)) * 1000);
+      const billingWindowEnd = addBillingWindowDays(billingWindowStart, subscription.frequency, subscription.preferredDeliveryDay);
+      if (existingInvoiceOrders.length) {
+        // Legacy invoices have no immutable entitlement snapshot. Repair only
+        // their known order IDs; do not infer extra days from today's schedule.
+        return { paymentIntentId: stripePaymentIntentId, billingWindowStart, billingWindowEnd,
+          legacyReviewRequired: true, completedAt: new Date(),
+          deliveries: existingInvoiceOrders.map(order => ({ scheduledDate: order.deliveryDate,
+            orderId: order._id, amountMinor: order.paymentAllocations?.filter(allocation =>
+              allocation.source === "subscription_invoice" && allocation.paymentIntentId === stripePaymentIntentId)
+              .reduce((sum, allocation) => sum + Number(allocation.amountMinor || 0), 0) ||
+              Math.round(((order.items || []).filter(item => !item.isSubscriptionAddOn)
+                .reduce((sum, item) => sum + Number(item.subtotal || 0), 0) + Number(order.deliveryFee || 0)) * 100),
+          })) };
+      }
+      let location = { lat: 0, lng: 0 };
+      try { location = await require("../../Integration/google.geocode").geocodeAddress(subscription.deliveryAddress); } catch {}
+      const slots = await SubscriptionDelivery.find({ subscription: subscription._id,
+        status: { $in: ["scheduled", "generated"] },
+        scheduledDate: { $gte: startOfDay(billingWindowStart), $lt: startOfDay(billingWindowEnd) },
+      }).sort({ scheduledDate: 1 });
+      if (!slots.length) slots.push({ scheduledDate: billingWindowStart });
+      const deliveries = [];
+      for (const slot of slots) {
+        const deliveryDate = new Date(slot.scheduledDate);
+        const effectiveFrom = subscription.pendingChanges?.effectiveFrom;
+        if (subscription.pendingChanges && (!effectiveFrom || new Date(effectiveFrom) <= deliveryDate)) {
+          // Failure must retry before any order is created, not silently use
+          // items that differ from the invoice-funded plan.
+          await promotePendingChanges(subscription);
+        }
+        const recurring = resolveOrderItemsForDelivery(subscription, deliveryDate).map(item => ({
+          product: item.product, variant: item.variant, name: item.name, sku: item.sku,
+          price: item.unitPrice, quantity: item.quantity, subtotal: item.unitPrice * item.quantity,
+          isSubscriptionAddOn: false,
+        }));
+        const addOns = Array.isArray(slot.addOns) ? slot.addOns : [];
+        const items = [...recurring, ...addOns.flatMap(addOn => (addOn.items || []).map(item => ({
+          product: item.product, variant: item.variant, name: item.name, sku: item.sku,
+          price: item.unitPrice, quantity: item.quantity, subtotal: item.subtotal, isSubscriptionAddOn: true,
+        })))];
+        const amountMinor = Math.round((recurring.reduce((sum, item) => sum + item.subtotal, 0) + SUBSCRIPTION_DELIVERY_FEE) * 100);
+        const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
+        const total = subtotal + SUBSCRIPTION_DELIVERY_FEE;
+        deliveries.push({ scheduledDate: deliveryDate, deliveryId: slot._id || null,
+          orderId: new mongoose.Types.ObjectId(), amountMinor, addOns,
+          orderParams: { customer: subscription.customer._id, items, deliveryAddress: subscription.deliveryAddress,
+            customerInstructions: subscription.deliveryAddress.deliveryInstructions || "", location, deliveryDate,
+            deliveryFee: SUBSCRIPTION_DELIVERY_FEE, subtotal, total, amountPaid: total,
+            status: "paid", deliveryStatus: "ordered", orderType: "subscription_generated",
+            subscription: subscription._id, stripePaymentIntentId, stripeInvoiceId: invoice.id,
+            paymentAllocations: [ ...(stripePaymentIntentId ? [{ paymentIntentId: stripePaymentIntentId,
+              stripeInvoiceId: invoice.id, source: "subscription_invoice", amountMinor }] : []),
+              ...addOns.map(addOn => ({ paymentIntentId: addOn.stripePaymentIntentId,
+                source: "delivery_add_on", amountMinor: addOn.amountMinor, idempotencyKey: `delivery-add-on:${addOn.operationId}` })) ],
+            paidAt, reservationExpiresAt: new Date(Date.now() + 86400000),
+          },
+        });
+      }
+      const fundedMinor = deliveries.reduce((sum, delivery) => sum + delivery.amountMinor, 0);
+      if (invoice.amount_paid != null && Number(invoice.amount_paid) !== fundedMinor) {
+        throw new Error("The paid invoice does not match the delivery plan. Reconciliation is required before fulfillment.");
+      }
+      return { paymentIntentId: stripePaymentIntentId, billingWindowStart, billingWindowEnd, deliveries };
+    },
+  });
+  const billingWindowEnd = new Date(plan.billingWindowEnd);
+  const deliverySlots = plan.deliveries;
 
   const createdOrders = [];
   let newlyCreatedOrderCount = 0;
@@ -273,34 +307,13 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
   )) {
     const deliveryDate = new Date(slot.scheduledDate);
 
-    try {
-      const pendingEffectiveFrom = subscription.pendingChanges?.effectiveFrom;
-      if (
-        subscription.pendingChanges &&
-        (!pendingEffectiveFrom ||
-          new Date(pendingEffectiveFrom).getTime() <= deliveryDate.getTime())
-      ) {
-        await promotePendingChanges(subscription);
-      }
-    } catch (err) {
-      logger.error(
-        `[SubscriptionWebhook] Promoting pending changes failed for ${subscription.subscriptionNumber}: ${err.message}`,
-      );
-    }
-
-    const existing = await Order.findOne({
-      stripeInvoiceId: invoice.id,
-      subscription: subscription._id,
-      deliveryDate: {
-        $gte: startOfDay(deliveryDate),
-        $lt: endOfDay(deliveryDate),
-      },
-    });
+    const existing = await Order.findOne({ _id: slot.orderId,
+      stripeInvoiceId: invoice.id, subscription: subscription._id });
 
     if (existing) {
       const existingSlot = await findDeliverySlot(
         subscription._id,
-        deliveryDate,
+        existing.deliveryDate,
       );
       if (existingSlot && !existingSlot.order) {
         existingSlot.status = "generated";
@@ -327,10 +340,7 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
         status: { $in: ["paid", "refunded"] },
       });
       if (!hasPayment) {
-        const invoiceFundedAmount = (existing.items || [])
-          .filter((item) => !item.isSubscriptionAddOn)
-          .reduce((sum, item) => sum + Number(item.subtotal || 0), 0) +
-          Number(existing.deliveryFee || 0);
+        const invoiceFundedAmount = slot.amountMinor / 100;
         await saveInvoicePayment(invoice.id, {
           customer: subscription.customer._id,
           order: existing._id,
@@ -359,111 +369,18 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
       continue;
     }
 
-    const sourceItems = resolveOrderItemsForDelivery(
-      subscription,
-      deliveryDate,
-    );
-    const subscriptionOrderItems = sourceItems.map((item) => ({
-      product: item.product,
-      variant: item.variant,
-      name: item.name,
-      sku: item.sku,
-      price: item.unitPrice,
-      quantity: item.quantity,
-      subtotal: item.unitPrice * item.quantity,
-      isSubscriptionAddOn: false,
-    }));
-    const paidAddOns = Array.isArray(slot.addOns) ? slot.addOns : [];
-    const addOnOrderItems = paidAddOns.flatMap((addOn) =>
-      (addOn.items || []).map((item) => ({
-        product: item.product,
-        variant: item.variant,
-        name: item.name,
-        sku: item.sku,
-        price: item.unitPrice,
-        quantity: item.quantity,
-        subtotal: item.subtotal,
-        isSubscriptionAddOn: true,
-      })),
-    );
-    const orderItems = [...subscriptionOrderItems, ...addOnOrderItems];
-
-    const subscriptionSubtotal = subscriptionOrderItems.reduce(
-      (sum, item) => sum + item.subtotal,
-      0,
-    );
-    const addOnSubtotal = addOnOrderItems.reduce(
-      (sum, item) => sum + item.subtotal,
-      0,
-    );
-    const subtotal = subscriptionSubtotal + addOnSubtotal;
-    const deliveryFee = SUBSCRIPTION_DELIVERY_FEE;
-    const total = subtotal + deliveryFee;
-    const amountPaid = total;
-    const subscriptionInvoiceAmountMinor = Math.round(
-      (subscriptionSubtotal + deliveryFee) * 100,
-    );
-
+    if (!slot.orderParams) throw new Error("A legacy invoice order is missing. Its original fulfillment must be reconciled.");
+    const paidAddOns = slot.addOns || [];
+    const subscriptionInvoiceAmountMinor = slot.amountMinor;
     let order;
     try {
-      order = await Order.create({
-        customer: subscription.customer._id,
-        items: orderItems,
-        deliveryAddress: {
-          line1: subscription.deliveryAddress.line1,
-          line2: subscription.deliveryAddress.line2 || null,
-          city: subscription.deliveryAddress.city,
-          postcode: subscription.deliveryAddress.postcode,
-          country: subscription.deliveryAddress.country,
-        },
-        customerInstructions:
-          subscription.deliveryAddress.deliveryInstructions || "",
-        location,
-        deliveryDate,
-        deliveryFee,
-        subtotal,
-        total,
-        amountPaid,
-        status: "paid",
-        deliveryStatus: "ordered",
-        orderType: "subscription_generated",
-        subscription: subscription._id,
-        stripePaymentIntentId,
-        stripeInvoiceId: invoice.id,
-        paymentAllocations: [
-          ...(stripePaymentIntentId
-            ? [
-                {
-                  paymentIntentId: stripePaymentIntentId,
-                  stripeInvoiceId: invoice.id,
-                  source: "subscription_invoice",
-                  amountMinor: subscriptionInvoiceAmountMinor,
-                },
-              ]
-            : []),
-          ...paidAddOns.map((addOn) => ({
-            paymentIntentId: addOn.stripePaymentIntentId,
-            source: "delivery_add_on",
-            amountMinor: addOn.amountMinor,
-            idempotencyKey: `delivery-add-on:${addOn.operationId}`,
-          })),
-        ],
-        paidAt,
-        reservationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      });
-    } catch (err) {
-      // Stripe can deliver the signed webhook while CreateSubscription is
-      // running its synchronous fallback. The unique idempotency index chooses
-      // one winner; the loser must treat that committed order as success.
-      if (err?.code !== 11000) throw err;
-      order = await Order.findOne({
-        stripeInvoiceId: invoice.id,
-        subscription: subscription._id,
-        deliveryDate,
-      });
-      if (!order) throw err;
-      createdOrders.push(order);
-      continue;
+      order = await Order.create({ ...slot.orderParams, _id: slot.orderId });
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      order = await Order.findOne({ _id: slot.orderId, stripeInvoiceId: invoice.id, subscription: subscription._id });
+      if (!order) throw error;
+      // Continue repairing its slot and ledger even if another worker inserted
+      // the order before the response was lost.
     }
 
     const deliverySlot = await findDeliverySlot(subscription._id, deliveryDate);
@@ -511,11 +428,10 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
     newlyCreatedOrderCount += 1;
   }
 
-  if (
+  if (!plan.completedAt && (
     !subscription.nextDeliveryDate ||
-    new Date(subscription.nextDeliveryDate).getTime() <
-      billingWindowEnd.getTime()
-  ) {
+    new Date(subscription.nextDeliveryDate).getTime() < billingWindowEnd.getTime()
+  )) {
     subscription.nextDeliveryDate = billingWindowEnd;
   }
 
@@ -556,6 +472,7 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice) {
   }
 
   await scheduleUpcomingDeliveries(subscription);
+  if (!plan.completedAt) await InvoiceFulfillment.updateOne({ _id: plan._id }, { $set: { completedAt: new Date() } });
 
   if (newlyCreatedOrderCount > 0) {
     // Notify once for work actually performed. A duplicate/retried webhook must
@@ -830,7 +747,7 @@ async function VerifySubscriptionWebhookConfiguration() {
 async function HandleSubscriptionInvoicePaid(eventInvoice) {
   const invoice = await resolveLegacyInvoice(eventInvoice);
   return withSubscriptionLifecycleLock(resolveInvoiceSubscriptionId(invoice),
-    () => HandleSubscriptionInvoicePaidUnlocked(invoice));
+    () => HandleSubscriptionInvoicePaidUnlocked(invoice), { allowInvoiceRecovery: true });
 }
 async function HandleSubscriptionInvoiceFailed(eventInvoice) {
   // Most event shapes already identify the subscription. Retrieve here only

@@ -5,6 +5,7 @@ const { startSubscriptionLockHeartbeat } = require("../subscriptions/subscriptio
 const mongoose = require("mongoose");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
+const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
 const { Response } = require("../../utils/response.util");
 
 const PROCESSING_LEASE_MS = 2 * 60 * 1000;
@@ -243,6 +244,10 @@ async function executeSubscriptionConcurrencyGuard({
   const heartbeat = startSubscriptionLockHeartbeat(subscriptionId, claim.lockOperationId);
 
   try {
+    if (subscriptionId && await InvoiceFulfillment.exists({ subscription: subscriptionId, completedAt: null })) {
+      return Response(false, "A paid invoice is still being applied. Please retry after its delivery recovery finishes.",
+        { subscriptionBusy: true, retryable: true, currentVersion: claim.currentVersion });
+    }
     if (claim.resumePaymentPlan && !claim.resumePaymentPlan.completedAt && mutationType !== "resume_subscription") {
       return Response(false, "An earlier resume payment still needs confirmation. Retry the original resume first.",
         { subscriptionBusy: true, retryable: true, currentVersion: claim.currentVersion });

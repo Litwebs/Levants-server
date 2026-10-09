@@ -14,6 +14,7 @@ const Review = require("../../models/review.model");
 const StoreCreditTransaction = require("../../models/storeCreditTransaction.model");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
+const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const passwordUtil = require("../../utils/password.util");
 const stripe = require("../../utils/stripe.util");
@@ -445,6 +446,7 @@ async function replaceDeliverySchedule({
 }) {
   await SubscriptionDelivery.deleteMany({ subscription: subscription._id });
   await Order.deleteMany({ subscription: subscription._id });
+  await InvoiceFulfillment.deleteMany({ subscription: subscription._id });
 
   subscription.nextDeliveryDate = config.dates[0];
   await subscription.save();

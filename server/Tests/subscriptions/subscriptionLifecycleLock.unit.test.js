@@ -1,4 +1,6 @@
 const Subscription = require('../../models/subscription.model');
+const InvoiceFulfillment = require('../../models/subscriptionInvoiceFulfillment.model');
+beforeEach(() => jest.spyOn(InvoiceFulfillment, 'exists').mockResolvedValue(false));
 const Mutation = require('../../models/subscriptionMutation.model');
 beforeEach(() => jest.spyOn(Mutation, 'exists').mockResolvedValue(false));
 const { withSubscriptionLifecycleLock: run } = require('../../services/subscriptions/subscriptionLifecycleLock.service');

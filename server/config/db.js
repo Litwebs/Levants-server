@@ -240,6 +240,9 @@ const connectDb = async () => {
     // must be enforced explicitly before the app starts accepting traffic.
     await ensureSubscriptionMutationOperationIndex();
     await ensureStoreCreditIdempotencyIndex();
+    await mongoose.connection.db.collection("subscriptioninvoicefulfillments").createIndex(
+      { subscription: 1, invoiceId: 1 }, { unique: true, name: "subscription_1_invoiceId_1" },
+    );
     await mongoose.connection.db.collection("payments").createIndex(
       { subscriptionInvoiceKey: 1 },
       { unique: true, name: "subscriptionInvoiceKey_1",

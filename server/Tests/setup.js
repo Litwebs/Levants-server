@@ -156,6 +156,7 @@ beforeAll(async () => {
     require("../models/order.model").init(),
     require("../models/subscription.model").init(),
     require("../models/subscriptionDelivery.model").init(),
+    require("../models/subscriptionInvoiceFulfillment.model").init(),
     require("../models/payment.model").init(),
     require("../models/broadcast.model").init(),
     require("../models/deliveryBatch.model").init(),

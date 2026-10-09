@@ -2,10 +2,11 @@
 const crypto = require('crypto');
 const Subscription = require('../../models/subscription.model');
 const Mutation = require('../../models/subscriptionMutation.model');
+const InvoiceFulfillment = require('../../models/subscriptionInvoiceFulfillment.model');
 
 // Use the portal's lock field so provider events and customer changes cannot
 // simultaneously read and replace the same lifecycle state.
-async function withSubscriptionLifecycleLock(stripeSubscriptionId, execute, { ignoreMissing = false, subscriptionId, allowResumeRecovery = false } = {}) {
+async function withSubscriptionLifecycleLock(stripeSubscriptionId, execute, { ignoreMissing = false, subscriptionId, allowResumeRecovery = false, allowInvoiceRecovery = false } = {}) {
   if (!stripeSubscriptionId && !subscriptionId) return;
   const target = subscriptionId ? { _id: subscriptionId } : { stripeSubscriptionId };
   const operationId = `webhook:${crypto.randomUUID()}`;
@@ -25,6 +26,11 @@ async function withSubscriptionLifecycleLock(stripeSubscriptionId, execute, { ig
   const owned = { _id: claimed._id, 'customerMutationLock.operationId': operationId };
   const heartbeat = startSubscriptionLockHeartbeat(claimed._id, operationId);
   try {
+    if (!allowInvoiceRecovery && await InvoiceFulfillment.exists({ subscription: claimed._id, completedAt: null })) {
+      throw Object.assign(new Error('A paid invoice is unfinished; retry this webhook.'), {
+        statusCode: 503, code: 'SUBSCRIPTION_LIFECYCLE_BUSY',
+      });
+    }
     if (!allowResumeRecovery && claimed.resumePaymentPlan && !claimed.resumePaymentPlan.completedAt) {
       throw Object.assign(new Error('A resume payment is unfinished; retry this webhook.'), {
         statusCode: 503, code: 'SUBSCRIPTION_LIFECYCLE_BUSY',

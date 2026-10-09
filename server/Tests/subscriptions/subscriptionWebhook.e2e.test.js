@@ -170,6 +170,35 @@ describe("Subscription Stripe webhook E2E", () => {
     }
   });
 
+  it("does not expand or move a completed invoice's fulfillment when the customer schedule changes", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const sunday = new Date("2026-07-12T09:00:00Z");
+    const wednesday = new Date("2026-07-15T09:00:00Z");
+    const subscription = await createSubscriptionFixture({ customer: customer._id,
+      stripeSubscriptionId: "sub_frozen_invoice", nextDeliveryDate: sunday,
+      items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: sunday, status: "scheduled" });
+    const invoice = { id: "in_frozen_invoice", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_frozen_invoice", paid: true, currency: "gbp", amount_paid: 350 };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    const original = await Order.findOne({ subscription: subscription._id, stripeInvoiceId: invoice.id });
+    await Subscription.updateOne({ _id: subscription._id }, { $set: { preferredDeliveryDays: [0, 3],
+      frequency: "monthly", nextDeliveryDate: wednesday, "items.0.quantity": 3 } });
+    await Order.updateOne({ _id: original._id }, { $set: { deliveryDate: wednesday, "items.0.quantity": 3, "items.0.subtotal": 7.5 } });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: wednesday, status: "generated", order: original._id });
+    await Payment.deleteMany({ order: original._id });
+    for (let retry = 0; retry < 2; retry += 1) await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    const orders = await Order.find({ subscription: subscription._id, stripeInvoiceId: invoice.id });
+    expect(orders).toHaveLength(1);
+    expect(String(orders[0]._id)).toBe(String(original._id));
+    expect(new Date(orders[0].deliveryDate)).toEqual(wednesday);
+    expect((await Payment.findOne({ order: original._id })).amount).toBe(3.5);
+    expect(new Date((await Subscription.findById(subscription._id)).nextDeliveryDate)).toEqual(wednesday);
+  });
+
   it("concurrent invoice recovery creates one payment record for the same order", async () => {
     await Payment.init();
     const customer = await createCustomer();
@@ -581,6 +610,14 @@ describe("Subscription Stripe webhook E2E", () => {
 
     expect((await postStripeEvent(event)).status).toBe(500);
     failingModel[writeMethod].mockRestore();
+    const guarded = await require("../../services/customerPortal/subscriptionMutation.service").executeSubscriptionConcurrencyGuard({
+      customerId: customer._id, subscriptionId: subscription._id, operationId: "conflicting-plan-change",
+      execute: async () => { throw new Error("An incomplete invoice must block plan edits"); },
+    });
+    expect(guarded.data.subscriptionBusy).toBe(true);
+    const plan = await require("../../models/subscriptionInvoiceFulfillment.model").findOne({ invoiceId: event.data.object.id });
+    expect(plan.completedAt).toBeNull();
+    expect(plan.deliveries).toHaveLength(2);
     expect(await Order.countDocuments({ subscription: subscription._id })).toBe(failure === "order" ? 1 : 2);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       stripe.invoices.list.mockResolvedValueOnce({ data: [event.data.object] });
