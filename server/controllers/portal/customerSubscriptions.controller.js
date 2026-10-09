@@ -91,8 +91,9 @@ function sendMutationError(res, result) {
     result?.data?.idempotencyInProgress ||
     result?.data?.staleSubscription ||
     result?.data?.subscriptionBusy;
+  if (conflict) return res.status(409).json(result);
   return sendErr(res, {
-    statusCode: conflict ? 409 : 400,
+    statusCode: 400,
     message: result?.message || "Subscription change failed",
   });
 }

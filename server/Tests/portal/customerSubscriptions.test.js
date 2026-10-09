@@ -5037,6 +5037,8 @@ describe("Portal Subscriptions", () => {
       .send({ operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0,
         deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }] });
     expect(response.status).toBe(409);
+    expect(response.body.data.subscriptionBusy).toBe(true);
+    expect(response.body.data.retryable).toBe(true);
     expect(stripe.subscriptions.create).not.toHaveBeenCalled();
     expect((await Customer.findById(customer._id).select("+paymentMethodLock")).paymentMethodLock.token).toBe("card-worker");
   });
