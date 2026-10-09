@@ -4911,7 +4911,7 @@ describe("Portal Subscriptions", () => {
     const failedRequest = stripe.refunds.create.mock.calls[1];
     const adminRefund = await refundService.RefundOrder({ orderId: order._id });
     expect(adminRefund.statusCode).toBe(409);
-    expect(adminRefund.message).toMatch(/unfinished/);
+    expect(adminRefund.message).toMatch(/subscription cancellation or item-adjustment/);
     const pendingOrder = await Order.findById(order._id).select("+subscriptionRefundPlan").lean();
     expect(pendingOrder.refunds).toHaveLength(1);
     expect(pendingOrder.subscriptionRefundPlan.steps.map(step => step.params.amount)).toEqual([500, 300]);
