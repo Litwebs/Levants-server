@@ -696,9 +696,11 @@ describe("Portal Subscriptions", () => {
         operationId: crypto.randomUUID(), frequency: "weekly",
         preferredDeliveryDay: days[0], preferredDeliveryDays: days,
         deliveryAddressId: addressId, notes: "Original note",
-        deliveryDayPlans: days.map((day, index) => ({ day, items: [{ variantId, quantity: index + 1 }] })),
+        ...(days.length === 1
+          ? { items: [{ variantId, quantity: 1 }] }
+          : { deliveryDayPlans: days.map((day, index) => ({ day, items: [{ variantId, quantity: index + 1 }] })) }),
       });
-    expect(created.status).toBe(201);
+    expect({ status: created.status, message: created.body.message }).toMatchObject({ status: 201 });
     const sub = created.body.data.subscription;
     const fields = "status frequency preferredDeliveryDay preferredDeliveryDays items deliveryDayPlans pendingChanges nextDeliveryDate stripeSubscriptionId stripePriceId deliveryAddress";
     const before = await Subscription.findById(sub._id).select(fields).lean();
