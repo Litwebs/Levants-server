@@ -11,7 +11,9 @@ function leaseLost() {
 }
 
 function withLease(lease, execute) {
-  return ownership.run([...(ownership.getStore() || []), lease], execute);
+  // Mongoose queries execute when awaited. Adopt thenables inside the lease
+  // context so returning a lazy query cannot move its write outside the fence.
+  return ownership.run([...(ownership.getStore() || []), lease], async () => await execute());
 }
 
 // Touch the owned row in the SAME transaction as the protected write. A
