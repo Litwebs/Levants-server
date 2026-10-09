@@ -1322,6 +1322,7 @@ async function updateUpcomingSubscriptionOrderForDay(
     refundedMinor = 0,
     paymentIntent = null,
     operationId = null,
+    session = null,
   } = {},
 ) {
   const orders = await Order.find({
@@ -1330,6 +1331,7 @@ async function updateUpcomingSubscriptionOrderForDay(
     deliveryStatus: "ordered",
   })
     .sort({ deliveryDate: 1 })
+    .session(session)
     .exec();
 
   const order = orders.find(
@@ -1367,7 +1369,7 @@ async function updateUpcomingSubscriptionOrderForDay(
     order.status = "partially_refunded";
   }
 
-  await order.save();
+  await order.save(session ? { session } : undefined);
   return true;
 }
 
@@ -3117,147 +3119,159 @@ async function UpdateSubscription({
     }
   }
 
-  if (scheduleChangeRequested) {
-    const now = new Date(subscriptionClock.now());
-    const nextDeliveryDate = calculateFirstSubscriptionDeliveryDate({
-      frequency: subscription.frequency,
-      preferredDeliveryDay: subscription.preferredDeliveryDay,
-      preferredDeliveryDays: subscription.preferredDeliveryDays,
-      referenceDate: now,
-      settings,
-    });
-    subscription.nextDeliveryDate = nextDeliveryDate;
-    shouldSyncStripePrice = true;
+  // Schedule, subscription, address and recurring order writes commit together.
+  // Provider settlement is checkpointed before this transaction and price sync
+  // follows it; no network calls belong in a retried MongoDB callback.
+  const baseUpdateMessage = updateMessage;
+  await mongoose.connection.transaction(async session => {
+    updateMessage = baseUpdateMessage;
+    if (scheduleChangeRequested) {
+      const now = new Date(subscriptionClock.now());
+      const nextDeliveryDate = calculateFirstSubscriptionDeliveryDate({
+        frequency: subscription.frequency,
+        preferredDeliveryDay: subscription.preferredDeliveryDay,
+        preferredDeliveryDays: subscription.preferredDeliveryDays,
+        referenceDate: now,
+        settings,
+      });
+      subscription.nextDeliveryDate = nextDeliveryDate;
+      shouldSyncStripePrice = true;
 
-    const openOrders = await Order.find({
-      subscription: subscription._id,
-      status: { $in: ["paid", "partially_refunded"] },
-      deliveryStatus: "ordered",
-      deliveryDate: { $gte: startOfDay(now) },
-    })
-      .sort({ deliveryDate: 1 })
-      .exec();
+      // Clear replaceable slots before moving linked slots onto the new dates.
+      // Otherwise an existing unlinked target can violate the date unique key.
+      await SubscriptionDelivery.deleteMany({
+        subscription: subscription._id, order: null, status: "scheduled",
+        scheduledDate: { $gte: startOfDay(now) },
+      }, { session });
 
-    const selectedDaySet = new Set(resolvedDays.days.map(Number));
-    const occupiedDates = new Set(
-      openOrders
-        .filter((order) => {
-          if (!order.deliveryDate) return false;
-          const orderDay = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
-          const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
-          const isLocked = cutoffAt
-            ? now.getTime() >= cutoffAt.getTime()
-            : false;
-          return selectedDaySet.has(orderDay) || isLocked;
-        })
-        .map((order) => deliveryDateKey(order.deliveryDate)),
-    );
-    const ordersToReschedule = openOrders.filter((order) => {
-      if (!order.deliveryDate) return false;
-      if (selectedDaySet.has(weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE))) {
-        return false;
-      }
-      const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
-      return cutoffAt ? now.getTime() < cutoffAt.getTime() : true;
-    });
+      const openOrders = await Order.find({
+        subscription: subscription._id,
+        status: { $in: ["paid", "partially_refunded"] },
+        deliveryStatus: "ordered",
+        deliveryDate: { $gte: startOfDay(now) },
+      })
+        .sort({ deliveryDate: 1 })
+        .session(session)
+        .exec();
 
-    let scheduledDate = new Date(nextDeliveryDate);
-    for (const order of ordersToReschedule) {
-      let collisionGuard = 0;
-      while (
-        occupiedDates.has(deliveryDateKey(scheduledDate)) &&
-        collisionGuard < 100
-      ) {
+      const selectedDaySet = new Set(resolvedDays.days.map(Number));
+      const occupiedDates = new Set(
+        openOrders
+          .filter((order) => {
+            if (!order.deliveryDate) return false;
+            const orderDay = weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE);
+            const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
+            const isLocked = cutoffAt
+              ? now.getTime() >= cutoffAt.getTime()
+              : false;
+            return selectedDaySet.has(orderDay) || isLocked;
+          })
+          .map((order) => deliveryDateKey(order.deliveryDate)),
+      );
+      const ordersToReschedule = openOrders.filter((order) => {
+        if (!order.deliveryDate) return false;
+        if (selectedDaySet.has(weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE))) {
+          return false;
+        }
+        const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
+        return cutoffAt ? now.getTime() < cutoffAt.getTime() : true;
+      });
+
+      let scheduledDate = new Date(nextDeliveryDate);
+      for (const order of ordersToReschedule) {
+        let collisionGuard = 0;
+        while (
+          occupiedDates.has(deliveryDateKey(scheduledDate)) &&
+          collisionGuard < 100
+        ) {
+          scheduledDate = addFrequencyDays(
+            scheduledDate,
+            subscription.frequency,
+            resolvedDays.days,
+          );
+          collisionGuard += 1;
+        }
+        order.deliveryDate = scheduledDate;
+        await order.save({ session });
+        await SubscriptionDelivery.updateMany(
+          {
+            subscription: subscription._id,
+            order: order._id,
+            status: { $in: ["scheduled", "generated"] },
+          },
+          { $set: { scheduledDate } },
+          { session },
+        );
+        occupiedDates.add(deliveryDateKey(scheduledDate));
         scheduledDate = addFrequencyDays(
           scheduledDate,
           subscription.frequency,
           resolvedDays.days,
         );
-        collisionGuard += 1;
       }
-      order.deliveryDate = scheduledDate;
-      await order.save();
-      await SubscriptionDelivery.updateMany(
-        {
-          subscription: subscription._id,
-          order: order._id,
-          status: { $in: ["scheduled", "generated"] },
-        },
-        { $set: { scheduledDate } },
-      );
-      occupiedDates.add(deliveryDateKey(scheduledDate));
-      scheduledDate = addFrequencyDays(
-        scheduledDate,
-        subscription.frequency,
-        resolvedDays.days,
-      );
+
+      await scheduleUpcomingDeliveries(subscription, session);
+
+      if (ordersToReschedule.length > 0) {
+        updateMessage += ` (${ordersToReschedule.length} order${ordersToReschedule.length > 1 ? "s" : ""} rescheduled to the next eligible delivery date)`;
+      }
     }
 
-    await SubscriptionDelivery.deleteMany({
-      subscription: subscription._id,
-      order: null,
-      status: "scheduled",
-      scheduledDate: { $gte: startOfDay(now) },
-    });
-    await scheduleUpcomingDeliveries(subscription);
-
-    if (ordersToReschedule.length > 0) {
-      updateMessage += ` (${ordersToReschedule.length} order${ordersToReschedule.length > 1 ? "s" : ""} rescheduled to the next eligible delivery date)`;
+    if (addressChange) {
+      await saveSubscriptionDeliveryAddress({ subscription, ...addressChange, settings,
+        effectiveFrom: effectiveIsPastCutoff && effectiveFromDate ? effectiveFromDate : new Date(subscriptionClock.now()),
+        session,
+      });
+    } else {
+      await subscription.save({ session });
     }
-  }
+    if (dayPlanChangeRequested && openChangedDeliveryDays.length > 0) {
+      const currentItemsByDay = new Map(
+        (currentLiveDayPlans || []).map((plan) => [
+          Number(plan.day),
+          plan.items || [],
+        ]),
+      );
+      const newItemsByDay = new Map(
+        (liveDeliveryDayPlans || []).map((plan) => [
+          Number(plan.day),
+          plan.items || [],
+        ]),
+      );
+      const itemsMinor = (items = []) =>
+        (items || []).reduce((sum, item) => {
+          const unitPriceMinor = Math.round(Number(item?.unitPrice || 0) * 100);
+          const quantity = Math.max(0, Number(item?.quantity || 0));
+          return sum + unitPriceMinor * quantity;
+        }, 0);
 
-  if (addressChange) {
-    await saveSubscriptionDeliveryAddress({ subscription, ...addressChange, settings,
-      effectiveFrom: effectiveIsPastCutoff && effectiveFromDate ? effectiveFromDate : new Date(subscriptionClock.now()),
-    });
-  } else {
-    await subscription.save();
-  }
+      for (const day of openChangedDeliveryDays) {
+        const dayNewItems = newItemsByDay.get(Number(day)) || [];
+        const dayDeltaMinor =
+          itemsMinor(dayNewItems) -
+          itemsMinor(currentItemsByDay.get(Number(day)) || []);
+
+        await updateUpcomingSubscriptionOrderForDay(
+          subscription,
+          Number(day),
+          dayNewItems,
+          {
+            chargedMinor: Math.max(dayDeltaMinor, 0),
+            refundedMinor: Math.max(-dayDeltaMinor, 0),
+            paymentIntent: dayPlanPaymentIntent,
+            operationId,
+            session,
+          },
+        );
+      }
+    }
+  });
   if (dayPlanChangeRequested && shouldStageFutureDayPlan) {
     await syncStripeSubscriptionPrice(subscription, resolvedSubscriptionItems);
   } else if (shouldSyncStripePrice) {
     await syncStripeSubscriptionPrice(subscription);
   }
 
-  if (dayPlanChangeRequested && openChangedDeliveryDays.length > 0) {
-    const currentItemsByDay = new Map(
-      (currentLiveDayPlans || []).map((plan) => [
-        Number(plan.day),
-        plan.items || [],
-      ]),
-    );
-    const newItemsByDay = new Map(
-      (liveDeliveryDayPlans || []).map((plan) => [
-        Number(plan.day),
-        plan.items || [],
-      ]),
-    );
-    const itemsMinor = (items = []) =>
-      (items || []).reduce((sum, item) => {
-        const unitPriceMinor = Math.round(Number(item?.unitPrice || 0) * 100);
-        const quantity = Math.max(0, Number(item?.quantity || 0));
-        return sum + unitPriceMinor * quantity;
-      }, 0);
-
-    for (const day of openChangedDeliveryDays) {
-      const dayNewItems = newItemsByDay.get(Number(day)) || [];
-      const dayDeltaMinor =
-        itemsMinor(dayNewItems) -
-        itemsMinor(currentItemsByDay.get(Number(day)) || []);
-
-      await updateUpcomingSubscriptionOrderForDay(
-        subscription,
-        Number(day),
-        dayNewItems,
-        {
-          chargedMinor: Math.max(dayDeltaMinor, 0),
-          refundedMinor: Math.max(-dayDeltaMinor, 0),
-          paymentIntent: dayPlanPaymentIntent,
-          operationId,
-        },
-      );
-    }
-  }
 
   await CustomerNotification.create({
     customer: customerId,

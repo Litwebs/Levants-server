@@ -22,9 +22,9 @@ function canChangeOrderAddress(order, settings, effectiveFrom, now) {
   return !cutoff || now < cutoff.getTime();
 }
 
-async function saveSubscriptionDeliveryAddress({ subscription, address, location, settings, effectiveFrom }) {
+async function saveSubscriptionDeliveryAddress({ subscription, address, location, settings, effectiveFrom, session }) {
   let updated = 0;
-  await mongoose.connection.transaction(async session => {
+  const apply = async session => {
       updated = 0;
       const now = clock.now();
       const orders = await Order.find({ subscription: subscription._id, customer: subscription.customer,
@@ -40,7 +40,9 @@ async function saveSubscriptionDeliveryAddress({ subscription, address, location
         await order.save({ session });
         updated += 1;
       }
-  });
+  };
+  if (session) await apply(session);
+  else await mongoose.connection.transaction(apply);
   return updated;
 }
 module.exports = { locateDeliveryAddress, canChangeOrderAddress, saveSubscriptionDeliveryAddress };

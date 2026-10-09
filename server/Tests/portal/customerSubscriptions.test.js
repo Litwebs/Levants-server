@@ -4710,6 +4710,70 @@ describe("Portal Subscriptions", () => {
     }
   });
 
+  it.each(["linked-slot", "regenerate", "subscription", "address"])("rolls back every schedule write and safely retries after a %s failure", async boundary => {
+    const now = jest.spyOn(subscriptionClock, "now").mockReturnValue(Date.parse("2026-07-07T12:00:00Z"));
+    let failure;
+    try {
+      await SubscriptionSettings.findOneAndUpdate({ singletonKey: "subscription-settings" }, {
+        deliveryDays: [0, 3], cutoffDaysBefore: 0, cutoffTime: "23:59",
+      }, { upsert: true });
+      const sub = await createBasicSubscription();
+      const order = await createPaidOrderFor(sub);
+      const linked = await SubscriptionDelivery.findOneAndUpdate({ subscription: sub._id,
+        scheduledDate: new Date(sub.nextDeliveryDate) }, { order: order._id, status: "generated" }, { new: true });
+      expect(linked).toBeTruthy();
+      // A target slot already exists: moving the paid order must not collide
+      // with it, and failed deletion/regeneration must restore it too.
+      await SubscriptionDelivery.create({ subscription: sub._id, customer: customer._id,
+        scheduledDate: new Date("2026-07-07T23:00:00Z"), status: "scheduled" });
+      const customerDoc = await Customer.findById(customer._id);
+      customerDoc.addresses.push({ label: "New", fullName: "Test Customer", line1: "22 New Street",
+        city: "London", postcode: "SW1A 1AA", country: "UK" });
+      await customerDoc.save();
+      const payload = { operationId: crypto.randomUUID(), preferredDeliveryDays: [3], preferredDeliveryDay: 3,
+        ...(boundary === "address" ? { deliveryAddressId: String(customerDoc.addresses.at(-1)._id) } : {}) };
+      const send = () => request(app).patch(`/api/portal/subscriptions/${sub._id}`)
+        .set("Authorization", `Bearer ${accessToken}`).send(payload);
+      const state = async () => ({
+        subscription: await Subscription.findById(sub._id)
+          .select("frequency preferredDeliveryDay preferredDeliveryDays nextDeliveryDate deliveryAddress customerVersion").lean(),
+        order: await Order.findById(order._id).select("deliveryDate deliveryAddress items total amountPaid").lean(),
+        slots: await SubscriptionDelivery.find({ subscription: sub._id }).sort({ _id: 1 })
+          .select("scheduledDate order status addOns").lean(),
+      });
+      const before = await state();
+      stripe.prices.create.mockClear();
+      if (boundary === "linked-slot") failure = jest.spyOn(SubscriptionDelivery, "updateMany")
+        .mockRejectedValueOnce(new Error("linked slot write failed"));
+      if (boundary === "regenerate") failure = jest.spyOn(SubscriptionDelivery, "updateOne")
+        .mockRejectedValueOnce(new Error("slot regeneration failed"));
+      if (boundary === "subscription") failure = jest.spyOn(Subscription.prototype, "save")
+        .mockRejectedValueOnce(new Error("subscription save failed"));
+      if (boundary === "address") {
+        const original = Order.prototype.save;
+        let saves = 0;
+        failure = jest.spyOn(Order.prototype, "save").mockImplementation(function (...args) {
+          if (++saves === 2) throw new Error("address save failed");
+          return original.apply(this, args);
+        });
+      }
+      expect((await send()).status).toBe(500);
+      failure.mockRestore();
+      expect(await state()).toEqual(before);
+      expect(stripe.prices.create).not.toHaveBeenCalled();
+      expect((await send()).status).toBe(200);
+      const after = await state();
+      expect(after.subscription.preferredDeliveryDays).toEqual([3]);
+      expect(weekdayInTimeZone(after.order.deliveryDate, SUBSCRIPTION_TIME_ZONE)).toBe(3);
+      expect(after.slots.find(slot => String(slot.order) === String(order._id)).scheduledDate)
+        .toEqual(after.order.deliveryDate);
+      expect(after.slots).toHaveLength(3);
+      expect(after.order.total).toBe(before.order.total);
+      expect(after.order.amountPaid).toBe(before.order.amountPaid);
+      if (boundary === "address") expect(after.order.deliveryAddress.line1).toBe("22 New Street");
+    } finally { failure?.mockRestore(); now.mockRestore(); }
+  });
+
   it("rejects unlocatable address changes before modifying the subscription or its order", async () => {
     const sub = await createBasicSubscription();
     await prepareUpcomingDeliveries(sub._id);
