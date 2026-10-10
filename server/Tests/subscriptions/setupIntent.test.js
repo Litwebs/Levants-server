@@ -3,6 +3,17 @@ const stripe = require("../../utils/stripe.util");
 const paymentService = require("../../services/customerPortal/customerPayments.service");
 
 describe("customer subscription SetupIntent", () => {
+  test("concurrent first-time setup retains one Stripe customer and survives retry", async () => {
+    const customer = await Customer.create({ email: `setup-race-${Date.now()}@example.com`, firstName: "Setup", lastName: "Race", stripeCustomerId: null });
+    stripe.customers.create.mockClear();
+    stripe.customers.create.mockResolvedValue({ id: "cus_setup_race" });
+    const results = await Promise.allSettled([1, 2].map(() => paymentService.CreateSetupIntent({ customerId: customer._id })));
+    expect(results.some(result => result.status === "fulfilled" && result.value.success)).toBe(true);
+    for (const result of results.filter(result => result.status === "rejected")) expect(result.reason.code).toBe("SUBSCRIPTION_LIFECYCLE_BUSY");
+    expect((await paymentService.CreateSetupIntent({ customerId: customer._id })).success).toBe(true);
+    expect(stripe.customers.create).toHaveBeenCalledTimes(1);
+    expect((await Customer.findById(customer._id)).stripeCustomerId).toBe("cus_setup_race");
+  });
   test("creates an off-session card-only SetupIntent and does not enable automatic payment methods", async () => {
     const customer = await Customer.create({
       email: `setup-intent-${Date.now()}@example.com`,

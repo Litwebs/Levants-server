@@ -65,12 +65,35 @@ function hasPendingRefund(order) {
   return refunds.some((r) => r?.status === "pending");
 }
 
+function getCapturedPaymentMinor(order, refundedMinor = 0) {
+  const allocations = Array.isArray(order.paymentAllocations)
+    ? order.paymentAllocations
+    : [];
+  const allocatedMinor = allocations.reduce(
+    (sum, allocation) =>
+      sum + Math.max(0, Math.round(Number(allocation?.amountMinor || 0))),
+    0,
+  );
+  if (allocatedMinor > 0) return allocatedMinor;
+
+  const amountPaid = Number(order.amountPaid);
+  if (Number.isFinite(amountPaid) && amountPaid > 0) {
+    const paidMinor = toMinorUnits(amountPaid, order.currency || "GBP");
+    if (order.orderType === "subscription_generated" && refundedMinor > 0) {
+      return paidMinor + refundedMinor;
+    }
+    return paidMinor;
+  }
+
+  return getOrderTotalMinor(order);
+}
+
 function computeRefundDerivedOrderStatus(order) {
-  const totalMinor = getOrderTotalMinor(order);
   const refundedMinor = sumSucceededRefundedMinor(order);
+  const capturedMinor = getCapturedPaymentMinor(order, refundedMinor);
   const pending = hasPendingRefund(order);
 
-  if (totalMinor > 0 && refundedMinor >= totalMinor) return "refunded";
+  if (capturedMinor > 0 && refundedMinor >= capturedMinor) return "refunded";
   if (pending) return "refund_pending";
   if (refundedMinor > 0) return "partially_refunded";
   return "paid";
@@ -84,10 +107,19 @@ async function RefundOrder({
   restock,
 } = {}) {
   try {
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId).select("+subscriptionRefundPlan");
 
     if (!order) {
       return { success: false, statusCode: 404, message: "Order not found" };
+    }
+
+    // Generic admin refunds assume one independent capture and do not hold
+    // the subscription's durable mutation lease. Subscription orders can
+    // share an invoice and carry several captures; route their refunds through
+    // the subscription cancellation/item-adjustment settlement instead.
+    if (order.subscription || order.orderType === "subscription_generated") {
+      return { success: false, statusCode: 409,
+        message: "Refund subscription orders through the subscription cancellation or item-adjustment workflow so every backing payment and inventory change is reconciled." };
     }
 
     if (order.status === "refunded") {
@@ -96,6 +128,11 @@ async function RefundOrder({
         statusCode: 409,
         message: "Order is already fully refunded",
       };
+    }
+
+    if (order.subscriptionRefundPlan) {
+      return { success: false, statusCode: 409,
+        message: "A subscription card refund is unfinished. Resume that settlement before starting another refund." };
     }
 
     if (order.status === "refund_pending") {
@@ -152,8 +189,8 @@ async function RefundOrder({
     }
 
     const currency = order.currency || "GBP";
-    const totalMinor = getOrderTotalMinor(order);
     const alreadyRefundedMinor = sumSucceededRefundedMinor(order);
+    const totalMinor = getCapturedPaymentMinor(order, alreadyRefundedMinor);
     const remainingMinor = Math.max(0, totalMinor - alreadyRefundedMinor);
 
     if (remainingMinor <= 0) {
@@ -196,6 +233,16 @@ async function RefundOrder({
         message:
           "Restock can only be used when refunding the full remaining order amount",
       };
+    }
+
+    // Freeze the legacy capture basis so subsequent partial admin refunds do
+    // not reinterpret the growing refund history as additional captured money.
+    if (!(order.paymentAllocations || []).length && order.orderType === "subscription_generated") {
+      order.paymentAllocations.push({
+        paymentIntentId,
+        source: "subscription_invoice",
+        amountMinor: totalMinor,
+      });
     }
 
     const refund = await stripe.refunds.create(
@@ -335,27 +382,26 @@ async function applyStripeRefundSucceeded({
 
   try {
     const exactFilter = {
-      stripePaymentIntentId: paymentIntentId,
-      $or: [
+      $and: [{ $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] }, { $or: [
         { "refunds.stripeRefundId": stripeRefundId },
         { "refund.stripeRefundId": stripeRefundId },
-      ],
+      ] }],
     };
     let order = await Order.findOne(
       orderId
-        ? { _id: orderId, stripePaymentIntentId: paymentIntentId }
+        ? { _id: orderId, $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] }
         : exactFilter,
-    ).session(session);
+    ).select("+subscriptionRefundPlan").session(session);
 
     // Legacy refunds may not carry orderId and may not have been pre-recorded.
     // A PaymentIntent is unambiguous for ordinary orders; subscription refunds
     // now always carry orderId to disambiguate shared invoice payments.
     if (!order && !orderId) {
-      order = await Order.findOne({
-        stripePaymentIntentId: paymentIntentId,
-      })
-        .sort({ deliveryDate: 1, createdAt: 1 })
-        .session(session);
+      const funding = { $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] };
+      if (await Order.countDocuments(funding).session(session) > 1) {
+        throw new Error("An unattributed refund on a shared payment requires reconciliation.");
+      }
+      order = await Order.findOne(funding).session(session);
     }
 
     if (!order) {
@@ -421,7 +467,11 @@ async function applyStripeRefundSucceeded({
       }
     }
 
-    order.status = nextStatus;
+    // A terminal subscription settlement may be smaller than the original
+    // capture after store-credit reductions. Its late webhook must not reopen it.
+    if (!(order.subscriptionRefundPlan && order.status === "refunded")) {
+      order.status = nextStatus;
+    }
     await order.save({ session });
 
     const updatedOrderId = order._id;
@@ -440,13 +490,14 @@ async function applyStripeRefundFailed({
   stripeRefundId,
   amountMinor,
   currency,
+  orderId,
 } = {}) {
   const order = await Order.findOne({
-    stripePaymentIntentId: paymentIntentId,
-    $or: [
+    ...(orderId ? { _id: orderId } : {}),
+    $and: [{ $or: [{ stripePaymentIntentId: paymentIntentId }, { "paymentAllocations.paymentIntentId": paymentIntentId }] }, { $or: [
       { "refunds.stripeRefundId": stripeRefundId },
       { "refund.stripeRefundId": stripeRefundId },
-    ],
+    ] }],
   });
 
   if (!order) return null;

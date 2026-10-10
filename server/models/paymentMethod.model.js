@@ -52,11 +52,17 @@ const paymentMethodSchema = new mongoose.Schema(
 );
 
 paymentMethodSchema.index({ customer: 1, isDefault: 1 });
+paymentMethodSchema.index({ customer: 1, provider: 1, providerReference: 1 }, {
+  unique: true, name: "customer_1_provider_1_providerReference_1",
+  partialFilterExpression: { providerReference: { $type: "string" } },
+});
 
 paymentMethodSchema.method("toJSON", function () {
   const obj = this.toObject();
   delete obj.__v;
   return obj;
 });
+
+require("../utils/subscriptionLease.util").leaseFencingPlugin(paymentMethodSchema);
 
 module.exports = mongoose.model("PaymentMethod", paymentMethodSchema);

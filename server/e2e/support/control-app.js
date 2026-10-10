@@ -1,10 +1,78 @@
 "use strict";
 
-//test
-
 const express = require("express");
 const { CONTROL_TOKEN } = require("./constants");
 const fixtures = require("./fixture-factory");
+const Order = require("../../models/order.model");
+const Subscription = require("../../models/subscription.model");
+const stripe = require("../../utils/stripe.util");
+const {
+  reconcileSubscriptionPrice,
+} = require("../../services/subscriptions/subscriptionPriceReconciliation.service");
+
+const originalPriceCreate = stripe.prices.create.bind(stripe.prices);
+let priceCreateFault = null;
+
+function restoreStripePriceCreate() {
+  stripe.prices.create = originalPriceCreate;
+  priceCreateFault = null;
+}
+
+async function failNextStripePriceCreates(subscriptionId, requestedCount) {
+  const subscription = await Subscription.findById(subscriptionId).lean();
+  if (!subscription?.stripeProductId) {
+    throw new Error("Subscription fixture has no Stripe product");
+  }
+
+  restoreStripePriceCreate();
+  const count = Math.max(1, Math.min(Number(requestedCount) || 1, 10));
+  priceCreateFault = {
+    stripeProductId: subscription.stripeProductId,
+    remaining: count,
+  };
+
+  stripe.prices.create = async (params, options) => {
+    const shouldFail =
+      priceCreateFault &&
+      priceCreateFault.remaining > 0 &&
+      params?.product === priceCreateFault.stripeProductId &&
+      Boolean(params?.recurring);
+
+    if (shouldFail) {
+      priceCreateFault.remaining -= 1;
+      const remaining = priceCreateFault.remaining;
+      if (remaining === 0) {
+        restoreStripePriceCreate();
+      }
+      throw new Error("Injected E2E Stripe recurring price creation failure");
+    }
+
+    return originalPriceCreate(params, options);
+  };
+
+  return { injected: true, count };
+}
+
+async function removeCapturedPaymentBacking(subscriptionId) {
+  const subscription = await Subscription.findById(subscriptionId).lean();
+  if (!subscription) {
+    throw new Error("Subscription fixture not found");
+  }
+
+  const result = await Order.updateMany(
+    {
+      subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded"] },
+      deliveryStatus: "ordered",
+    },
+    { $set: { stripePaymentIntentId: null } },
+  );
+
+  return {
+    matchedCount: Number(result.matchedCount ?? result.n ?? 0),
+    modifiedCount: Number(result.modifiedCount ?? result.nModified ?? 0),
+  };
+}
 
 function asyncRoute(handler) {
   return async (req, res) => {
@@ -41,6 +109,7 @@ function createControlApp() {
   app.post(
     "/reset",
     asyncRoute(async () => {
+      restoreStripePriceCreate();
       await fixtures.reset();
       return { reset: true };
     }),
@@ -78,6 +147,10 @@ function createControlApp() {
     ),
   );
   app.post(
+    "/state/:subscriptionId/payment-backing/remove",
+    asyncRoute((req) => removeCapturedPaymentBacking(req.params.subscriptionId)),
+  );
+  app.post(
     "/state/:subscriptionId/payment-retry/prepare",
     asyncRoute((req) =>
       fixtures.preparePaymentRetry(req.params.subscriptionId),
@@ -109,6 +182,16 @@ function createControlApp() {
         req.body?.referenceDate,
       ),
     ),
+  );
+  app.post(
+    "/state/:subscriptionId/stripe-price-sync/fail-next",
+    asyncRoute((req) =>
+      failNextStripePriceCreates(req.params.subscriptionId, req.body?.count),
+    ),
+  );
+  app.post(
+    "/state/:subscriptionId/stripe-price-sync/reconcile",
+    asyncRoute((req) => reconcileSubscriptionPrice(req.params.subscriptionId)),
   );
 
   return app;

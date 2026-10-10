@@ -73,11 +73,11 @@ SUB-MULTI-07,Multi-day,Order generation uses day-specific plan,Yes,Yes,Covered b
 SUB-MULTI-08,Multi-day,Edit a single day's products in detail page (before cut-off),Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
 SUB-MULTI-09,Multi-day,Edit a single day's products after cut-off,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
 SUB-MULTI-10,Multi-day,Send deliveryDayPlans on a single-day/non-weekly subscription,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
-SUB-MULTI-11,Multi-day,Add products via add-products assigning to multiple days,Yes,No,No direct automated test found in current subscription test suites.
-SUB-MULTI-12,Multi-day,Add-products save blocked when a product has no day chosen,Yes,No,No direct automated test found in current subscription test suites.
+SUB-MULTI-11,Multi-day,Add products via add-products assigning to multiple days,Yes,Yes,Covered by direct Playwright UI E2E: one PATCH updates every selected day plan and the merged recurring billing state.
+SUB-MULTI-12,Multi-day,Add-products save blocked when a product has no day chosen,Yes,Yes,Covered by direct Playwright UI E2E: save remains disabled and no mutation request is sent until a delivery day is assigned.
 SUB-MULTI-13,Multi-day,Reduce a multi-day sub to single day clears day plans,Yes,Yes,Covered by automated backend subscription tests (portal API/service suite).
-SUB-MULTI-14,Multi-day,Multi-day next delivery date picks nearest selected weekday,Yes,Partial,Partially covered by automated tests; related behavior asserted but not fully end-to-end for this exact rule.
-SUB-MULTI-15,Multi-day,Recurring cadence for multi-day steps day-to-day,Yes,Partial,Partially covered by automated tests; related behavior asserted but not fully end-to-end for this exact rule.
+SUB-MULTI-14,Multi-day,Multi-day next delivery date picks nearest selected weekday,Yes,Yes,Covered by direct API/Stripe Playwright E2E from subscription creation through generated delivery schedule.
+SUB-MULTI-15,Multi-day,Recurring cadence for multi-day steps day-to-day,Yes,Yes,Covered by direct API/Stripe Playwright E2E asserting each generated step advances to the nearest selected weekday.
 SUB-PAY-01,Payment,Recurring subscription invoice payment fails,Yes,Yes,Covered by automated subscription tests (portal API and/or webhook E2E suite).
 SUB-PAY-02,Payment,Payment method declined when increasing items pre-cut-off,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).
 SUB-PAY-03,Payment,Card declined during initial subscription creation,Yes,Yes,Covered by automated backend subscription tests (portal/webhook suite).

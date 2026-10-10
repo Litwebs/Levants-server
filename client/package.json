@@ -9,7 +9,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test:map-tiles": "node scripts/check-map-tiles.mjs",
-    "check:release": "npm run test:map-tiles && npm run lint -- --max-warnings 395 && npm run build",
+    "test:subscription-settings": "node scripts/check-subscription-settings.mjs",
+    "check:release": "npm run test:map-tiles && npm run test:subscription-settings && npm run lint -- --max-warnings 395 && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {

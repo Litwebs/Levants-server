@@ -75,6 +75,13 @@ const HandleStripeWebhook = async (req, res) => {
       break;
 
     // ── Stripe Subscription billing events ──────────────────────────────────
+    case "invoice.created":
+      await subscriptionWebhookService.HandleSubscriptionInvoiceCreated(event.data.object);
+      break;
+    case "invoice.voided":
+    case "invoice.marked_uncollectible":
+      await subscriptionWebhookService.HandleSubscriptionInvoiceClosed(event.data.object);
+      break;
     case "invoice.payment_succeeded":
       // Let processing errors return 5xx. Acknowledging a failed fulfillment
       // event makes Stripe consider it delivered and permanently loses the
