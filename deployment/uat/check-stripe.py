@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import re
 import stat
+import sys
+import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -35,6 +37,16 @@ if len(matching) != 1 or matching[0].get('livemode') is not False:
 required = {'checkout.session.completed','checkout.session.expired','payment_intent.payment_failed','charge.refunded',
     'refund.created','refund.updated','refund.failed','invoice.created','invoice.voided','invoice.marked_uncollectible',
     'invoice.payment_succeeded','invoice.payment_failed','customer.subscription.updated','customer.subscription.deleted'}
+if '--apply-missing-events' in sys.argv and not required.issubset(set(matching[0]['enabled_events'])):
+    enabled = sorted(required | set(matching[0]['enabled_events']))
+    body = urllib.parse.urlencode([('enabled_events[]', event) for event in enabled]).encode()
+    req = urllib.request.Request('https://api.stripe.com/v1/webhook_endpoints/' + matching[0]['id'],
+        data=body, headers={'Authorization':'Bearer ' + values['STRIPE_SECRET_KEY']})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            matching[0] = json.load(response)
+    except urllib.error.HTTPError as error:
+        raise SystemExit('Sandbox webhook update failed; HTTP status ' + str(error.code)) from None
 if not required.issubset(set(matching[0]['enabled_events'])):
-    raise SystemExit('UAT webhook is missing required event types')
+    raise SystemExit('UAT webhook missing events: ' + ', '.join(sorted(required - set(matching[0]['enabled_events']))))
 print(json.dumps({'sandboxVerified':True,'endpointVerified':True,'apiVersion':matching[0]['api_version'],'requiredEvents':len(required)}))
