@@ -438,7 +438,7 @@ function calculateFirstSubscriptionDeliveryDate({
  * Pre-generate upcoming SubscriptionDelivery slots (3 upcoming).
  */
 async function scheduleUpcomingDeliveries(subscription, session) {
-  if (!subscription?.nextDeliveryDate) return;
+  if (!subscription?.nextDeliveryDate || subscription.isCancellationScheduled || subscription.status === "cancelled") return;
 
   const today = startOfDay(new Date(subscriptionClock.now()));
   let nextDate = new Date(subscription.nextDeliveryDate);
@@ -2390,10 +2390,10 @@ async function UpdateSubscription({
   });
   if (!subscription) return Response(false, "Subscription not found", null);
 
-  if (subscription.status !== "active") {
+  if (subscription.status !== "active" || subscription.isCancellationScheduled) {
     return Response(
       false,
-      "Paused or cancelled subscriptions cannot be changed.",
+      "Paused, cancelled or scheduled-for-cancellation subscriptions cannot be changed.",
       null,
     );
   }
@@ -4300,10 +4300,10 @@ async function AddSubscriptionItem({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
-  if (subscription.status !== "active") {
+  if (subscription.status !== "active" || subscription.isCancellationScheduled) {
     return Response(
       false,
-      "Paused or cancelled subscriptions cannot be changed.",
+      "Paused, cancelled or scheduled-for-cancellation subscriptions cannot be changed.",
       null,
     );
   }
@@ -4381,10 +4381,10 @@ async function ReplaceSubscriptionItems({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
-  if (subscription.status !== "active") {
+  if (subscription.status !== "active" || subscription.isCancellationScheduled) {
     return Response(
       false,
-      "Paused or cancelled subscriptions cannot be changed.",
+      "Paused, cancelled or scheduled-for-cancellation subscriptions cannot be changed.",
       null,
     );
   }
@@ -4477,10 +4477,10 @@ async function UpdateSubscriptionItem({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
-  if (subscription.status !== "active") {
+  if (subscription.status !== "active" || subscription.isCancellationScheduled) {
     return Response(
       false,
-      "Paused or cancelled subscriptions cannot be changed.",
+      "Paused, cancelled or scheduled-for-cancellation subscriptions cannot be changed.",
       null,
     );
   }
@@ -4528,10 +4528,10 @@ async function RemoveSubscriptionItem({
     customer: customerId,
   });
   if (!subscription) return Response(false, "Subscription not found", null);
-  if (subscription.status !== "active") {
+  if (subscription.status !== "active" || subscription.isCancellationScheduled) {
     return Response(
       false,
-      "Paused or cancelled subscriptions cannot be changed.",
+      "Paused, cancelled or scheduled-for-cancellation subscriptions cannot be changed.",
       null,
     );
   }
