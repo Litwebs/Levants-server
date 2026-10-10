@@ -113,6 +113,15 @@ const connectDb = async () => {
       autoIndex: env !== "production",
     });
 
+    // A new UAT database has no collections yet. Production already has its
+    // established collections and must retain its existing startup behavior.
+    if (process.env.APP_ENV === "uat") {
+      for (const model of Object.values(mongoose.models)) {
+        await model.createCollection();
+        await model.createIndexes();
+      }
+    }
+
     await ensureDiscountCodeIndex();
     await ensureSubscriptionDeliveryUniqueIndex();
     await ensureSubscriptionOrderInvoiceUniqueIndex();

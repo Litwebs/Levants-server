@@ -7,6 +7,7 @@
     "test": "tests"
   },
   "scripts": {
+    "test:uat-safety": "node --test scripts/uatSafety.node.cjs",
     "test": "jest --runInBand",
     "test:release": "NODE_OPTIONS=--max-old-space-size=4096 jest --runInBand --no-watchman",
     "test:e2e:subscriptions": "playwright test",
