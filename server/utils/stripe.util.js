@@ -22,7 +22,7 @@ const { fenceLease } = require("./subscriptionLease.util");
 for (const [resource, methods] of Object.entries({
   paymentIntents: ["create", "confirm", "cancel"], refunds: ["create"],
   invoices: ["update", "voidInvoice", "finalizeInvoice"],
-  subscriptions: ["create", "update", "cancel"], customers: ["update"],
+  subscriptions: ["create", "update", "cancel"], customers: ["create", "update"],
   paymentMethods: ["attach", "detach"], products: ["create"], prices: ["create", "update"],
 })) {
   for (const method of methods) {

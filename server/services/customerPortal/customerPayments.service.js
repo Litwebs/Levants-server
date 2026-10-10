@@ -85,22 +85,7 @@ async function getCustomerWithStripeId(customerId) {
 }
 
 async function ensureStripeCustomer(customerId) {
-  const customer = await getCustomerWithStripeId(customerId);
-  if (!customer) return null;
-
-  if (customer.stripeCustomerId) return customer;
-
-  const stripeCustomer = await stripe.customers.create({
-    email: customer.email || undefined,
-    name: `${customer.firstName || ""} ${customer.lastName || ""}`.trim(),
-    metadata: {
-      customerId: String(customer._id),
-    },
-  });
-
-  customer.stripeCustomerId = stripeCustomer.id;
-  await customer.save();
-  return customer;
+  return require("./subscriptionCustomerIdentity.service").ensureCustomerIdentity(customerId);
 }
 
 function normalizeStripeCard(paymentMethod) {

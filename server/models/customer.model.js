@@ -73,6 +73,7 @@ const customerSchema = new mongoose.Schema(
 
     // Durable, customer-scoped card operation and a fenced worker lease.
     paymentMethodOperation: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    stripeCustomerCreation: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
     paymentMethodLock: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
 
     // Store credit / wallet balance, held in MINOR units (pence). 100 = £1.00
