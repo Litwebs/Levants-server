@@ -36,6 +36,7 @@ test("UAT captures individual and batch messages without loading an email provid
   const original = { ...process.env };
   t.after(() => { process.env = original; });
   process.env.APP_ENV = "uat";
+  process.env.EMAIL_TRANSPORT = "capture";
   process.env.UAT_EMAIL_OUTBOX = "/srv/levants-uat/shared/email-outbox";
   t.mock.method(fs, "mkdirSync", () => {});
   t.mock.method(fs, "readdirSync", () => []);
@@ -105,4 +106,26 @@ test("UAT webhook rejects disabled, live and unsigned events before business han
   event = {type:"unhandled.test",livemode:false}; res=response(); await handle(req,res); assert.equal(res.code,200);
   process.env.STRIPE_WEBHOOKS_ENABLED="false"; const before=calls;
   res=response(); await handle(req,res); assert.equal(res.code,503); assert.equal(calls,before);
+});
+
+
+test("UAT Resend labels single and batch mail and preserves unrestricted recipients", (t) => {
+  const vm = require("node:vm");
+  const original = {...process.env}; t.after(() => {process.env=original;});
+  process.env.APP_ENV="uat"; process.env.EMAIL_TRANSPORT="resend"; process.env.RESEND_EMAIL_KEY="re_testOnly";
+  const sends=[]; const batches=[];
+  const sandbox={process,module:{exports:{}},require:name => {
+    if (name==="resend") return {Resend:class {constructor(){this.emails={send:p=>sends.push(p)};this.batch={send:p=>batches.push(p)};}}};
+    return require(name);
+  }};
+  vm.runInNewContext(fs.readFileSync(require.resolve("../Integration/emailTransport"),"utf8"),sandbox);
+  const transport=sandbox.module.exports.createEmailTransport();
+  transport.emails.send({from:"production@example.com",to:"anyone@example.com",cc:["other@example.com"],subject:"Receipt",html:"<p>Test</p>"});
+  transport.batch.send([{to:"third@example.com",subject:"[UAT] Already marked"}]);
+  assert.equal(sends[0].from,"Levants UAT <no-reply@levantsdairy.co.uk>");
+  assert.equal(sends[0].subject,"[UAT] Receipt");
+  assert.equal(sends[0].to,"anyone@example.com"); assert.equal(sends[0].cc[0],"other@example.com");
+  assert.equal(batches[0][0].subject,"[UAT] Already marked");
+  validateUatEnvironment({...safe(),EMAIL_TRANSPORT:"resend",RESEND_EMAIL_KEY:"re_testOnly"});
+  assert.throws(()=>validateUatEnvironment({...safe(),EMAIL_TRANSPORT:"resend"}),/separate Resend key/);
 });

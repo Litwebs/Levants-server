@@ -17,7 +17,12 @@ function validateUatEnvironment(values = process.env) {
   }
   if (values.NODE_ENV !== "production") fail("NODE_ENV must be production");
   if (values.PORT !== "5002" || values.HOST !== "127.0.0.1") fail("unexpected API binding");
-  if (values.EMAIL_TRANSPORT !== "capture") fail("outbound email must be captured");
+  if (values.EMAIL_TRANSPORT === "resend") {
+    if (!/^re_[A-Za-z0-9_\-]+$/.test(values.RESEND_EMAIL_KEY || "")) fail("UAT email requires its separate Resend key");
+  } else {
+    if (values.EMAIL_TRANSPORT !== "capture") fail("unknown email transport");
+    if (values.RESEND_EMAIL_KEY) fail("capture mode must not contain a sending key");
+  }
   if (values.UAT_EMAIL_OUTBOX !== "/srv/levants-uat/shared/email-outbox") fail("unexpected email capture path");
   if (values.UAT_STORAGE_MODE !== "disabled") fail("external storage must remain disabled");
   if (values.BACKGROUND_JOBS_ENABLED !== "false") fail("background jobs must remain disabled");
@@ -31,7 +36,7 @@ function validateUatEnvironment(values = process.env) {
     if (values.STRIPE_SECRET_KEY !== "sk_test_uat_disabled" || values.STRIPE_PUBLISHABLE_KEY) fail("payments must remain disabled until test credentials are provisioned");
     if (values.STRIPE_WEBHOOKS_ENABLED !== "false") fail("payment webhooks must remain disabled");
   }
-  for (const name of ["RESEND_API_KEY", "RESEND_EMAIL_KEY", "RESEND_URI", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET", "CLOUDINARY_URL", "OLD_STRIPE_SECRET_KEY"]) {
+  for (const name of ["RESEND_API_KEY", "RESEND_URI", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET", "CLOUDINARY_URL", "OLD_STRIPE_SECRET_KEY"]) {
     if (values[name]) fail(`${name} must not be configured in isolated mode`);
   }
   for (const name of ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "JWT_2FA_SECRET", "JWT_CUSTOMER_ACCESS_SECRET", "JWT_CUSTOMER_REFRESH_SECRET", "CREDENTIALS_MASTER_KEY"]) {

@@ -91,3 +91,13 @@ snapshot invoice payloads are normalized by the subscription webhook service.
 Allow only Stripe's published API IP addresses in the UAT service network
 policy, retaining the default deny rule. Refresh that list when Stripe changes
 its published addresses: https://docs.stripe.com/ips .
+
+UAT email can use `EMAIL_TRANSPORT=resend` with its separate
+`RESEND_EMAIL_KEY`. Every single and batch message uses
+`Levants UAT <no-reply@levantsdairy.co.uk>` and an `[UAT]` subject prefix.
+Recipients are unrestricted, as requested. Production's email behavior is
+unchanged. `activate-email.py` validates the protected `email.pending.env`,
+adds Resend API IPs to the UAT-only network policy and tests with
+`delivered@resend.dev`. Failure restores the prior UAT config. The network
+allowlist is a DNS snapshot; if Resend changes its API addresses, refresh
+`resend.conf` from `api.resend.com`, reload systemd and restart only UAT.

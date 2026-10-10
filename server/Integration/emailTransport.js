@@ -4,12 +4,32 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 
+function prepareUatEmail(payload) {
+  return {
+    ...payload,
+    from: "Levants UAT <no-reply@levantsdairy.co.uk>",
+    subject: `[UAT] ${String(payload.subject || "").replace(/^(?:\[UAT\]\s*)+/i, "")}`,
+  };
+}
+
 function createEmailTransport() {
   if (process.env.APP_ENV !== "uat") {
     const { Resend } = require("resend");
     const { RESEND_EMAIL_KEY } = require("../config/env");
     return new Resend(RESEND_EMAIL_KEY);
   }
+  if (process.env.EMAIL_TRANSPORT === "resend") {
+    if (!/^re_[A-Za-z0-9_\-]+$/.test(process.env.RESEND_EMAIL_KEY || "")) {
+      throw new Error("UAT email requires its separate Resend key");
+    }
+    const { Resend } = require("resend");
+    const provider = new Resend(process.env.RESEND_EMAIL_KEY);
+    return {
+      emails: { send: (payload) => provider.emails.send(prepareUatEmail(payload)) },
+      batch: { send: (payloads) => provider.batch.send(payloads.map(prepareUatEmail)) },
+    };
+  }
+  if (process.env.EMAIL_TRANSPORT !== "capture") throw new Error("Unknown UAT email transport");
   const capture = async (payload) => {
     const directory = process.env.UAT_EMAIL_OUTBOX;
     if (directory !== "/srv/levants-uat/shared/email-outbox") throw new Error("Invalid UAT outbox");
@@ -27,4 +47,4 @@ function createEmailTransport() {
   };
 }
 
-module.exports = { createEmailTransport };
+module.exports = { createEmailTransport, prepareUatEmail };
