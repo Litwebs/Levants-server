@@ -118,7 +118,7 @@ issues require review; exit `1` means the audit failed or could not finish.
 Require the final `AUDIT_RESULT` to report `"ok":true` and `"issues":0` for a
 clean result. A partial report or an exit code alone is not sufficient evidence.
 
-Every row of `INDEX_INTEGRITY` must have `ok: true`. All seven indexes below
+Every row of `INDEX_INTEGRITY` must have `ok: true`. All eight indexes below
 must be unique, with the specified keys and partial filter where applicable:
 
 | Collection | Index keys | Partial filter |
@@ -181,7 +181,7 @@ refund/credit.
    Stripe refund/credit first, then record the local refund outcome.
 6. Re-run both diagnostic scripts. Do not close the incident until every paid
    invoice has an order/payment or an explicitly documented refund/credit,
-   duplicate slot lists are empty, and all seven unique-index checks are true.
+   duplicate slot lists are empty, and all eight unique-index checks are true.
 7. Check the next three delivery slots for every active subscription against
    its frequency, weekly selected days or monthly calendar cadence, protected
    deliveries, and staged changes before allowing route generation.

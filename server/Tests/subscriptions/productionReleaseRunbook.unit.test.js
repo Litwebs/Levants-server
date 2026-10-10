@@ -27,6 +27,7 @@ test("the documented required events exactly match the runtime contract", () => 
 });
 
 test("the runbook lists every audited index once, with no extra rows", () => {
+  expect(runbook).toContain(`All ${["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"][indexes.length]} indexes below`);
   expect(rows.map(row => row.collection).sort()).toEqual(indexes.map(row => row[0]).sort());
   expect(new Set(rows.map(row => row.collection)).size).toBe(rows.length);
 });
