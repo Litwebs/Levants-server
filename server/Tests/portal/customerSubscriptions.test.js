@@ -3238,6 +3238,23 @@ describe("Portal Subscriptions", () => {
       subscription: subId, customer: customer._id,
       scheduledDate: new Date(`${day}T09:00:00Z`), status: "scheduled",
     })));
+    const paidSubscription = await Subscription.findById(subId);
+    const sundayItems = paidSubscription.deliveryDayPlans.find(plan => plan.day === 0).items;
+    const sundayTotal = sundayItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const paidSunday = await Order.create({
+      customer: customer._id, subscription: subId, orderType: "subscription_generated",
+      items: sundayItems.map(item => ({ product: item.product, variant: item.variant,
+        name: item.name, sku: item.sku, price: item.unitPrice,
+        quantity: item.quantity, subtotal: item.unitPrice * item.quantity })),
+      deliveryAddress: paidSubscription.deliveryAddress, location: { lat: 51.5, lng: -0.1 },
+      deliveryDate: new Date("2026-10-18T09:00:00Z"),
+      subtotal: sundayTotal, total: sundayTotal, amountPaid: sundayTotal,
+      status: "paid", deliveryStatus: "ordered", reservationExpiresAt: new Date(Date.now() + 86400000),
+      stripePaymentIntentId: `pi_${crypto.randomUUID()}`, paidAt: new Date(),
+    });
+    await SubscriptionDelivery.updateOne({ subscription: subId,
+      scheduledDate: new Date("2026-10-18T09:00:00Z") },
+      { $set: { status: "generated", order: paidSunday._id } });
     const detail = await request(app).get(`/api/portal/subscriptions/${subId}`)
       .set("Authorization", `Bearer ${accessToken}`);
     expect(detail.status).toBe(200);

@@ -1198,6 +1198,7 @@ async function updateUpcomingSubscriptionOrderForDay(
   weekday,
   dayItems,
   {
+    orderId = null,
     chargedMinor = 0,
     refundedMinor = 0,
     paymentIntent = null,
@@ -1208,6 +1209,8 @@ async function updateUpcomingSubscriptionOrderForDay(
 ) {
   const orders = await Order.find({
     subscription: subscription._id,
+    ...(orderId ? { _id: orderId } : {}),
+    deliveryDate: { $gte: startOfDay(new Date(subscriptionClock.now())) },
     status: { $in: ["paid", "partially_refunded"] },
     deliveryStatus: "ordered",
   })
@@ -1221,7 +1224,10 @@ async function updateUpcomingSubscriptionOrderForDay(
       weekdayInTimeZone(candidate.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(weekday),
   );
 
-  if (!order) return false;
+  if (!order) {
+    if (orderId) throw new Error("The paid delivery order is no longer editable");
+    return false;
+  }
 
   if (!(order.paymentAllocations || []).length && order.stripePaymentIntentId) {
     const priorRefundMinor = (order.refunds || []).filter(refund => refund.status === "succeeded")
@@ -1281,6 +1287,12 @@ async function updateUpcomingSubscriptionOrderForDay(
  */
 // Freeze both the payment request and fulfillment targets before calling Stripe.
 async function prepareSubscriptionItemIncrease({ subscription, customer, operationId, fields, orderEdits, amountMinor, actionLabel }) {
+  if (!Array.isArray(orderEdits) || !orderEdits.length ||
+      orderEdits.some(edit => !edit.orderId || Number(edit.chargedMinor) < 0) ||
+      orderEdits.reduce((sum, edit) => sum + Number(edit.chargedMinor || 0), 0) !== amountMinor) {
+    return Response(false, "Payment for this delivery has not been confirmed. No charge has been applied.",
+      { paymentPending: true });
+  }
   const mutation = operationId && await SubscriptionMutation.findOne({
     customer: customer._id, subscription: subscription._id, operationId,
   });
@@ -1503,10 +1515,17 @@ async function applyItemChange(
   const newMinor = calculateSubscriptionTotalMinor(nextItems);
   const deltaMinor = newMinor - oldMinor;
 
+  const settlementOrder = deltaMinor !== 0 ? await Order.findOne({
+    subscription: subscription._id,
+    status: { $in: ["paid", "partially_refunded"] }, deliveryStatus: "ordered",
+    deliveryDate: upcomingDeliveryDate || { $gte: startOfDay(new Date(subscriptionClock.now())) },
+  }).sort({ deliveryDate: 1, createdAt: 1 }).select("_id").lean() : null;
+  if (deltaMinor !== 0 && !settlementOrder) return Response(false,
+    "Payment for this delivery has not been confirmed. No charge or credit has been applied. Please retry after its payment is confirmed.",
+    { paymentPending: true });
+
   if (deltaMinor > 0) {
-    const order = await Order.findOne({ subscription: subscription._id,
-      status: { $in: ["paid", "partially_refunded", "refunded"] }, deliveryStatus: "ordered",
-    }).sort({ deliveryDate: -1, createdAt: -1 }).select("_id").lean();
+    const order = settlementOrder;
     return prepareSubscriptionItemIncrease({
       subscription, customer, operationId, fields: { items: nextItems },
       orderEdits: order ? [{ orderId: order._id, items: nextItems, chargedMinor: deltaMinor }] : [],
@@ -1544,9 +1563,7 @@ async function applyItemChange(
 
     if (refundMethod === "refund") {
       let refundResult;
-      const target = await Order.findOne({ subscription: subscription._id,
-        status: { $in: ["paid", "partially_refunded"] }, deliveryStatus: "ordered",
-      }).sort({ deliveryDate: -1, createdAt: -1 }).select("_id").lean();
+      const target = settlementOrder;
       try { refundResult = await refundSubscriptionToCard(subscription, owedMinor, operationId,
         target ? [{ orderId: target._id, amountMinor: owedMinor }] : []); }
       catch (error) { return decreaseRefundFailure(error); }
@@ -1614,7 +1631,7 @@ async function applyItemChange(
             refundedMinor,
             operationId,
             session,
-            orderId: refundOrderId,
+            orderId: refundOrderId || settlementOrder._id,
             refundRecords,
             refundRecord: stripeRefundId
               ? {
@@ -2519,6 +2536,7 @@ async function UpdateSubscription({
   let currentLiveSubscriptionItems = null;
   let currentWorkingPlans = [];
   let currentWorkingSubscriptionItems = [];
+  let fundedDayOrders = new Map();
   let openDayCurrentMinor = 0;
   let openDayNewMinor = 0;
   let shouldStageFutureDayPlan = false;
@@ -2793,6 +2811,31 @@ async function UpdateSubscription({
       currentLiveDayPlans.map((plan) => [Number(plan.day), plan]),
     );
 
+    // An open cutoff does not mean this delivery has been paid. Bind money
+    // changes to the actual outstanding slot; a different week's order cannot
+    // fund this edit. Refuse before any external settlement or plan mutation.
+    const candidateOrders = await Order.find({
+      subscription: subscription._id,
+      status: { $in: ["paid", "partially_refunded"] },
+      deliveryStatus: "ordered",
+      deliveryDate: { $gte: startOfDay(new Date(subscriptionClock.now())) },
+    }).sort({ deliveryDate: 1 }).lean();
+    for (const day of openChangedDeliveryDays) {
+      const date = getActualDeliveryDateForDay(day, outstandingDeliveries);
+      const slot = date && outstandingDeliveries.find(delivery =>
+        deliveryDateKey(delivery.scheduledDate) === deliveryDateKey(date));
+      const order = candidateOrders.find(candidate => candidate.deliveryDate &&
+        weekdayInTimeZone(candidate.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(day) &&
+        (!date || deliveryDateKey(candidate.deliveryDate) === deliveryDateKey(date)) &&
+        (!slot || (slot.order && String(slot.order) === String(candidate._id))));
+      const delta = dayPlanMinor(requestedByDay.get(Number(day))?.items || []) -
+        dayPlanMinor(currentLiveByDay.get(Number(day))?.items || []);
+      if (delta && !order) return Response(false,
+        "Payment for this delivery has not been confirmed. No charge or credit has been applied. Please retry after its payment is confirmed.",
+        { paymentPending: true, deliveryDay: Number(day) });
+      if (order) fundedDayOrders.set(Number(day), order);
+    }
+
     openDayCurrentMinor = openChangedDeliveryDays.reduce((sum, day) => {
       const currentPlan = currentLiveByDay.get(Number(day));
       return sum + dayPlanMinor(currentPlan?.items || []);
@@ -2863,9 +2906,6 @@ async function UpdateSubscription({
     if (scheduleChangeRequested || deliveryAddressId !== undefined) {
       return Response(false, "Please save delivery schedule or address changes separately from item increases.", null);
     }
-    const orders = await Order.find({ subscription: subscription._id,
-      status: { $in: ["paid", "partially_refunded"] }, deliveryStatus: "ordered",
-    }).sort({ deliveryDate: 1 }).lean();
     const orderEdits = [];
     for (const day of openChangedDeliveryDays) {
       const items = liveDeliveryDayPlans.find(plan => Number(plan.day) === Number(day))?.items || [];
@@ -2874,8 +2914,7 @@ async function UpdateSubscription({
       if (delta < 0) {
         return Response(false, "Please save delivery-day increases and decreases separately.", null);
       }
-      const order = orders.find(order => order.deliveryDate &&
-        weekdayInTimeZone(order.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(day));
+      const order = fundedDayOrders.get(Number(day));
       if (order) orderEdits.push({ orderId: order._id, items, chargedMinor: delta });
     }
     const fields = { items: liveSubscriptionItems, deliveryDayPlans: liveDeliveryDayPlans };
@@ -2923,9 +2962,6 @@ async function UpdateSubscription({
 
     if (refundMethod === "refund") {
       let refundResult;
-      const orders = await Order.find({ subscription: subscription._id,
-        status: { $in: ["paid", "partially_refunded"] }, deliveryStatus: "ordered",
-      }).sort({ deliveryDate: 1 }).lean();
       const targets = [];
       for (const day of openChangedDeliveryDays) {
         const previous = currentLiveDayPlans.find(plan => Number(plan.day) === Number(day))?.items || [];
@@ -2933,8 +2969,7 @@ async function UpdateSubscription({
         const delta = calculateSubscriptionTotalMinor(previous) - calculateSubscriptionTotalMinor(next);
         if (delta < 0) return Response(false, "Please save delivery-day increases and decreases separately.", null);
         if (!delta) continue;
-        const order = orders.find(candidate => candidate.deliveryDate &&
-          weekdayInTimeZone(candidate.deliveryDate, SUBSCRIPTION_TIME_ZONE) === Number(day));
+        const order = fundedDayOrders.get(Number(day));
         if (order) targets.push({ orderId: order._id, amountMinor: delta });
       }
       try { refundResult = await refundSubscriptionToCard(subscription, dayPlanRefundOwedMinor, operationId, targets); }
@@ -3323,6 +3358,7 @@ async function UpdateSubscription({
           Number(day),
           dayNewItems,
           {
+            orderId: fundedDayOrders.get(Number(day))?._id || null,
             chargedMinor: Math.max(dayDeltaMinor, 0),
             refundedMinor: Math.max(-dayDeltaMinor, 0),
             paymentIntent: dayPlanPaymentIntent,
