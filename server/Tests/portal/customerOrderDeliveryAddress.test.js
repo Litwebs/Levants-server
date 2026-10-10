@@ -8,6 +8,27 @@ const { geocodeAddress } = require("../../Integration/google.geocode");
 const { createPortalCustomer, loginPortalCustomer } = require("./helpers");
 
 describe("Portal order delivery address updates", () => {
+  it("rejects an address change if dispatch completes during geocoding", async () => {
+    const creds = await createPortalCustomer();
+    const auth = await loginPortalCustomer(creds);
+    const order = await Order.create({ customer: creds.customer._id,
+      items: [{ product: new mongoose.Types.ObjectId(), variant: new mongoose.Types.ObjectId(), name: "Milk", sku: "RACE", price: 10, quantity: 1, subtotal: 10 }],
+      subtotal: 10, total: 10, status: "paid", deliveryStatus: "ordered",
+      deliveryDate: new Date(Date.now() + 7 * 86400000),
+      deliveryAddress: { line1: "Original dispatch address", city: "London", postcode: "SW1A 1AA", country: "United Kingdom" },
+    });
+    geocodeAddress.mockImplementationOnce(async () => {
+      await Order.updateOne({ _id: order._id }, { $set: { deliveryStatus: "dispatched" } });
+      return { lat: 53.79, lng: -1.75 };
+    });
+    const response = await request(app).patch(`/api/portal/orders/${order._id}/delivery`)
+      .set("Authorization", `Bearer ${auth.accessToken}`)
+      .send({ deliveryAddressId: String(creds.customer.addresses[0]._id) });
+    expect(response.status).toBe(400);
+    const saved = await Order.findById(order._id);
+    expect(saved.deliveryStatus).toBe("dispatched");
+    expect(saved.deliveryAddress.line1).toBe("Original dispatch address");
+  });
   it("re-geocodes the order when the customer changes delivery address", async () => {
     const creds = await createPortalCustomer();
     const { customer } = creds;

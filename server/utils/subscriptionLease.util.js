@@ -67,7 +67,7 @@ function leaseFencingPlugin(schema, { guardSubscriptionOrders = false } = {}) {
     const leased = Boolean(ownership.getStore()?.length);
     const document = typeof this.$session === "function";
     const update = document ? null : this.getUpdate?.();
-    const guardedPaths = ["deliveryStatus", "deliveryDate", "status", "items"];
+    const guardedPaths = ["deliveryStatus", "deliveryDate", "status", "items", "deliveryAddress", "location"];
     const externalOrderWrite = guardSubscriptionOrders && !leased && (document
       ? !this.isNew && this.subscription && guardedPaths.some(path => this.isModified(path))
       : guardedPaths.some(path => Object.hasOwn(update?.$set || update || {}, path)));

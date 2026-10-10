@@ -184,7 +184,18 @@ async function UpdateOrderDelivery({
     country: address.country,
   };
 
-  await order.save();
+  // Geocoding is an external wait: dispatch, rescheduling or cutoff may have
+  // changed eligibility while it ran. Condition the actual write on its state.
+  if (Date.now() >= currentCutoffAt.getTime()) {
+    return Response(false, "The cut-off for this order has passed", null);
+  }
+  const saved = await Order.updateOne({ _id: order._id, customer: customerId,
+    status: { $in: [...DELIVERY_CHANGE_ELIGIBLE_STATUSES] },
+    deliveryStatus: "ordered", deliveryDate: order.deliveryDate,
+  }, { $set: { deliveryAddress: order.deliveryAddress, location: order.location } });
+  if (saved.matchedCount !== 1) {
+    return Response(false, "This order's delivery can no longer be changed", null);
+  }
 
   await CustomerNotification.create({
     customer: customerId,
