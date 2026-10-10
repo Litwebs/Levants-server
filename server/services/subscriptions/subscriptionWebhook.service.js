@@ -557,7 +557,9 @@ async function HandleSubscriptionInvoiceFailedUnlocked(eventInvoice) {
   // A recorded paid order also proves this failure event is obsolete. This
   // catches a paid handler winning the race with the Stripe retrieval above.
   if (await Order.exists({ subscription: subscription._id, stripeInvoiceId: invoice.id })) return;
-  if (subscription.status !== "active" || subscription.isCancellationScheduled) return;
+  const recoveringOwnPause = subscription.status === "paused" && subscription.pauseReason === "payment_failed" &&
+    subscription.paymentFailureInvoiceId === invoice.id;
+  if ((subscription.status !== "active" && !recoveringOwnPause) || subscription.isCancellationScheduled) return;
 
   // Pause Stripe billing to stop future charges while the customer fixes their payment.
   if (subscription.stripeSubscriptionId && subscription.status === "active") {
@@ -572,9 +574,13 @@ async function HandleSubscriptionInvoiceFailedUnlocked(eventInvoice) {
     await subscription.save();
   }
 
+  const sourceEventId = `invoice:${invoice.id}:payment_failed`;
+  if (await CustomerNotification.exists({ customer: subscription.customer,
+    relatedSubscription: subscription._id, type: "payment_failed", sourceEventId })) return;
   await CustomerNotification.create({
     customer: subscription.customer,
     type: "payment_failed",
+    sourceEventId,
     title: "Subscription paused – payment failed",
     message:
       "We couldn't charge your payment method, so your subscription has been paused. Please update your payment details in the Payments section to resume.",

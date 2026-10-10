@@ -117,6 +117,22 @@ async function createSubscriptionFixture({
 }
 
 describe("Subscription Stripe webhook E2E", () => {
+  it("recovers a failed notification write after pausing without duplicate notifications", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_notification_retry",
+      nextDeliveryDate: new Date("2030-01-06T09:00:00Z"), items: [buildSubscriptionItem(product, variant, 1)] });
+    const invoice = { id: "in_notification_retry", subscription: sub.stripeSubscriptionId, status: "open", paid: false };
+    stripe.invoices.retrieve.mockResolvedValue(invoice);
+    const create = jest.spyOn(CustomerNotification, "create").mockRejectedValueOnce(new Error("temporary notification database failure"));
+    try {
+      await expect(subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice)).rejects.toThrow("temporary notification database failure");
+      expect((await Subscription.findById(sub._id)).pauseReason).toBe("payment_failed");
+      await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
+      await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "payment_failed" })).toBe(1);
+    } finally { create.mockRestore(); }
+  });
   beforeEach(() => {
     stripe.subscriptions.retrieve = jest.fn(async id => ({ id, status: "active", pause_collection: null }));
   });

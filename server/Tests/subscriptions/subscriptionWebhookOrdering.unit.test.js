@@ -23,6 +23,7 @@ beforeEach(() => {
   });
   jest.spyOn(Order, "exists").mockResolvedValue(false);
   jest.spyOn(Notification, "create").mockResolvedValue({});
+  jest.spyOn(Notification, "exists").mockImplementation(async () => Notification.create.mock.calls.length > 0);
   stripe.subscriptions.retrieve.mockResolvedValue({ id: "sub", status: "active", pause_collection: null });
   stripe.invoices.retrieve.mockResolvedValue({ id: "invoice", subscription: "sub", status: "open", paid: false });
   stripe.subscriptions.update.mockResolvedValue({});
