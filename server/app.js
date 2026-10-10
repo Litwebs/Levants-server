@@ -162,6 +162,7 @@ app.get("/health", (req, res) => {
     env,
     deploymentEnvironment: process.env.APP_ENV || env,
     release: process.env.RELEASE_SHA || null,
+    ...(process.env.APP_ENV === "uat" ? { backgroundJobsEnabled: process.env.BACKGROUND_JOBS_ENABLED === "true" } : {}),
     timestamp: new Date().toISOString(),
   });
 });

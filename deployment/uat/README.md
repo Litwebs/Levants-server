@@ -125,3 +125,13 @@ oauth2.googleapis.com and routeoptimization.googleapis.com, and tests both
 APIs using public London landmarks with no customer data or database writes.
 Failure restores UAT configuration. Refresh google.conf if provider API
 addresses change. Scheduled jobs remain disabled until separately configured.
+
+UAT schedules are enabled with `BACKGROUND_JOBS_ENABLED=true` only while
+Stripe sandbox mode and webhooks are enabled. The existing dedicated MongoDB
+validation remains mandatory. Order expiration and invitation cleanup run
+every minute. Subscription invoice/price reconciliation runs every 15 minutes;
+full maintenance, cancellation finalisation, auto-resume and slot scheduling
+run daily at 06:00 Europe/London. Scheduler leases live in the UAT database.
+`activate-jobs.py` restarts only UAT and confirms healthy scheduler registration,
+restoring configuration if startup fails. The UAT health response reports
+`backgroundJobsEnabled`; production health remains unchanged.

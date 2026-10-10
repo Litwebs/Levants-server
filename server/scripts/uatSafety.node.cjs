@@ -175,3 +175,12 @@ test("UAT Google uses its protected credential copy and disabled calls make no r
   assert.throws(()=>validateUatEnvironment({...settings,GOOGLE_APPLICATION_CREDENTIALS:"/root/production.json"}),/protected UAT copy/);
   assert.throws(()=>validateUatEnvironment({...settings,GOOGLE_MAPS_API_KEY:""}),/Google settings/);
 });
+
+
+test("UAT background jobs require the dedicated database and Stripe sandbox", () => {
+  const settings={...safe(),BACKGROUND_JOBS_ENABLED:"true",UAT_STRIPE_MODE:"test",STRIPE_SECRET_KEY:"sk_test_example123",STRIPE_PUBLISHABLE_KEY:"pk_test_example123",STRIPE_WEBHOOK_SECRET:"whsec_example123",STRIPE_WEBHOOKS_ENABLED:"true"};
+  validateUatEnvironment(settings);
+  for(const changes of [{UAT_STRIPE_MODE:"disabled"},{STRIPE_SECRET_KEY:"sk_live_example123"},{STRIPE_WEBHOOKS_ENABLED:"false"},{MONGO_URI:"mongodb://production@127.0.0.1:27017/production"},{BACKGROUND_JOBS_ENABLED:"yes"}]) {
+    assert.throws(()=>validateUatEnvironment({...settings,...changes}),/UAT safety/);
+  }
+});

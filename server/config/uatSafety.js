@@ -37,7 +37,11 @@ function validateUatEnvironment(values = process.env) {
         !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(values.GOOGLE_PROJECT_ID || "")) fail("valid Google settings are required");
     if (values.GOOGLE_APPLICATION_CREDENTIALS !== "/etc/levants-uat/google-service-account.json") fail("Google credentials must use the protected UAT copy");
   } else if (values.UAT_GOOGLE_MODE && values.UAT_GOOGLE_MODE !== "disabled") fail("unknown Google mode");
-  if (values.BACKGROUND_JOBS_ENABLED !== "false") fail("background jobs must remain disabled");
+  if (!["false", "true"].includes(values.BACKGROUND_JOBS_ENABLED)) fail("background job setting must be explicit");
+  if (values.BACKGROUND_JOBS_ENABLED === "true" &&
+      (values.UAT_STRIPE_MODE !== "test" || values.STRIPE_WEBHOOKS_ENABLED !== "true")) {
+    fail("UAT background jobs require Stripe sandbox mode and webhooks");
+  }
   if (values.UAT_STRIPE_MODE === "test") {
     if (!/^sk_test_[A-Za-z0-9]+$/.test(values.STRIPE_SECRET_KEY || "")) fail("Stripe requires a sandbox secret key");
     if (!/^pk_test_[A-Za-z0-9]+$/.test(values.STRIPE_PUBLISHABLE_KEY || "")) fail("Stripe requires a sandbox publishable key");
