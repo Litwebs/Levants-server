@@ -3529,6 +3529,14 @@ describe("Portal Subscriptions", () => {
     stripe.paymentIntents.create.mockClear();
     stripe.prices.create.mockClear();
 
+    // This scenario needs a real protected delivery: creation after Tuesday's
+    // cutoff correctly skips Wednesday 8 July.
+    await SubscriptionDelivery.findOneAndUpdate(
+      { subscription: subId, scheduledDate: new Date("2026-07-08T12:00:00Z") },
+      { customer: customer._id, status: "scheduled" },
+      { upsert: true },
+    );
+
     const updateRes = await request(app)
       .patch(`/api/portal/subscriptions/${subId}`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -3745,6 +3753,12 @@ describe("Portal Subscriptions", () => {
       });
     expect(createRes.status).toBe(201);
     const subId = createRes.body.data.subscription._id;
+
+    await SubscriptionDelivery.findOneAndUpdate(
+      { subscription: subId, scheduledDate: new Date("2026-07-08T12:00:00Z") },
+      { customer: customer._id, status: "scheduled" },
+      { upsert: true },
+    );
 
     const stageWednesdayRes = await request(app)
       .patch(`/api/portal/subscriptions/${subId}`)
