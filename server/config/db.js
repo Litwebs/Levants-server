@@ -239,6 +239,11 @@ const connectDb = async () => {
     // Production disables Mongoose autoIndex, so financial/idempotency indexes
     // must be enforced explicitly before the app starts accepting traffic.
     await ensureSubscriptionMutationOperationIndex();
+    // Fenced notification writes start transactions; initialize this collection
+    // before the first notification rather than changing the catalog mid-write.
+    await mongoose.connection.db.collection("customernotifications").createIndex(
+      { customer: 1, readAt: 1, createdAt: -1 },
+    );
     // Fail startup on legacy duplicates instead of choosing a card/default or
     // detaching a provider method without reviewing its subscription links.
     await mongoose.connection.db.collection("paymentmethods").createIndex(

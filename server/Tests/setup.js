@@ -157,6 +157,7 @@ beforeAll(async () => {
     require("../models/passwordResetToken.model").init(),
     require("../models/customer.model").init(),
     require("../models/paymentMethod.model").init(),
+    require("../models/customerNotification.model").init(),
     require("../models/category.model").init(),
     require("../models/product.model").init(),
     require("../models/variant.model").init(),
