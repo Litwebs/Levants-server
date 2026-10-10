@@ -614,7 +614,7 @@ async function HandleStripeSubscriptionUpdatedUnlocked(eventSubscription) {
   const subscription = await Subscription.findOne({
     stripeSubscriptionId: stripeSub.id,
   });
-  if (!subscription || subscription.status === "cancelled") return;
+  if (!subscription) return;
 
   let changed = false;
 
@@ -628,6 +628,11 @@ async function HandleStripeSubscriptionUpdatedUnlocked(eventSubscription) {
       subscription.cancelledAt = subscription.cancelledAt || new Date();
       changed = true;
     }
+    if (changed) await subscription.save();
+    await closeUnlinkedCancellationSlots(subscription._id);
+    return;
+  } else if (subscription.status === "cancelled") {
+    return;
   } else if (stripeSub.pause_collection) {
     if (subscription.status !== "paused") {
       subscription.status = "paused";
@@ -675,15 +680,20 @@ async function HandleStripeSubscriptionDeletedUnlocked(stripeSub) {
     subscription.cancelledAt = subscription.cancelledAt || new Date();
     await subscription.save();
 
-    await SubscriptionDelivery.updateMany(
-      { subscription: subscription._id, status: "scheduled" },
-      { $set: { status: "cancelled" } },
-    );
-
     logger.info(
       `[SubscriptionWebhook] Subscription ${subscription.subscriptionNumber} marked cancelled via Stripe deletion`,
     );
   }
+  // A prior updated event, or a failed cleanup after the status save, must not
+  // suppress retry. Linked paid orders keep their existing fulfillment state.
+  await closeUnlinkedCancellationSlots(subscription._id);
+}
+
+async function closeUnlinkedCancellationSlots(subscriptionId) {
+  await SubscriptionDelivery.updateMany(
+    { subscription: subscriptionId, status: "scheduled", order: null },
+    { $set: { status: "cancelled" } },
+  );
 }
 
 /**
