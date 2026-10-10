@@ -113,3 +113,15 @@ Cloudinary permissions or quotas. `activate-cloudinary.py` updates only UAT,
 adds a DNS snapshot for api.cloudinary.com and tests upload/delete using a
 synthetic pixel, restoring UAT config on failure. Refresh the service drop-in
 if Cloudinary changes its API addresses.
+
+Google geocoding and route optimisation can use the existing Google project
+and credentials, sharing production quotas and billing. Set
+`UAT_GOOGLE_MODE=enabled`, `GOOGLE_MAPS_API_KEY`, `GOOGLE_PROJECT_ID` and
+`GOOGLE_APPLICATION_CREDENTIALS=/etc/levants-uat/google-service-account.json`.
+The service-account file is a protected root-owned copy readable only by UAT;
+production's hardcoded credential path remains unchanged. `activate-google.py`
+validates `google.pending.env`, adds DNS snapshots for maps.googleapis.com,
+oauth2.googleapis.com and routeoptimization.googleapis.com, and tests both
+APIs using public London landmarks with no customer data or database writes.
+Failure restores UAT configuration. Refresh google.conf if provider API
+addresses change. Scheduled jobs remain disabled until separately configured.

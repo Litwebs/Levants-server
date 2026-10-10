@@ -32,6 +32,11 @@ function validateUatEnvironment(values = process.env) {
     if (values.UAT_STORAGE_MODE !== "disabled") fail("unknown storage mode");
     if (values.CLOUDINARY_API_KEY || values.CLOUDINARY_API_SECRET) fail("disabled storage must not contain Cloudinary credentials");
   }
+  if (values.UAT_GOOGLE_MODE === "enabled") {
+    if (!/^[A-Za-z0-9_-]+$/.test(values.GOOGLE_MAPS_API_KEY || "") ||
+        !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(values.GOOGLE_PROJECT_ID || "")) fail("valid Google settings are required");
+    if (values.GOOGLE_APPLICATION_CREDENTIALS !== "/etc/levants-uat/google-service-account.json") fail("Google credentials must use the protected UAT copy");
+  } else if (values.UAT_GOOGLE_MODE && values.UAT_GOOGLE_MODE !== "disabled") fail("unknown Google mode");
   if (values.BACKGROUND_JOBS_ENABLED !== "false") fail("background jobs must remain disabled");
   if (values.UAT_STRIPE_MODE === "test") {
     if (!/^sk_test_[A-Za-z0-9]+$/.test(values.STRIPE_SECRET_KEY || "")) fail("Stripe requires a sandbox secret key");

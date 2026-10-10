@@ -153,3 +153,25 @@ test("UAT Cloudinary cannot overwrite or delete production assets", async () => 
   validateUatEnvironment({...safe(),UAT_STORAGE_MODE:"cloudinary",CLOUDINARY_CLOUD_NAME:"example",CLOUDINARY_API_KEY:"123456789",CLOUDINARY_API_SECRET:"testOnly"});
   assert.throws(()=>validateUatEnvironment({...safe(),UAT_STORAGE_MODE:"cloudinary"}),/Cloudinary/);
 });
+
+
+test("UAT Google uses its protected credential copy and disabled calls make no requests", async (t) => {
+  const vm=require("node:vm");const original={...process.env};t.after(()=>{process.env=original;});
+  process.env.APP_ENV="uat";process.env.UAT_GOOGLE_MODE="disabled";
+  let authOptions; let requests=0;
+  function load(file) {
+    const sandbox={process,module:{exports:{}},require:name=>{
+      if(name==="axios") return {get:()=>{requests++;},post:()=>{requests++;}};
+      if(name==="google-auth-library") return {GoogleAuth:class {constructor(options){authOptions=options;}getClient(){throw new Error("Must not authenticate while disabled");}}};
+      return require(name);
+    }};
+    vm.runInNewContext(fs.readFileSync(require.resolve(file),"utf8"),sandbox);return sandbox.module.exports;
+  }
+  await assert.rejects(load("../Integration/google.geocode").geocodeAddress({}),/disabled/);
+  await assert.rejects(load("../services/googleRoute.service").optimizeRoutes({}),/disabled/);
+  assert.equal(requests,0);assert.equal(authOptions.keyFile,"/etc/levants-uat/google-service-account.json");
+  const settings={...safe(),UAT_GOOGLE_MODE:"enabled",GOOGLE_MAPS_API_KEY:"testKey",GOOGLE_PROJECT_ID:"test-project-123",GOOGLE_APPLICATION_CREDENTIALS:"/etc/levants-uat/google-service-account.json"};
+  validateUatEnvironment(settings);
+  assert.throws(()=>validateUatEnvironment({...settings,GOOGLE_APPLICATION_CREDENTIALS:"/root/production.json"}),/protected UAT copy/);
+  assert.throws(()=>validateUatEnvironment({...settings,GOOGLE_MAPS_API_KEY:""}),/Google settings/);
+});
