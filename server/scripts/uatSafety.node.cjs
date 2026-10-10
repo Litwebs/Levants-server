@@ -60,3 +60,49 @@ test("UAT payment transport refuses provider requests", async (t) => {
   process.env.APP_ENV = "production";
   assert.deepEqual(uatStripeOptions(), {});
 });
+
+
+test("sandbox mode accepts test credentials and rejects live or incomplete credentials", () => {
+  const values = { ...safe(), UAT_STRIPE_MODE: "test", STRIPE_SECRET_KEY: "sk_test_example123",
+    STRIPE_PUBLISHABLE_KEY: "pk_test_example123", STRIPE_WEBHOOK_SECRET: "whsec_example123", STRIPE_WEBHOOKS_ENABLED: "true" };
+  validateUatEnvironment(values);
+  for (const changes of [{STRIPE_SECRET_KEY:"sk_live_example"}, {STRIPE_PUBLISHABLE_KEY:"pk_live_example"},
+    {STRIPE_WEBHOOK_SECRET:""}, {STRIPE_WEBHOOKS_ENABLED:"false"}, {UAT_STRIPE_MODE:"live"}]) {
+    assert.throws(() => validateUatEnvironment({...values, ...changes}), /UAT safety/);
+  }
+});
+
+test("sandbox transport rejects live keys", (t) => {
+  const original = {...process.env};
+  t.after(() => { process.env = original; });
+  process.env.APP_ENV = "uat";
+  process.env.UAT_STRIPE_MODE = "test";
+  process.env.STRIPE_SECRET_KEY = "sk_test_example123";
+  assert.equal(uatStripeOptions().httpClient, undefined);
+  process.env.STRIPE_SECRET_KEY = "sk_live_example123";
+  assert.throws(() => uatStripeOptions(), /sandbox key/);
+});
+
+test("UAT webhook rejects disabled, live and unsigned events before business handlers", async (t) => {
+  const vm = require("node:vm");
+  const original = {...process.env};
+  t.after(() => { process.env = original; });
+  process.env.APP_ENV = "uat";
+  process.env.UAT_STRIPE_MODE = "test";
+  process.env.STRIPE_WEBHOOKS_ENABLED = "true";
+  let event = {type:"unhandled.test",livemode:true};
+  let calls = 0;
+  const sandbox = {process, module:{exports:{}}, require: name => {
+    if (name.includes("stripe.util")) return {webhooks:{constructEvent: () => { calls++; if (!event) throw new Error("Invalid signature"); return event; }}};
+    return new Proxy({}, {get: () => () => { throw new Error("Business handler must not run"); }});
+  }};
+  vm.runInNewContext(fs.readFileSync(require.resolve("../controllers/stripe.webhook.controller"), "utf8"), sandbox);
+  const handle = sandbox.module.exports.HandleStripeWebhook;
+  const response = () => ({code:200,status(code){this.code=code;return this;},json(){return this;},send(){return this;}});
+  const req = {headers:{"stripe-signature":"synthetic"},body:Buffer.from("{}")} ;
+  let res = response(); await handle(req,res); assert.equal(res.code,400);
+  event = null; res = response(); await handle(req,res); assert.equal(res.code,400);
+  event = {type:"unhandled.test",livemode:false}; res=response(); await handle(req,res); assert.equal(res.code,200);
+  process.env.STRIPE_WEBHOOKS_ENABLED="false"; const before=calls;
+  res=response(); await handle(req,res); assert.equal(res.code,503); assert.equal(calls,before);
+});

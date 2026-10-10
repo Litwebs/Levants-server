@@ -80,3 +80,14 @@ For manual UAT rollback, choose an existing immutable release, atomically switch
 the UAT current symlink and restart only `levants-uat-api.service`. Database
 changes are not rolled back by switching application code. Keep schema changes
 backward compatible; do not delete prior releases until a retention policy is set.
+
+Stripe sandbox activation is optional. With `UAT_STRIPE_MODE=test`, UAT requires
+`sk_test_`, `pk_test_` and its own `whsec_` credentials, and
+`STRIPE_WEBHOOKS_ENABLED=true`. Live webhook events are rejected. Email, storage
+and background jobs stay isolated and disabled/captured. Use
+`check-stripe.py` as root to validate `/etc/levants-uat/stripe.pending.env`
+without printing credentials. Keep the API pinned to `2024-06-20`; modern
+snapshot invoice payloads are normalized by the subscription webhook service.
+Allow only Stripe's published API IP addresses in the UAT service network
+policy, retaining the default deny rule. Refresh that list when Stripe changes
+its published addresses: https://docs.stripe.com/ips .

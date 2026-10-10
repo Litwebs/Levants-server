@@ -21,9 +21,17 @@ function validateUatEnvironment(values = process.env) {
   if (values.UAT_EMAIL_OUTBOX !== "/srv/levants-uat/shared/email-outbox") fail("unexpected email capture path");
   if (values.UAT_STORAGE_MODE !== "disabled") fail("external storage must remain disabled");
   if (values.BACKGROUND_JOBS_ENABLED !== "false") fail("background jobs must remain disabled");
-  if (values.STRIPE_SECRET_KEY !== "sk_test_uat_disabled") fail("payments must remain disabled until test credentials are provisioned");
-  if (values.STRIPE_WEBHOOKS_ENABLED !== "false") fail("payment webhooks must remain disabled");
-  for (const name of ["RESEND_API_KEY", "RESEND_EMAIL_KEY", "RESEND_URI", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET", "CLOUDINARY_URL", "OLD_STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY"]) {
+  if (values.UAT_STRIPE_MODE === "test") {
+    if (!/^sk_test_[A-Za-z0-9]+$/.test(values.STRIPE_SECRET_KEY || "")) fail("Stripe requires a sandbox secret key");
+    if (!/^pk_test_[A-Za-z0-9]+$/.test(values.STRIPE_PUBLISHABLE_KEY || "")) fail("Stripe requires a sandbox publishable key");
+    if (!/^whsec_[A-Za-z0-9]+$/.test(values.STRIPE_WEBHOOK_SECRET || "")) fail("Stripe requires its UAT webhook signing secret");
+    if (values.STRIPE_WEBHOOKS_ENABLED !== "true") fail("sandbox webhooks must be enabled");
+  } else {
+    if (values.UAT_STRIPE_MODE && values.UAT_STRIPE_MODE !== "disabled") fail("unknown Stripe mode");
+    if (values.STRIPE_SECRET_KEY !== "sk_test_uat_disabled" || values.STRIPE_PUBLISHABLE_KEY) fail("payments must remain disabled until test credentials are provisioned");
+    if (values.STRIPE_WEBHOOKS_ENABLED !== "false") fail("payment webhooks must remain disabled");
+  }
+  for (const name of ["RESEND_API_KEY", "RESEND_EMAIL_KEY", "RESEND_URI", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET", "CLOUDINARY_URL", "OLD_STRIPE_SECRET_KEY"]) {
     if (values[name]) fail(`${name} must not be configured in isolated mode`);
   }
   for (const name of ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "JWT_2FA_SECRET", "JWT_CUSTOMER_ACCESS_SECRET", "JWT_CUSTOMER_REFRESH_SECRET", "CREDENTIALS_MASTER_KEY"]) {

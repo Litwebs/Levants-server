@@ -3,6 +3,10 @@ const orderService = require("../services/orders/orders.webhook.service");
 const subscriptionWebhookService = require("../services/subscriptions/subscriptionWebhook.service");
 
 const HandleStripeWebhook = async (req, res) => {
+  if (process.env.APP_ENV === "uat" &&
+      (process.env.UAT_STRIPE_MODE !== "test" || process.env.STRIPE_WEBHOOKS_ENABLED !== "true")) {
+    return res.status(503).json({ error: "UAT Stripe webhooks are disabled" });
+  }
   const sig = req.headers["stripe-signature"];
 
   let event;
@@ -15,6 +19,10 @@ const HandleStripeWebhook = async (req, res) => {
     );
   } catch (err) {
     return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (process.env.APP_ENV === "uat" && event.livemode !== false) {
+    return res.status(400).json({ error: "UAT accepts sandbox events only" });
   }
 
   switch (event.type) {
