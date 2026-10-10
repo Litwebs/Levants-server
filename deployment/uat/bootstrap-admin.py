@@ -10,7 +10,7 @@ if os.geteuid() != 0: raise SystemExit('Run as root')
 login = Path('/etc/levants-uat/initial-admin.json')
 seed = Path('/etc/levants-uat/admin-seed.env')
 if login.exists() or seed.exists(): raise SystemExit('UAT admin bootstrap already exists; refusing to reset credentials')
-values = {'email': 'admin@uat.example.invalid', 'password': secrets.token_urlsafe(32)}
+values = {'email': 'admin@uat.example.com', 'password': secrets.token_urlsafe(32)}
 for path, content in [(login, json.dumps(values)), (seed,
         'ADMIN_EMAIL='+values['email']+'\nADMIN_NAME="UAT Administrator"\nADMIN_PASSWORD='+values['password']+'\n')]:
     with path.open('x') as out: out.write(content)
