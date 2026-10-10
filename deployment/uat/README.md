@@ -135,3 +135,50 @@ run daily at 06:00 Europe/London. Scheduler leases live in the UAT database.
 `activate-jobs.py` restarts only UAT and confirms healthy scheduler registration,
 restoring configuration if startup fails. The UAT health response reports
 `backgroundJobsEnabled`; production health remains unchanged.
+
+## Automated integration checks and promotion
+
+Every push to `uat` now requires backend/admin release checks and the complete
+real Stripe/Chromium suite before deployment. The browser suite runs on a
+GitHub runner against an ephemeral Mongo replica set, local API, admin and
+customer portal, using test-mode Stripe keys only. It never uses the VPS DB.
+`portal.json` pins the exact customer portal SHA; update it when the companion
+portal feature changes. No portal hosting changes are made by these tests.
+
+Configure repository Actions secrets `STRIPE_TEST_SECRET_KEY` and
+`STRIPE_TEST_PUBLISHABLE_KEY` with dedicated sandbox keys. A private portal
+repository additionally requires `PORTAL_CLIENT_READ_TOKEN`. Do not supply
+live keys. Avoid sharing the browser sandbox with other concurrent test runs.
+
+After UAT deployment, the forced SSH command `verify <release-sha>` runs actual
+provider probes as the unprivileged UAT service account, with the API's egress
+allowlists and a four-minute resource limit. The suite checks:
+
+- Stripe sandbox API, checkout expiration and signed webhook acknowledgement;
+  missing/invalid signatures are rejected.
+- Resend single and batch API acceptance to `delivered@resend.dev`, with UAT
+  sender/subjects. This proves provider acceptance, not a human inbox delivery.
+- Cloudinary synthetic image upload and deletion under `levants-uat/`, plus
+  refusal of out-of-scope deletions before contacting the provider.
+- Google geocoding and route optimization for public London landmarks.
+- Dedicated UAT Mongo connectivity and scheduler lease exclusion using only a
+  uniquely named synthetic lease. Existing release tests cover job behavior;
+  this probe does not force daily processing of UAT customer subscriptions.
+
+Provider reports contain only check names, results, durations and release SHA.
+Failure blocks a successful UAT workflow and production promotion. A failed
+post-deployment probe leaves the UAT release available for diagnosis; health
+failures during deployment still use the existing automatic rollback.
+Synthetic Stripe sessions expire; uploaded images are deleted in `finally`.
+A timeout/kill or provider outage can leave test objects requiring cleanup.
+The full browser suite captures emails locally; only the provider probe sends
+messages through Resend. It uses no real customer addresses.
+
+Promote using a normal merge PR **`uat` → `main`**, after UAT is green and manual
+acceptance is complete. Do not squash or rebase this promotion. The production
+workflow requires successful UAT deployment/provider and browser jobs for the
+latest UAT commit, and verifies the proposed production source tree is exactly
+the same. If main changes meanwhile, merge main into UAT and run UAT again.
+Configure main's branch rules to require `Production release gate` and a PR.
+The gate takes effect on main when this workflow change is promoted; installing
+it on UAT does not modify the currently running production deployment.

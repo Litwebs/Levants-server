@@ -13,6 +13,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  subscription-e2e:
+    name: Real Stripe and browser checks
+    uses: ./.github/workflows/integration-e2e.yml
+    secrets: inherit
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -25,6 +30,8 @@ jobs:
           cache-dependency-path: |
             server/package-lock.json
             client/package-lock.json
+      - name: Verify promotion evidence rules
+        run: python3 deployment/uat/test-promotion-gate.py
       - name: Install backend dependencies
         run: npm ci
         working-directory: server
@@ -50,7 +57,7 @@ jobs:
           if-no-files-found: error
 
   deploy:
-    needs: verify
+    needs: [verify, subscription-e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: uat
@@ -83,3 +90,22 @@ jobs:
             -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
             -p "$UAT_PORT" "levants-uat-deploy@$UAT_HOST" \
             "deploy $RELEASE_SHA" < release/levants-uat.tar.gz
+      - name: Verify configured UAT providers
+        env:
+          UAT_HOST: ${{ vars.UAT_HOST }}
+          UAT_PORT: ${{ vars.UAT_PORT }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/uat -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            -p "$UAT_PORT" "levants-uat-deploy@$UAT_HOST" \
+            "verify $RELEASE_SHA" | tee uat-integration-report.json
+      - name: Save provider verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uat-provider-report-${{ github.sha }}
+          path: uat-integration-report.json
+          if-no-files-found: ignore
+          retention-days: 14

@@ -77,127 +77,25 @@ jobs:
   subscription-e2e:
     name: Subscription E2E (Stripe test mode)
     if: github.event_name == 'push' || github.event.pull_request.draft == false
+    uses: ./.github/workflows/integration-e2e.yml
+    secrets: inherit
+
+  uat-verification:
+    name: Exact release passed UAT
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
-      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
-      JWT_ACCESS_SECRET: ci-only-subscription-access-secret
-      JWT_REFRESH_SECRET: ci-only-subscription-refresh-secret
-      STRIPE_DEFAULT_CURRENCY: GBP
-      TZ: Europe/London
-      E2E_CLIENT_DIR: ${{ github.workspace }}/portal-client
+    permissions:
+      contents: read
+      actions: read
     steps:
-      - name: Checkout exact server PR merge
-        uses: actions/checkout@v4
-
-      - name: Resolve and pin customer portal SHA
-        id: portal-ref
-        shell: bash
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require successful UAT tests for this code
         env:
-          SERVER_HEAD_REF: ${{ github.head_ref }}
-        run: |
-          set -euo pipefail
-
-          portal_ref="main"
-          candidate_ref="${SERVER_HEAD_REF%-server}"
-
-          if [[ -n "$SERVER_HEAD_REF" && "$candidate_ref" != "$SERVER_HEAD_REF" ]] && \
-            git ls-remote --exit-code https://github.com/Litwebs/Levants-client.git \
-              "refs/heads/$candidate_ref" > /dev/null 2>&1; then
-            portal_ref="$candidate_ref"
-          fi
-
-          portal_sha="$(git ls-remote https://github.com/Litwebs/Levants-client.git \
-            "refs/heads/$portal_ref" | awk '{print $1}')"
-
-          if [[ -z "$portal_sha" ]]; then
-            echo "Could not resolve Levants-client ref: $portal_ref" >&2
-            exit 1
-          fi
-
-          echo "ref=$portal_ref" >> "$GITHUB_OUTPUT"
-          echo "sha=$portal_sha" >> "$GITHUB_OUTPUT"
-          echo "Customer portal ref: $portal_ref"
-          echo "Customer portal SHA: $portal_sha"
-
-      - name: Checkout exact customer portal commit
-        uses: actions/checkout@v4
-        with:
-          repository: Litwebs/Levants-client
-          token: ${{ secrets.PORTAL_CLIENT_READ_TOKEN }}
-          ref: ${{ steps.portal-ref.outputs.sha }}
-          path: portal-client
-
-      - name: Record exact release-gate SHAs
-        shell: bash
-        run: |
-          set -euo pipefail
-          server_sha="$(git rev-parse HEAD)"
-          portal_sha="$(git -C portal-client rev-parse HEAD)"
-
-          test "$portal_sha" = "${{ steps.portal-ref.outputs.sha }}"
-
-          {
-            echo "### Production release gate"
-            echo "- Server merge SHA: $server_sha"
-            echo "- Customer portal ref: ${{ steps.portal-ref.outputs.ref }}"
-            echo "- Customer portal SHA: $portal_sha"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Require Stripe test-mode secrets
-        shell: bash
-        run: |
-          [[ "$STRIPE_SECRET_KEY" == sk_test_* ]]
-          [[ "$STRIPE_PUBLISHABLE_KEY" == pk_test_* ]]
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            server/package-lock.json
-            client/package-lock.json
-            portal-client/package-lock.json
-
-      - name: Install backend dependencies
-        working-directory: server
-        run: npm ci
-
-      - name: Install customer portal dependencies
-        working-directory: portal-client
-        run: npm ci
-
-      - name: Install admin client dependencies
-        working-directory: client
-        run: npm ci
-
-      - name: Install Chromium
-        working-directory: server
-        run: npx playwright install --with-deps chromium
-
-      - name: Install Stripe CLI
-        run: |
-          curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor | sudo tee /usr/share/keyrings/stripe.gpg > /dev/null
-          echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | sudo tee /etc/apt/sources.list.d/stripe.list
-          sudo apt-get update
-          sudo apt-get install -y stripe
-
-      - name: Run all subscription and signed-webhook E2E tests
-        working-directory: server
-        run: npm run test:e2e:subscriptions:ci
-
-      - name: Store E2E diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: subscription-e2e-diagnostics
-          path: |
-            server/playwright-report
-            server/test-results/playwright
-          if-no-files-found: ignore
-          retention-days: 7
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: python3 deployment/uat/promotion-gate.py
 
   production-release-gate:
     name: Production release gate
@@ -206,6 +104,7 @@ jobs:
       - backend-tests
       - client-quality
       - subscription-e2e
+      - uat-verification
     runs-on: ubuntu-latest
     steps:
       - name: Require every release check to pass
@@ -214,11 +113,13 @@ jobs:
           BACKEND_RESULT: ${{ needs.backend-tests.result }}
           CLIENT_RESULT: ${{ needs.client-quality.result }}
           E2E_RESULT: ${{ needs.subscription-e2e.result }}
+          UAT_RESULT: ${{ needs.uat-verification.result }}
         run: |
           set -euo pipefail
           [[ "$BACKEND_RESULT" == "success" ]]
           [[ "$CLIENT_RESULT" == "success" ]]
           [[ "$E2E_RESULT" == "success" ]]
+          [[ "$UAT_RESULT" == "success" ]]
 
           echo "All production release checks passed for the current PR head."
 

@@ -13,7 +13,7 @@ if not key.startswith('ssh-ed25519 ') or '\n' in key:
     raise SystemExit('Expected a dedicated ed25519 public key')
 home = Path('/var/lib/levants-uat-deploy')
 for path in [home, Path('/etc/sudoers.d/levants-uat-deploy'),
-             Path('/usr/local/sbin/levants-uat-deploy'), Path('/usr/local/sbin/levants-uat-ssh')]:
+             Path('/usr/local/sbin/levants-uat-deploy'), Path('/usr/local/sbin/levants-uat-verify'), Path('/usr/local/sbin/levants-uat-ssh')]:
     if path.exists(): raise SystemExit('UAT deployment target already exists; refusing overwrite')
 try:
     pwd.getpwnam('levants-uat-deploy')
@@ -27,12 +27,12 @@ home.mkdir(mode=0o755)
 authorized = home/'.ssh/authorized_keys'
 authorized.write_text('restrict,command="/usr/local/sbin/levants-uat-ssh" '+key+'\n')
 os.chmod(authorized, 0o644)
-for original, target in [('deploy.py', '/usr/local/sbin/levants-uat-deploy'), ('ssh-entry.py', '/usr/local/sbin/levants-uat-ssh')]:
+for original, target in [('deploy.py', '/usr/local/sbin/levants-uat-deploy'), ('verify.py', '/usr/local/sbin/levants-uat-verify'), ('ssh-entry.py', '/usr/local/sbin/levants-uat-ssh')]:
     path = Path(target)
     path.write_bytes((source/original).read_bytes())
     os.chmod(path, 0o755)
 sudoers = Path('/etc/sudoers.d/levants-uat-deploy')
-sudoers.write_text('levants-uat-deploy ALL=(root) NOPASSWD: /usr/local/sbin/levants-uat-deploy *\n')
+sudoers.write_text('levants-uat-deploy ALL=(root) NOPASSWD: /usr/local/sbin/levants-uat-deploy *, /usr/local/sbin/levants-uat-verify *\n')
 os.chmod(sudoers, 0o440)
 subprocess.run(['visudo', '-cf', str(sudoers)], check=True)
 print('Dedicated forced-command UAT deployment account installed; no general shell or sudo access through its SSH key.')
