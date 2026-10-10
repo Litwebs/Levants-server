@@ -54,6 +54,7 @@ function effectiveDays(subscription) {
 async function main() {
   await mongoose.connect(env.mongoUri, { autoIndex: false, autoCreate: false });
   const requiredIndexes = [
+    ["paymentmethods", { customer: 1, provider: 1, providerReference: 1 }, "providerReference"],
     ["subscriptiondeliveries", { subscription: 1, scheduledDate: 1 }],
     ["orders", { stripeInvoiceId: 1, subscription: 1, deliveryDate: 1 }, "stripeInvoiceId"],
     ["subscriptionmutations", { customer: 1, operationId: 1 }],

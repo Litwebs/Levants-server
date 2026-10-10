@@ -5,6 +5,17 @@ const stripe = require("../../utils/stripe.util");
 const paymentService = require("../../services/customerPortal/customerPayments.service");
 
 describe("customer payment method attachment", () => {
+  test("concurrent saves retain one local identity for a confirmed card", async () => {
+    const customer = await createCustomer();
+    await PaymentMethod.create({ customer: customer._id, type: "card", provider: "stripe", providerReference: "pm_default_existing", isDefault: true });
+    stripe.paymentMethods.retrieve.mockResolvedValue({ id: "pm_same_concurrent", customer: "cus_existing", type: "card" });
+    const results = await Promise.all([1, 2].map(() => paymentService.AttachPaymentMethod({
+      customerId: customer._id, stripePaymentMethodId: "pm_same_concurrent", setDefault: false,
+    })));
+    expect(results.every(result => result.success)).toBe(true);
+    expect(String(results[0].data.paymentMethod._id)).toBe(String(results[1].data.paymentMethod._id));
+    expect(await PaymentMethod.countDocuments({ customer: customer._id, providerReference: "pm_same_concurrent" })).toBe(1);
+  });
   async function createCustomer() {
     return Customer.create({
       email: `payment-${Date.now()}@example.com`,

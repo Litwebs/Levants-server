@@ -128,6 +128,7 @@ must be unique, with the specified keys and partial filter where applicable:
 | `subscriptionmutations` | `{"customer":1,"operationId":1}` | None |
 | `subscriptioninvoicefulfillments` | `{"subscription":1,"invoiceId":1}` | None |
 | `subscriptionstockreservations` | `{"key":1}` | None |
+| `paymentmethods` | `{"customer":1,"provider":1,"providerReference":1}` | `{"providerReference":{"$type":"string"}}` |
 | `payments` | `{"subscriptionInvoiceKey":1}` | `{"subscriptionInvoiceKey":{"$type":"string"}}` |
 | `storecredittransactions` | `{"customer":1,"idempotencyKey":1}` | `{"idempotencyKey":{"$type":"string"}}` |
 

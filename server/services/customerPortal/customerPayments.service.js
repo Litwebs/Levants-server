@@ -367,20 +367,20 @@ async function AttachPaymentMethod({
     );
   }
 
-  let method = await PaymentMethod.findOne({
+  const identity = {
     customer: customer._id,
     provider: "stripe",
     providerReference: stripePaymentMethodId,
-  }).select("+providerReference");
-
-  if (!method) {
-    method = await PaymentMethod.create({
-      customer: customer._id,
-      type: "card",
-      provider: "stripe",
-      providerReference: stripePaymentMethodId,
-      isDefault: false,
-    });
+  };
+  let method;
+  try {
+    method = await PaymentMethod.findOneAndUpdate(identity,
+      { $setOnInsert: { ...identity, type: "card", isDefault: false } },
+      { upsert: true, new: true, runValidators: true }).select("+providerReference");
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    method = await PaymentMethod.findOne(identity).select("+providerReference");
+    if (!method) throw error;
   }
 
   const hasDefault = await PaymentMethod.exists({
