@@ -372,6 +372,13 @@ subscriptionSchema.pre("save", function () {
   if (this.isNew) { this.billingStateUpdatedAt = this.billingStateUpdatedAt || this.startDate; return; }
   if (CUSTOMER_VERSIONED_PATHS.some((path) => this.isModified(path))) {
     this.customerVersion = Number(this.customerVersion || 0) + 1;
+  }
+  // Pausing after an invoice failure changes lifecycle state, not the goods
+  // funded by that invoice. Keep its agreement valid even if draft delivery
+  // arrived late; still version every customer-visible lifecycle edit above.
+  if (["frequency", "preferredDeliveryDay", "preferredDeliveryDays", "nextDeliveryDate",
+    "deliveryAddress", "items", "deliveryDayPlans", "pendingChanges",
+    "isCancellationScheduled", "cancellationEffectiveAfter"].some(path => this.isModified(path))) {
     this.billingStateUpdatedAt = new Date(require("../utils/subscriptionClock.util").now());
   }
 });
