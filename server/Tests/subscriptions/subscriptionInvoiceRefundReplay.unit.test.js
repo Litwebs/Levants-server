@@ -16,6 +16,7 @@ const Subscription = require("../../models/subscription.model");
 const Delivery = require("../../models/subscriptionDelivery.model");
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
+const Notification = require("../../models/customerNotification.model");
 const { HandleSubscriptionInvoicePaid: paid } = require("../../services/subscriptions/subscriptionWebhook.service");
 afterEach(() => jest.restoreAllMocks());
 function setup(status, hasLedger = false) {
@@ -32,6 +33,8 @@ function setup(status, hasLedger = false) {
   jest.spyOn(Payment, "exists").mockResolvedValue(hasLedger);
   jest.spyOn(Payment, "updateMany").mockResolvedValue({ modifiedCount: 1 });
   jest.spyOn(Payment, "findOneAndUpdate").mockResolvedValue({});
+  jest.spyOn(Notification, "exists").mockResolvedValue(true);
+  jest.spyOn(Notification, "create").mockResolvedValue({});
   return { id: "in_paid", subscription: "sub", payment_intent: "pi", paid: true };
 }
 it.each(["paid", "refunded"])("preserves an existing settled payment when the order is %s", async status => {
@@ -71,4 +74,10 @@ it('ignores a normalized non-subscription invoice without reading a subscription
   await paid({ id: 'one-time' });
   expect(stripe.invoices.retrieve).toHaveBeenCalledTimes(1);
   expect(Subscription.findOne).not.toHaveBeenCalled();
+});
+it("does not send a recovered confirmation for an invoice whose order was refunded", async () => {
+  const invoice = setup("refunded", true);
+  Notification.exists.mockResolvedValue(false);
+  await paid(invoice);
+  expect(Notification.create).not.toHaveBeenCalled();
 });

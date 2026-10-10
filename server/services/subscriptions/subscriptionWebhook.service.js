@@ -517,12 +517,13 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice, { prepareOnly = fa
   };
   // Older confirmations have no event identity. Their related order still
   // proves this invoice was notified, so deploying this must not notify twice.
-  const confirmationExists = createdOrders.length > 0 && await CustomerNotification.exists({
+  const hasFulfillableOrder = createdOrders.some(order => order.status !== "refunded" && order.status !== "cancelled");
+  const confirmationExists = hasFulfillableOrder && await CustomerNotification.exists({
     ...confirmationIdentity,
     $or: [{ sourceEventId: `invoice:${invoice.id}:confirmed` },
       { relatedOrder: { $in: createdOrders.map(order => order._id) } }],
   });
-  if (createdOrders.length > 0 && !confirmationExists) {
+  if (hasFulfillableOrder && !confirmationExists) {
     // The lifecycle lease and notification write fence serialize retries.
     // Existing orders must also recover a confirmation lost after fulfillment.
     await CustomerNotification.create({
