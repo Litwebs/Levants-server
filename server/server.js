@@ -9,7 +9,7 @@ async function start() {
 
   const server = http.createServer(app);
 
-  server.listen(port, () => {
+  server.listen(port, process.env.HOST || "0.0.0.0", () => {
     logger.server(port, env);
   });
 

@@ -8,4 +8,12 @@ cloudinary.config({
   api_secret: apiSecret,
 });
 
-module.exports = cloudinary;
+const unavailable = async () => {
+  const error = new Error("Image uploads are disabled in isolated UAT");
+  error.statusCode = 503;
+  throw error;
+};
+
+module.exports = process.env.APP_ENV === "uat"
+  ? { uploader: { upload: unavailable, destroy: unavailable }, api: { delete_resources: unavailable } }
+  : cloudinary;
