@@ -1,6 +1,9 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { validateUatEnvironment } = require("../config/uatSafety");
+const fs = require("node:fs");
+const { createEmailTransport } = require("../Integration/emailTransport");
+const { uatStripeOptions } = require("../utils/uatStripeOptions");
 
 function safe() {
   const values = {
@@ -27,4 +30,33 @@ test("rejects wrong database, service, integration and origin settings", () => {
   for (const [name, value] of Object.entries(changes)) {
     assert.throws(() => validateUatEnvironment({ ...safe(), [name]: value }), /UAT|requires/, name);
   }
+});
+
+test("UAT captures individual and batch messages without loading an email provider", async (t) => {
+  const original = { ...process.env };
+  t.after(() => { process.env = original; });
+  process.env.APP_ENV = "uat";
+  process.env.UAT_EMAIL_OUTBOX = "/srv/levants-uat/shared/email-outbox";
+  t.mock.method(fs, "mkdirSync", () => {});
+  t.mock.method(fs, "readdirSync", () => []);
+  const writes = [];
+  t.mock.method(fs, "writeFileSync", (file, content, options) => writes.push({ file, content, options }));
+  const transport = createEmailTransport();
+  await transport.emails.send({ to: "synthetic@example.invalid", subject: "test" });
+  const batch = await transport.batch.send([{ to: "synthetic@example.invalid" }]);
+  assert.equal(batch.data.length, 1);
+  assert.equal(writes.length, 2);
+  assert.equal(writes[0].options.mode, 0o600);
+  assert.equal(JSON.parse(writes[0].content).subject, "test");
+  process.env.UAT_EMAIL_OUTBOX = "/tmp/unsafe";
+  await assert.rejects(transport.emails.send({}), /Invalid UAT outbox/);
+});
+
+test("UAT payment transport refuses provider requests", async (t) => {
+  const original = process.env.APP_ENV;
+  t.after(() => { if (original === undefined) delete process.env.APP_ENV; else process.env.APP_ENV = original; });
+  process.env.APP_ENV = "uat";
+  await assert.rejects(uatStripeOptions().httpClient.makeRequest(), /Payments are disabled/);
+  process.env.APP_ENV = "production";
+  assert.deepEqual(uatStripeOptions(), {});
 });

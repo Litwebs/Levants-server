@@ -91,10 +91,9 @@ app.use(
         ],
         fontSrc: ["'self'", "https:", "data:"],
         connectSrc: [
-          ...(process.env.APP_ENV === "uat" ? ["'self'", ...allowedOrigins] : []),
-          "https://levantsdairy.co.uk",
-          "https://api.levantsdairy.co.uk",
-          "http://localhost:8080",
+          ...(process.env.APP_ENV === "uat"
+            ? ["'self'", ...allowedOrigins]
+            : ["https://levantsdairy.co.uk", "https://api.levantsdairy.co.uk", "http://localhost:8080"]),
         ],
         objectSrc: ["'none'"],
         frameAncestors: ["'self'"],

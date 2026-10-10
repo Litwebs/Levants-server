@@ -14,4 +14,5 @@ try {
 
 module.exports = new Stripe(secretKey || process.env.STRIPE_SECRET_KEY, {
   apiVersion: apiVersion || process.env.STRIPE_API_VERSION,
+  ...require("./uatStripeOptions").uatStripeOptions(),
 });
