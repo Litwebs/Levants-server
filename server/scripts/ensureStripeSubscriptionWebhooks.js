@@ -6,17 +6,12 @@
 
 const env = require("../config/env");
 const Stripe = require("stripe");
+const { listAllStripePages } = require("../utils/stripePagination.util");
+const { REQUIRED_EVENTS } = require("../utils/subscriptionWebhookConfiguration.util");
 
 const stripe = new Stripe(env.stripe.secretKey, {
   apiVersion: env.stripe.apiVersion,
 });
-
-const REQUIRED_EVENTS = [
-  "invoice.payment_succeeded",
-  "invoice.payment_failed",
-  "customer.subscription.updated",
-  "customer.subscription.deleted",
-];
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -26,8 +21,8 @@ function argument(name) {
 async function main() {
   const requestedId = argument("--endpoint");
   const apply = process.argv.includes("--apply");
-  const page = await stripe.webhookEndpoints.list({ limit: 100 });
-  const candidates = (page.data || []).filter(
+  const endpoints = await listAllStripePages(params => stripe.webhookEndpoints.list(params), {});
+  const candidates = endpoints.filter(
     (endpoint) =>
       endpoint.status === "enabled" &&
       (!requestedId || endpoint.id === requestedId),
@@ -51,7 +46,8 @@ async function main() {
       apply,
     }),
   );
-  if (!apply || missing.length === 0) return;
+  if (!apply) { if (missing.length) process.exitCode = 2; return; }
+  if (missing.length === 0) return;
 
   await stripe.webhookEndpoints.update(endpoint.id, {
     enabled_events: [...new Set([...current, ...REQUIRED_EVENTS])].sort(),

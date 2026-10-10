@@ -3,6 +3,7 @@
 const { spawn } = require("child_process");
 
 const EVENTS = [
+  "invoice.created", "invoice.voided", "invoice.marked_uncollectible",
   "customer.subscription.created",
   "customer.subscription.updated",
   "customer.subscription.deleted",
@@ -11,6 +12,7 @@ const EVENTS = [
   "charge.refunded",
   "refund.created",
   "refund.updated",
+  "refund.failed",
 ].join(",");
 
 async function startStripeListener({ secretKey, forwardTo }) {

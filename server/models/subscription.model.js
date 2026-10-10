@@ -194,9 +194,12 @@ const subscriptionSchema = new mongoose.Schema(
     // a pause intentionally requested by a customer or applied in Stripe.
     pauseReason: {
       type: String,
-      enum: ["customer", "payment_failed", "stripe"],
+      enum: ["customer", "payment_failed", "stripe", "inventory", "reconciliation"],
       default: null,
     },
+
+    // Prevent an older, unrelated successful invoice from clearing a newer debt.
+    paymentFailureInvoiceId: { type: String, default: null },
 
     cancelledAt: {
       type: Date,
@@ -304,11 +307,82 @@ const subscriptionSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    // Reliability marker only: the recurring Stripe price failed to synchronize
+    // and should be retried by reconciliation. Keep this separate from
+    // pendingPriceSync, which has invoice-bound deferral semantics.
+    stripePriceSyncPending: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    resumePaymentPlan: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    initialInventoryKey: { type: String, default: null },
+    initialInvoiceId: { type: String, default: null },
+    billingStateUpdatedAt: { type: Date, default: null },
+
+    // Monotonic customer/admin edit revision used for stale-edit protection.
+    customerVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // A short-lived server-side lock serializes overlapping customer/admin
+    // commands before any external payment side effects are attempted.
+    customerMutationLock: {
+      type: new mongoose.Schema(
+        {
+          operationId: { type: String, required: true },
+          lockedAt: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+      select: false,
+    },
   },
   {
     timestamps: true,
   },
 );
+
+const CUSTOMER_VERSIONED_PATHS = [
+  "status",
+  "frequency",
+  "preferredDeliveryDay",
+  "preferredDeliveryDays",
+  "nextDeliveryDate",
+  "deliveryAddress",
+  "items",
+  "deliveryDayPlans",
+  "notes",
+  "pausedAt",
+  "pausedUntil",
+  "pauseReason",
+  "cancelledAt",
+  "cancelReason",
+  "isCancellationScheduled",
+  "cancellationEffectiveAfter",
+  "pendingChanges",
+];
+
+subscriptionSchema.pre("save", function () {
+  if (this.isNew) { this.billingStateUpdatedAt = this.billingStateUpdatedAt || this.startDate; return; }
+  if (CUSTOMER_VERSIONED_PATHS.some((path) => this.isModified(path))) {
+    this.customerVersion = Number(this.customerVersion || 0) + 1;
+  }
+  // Pausing after an invoice failure changes lifecycle state, not the goods
+  // funded by that invoice. Keep its agreement valid even if draft delivery
+  // arrived late; still version every customer-visible lifecycle edit above.
+  if ((this.isModified("status") && this.status === "cancelled") ||
+    ["frequency", "preferredDeliveryDay", "preferredDeliveryDays", "nextDeliveryDate",
+    "deliveryAddress", "items", "deliveryDayPlans", "pendingChanges",
+    "isCancellationScheduled", "cancellationEffectiveAfter"].some(path => this.isModified(path))) {
+    this.billingStateUpdatedAt = new Date(require("../utils/subscriptionClock.util").now());
+  }
+});
 
 // Auto-generate subscriptionNumber before save
 subscriptionSchema.pre("validate", async function () {
@@ -325,7 +399,10 @@ subscriptionSchema.index({ nextDeliveryDate: 1, status: 1 });
 subscriptionSchema.method("toJSON", function () {
   const obj = this.toObject();
   delete obj.__v;
+  delete obj.resumePaymentPlan;
   return obj;
 });
+
+require("../utils/subscriptionLease.util").leaseFencingPlugin(subscriptionSchema);
 
 module.exports = mongoose.model("Subscription", subscriptionSchema);

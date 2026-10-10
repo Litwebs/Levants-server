@@ -58,6 +58,8 @@ const customerNotificationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Provider event identity used only by serialized lifecycle recovery.
+    sourceEventId: { type: String, default: null, select: false },
 
     // Related entities for deep-linking
     relatedOrder: {
@@ -90,6 +92,8 @@ customerNotificationSchema.method("toJSON", function () {
   delete obj.__v;
   return obj;
 });
+
+require("../utils/subscriptionLease.util").leaseFencingPlugin(customerNotificationSchema);
 
 module.exports = mongoose.model(
   "CustomerNotification",

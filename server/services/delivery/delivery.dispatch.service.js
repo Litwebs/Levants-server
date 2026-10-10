@@ -30,11 +30,7 @@ async function dispatchBatch({ batchId } = {}) {
     };
   }
 
-  // Mark batch as dispatched (idempotent)
   const now = new Date();
-  batch.status = "dispatched";
-  if (!batch.dispatchedAt) batch.dispatchedAt = now;
-  await batch.save();
 
   const orderIds = (Array.isArray(batch.orders) ? batch.orders : [])
     .map((id) => String(id))
@@ -43,26 +39,32 @@ async function dispatchBatch({ batchId } = {}) {
 
   let ordersUpdatedCount = 0;
 
-  if (orderIds.length > 0) {
-    const updateRes = await Order.updateMany(
-      {
-        _id: { $in: orderIds },
-        deliveryStatus: { $nin: ["delivered", "returned"] },
-      },
-      {
-        $set: {
-          deliveryStatus: "dispatched",
+  await mongoose.connection.transaction(async session => {
+    batch.status = "dispatched";
+    if (!batch.dispatchedAt) batch.dispatchedAt = now;
+    await batch.save({ session });
+    if (orderIds.length > 0) {
+      const updateRes = await Order.updateMany(
+        {
+          _id: { $in: orderIds },
+          deliveryStatus: { $nin: ["delivered", "returned"] },
         },
-      },
-    );
+        {
+          $set: {
+            deliveryStatus: "dispatched",
+          },
+        },
+        { session },
+      );
 
-    ordersUpdatedCount =
-      typeof updateRes?.modifiedCount === "number"
-        ? updateRes.modifiedCount
-        : typeof updateRes?.nModified === "number"
-          ? updateRes.nModified
-          : 0;
-  }
+      ordersUpdatedCount =
+        typeof updateRes?.modifiedCount === "number"
+          ? updateRes.modifiedCount
+          : typeof updateRes?.nModified === "number"
+            ? updateRes.nModified
+            : 0;
+    }
+  });
 
   const routeIds = (Array.isArray(batch.routes) ? batch.routes : [])
     .map((id) => String(id))
@@ -309,40 +311,43 @@ async function dispatchRoute({ batchId, routeId } = {}) {
 
   let ordersUpdatedCount = 0;
 
-  if (routeOrderIds.length > 0) {
-    const updateRes = await Order.updateMany(
-      {
-        _id: { $in: routeOrderIds },
-        deliveryStatus: { $nin: ["delivered", "returned"] },
-      },
-      { $set: { deliveryStatus: "dispatched" } },
+  await mongoose.connection.transaction(async session => {
+    if (routeOrderIds.length > 0) {
+      const updateRes = await Order.updateMany(
+        {
+          _id: { $in: routeOrderIds },
+          deliveryStatus: { $nin: ["delivered", "returned"] },
+        },
+        { $set: { deliveryStatus: "dispatched" } },
+        { session },
+      );
+
+      ordersUpdatedCount =
+        typeof updateRes?.modifiedCount === "number"
+          ? updateRes.modifiedCount
+          : typeof updateRes?.nModified === "number"
+            ? updateRes.nModified
+            : 0;
+    }
+
+    // Mark the route itself as in_progress
+    route.status = "in_progress";
+    await route.save({ session });
+
+    // If all routes in the batch are now in_progress or completed, mark the batch dispatched
+    const allRouteIds = (Array.isArray(batch.routes) ? batch.routes : []).map(
+      (id) => String(id),
     );
-
-    ordersUpdatedCount =
-      typeof updateRes?.modifiedCount === "number"
-        ? updateRes.modifiedCount
-        : typeof updateRes?.nModified === "number"
-          ? updateRes.nModified
-          : 0;
-  }
-
-  // Mark the route itself as in_progress
-  route.status = "in_progress";
-  await route.save();
-
-  // If all routes in the batch are now in_progress or completed, mark the batch dispatched
-  const allRouteIds = (Array.isArray(batch.routes) ? batch.routes : []).map(
-    (id) => String(id),
-  );
-  const pendingRoutes = await Route.countDocuments({
-    _id: { $in: allRouteIds },
-    status: "planned",
+    const pendingRoutes = await Route.countDocuments({
+      _id: { $in: allRouteIds },
+      status: "planned",
+    }).session(session);
+    if (pendingRoutes === 0 && !batch.dispatchedAt) {
+      batch.status = "dispatched";
+      batch.dispatchedAt = new Date();
+      await batch.save({ session });
+    }
   });
-  if (pendingRoutes === 0 && !batch.dispatchedAt) {
-    batch.status = "dispatched";
-    batch.dispatchedAt = new Date();
-    await batch.save();
-  }
 
   // Send dispatch emails for this route's orders
   let emailsSent = 0;
