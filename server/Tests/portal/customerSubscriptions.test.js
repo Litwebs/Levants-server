@@ -1033,7 +1033,7 @@ describe("Portal Subscriptions", () => {
 
     expect(addRes.status).toBe(400);
     expect(addRes.body.message).toMatch(
-      /paused or cancelled subscriptions cannot be changed/i,
+      /paused, cancelled or scheduled-for-cancellation subscriptions cannot be changed/i,
     );
   });
 
@@ -1086,7 +1086,7 @@ describe("Portal Subscriptions", () => {
 
     expect(updateRes.status).toBe(400);
     expect(updateRes.body.message).toMatch(
-      /paused or cancelled subscriptions cannot be changed/i,
+      /paused, cancelled or scheduled-for-cancellation subscriptions cannot be changed/i,
     );
   });
 
@@ -1597,7 +1597,7 @@ describe("Portal Subscriptions", () => {
       .send({ variantId, quantity: 1 });
 
     expect(addRes.status).toBe(400);
-    expect(addRes.body.message).toMatch(/paused or cancelled/i);
+    expect(addRes.body.message).toMatch(/paused, cancelled or scheduled-for-cancellation/i);
   });
 
   it("increases quantity before cut-off with immediate charge", async () => {
@@ -4989,7 +4989,11 @@ describe("Portal Subscriptions", () => {
         const payload = { operationId: crypto.randomUUID(), refundMethod: method };
         if (action === "pause") payload.resumeOn = new Date(Date.now() + 21 * 86400000).toISOString();
         if (action === "remove-day") {
-          const target = (weekdayInTimeZone(deliveries[0].scheduledDate, SUBSCRIPTION_TIME_ZONE) + 1) % 7;
+          // The helper moves dates to arbitrary weekdays. Choose a day that
+          // changes the actual schedule and removes the paid add-on's slot.
+          const slotDay = weekdayInTimeZone(deliveries[0].scheduledDate, SUBSCRIPTION_TIME_ZONE);
+          const currentDays = sub.preferredDeliveryDays?.length ? sub.preferredDeliveryDays : [sub.preferredDeliveryDay];
+          const target = Array.from({ length: 7 }, (_, day) => day).find(day => day !== slotDay && !currentDays.includes(day));
           payload.preferredDeliveryDay = target;
           payload.preferredDeliveryDays = [target];
         }

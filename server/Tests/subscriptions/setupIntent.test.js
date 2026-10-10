@@ -4,7 +4,7 @@ const paymentService = require("../../services/customerPortal/customerPayments.s
 
 describe("customer subscription SetupIntent", () => {
   test("concurrent first-time setup retains one Stripe customer and survives retry", async () => {
-    const customer = await Customer.create({ email: `setup-race-${Date.now()}@example.com`, firstName: "Setup", stripeCustomerId: null });
+    const customer = await Customer.create({ email: `setup-race-${Date.now()}@example.com`, firstName: "Setup", lastName: "Race", stripeCustomerId: null });
     stripe.customers.create.mockClear();
     stripe.customers.create.mockResolvedValue({ id: "cus_setup_race" });
     const results = await Promise.allSettled([1, 2].map(() => paymentService.CreateSetupIntent({ customerId: customer._id })));

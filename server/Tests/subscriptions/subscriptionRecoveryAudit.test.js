@@ -32,7 +32,7 @@ test("alerts on stale financial recovery and held invoices, while allowing new d
 });
 test("flags an interrupted customer identity without leaking its request details", async () => {
   const now = Date.now();
-  const customer = await Customer.create({ email: "profile-recovery@example.com", stripeCustomerCreation: { id: "profile-op", params: { email: "private@example.com" } } });
+  const customer = await Customer.create({ firstName: "Profile", lastName: "Recovery", email: "profile-recovery@example.com", stripeCustomerCreation: { id: "profile-op", params: { email: "private@example.com" } } });
   await Customer.collection.updateOne({ _id: customer._id }, { $set: { updatedAt: new Date(now - 180000) } });
   const error = jest.spyOn(logger, "error").mockImplementation(() => {});
   try {
