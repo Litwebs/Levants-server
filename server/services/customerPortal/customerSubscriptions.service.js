@@ -572,16 +572,34 @@ async function getCutoffStatus(subscription) {
   return { settings, cutoffAt, isPastCutoff };
 }
 
+async function getOutstandingDeliveriesForCutoffs(subscriptionId, referenceDate) {
+  return SubscriptionDelivery.find({
+    subscription: subscriptionId,
+    status: { $in: ["scheduled", "generated"] },
+    scheduledDate: { $gte: startOfDay(referenceDate) },
+  }).sort({ scheduledDate: 1 }).lean();
+}
+
+function getActualDeliveryDateForDay(day, deliveries) {
+  return deliveries.reduce((earliest, delivery) => {
+    const date = new Date(delivery.scheduledDate);
+    if (!Number.isFinite(date.getTime()) ||
+        weekdayInTimeZone(date, SUBSCRIPTION_TIME_ZONE) !== Number(day)) return earliest;
+    return !earliest || date < earliest ? date : earliest;
+  }, null);
+}
+
 function buildDeliveryDayCutoffs(
   subscription,
   settings,
   referenceDate = new Date(subscriptionClock.now()),
+  outstandingDeliveries = [],
 ) {
   const reference = new Date(referenceDate);
   const referenceMs = reference.getTime();
 
   return getEffectiveDeliveryDays(subscription).map((day) => {
-    const deliveryDate = getNextWeekdayDateInTimeZone(
+    const deliveryDate = getActualDeliveryDateForDay(day, outstandingDeliveries) || getNextWeekdayDateInTimeZone(
       day,
       reference,
       SUBSCRIPTION_TIME_ZONE,
@@ -2346,6 +2364,7 @@ async function GetSubscription({ customerId, subscriptionId } = {}) {
     enriched,
     settings,
     now,
+    await getOutstandingDeliveriesForCutoffs(subscription._id, now),
   );
 
   return Response(true, null, {
@@ -2672,8 +2691,12 @@ async function UpdateSubscription({
       );
     };
 
+    const outstandingDeliveries = await getOutstandingDeliveriesForCutoffs(
+      subscription._id,
+      new Date(subscriptionClock.now()),
+    );
     const isDayPastOwnCutoff = (day) => {
-      const deliveryDateForDay = calculateNextDeliveryDate(
+      const deliveryDateForDay = getActualDeliveryDateForDay(day, outstandingDeliveries) || calculateNextDeliveryDate(
         day,
         targetFrequency,
         new Date(subscriptionClock.now()),

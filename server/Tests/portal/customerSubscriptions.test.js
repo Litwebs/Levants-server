@@ -3218,6 +3218,50 @@ describe("Portal Subscriptions", () => {
       .toBeGreaterThan(deliveryInThreeDays.getTime());
   });
 
+  it("uses actual outstanding delivery cutoffs for both portal metadata and day-plan settlement", async () => {
+    const nowSpy = jest.spyOn(subscriptionClock, "now")
+      .mockReturnValue(Date.parse("2026-10-10T21:00:00Z"));
+    await SubscriptionSettings.findOneAndUpdate(
+      { singletonKey: "subscription-settings" },
+      { deliveryDays: [0, 3], cutoffDaysBefore: 2, cutoffTime: "22:00" },
+      { upsert: true },
+    );
+    const created = await request(app).post("/api/portal/subscriptions")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId: crypto.randomUUID(), frequency: "weekly",
+        preferredDeliveryDays: [0, 3], preferredDeliveryDay: 0, deliveryAddressId: addressId,
+        items: [{ variantId, quantity: 1 }] });
+    expect(created.status).toBe(201);
+    const subId = created.body.data.subscription._id;
+    await SubscriptionDelivery.deleteMany({ subscription: subId });
+    await SubscriptionDelivery.create(["2026-10-14", "2026-10-18"].map(day => ({
+      subscription: subId, customer: customer._id,
+      scheduledDate: new Date(`${day}T09:00:00Z`), status: "scheduled",
+    })));
+    const detail = await request(app).get(`/api/portal/subscriptions/${subId}`)
+      .set("Authorization", `Bearer ${accessToken}`);
+    expect(detail.status).toBe(200);
+    const sunday = detail.body.data.cutoff.deliveryDayCutoffs.find(day => day.day === 0);
+    expect(formatDateKeyInTimeZone(sunday.deliveryDate, SUBSCRIPTION_TIME_ZONE)).toBe("2026-10-18");
+    expect(sunday.isPastCutoff).toBe(false);
+    stripe.paymentIntents.create.mockClear();
+    const updated = await request(app).patch(`/api/portal/subscriptions/${subId}`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId: crypto.randomUUID(), changedDeliveryDays: [0],
+        deliveryDayPlans: [
+          { day: 0, items: [{ variantId, quantity: 2 }] },
+          { day: 3, items: [{ variantId, quantity: 1 }] },
+        ] });
+    expect(updated.status).toBe(200);
+    expect(updated.body.data.appliedTo).toBe("upcoming");
+    expect(updated.body.data.chargedMinor).toBe(250);
+    expect(stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+    const stored = await Subscription.findById(subId).lean();
+    expect(stored.deliveryDayPlans.find(day => day.day === 0).items[0].quantity).toBe(2);
+    expect(stored.pendingChanges?.deliveryDayPlans?.length || 0).toBe(0);
+    nowSpy.mockRestore();
+  });
+
   it("multi-day create rejects invalid deliveryDayPlans and supports defaults", async () => {
     const { variant: secondVariant } = await createTestProduct();
 
