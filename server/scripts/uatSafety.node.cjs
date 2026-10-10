@@ -184,3 +184,15 @@ test("UAT background jobs require the dedicated database and Stripe sandbox", ()
     assert.throws(()=>validateUatEnvironment({...settings,...changes}),/UAT safety/);
   }
 });
+
+
+test("UAT storefront mapping requires matching isolated portal origins", () => {
+  const mapped = { ...safe(), CLIENT_FRONT_URL_PROD: "https://uat.levantsdairy.co.uk", CUSTOMER_PORTAL_URL_PROD: "https://uat.levantsdairy.co.uk" };
+  validateUatEnvironment(mapped);
+  for (const change of [{ CLIENT_FRONT_URL_PROD: "https://levantsdairy.co.uk" },
+    { CUSTOMER_PORTAL_URL_PROD: "https://levantsdairy.co.uk" },
+    { CUSTOMER_PORTAL_URL_PROD: "https://uat-api.levantsdairy.co.uk" },
+    { FRONTEND_URL_PROD: "https://uat.levantsdairy.co.uk" }]) {
+    assert.throws(() => validateUatEnvironment({ ...mapped, ...change }), /UAT safety/);
+  }
+});

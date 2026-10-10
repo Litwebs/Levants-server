@@ -16,7 +16,7 @@ function getPaymentMethodDomains() {
     ...(process.env.STRIPE_PAYMENT_METHOD_DOMAINS || "").split(","),
     process.env.CLIENT_FRONT_URL_PROD,
     process.env.FRONTEND_URL_PROD,
-    "levantsdairy.co.uk",
+    ...(process.env.APP_ENV === "uat" ? [] : ["levantsdairy.co.uk"]),
   ];
 
   return [

@@ -58,8 +58,11 @@ function validateUatEnvironment(values = process.env) {
   for (const name of ["JWT_ACCESS_SECRET", "JWT_REFRESH_SECRET", "JWT_2FA_SECRET", "JWT_CUSTOMER_ACCESS_SECRET", "JWT_CUSTOMER_REFRESH_SECRET", "CREDENTIALS_MASTER_KEY"]) {
     if (!values[name] || values[name].length < 32) fail(`${name} must be independently generated`);
   }
-  for (const name of ["FRONTEND_URL_PROD", "CLIENT_FRONT_URL_PROD", "CUSTOMER_PORTAL_URL_PROD"]) {
-    if (values[name] !== "https://uat-api.levantsdairy.co.uk") fail(`${name} must use the UAT origin`);
+  if (values.FRONTEND_URL_PROD !== "https://uat-api.levantsdairy.co.uk") fail("Admin must use its UAT origin");
+  const portalOrigins = ["https://uat-api.levantsdairy.co.uk", "https://uat.levantsdairy.co.uk"];
+  if (!portalOrigins.includes(values.CLIENT_FRONT_URL_PROD) ||
+      values.CUSTOMER_PORTAL_URL_PROD !== values.CLIENT_FRONT_URL_PROD) {
+    fail("Storefront and customer links must use the same approved UAT origin");
   }
 }
 
