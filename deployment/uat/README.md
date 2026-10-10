@@ -101,3 +101,15 @@ adds Resend API IPs to the UAT-only network policy and tests with
 `delivered@resend.dev`. Failure restores the prior UAT config. The network
 allowlist is a DNS snapshot; if Resend changes its API addresses, refresh
 `resend.conf` from `api.resend.com`, reload systemd and restart only UAT.
+
+UAT Cloudinary may share the existing production product environment with
+`UAT_STORAGE_MODE=cloudinary`. Credentials are entered into the protected
+`cloudinary.pending.env`; they are never copied from production config.
+Uploads receive generated unique IDs under `levants-uat/`, with overwrite
+always false. Single and bulk deletions validate every public ID against that
+prefix before calling Cloudinary. The wrapper exposes no rename, prefix-delete
+or delete-all operations. This is application-level isolation, not separate
+Cloudinary permissions or quotas. `activate-cloudinary.py` updates only UAT,
+adds a DNS snapshot for api.cloudinary.com and tests upload/delete using a
+synthetic pixel, restoring UAT config on failure. Refresh the service drop-in
+if Cloudinary changes its API addresses.

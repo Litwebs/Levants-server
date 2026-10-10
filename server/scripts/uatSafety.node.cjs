@@ -129,3 +129,27 @@ test("UAT Resend labels single and batch mail and preserves unrestricted recipie
   validateUatEnvironment({...safe(),EMAIL_TRANSPORT:"resend",RESEND_EMAIL_KEY:"re_testOnly"});
   assert.throws(()=>validateUatEnvironment({...safe(),EMAIL_TRANSPORT:"resend"}),/separate Resend key/);
 });
+
+
+test("UAT Cloudinary cannot overwrite or delete production assets", async () => {
+  const {createUatCloudinary} = require("../utils/uatCloudinary");
+  const uploads=[],deletes=[],batches=[];
+  const provider={uploader:{upload:async(file,options)=>{uploads.push(options);return {public_id:options.folder+"/"+options.public_id};},destroy:async(...args)=>deletes.push(args)},api:{delete_resources:async(...args)=>batches.push(args)}};
+  const client=createUatCloudinary(provider);
+  const asset=await client.uploader.upload("synthetic",{folder:"litwebs/products",public_id:"production",overwrite:true,upload_preset:"unsafe",api_key:"different",resource_type:"image"});
+  assert.match(asset.public_id,/^levants-uat\/litwebs\/products\/[a-f0-9-]+$/);
+  assert.equal(uploads[0].overwrite,false); assert.equal(uploads[0].upload_preset,undefined); assert.equal(uploads[0].api_key,undefined);
+  for(const id of ["production/image","levants-uat-other/image","levants-uat/../production","levants-uat/%2e%2e/image","levants-uat/",null]) {
+    await assert.rejects(client.uploader.destroy(id),/outside/);
+    await assert.rejects(client.api.delete_resources([asset.public_id,id]),/outside/);
+  }
+  assert.equal(deletes.length,0);assert.equal(batches.length,0);
+  await assert.rejects(client.uploader.upload("synthetic",{folder:"../production"}),/outside/);
+  assert.equal(uploads.length,1);
+  await client.uploader.destroy(asset.public_id,{public_ids:["production/image"]});
+  await client.api.delete_resources([asset.public_id]);
+  assert.equal(deletes.length,1);assert.equal(batches.length,1);
+  assert.equal(client.api.delete_all_resources,undefined);
+  validateUatEnvironment({...safe(),UAT_STORAGE_MODE:"cloudinary",CLOUDINARY_CLOUD_NAME:"example",CLOUDINARY_API_KEY:"123456789",CLOUDINARY_API_SECRET:"testOnly"});
+  assert.throws(()=>validateUatEnvironment({...safe(),UAT_STORAGE_MODE:"cloudinary"}),/Cloudinary/);
+});

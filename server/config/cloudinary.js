@@ -15,5 +15,7 @@ const unavailable = async () => {
 };
 
 module.exports = process.env.APP_ENV === "uat"
-  ? { uploader: { upload: unavailable, destroy: unavailable }, api: { delete_resources: unavailable } }
+  ? (process.env.UAT_STORAGE_MODE === "cloudinary"
+      ? require("../utils/uatCloudinary").createUatCloudinary(cloudinary)
+      : { uploader: { upload: unavailable, destroy: unavailable }, api: { delete_resources: unavailable } })
   : cloudinary;
