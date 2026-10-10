@@ -166,7 +166,9 @@ allowlists and a four-minute resource limit. The suite checks:
   this probe does not force daily processing of UAT customer subscriptions.
 
 Provider reports contain only check names, results, durations and release SHA.
-Failure blocks a successful UAT workflow and production promotion. A failed
+Failure blocks a successful UAT workflow and production promotion. Provider
+checks run as a separate job so a transient failure can use GitHub’s **Re-run
+failed jobs** without redeploying the immutable release. A failed
 post-deployment probe leaves the UAT release available for diagnosis; health
 failures during deployment still use the existing automatic rollback.
 Synthetic Stripe sessions expire; uploaded images are deleted in `finally`.

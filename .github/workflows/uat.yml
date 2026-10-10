@@ -90,6 +90,26 @@ jobs:
             -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
             -p "$UAT_PORT" "levants-uat-deploy@$UAT_HOST" \
             "deploy $RELEASE_SHA" < release/levants-uat.tar.gz
+
+  integrations:
+    name: Configured UAT provider checks
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: uat
+    steps:
+      - name: Configure dedicated UAT SSH access
+        env:
+          UAT_SSH_KEY: ${{ secrets.UAT_SSH_KEY }}
+          UAT_KNOWN_HOSTS: ${{ vars.UAT_KNOWN_HOSTS }}
+        run: |
+          test -n "$UAT_SSH_KEY"
+          test -n "$UAT_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$UAT_SSH_KEY" > ~/.ssh/uat
+          chmod 600 ~/.ssh/uat
+          printf '%s\n' "$UAT_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
       - name: Verify configured UAT providers
         env:
           UAT_HOST: ${{ vars.UAT_HOST }}

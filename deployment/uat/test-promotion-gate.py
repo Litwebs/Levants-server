@@ -16,9 +16,9 @@ class PromotionEvidenceTests(unittest.TestCase):
 
     def test_old_or_incomplete_workflow_cannot_pass(self):
         jobs = [dict(name=n, status='completed', conclusion='success') for n in
-                ['verify', 'deploy', 'Real Stripe and browser checks / Subscription E2E (Stripe test mode)']]
+                ['verify', 'deploy', 'Configured UAT provider checks', 'Real Stripe and browser checks / Subscription E2E (Stripe test mode)']]
         self.assertTrue(gate.accepted_jobs(jobs))
-        for index in range(3):
+        for index in range(len(jobs)):
             self.assertFalse(gate.accepted_jobs(jobs[:index] + jobs[index+1:]))
             for result in ['failure', 'cancelled', 'skipped']:
                 changed = [dict(j) for j in jobs]

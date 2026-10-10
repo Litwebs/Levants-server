@@ -20,7 +20,7 @@ def accepted_run(run, sha):
 def accepted_jobs(jobs):
     # Reusable-workflow job names include their caller. Require the browser job,
     # not merely a workflow with the same display name from an older revision.
-    required = ['verify', 'deploy', 'Real Stripe and browser checks / Subscription E2E (Stripe test mode)']
+    required = ['verify', 'deploy', 'Configured UAT provider checks', 'Real Stripe and browser checks / Subscription E2E (Stripe test mode)']
     return all(any(j.get('name') == name and j.get('status') == 'completed'
                    and j.get('conclusion') == 'success' for j in jobs) for name in required)
 
