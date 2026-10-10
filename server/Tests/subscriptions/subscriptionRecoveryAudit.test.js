@@ -2,6 +2,7 @@
 const mongoose = require("mongoose");
 const Mutation = require("../../models/subscriptionMutation.model");
 const Plan = require("../../models/subscriptionInvoiceFulfillment.model");
+const Customer = require("../../models/customer.model");
 const logger = require("../../utils/logger.util");
 const { auditUnresolvedSubscriptionOperations: audit } = require("../../services/subscriptions/subscriptionRecoveryAudit.service");
 const id = () => new mongoose.Types.ObjectId();
@@ -27,5 +28,16 @@ test("alerts on stale financial recovery and held invoices, while allowing new d
     expect(report.invoices.map(item => item.invoiceId)).toEqual(["stock-held"]);
     expect(error).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(report)).not.toContain("email");
+  } finally { error.mockRestore(); }
+});
+test("flags an interrupted customer identity without leaking its request details", async () => {
+  const now = Date.now();
+  const customer = await Customer.create({ email: "profile-recovery@example.com", stripeCustomerCreation: { id: "profile-op", params: { email: "private@example.com" } } });
+  await Customer.collection.updateOne({ _id: customer._id }, { $set: { updatedAt: new Date(now - 180000) } });
+  const error = jest.spyOn(logger, "error").mockImplementation(() => {});
+  try {
+    const report = await audit({ now });
+    expect(report.customersWithCardRecovery.map(entry => String(entry._id))).toContain(String(customer._id));
+    expect(JSON.stringify(report)).not.toContain("private@example.com");
   } finally { error.mockRestore(); }
 });

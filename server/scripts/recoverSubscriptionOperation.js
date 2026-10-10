@@ -12,10 +12,11 @@ async function main() {
   const invoiceId = argument("--invoice");
   const operationId = argument("--operation");
   const card = process.argv.includes("--card");
+  const profile = process.argv.includes("--profile");
   const customerId = argument("--customer");
   const apply = process.argv.includes("--apply");
-  if ([Boolean(invoiceId), Boolean(operationId), card].filter(Boolean).length !== 1) {
-    throw new Error("Select exactly one of --invoice in_..., --operation UUID, or --card.");
+  if ([Boolean(invoiceId), Boolean(operationId), card, profile].filter(Boolean).length !== 1) {
+    throw new Error("Select exactly one of --invoice in_..., --operation UUID, --card, or --profile.");
   }
   if (!invoiceId && !mongoose.Types.ObjectId.isValid(customerId)) throw new Error("Select the exact --customer ObjectId.");
   await mongoose.connect(env.mongoUri, { autoIndex: false, autoCreate: false });
@@ -32,6 +33,12 @@ async function main() {
         else if (["void", "uncollectible"].includes(invoice.status)) await service.HandleSubscriptionInvoiceClosed(invoice);
         else throw new Error("This invoice is still unpaid. Review its provider state; no new payment was started.");
       }
+    } else if (profile) {
+      const customer = await Customer.findById(customerId).select("+stripeCustomerCreation").lean();
+      if (!customer?.stripeCustomerCreation) throw new Error("No saved customer-profile creation requires recovery.");
+      console.log(JSON.stringify({ customerId, operationId: customer.stripeCustomerCreation.id,
+        startedAt: customer.stripeCustomerCreation.startedAt, apply }));
+      if (apply) await require("../services/customerPortal/subscriptionCustomerIdentity.service").ensureCustomerIdentity(customerId);
     } else if (card) {
       const customer = await Customer.findById(customerId).select("+paymentMethodOperation").lean();
       if (!customer) throw new Error("The selected customer does not exist.");

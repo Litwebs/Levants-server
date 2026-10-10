@@ -87,7 +87,7 @@ async function main() {
       { completedAt: null, createdAt: { $lte: new Date(now - 7200000) } }] })
       .select("_id subscription invoiceId inventoryBlocked legacyReviewRequired completedAt createdAt").lean(),
     Reservation.find({ state: "held" }).select("key subscription remaining createdAt").lean(),
-    Customer.find({ paymentMethodOperation: { $ne: null }, updatedAt: { $lte: stale } }).select("_id +paymentMethodOperation").lean(),
+    Customer.find({ $or: [{ paymentMethodOperation: { $ne: null } }, { stripeCustomerCreation: { $ne: null } }], updatedAt: { $lte: stale } }).select("_id +paymentMethodOperation +stripeCustomerCreation").lean(),
     Subscription.find({ "resumePaymentPlan.id": { $exists: true }, "resumePaymentPlan.completedAt": null,
       "resumePaymentPlan.startedAt": { $lte: stale } })
       .select("_id subscriptionNumber +resumePaymentPlan").lean(),
@@ -99,7 +99,9 @@ async function main() {
   console.log("RECOVERY_INTEGRITY", JSON.stringify({
     unresolvedOperations: mutations, invoicePlansNeedingReview: plans,
     heldInventory: reservations, savedCardOperations: cards.map(customer => ({ customerId: customer._id,
-      operationId: customer.paymentMethodOperation.id, startedAt: customer.paymentMethodOperation.startedAt })),
+      operationId: (customer.paymentMethodOperation || customer.stripeCustomerCreation)?.id,
+      startedAt: (customer.paymentMethodOperation || customer.stripeCustomerCreation)?.startedAt,
+      kind: customer.stripeCustomerCreation ? "customer_identity" : "card" })),
     unfinishedResumes: resumes.map(subscription => ({ subscriptionId: subscription._id,
       planId: subscription.resumePaymentPlan.id, startedAt: subscription.resumePaymentPlan.startedAt })),
     webhookConfiguration: endpointCheck,

@@ -15,6 +15,7 @@ describe("Portal order delivery address updates", () => {
       items: [{ product: new mongoose.Types.ObjectId(), variant: new mongoose.Types.ObjectId(), name: "Milk", sku: "RACE", price: 10, quantity: 1, subtotal: 10 }],
       subtotal: 10, total: 10, status: "paid", deliveryStatus: "ordered",
       deliveryDate: new Date(Date.now() + 7 * 86400000),
+      reservationExpiresAt: new Date(Date.now() + 3600000), location: { lat: 51.5, lng: -0.1 },
       deliveryAddress: { line1: "Original dispatch address", city: "London", postcode: "SW1A 1AA", country: "United Kingdom" },
     });
     geocodeAddress.mockImplementationOnce(async () => {

@@ -16,11 +16,12 @@ test.each([
   expect(doc.customerVersion).toBe(4);
   expect(doc.billingStateUpdatedAt).toEqual(original);
 });
-test("a changed delivery schedule invalidates an unfrozen old agreement", async () => {
+test.each(["schedule", "cancellation"])("%s invalidates an unfrozen old agreement", async change => {
   jest.spyOn(Subscription.collection, "updateOne").mockResolvedValue({ matchedCount: 1 });
   const doc = Subscription.hydrate({ _id: new mongoose.Types.ObjectId(), customer: new mongoose.Types.ObjectId(),
     frequency: "weekly", customerVersion: 3, billingStateUpdatedAt: original });
-  doc.frequency = "monthly";
+  if (change === "schedule") doc.frequency = "monthly";
+  else doc.status = "cancelled";
   await doc.save({ validateBeforeSave: false });
   expect(doc.customerVersion).toBe(4);
   expect(doc.billingStateUpdatedAt.getTime()).toBeGreaterThan(original.getTime());

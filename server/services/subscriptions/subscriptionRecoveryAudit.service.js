@@ -17,7 +17,7 @@ async function auditUnresolvedSubscriptionOperations({ now = Date.now() } = {}) 
     Plan.find({ $or: [{ legacyReviewRequired: true }, { inventoryBlocked: true },
       { completedAt: null, createdAt: { $lte: new Date(now - 7200000) } }] })
       .select("_id invoiceId subscription legacyReviewRequired inventoryBlocked").lean(),
-    Customer.find({ paymentMethodOperation: { $ne: null }, updatedAt: { $lte: stale } })
+    Customer.find({ $or: [{ paymentMethodOperation: { $ne: null } }, { stripeCustomerCreation: { $ne: null } }], updatedAt: { $lte: stale } })
       .select("_id").lean(),
     Subscription.find({ "resumePaymentPlan.id": { $exists: true }, "resumePaymentPlan.completedAt": null,
       "resumePaymentPlan.startedAt": { $lte: stale } }).select("_id subscriptionNumber").lean(),
