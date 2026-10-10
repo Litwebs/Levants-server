@@ -1,6 +1,7 @@
 "use strict";
 
 jest.mock("../../utils/stripe.util", () => ({ paymentIntents: { create: jest.fn(), retrieve: jest.fn() } }));
+jest.mock("../../services/subscriptions/subscriptionOrderStock.service", () => ({ updateRecurringInventory: jest.fn(async () => {}) }));
 jest.mock("../../services/customerPortal/subscriptionEmailNotifications.service", () => ({ sendSubscriptionUpdateEmail: jest.fn(async () => {}) }));
 const mongoose = require("mongoose");
 const Subscription = require("../../models/subscription.model");
@@ -13,7 +14,7 @@ let mutation, session, updated;
 beforeEach(() => {
   mutation = { _id: "m", customer: "c", subscription: "s", operationId: "op", status: "failed",
     itemIncreaseSnapshot: { startedAt: new Date(), baseVersion: 2, fields: { items: [] },
-      orderEdits: [], amountMinor: 250, chargeParams: { customer: "cus", currency: "gbp", amount: 250, payment_method: "pm_original" } } };
+      orderEdits: [{ orderId: "o", items: [], chargedMinor: 250 }], amountMinor: 250, chargeParams: { customer: "cus", currency: "gbp", amount: 250, payment_method: "pm_original" } } };
   updated = { _id: "s", toObject: () => ({ _id: "s", customerVersion: 3 }) };
   session = { withTransaction: jest.fn(async fn => fn()), endSession: jest.fn(async () => {}) };
   jest.spyOn(mongoose, "startSession").mockResolvedValue(session);
@@ -23,6 +24,9 @@ beforeEach(() => {
     return { matchedCount: 1 };
   });
   jest.spyOn(Subscription, "findOneAndUpdate").mockImplementation(async () => updated);
+  const order = { _id: "o", items: [], paymentAllocations: [], refunds: [], amountPaid: 5,
+    deliveryFee: 0, save: jest.fn(async () => {}) };
+  jest.spyOn(Order, "findOne").mockReturnValue({ sort() { return this; }, session() { return this; }, exec: async () => order });
   stripe.paymentIntents.create.mockReset().mockResolvedValue({ id: "pi_saved", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 250 });
 });
 afterEach(() => jest.restoreAllMocks());
@@ -73,7 +77,7 @@ it("never fulfills an unconfirmed payment", async () => {
 it("does not complete a payment against a missing fulfillment target", async () => {
   mutation.itemIncreaseSnapshot.orderEdits = [{ orderId: "o", items: [], chargedMinor: 250 }];
   const query = { sort() { return this; }, session() { return this; }, exec: async () => null };
-  jest.spyOn(Order, "findOne").mockReturnValue(query);
+  Order.findOne.mockReturnValue(query);
   await expect(run()).rejects.toThrow("delivery order is no longer editable");
   expect(Mutation.updateOne.mock.calls.some(([, update]) => update.$set.status === "completed")).toBe(false);
 });
@@ -104,3 +108,20 @@ it.each([{ customer: "foreign" }, { currency: "usd" }, { amount_received: 249 }]
     expect((await run()).data.reconciliationRequired).toBe(true);
     expect(Subscription.findOneAndUpdate).not.toHaveBeenCalled();
   });
+
+
+it.each([[[]], [[{ orderId: "o", items: [], chargedMinor: 249 }]]])(
+  "refuses historical item increases without complete delivery funding: %j", async edits => {
+    mutation.itemIncreaseSnapshot.orderEdits = edits;
+    expect((await run()).data.reconciliationRequired).toBe(true);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(Subscription.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+it("does not silently complete an already captured item increase with no delivery target", async () => {
+  mutation.itemIncreaseSnapshot.orderEdits = [];
+  mutation.itemIncreaseSnapshot.paymentIntent = { id: "pi_known", status: "succeeded", customer: "cus", currency: "gbp", amount_received: 250 };
+  expect((await run()).data.reconciliationRequired).toBe(true);
+  expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+  expect(Subscription.findOneAndUpdate).not.toHaveBeenCalled();
+});

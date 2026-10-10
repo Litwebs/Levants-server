@@ -1375,6 +1375,7 @@ describe("Portal Subscriptions", () => {
 
   it("add item before cut-off charges immediately", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const { variant: secondVariant } = await createTestProduct();
 
     const addRes = await request(app)
@@ -1389,6 +1390,7 @@ describe("Portal Subscriptions", () => {
 
   it("rejects add item before cut-off when immediate charge fails", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const { variant: secondVariant } = await createTestProduct();
     stripe.paymentIntents.create.mockRejectedValueOnce(
       new Error("card declined"),
@@ -1405,6 +1407,7 @@ describe("Portal Subscriptions", () => {
 
   it("rejects pre-cutoff increase when customer has no default card", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const { variant: secondVariant } = await createTestProduct();
 
     stripe.customers.retrieve.mockResolvedValueOnce({
@@ -1424,6 +1427,7 @@ describe("Portal Subscriptions", () => {
 
   it("archives old Stripe price when syncing after item change", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const oldPriceId = sub.stripePriceId;
     const { variant: secondVariant } = await createTestProduct();
     const priorUpdateCalls = stripe.prices.update.mock.calls.length;
@@ -1444,6 +1448,7 @@ describe("Portal Subscriptions", () => {
 
   it("keeps DB update successful when Stripe price sync throws", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const itemId = sub.items[0]._id;
 
     stripe.prices.create.mockRejectedValueOnce(
@@ -1462,6 +1467,7 @@ describe("Portal Subscriptions", () => {
 
   it("adds same variant by increasing quantity without duplicate line", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const addRes = await request(app)
       .post(`/api/portal/subscriptions/${sub._id}/items`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -1602,6 +1608,7 @@ describe("Portal Subscriptions", () => {
 
   it("increases quantity before cut-off with immediate charge", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const itemId = sub.items[0]._id;
 
     const res = await request(app)
@@ -3147,6 +3154,7 @@ describe("Portal Subscriptions", () => {
 
   it("cutoff status without nextDeliveryDate is not past cutoff", async () => {
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     await Subscription.findByIdAndUpdate(sub._id, { nextDeliveryDate: null });
 
     const res = await request(app)
@@ -3216,6 +3224,50 @@ describe("Portal Subscriptions", () => {
     expect(stored.pendingChanges.deliveryAddress.line1).toBe("3 After Cutoff Street");
     expect(new Date(stored.pendingChanges.effectiveFrom).getTime())
       .toBeGreaterThan(deliveryInThreeDays.getTime());
+  });
+
+  it.each(["increase", "decrease", "mixed"])("rejects %s money changes on an unbilled day without changing credit or plans", async action => {
+    const nowSpy = jest.spyOn(subscriptionClock, "now").mockReturnValue(Date.parse("2026-10-10T21:00:00Z"));
+    try {
+      await SubscriptionSettings.findOneAndUpdate({ singletonKey: "subscription-settings" },
+        { deliveryDays: [0, 3], cutoffDaysBefore: 2, cutoffTime: "22:00" }, { upsert: true });
+      const initialWednesdayQty = action === "increase" ? 1 : 2;
+      const created = await request(app).post("/api/portal/subscriptions")
+        .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID(),
+          frequency: "weekly", preferredDeliveryDays: [0, 3], preferredDeliveryDay: 0,
+          deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }],
+          deliveryDayPlans: [
+            { day: 0, items: [{ variantId, quantity: 1 }] },
+            { day: 3, items: [{ variantId, quantity: initialWednesdayQty }] },
+          ] });
+      expect(created.status).toBe(201);
+      const subId = created.body.data.subscription._id;
+      await SubscriptionDelivery.deleteMany({ subscription: subId });
+      await SubscriptionDelivery.create(["2026-10-18", "2026-10-21"].map(day => ({
+        subscription: subId, customer: customer._id, scheduledDate: new Date(`${day}T09:00:00Z`), status: "scheduled",
+      })));
+      const before = await Subscription.findById(subId).lean();
+      const beforeCredit = (await Customer.findById(customer._id)).creditBalance;
+      const beforeTransactions = await StoreCreditTransaction.countDocuments({ customer: customer._id });
+      stripe.paymentIntents.create.mockClear();
+      stripe.refunds.create.mockClear();
+      const result = await request(app).patch(`/api/portal/subscriptions/${subId}`)
+        .set("Authorization", `Bearer ${accessToken}`).send({ operationId: crypto.randomUUID(),
+          changedDeliveryDays: action === "mixed" ? [0, 3] : [3], deliveryDayPlans: [
+            { day: 0, items: [{ variantId, quantity: action === "mixed" ? 2 : 1 }] },
+            { day: 3, items: [{ variantId, quantity: action === "increase" ? 2 : 1 }] },
+          ] });
+      expect(result.status).toBe(400);
+      expect(result.body.data.paymentPending).toBe(true);
+      expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+      expect(stripe.refunds.create).not.toHaveBeenCalled();
+      expect((await Customer.findById(customer._id)).creditBalance).toBe(beforeCredit);
+      expect(await StoreCreditTransaction.countDocuments({ customer: customer._id })).toBe(beforeTransactions);
+      const after = await Subscription.findById(subId).lean();
+      expect(after.items).toEqual(before.items);
+      expect(after.deliveryDayPlans).toEqual(before.deliveryDayPlans);
+      expect(after.customerVersion).toBe(before.customerVersion);
+    } finally { nowSpy.mockRestore(); }
   });
 
   it("uses actual outstanding delivery cutoffs for both portal metadata and day-plan settlement", async () => {
@@ -3405,6 +3457,8 @@ describe("Portal Subscriptions", () => {
     expect(createRes.status).toBe(201);
     const subId = createRes.body.data.subscription._id;
 
+    await fundCurrentDeliveryPlans(subId);
+
     const updateOk = await request(app)
       .patch(`/api/portal/subscriptions/${subId}`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -3467,6 +3521,8 @@ describe("Portal Subscriptions", () => {
     expect(createRes.status).toBe(201);
 
     const sub = createRes.body.data.subscription;
+
+    await fundCurrentDeliveryPlans(sub._id);
 
     const increaseRes = await request(app)
       .patch(`/api/portal/subscriptions/${sub._id}`)
@@ -3799,6 +3855,8 @@ describe("Portal Subscriptions", () => {
 
     stripe.paymentIntents.create.mockClear();
 
+    await fundCurrentDeliveryPlans(subId);
+
     const sundayUpdateRes = await request(app)
       .patch(`/api/portal/subscriptions/${subId}`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -3917,6 +3975,8 @@ describe("Portal Subscriptions", () => {
     });
 
     // Add an item to Sunday only, before Sunday's cut-off.
+    await fundCurrentDeliveryPlans(sub._id);
+
     const updateRes = await request(app)
       .patch(`/api/portal/subscriptions/${sub._id}`)
       .set("Authorization", `Bearer ${accessToken}`)
@@ -4306,7 +4366,8 @@ describe("Portal Subscriptions", () => {
       .send({ quantity: 1, refundMethod: "refund" });
 
     expect(updateRes.status).toBe(400);
-    expect(updateRes.body.message).toMatch(/captured payment/i);
+    expect(updateRes.body.data.paymentPending).toBe(true);
+    expect((await Customer.findById(customer._id)).creditBalance).toBe(0);
   });
 
   it("removes a non-last item before cut-off", async () => {
@@ -4328,6 +4389,7 @@ describe("Portal Subscriptions", () => {
     expect(createRes.status).toBe(201);
 
     const sub = createRes.body.data.subscription;
+    await createPaidOrderFor(sub);
     const removeItemId = sub.items[0]._id;
 
     const removeRes = await request(app)
@@ -4437,6 +4499,7 @@ describe("Portal Subscriptions", () => {
     );
 
     const sub = await createBasicSubscription();
+    await createPaidOrderFor(sub);
     const nextDelivery = new Date(cutoffAt);
     await Subscription.findByIdAndUpdate(sub._id, {
       nextDeliveryDate: nextDelivery,
@@ -4992,6 +5055,7 @@ describe("Portal Subscriptions", () => {
     expect(createRes.status).toBe(201);
     const subscription = createRes.body.data.subscription;
     await prepareUpcomingDeliveries(subscription._id);
+    await createPaidOrderFor(subscription);
 
     const primaryItem = subscription.items.find(
       (item) => String(item.variant) === String(variantId),
@@ -5021,9 +5085,35 @@ describe("Portal Subscriptions", () => {
     expect(saved.items[0].quantity).toBe(1);
   });
 
+  async function fundCurrentDeliveryPlans(subscriptionId) {
+    const sub = await Subscription.findById(subscriptionId);
+    const slots = await SubscriptionDelivery.find({ subscription: sub._id,
+      status: { $in: ["scheduled", "generated"] } }).sort({ scheduledDate: 1 });
+    for (const plan of sub.deliveryDayPlans) {
+      const slot = slots.find(delivery => weekdayInTimeZone(delivery.scheduledDate, SUBSCRIPTION_TIME_ZONE) === Number(plan.day));
+      if (!slot) continue;
+      const existing = await Order.find({ subscription: sub._id, status: { $in: ["paid", "partially_refunded"] },
+        deliveryStatus: "ordered" });
+      let order = existing.find(candidate => formatDateKeyInTimeZone(candidate.deliveryDate, SUBSCRIPTION_TIME_ZONE) ===
+        formatDateKeyInTimeZone(slot.scheduledDate, SUBSCRIPTION_TIME_ZONE));
+      if (!order) {
+        const total = plan.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+        order = await Order.create({ customer: customer._id, subscription: sub._id, orderType: "subscription_generated",
+          items: plan.items.map(item => ({ product: item.product, variant: item.variant, name: item.name, sku: item.sku,
+            price: item.unitPrice, quantity: item.quantity, subtotal: item.unitPrice * item.quantity })),
+          deliveryAddress: sub.deliveryAddress, location: { lat: 51.5, lng: -0.1 }, deliveryDate: slot.scheduledDate,
+          subtotal: total, total, amountPaid: total, status: "paid", deliveryStatus: "ordered",
+          reservationExpiresAt: new Date(Date.now() + 86400000), stripePaymentIntentId: `pi_${crypto.randomUUID()}`, paidAt: new Date() });
+      }
+      slot.status = "generated"; slot.order = order._id; await slot.save();
+    }
+  }
+
   async function createPaidOrderFor(sub) {
     const total = sub.items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-    return Order.create({
+    const slot = await SubscriptionDelivery.findOne({ subscription: sub._id,
+      status: { $in: ["scheduled", "generated"] } }).sort({ scheduledDate: 1 });
+    const order = await Order.create({
       customer: customer._id,
       items: sub.items.map((item) => ({
         product: item.product, variant: item.variant, name: item.name, sku: item.sku,
@@ -5031,13 +5121,15 @@ describe("Portal Subscriptions", () => {
       })),
       deliveryAddress: sub.deliveryAddress,
       location: { lat: 51.5, lng: -0.1 },
-      deliveryDate: sub.nextDeliveryDate,
+      deliveryDate: slot?.scheduledDate || sub.nextDeliveryDate,
       subtotal: total, total, amountPaid: total,
       status: "paid", deliveryStatus: "ordered",
       reservationExpiresAt: new Date(Date.now() + 86400000),
       orderType: "subscription_generated", subscription: sub._id,
       stripePaymentIntentId: `pi_${crypto.randomUUID()}`, paidAt: new Date(),
     });
+    if (slot) { slot.status = "generated"; slot.order = order._id; await slot.save(); }
+    return order;
   }
 
   it.each(["pause", "cancel", "remove-day"].flatMap(action => ["credit", "refund"].map(method => [action, method])))(
@@ -5556,6 +5648,7 @@ describe("Portal Subscriptions", () => {
   it("deduplicates an incremental add-item retry with the same operation ID", async () => {
     const sub = await createBasicSubscription();
     await prepareUpcomingDeliveries(sub._id);
+    await createPaidOrderFor(sub);
     const extra = await createTestProduct();
     const operationId = crypto.randomUUID();
 
@@ -5590,6 +5683,7 @@ describe("Portal Subscriptions", () => {
   it("rejects reusing an operation ID for a different mutation payload", async () => {
     const sub = await createBasicSubscription();
     await prepareUpcomingDeliveries(sub._id);
+    await createPaidOrderFor(sub);
     const extra = await createTestProduct();
     const operationId = crypto.randomUUID();
 

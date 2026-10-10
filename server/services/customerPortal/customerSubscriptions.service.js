@@ -1351,6 +1351,15 @@ async function RecoverSubscriptionItemIncrease({ customerId, subscriptionId, ope
 async function completeSubscriptionItemIncrease(mutation) {
   if (mutation.status === "completed" && mutation.response) return mutation.response;
   const snapshot = mutation.itemIncreaseSnapshot;
+  // Historical unfinished attempts may have been frozen before the funding
+  // guard existed. Do not charge or silently complete an unallocated attempt;
+  // an already collected payment requires explicit reconciliation as well.
+  if (!Array.isArray(snapshot.orderEdits) || !snapshot.orderEdits.length ||
+      snapshot.orderEdits.some(edit => !edit.orderId || Number(edit.chargedMinor) < 0) ||
+      snapshot.orderEdits.reduce((sum, edit) => sum + Number(edit.chargedMinor || 0), 0) !== snapshot.amountMinor) {
+    return Response(false, "This item change has no matching paid delivery allocation. Support reconciliation is required.",
+      { reconciliationRequired: true });
+  }
   if (snapshot.inventoryKey) await require("../subscriptions/subscriptionStock.service").reserveStock({
     key: snapshot.inventoryKey, subscriptionId: mutation.subscription, items: snapshot.inventoryItems,
   });
@@ -2536,7 +2545,7 @@ async function UpdateSubscription({
   let currentLiveSubscriptionItems = null;
   let currentWorkingPlans = [];
   let currentWorkingSubscriptionItems = [];
-  let fundedDayOrders = new Map();
+  const fundedDayOrders = new Map();
   let openDayCurrentMinor = 0;
   let openDayNewMinor = 0;
   let shouldStageFutureDayPlan = false;
@@ -2834,6 +2843,13 @@ async function UpdateSubscription({
         "Payment for this delivery has not been confirmed. No charge or credit has been applied. Please retry after its payment is confirmed.",
         { paymentPending: true, deliveryDay: Number(day) });
       if (order) fundedDayOrders.set(Number(day), order);
+    }
+
+    const moneyDeltas = openChangedDeliveryDays.map(day =>
+      dayPlanMinor(requestedByDay.get(Number(day))?.items || []) -
+      dayPlanMinor(currentLiveByDay.get(Number(day))?.items || []));
+    if (moneyDeltas.some(delta => delta > 0) && moneyDeltas.some(delta => delta < 0)) {
+      return Response(false, "Please save delivery-day increases and decreases separately.", null);
     }
 
     openDayCurrentMinor = openChangedDeliveryDays.reduce((sum, day) => {
