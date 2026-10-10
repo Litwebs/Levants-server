@@ -510,12 +510,24 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice, { prepareOnly = fa
   await scheduleUpcomingDeliveries(subscription);
   if (!plan.completedAt) await InvoiceFulfillment.updateOne({ _id: plan._id }, { $set: { completedAt: new Date() } });
 
-  if (newlyCreatedOrderCount > 0) {
-    // Notify once for work actually performed. A duplicate/retried webhook must
-    // not create duplicate customer notifications.
+  const confirmationIdentity = {
+    customer: subscription.customer._id,
+    relatedSubscription: subscription._id,
+    type: "subscription_upcoming_delivery",
+  };
+  // Older confirmations have no event identity. Their related order still
+  // proves this invoice was notified, so deploying this must not notify twice.
+  const confirmationExists = createdOrders.length > 0 && await CustomerNotification.exists({
+    ...confirmationIdentity,
+    $or: [{ sourceEventId: `invoice:${invoice.id}:confirmed` },
+      { relatedOrder: { $in: createdOrders.map(order => order._id) } }],
+  });
+  if (createdOrders.length > 0 && !confirmationExists) {
+    // The lifecycle lease and notification write fence serialize retries.
+    // Existing orders must also recover a confirmation lost after fulfillment.
     await CustomerNotification.create({
-      customer: subscription.customer._id,
-      type: "subscription_upcoming_delivery",
+      ...confirmationIdentity,
+      sourceEventId: `invoice:${invoice.id}:confirmed`,
       title: "Subscription order confirmed",
       message:
         createdOrders.length > 1

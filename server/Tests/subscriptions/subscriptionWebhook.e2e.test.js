@@ -123,6 +123,7 @@ describe("Subscription Stripe webhook E2E", () => {
     const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_notification_retry",
       nextDeliveryDate: new Date("2030-01-06T09:00:00Z"), items: [buildSubscriptionItem(product, variant, 1)] });
     const invoice = { id: "in_notification_retry", subscription: sub.stripeSubscriptionId, status: "open", paid: false };
+    const retrieveBefore = stripe.invoices.retrieve.getMockImplementation();
     stripe.invoices.retrieve.mockResolvedValue(invoice);
     const create = jest.spyOn(CustomerNotification, "create").mockRejectedValueOnce(new Error("temporary notification database failure"));
     try {
@@ -131,6 +132,32 @@ describe("Subscription Stripe webhook E2E", () => {
       await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
       await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
       expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "payment_failed" })).toBe(1);
+    } finally {
+      create.mockRestore();
+      stripe.invoices.retrieve.mockReset().mockImplementation(retrieveBefore);
+    }
+  });
+  it("recovers a lost paid-invoice confirmation without duplicating orders or legacy confirmations", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const date = new Date("2030-01-06T09:00:00Z");
+    const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_confirmation_retry",
+      nextDeliveryDate: date, items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ customer: customer._id, subscription: sub._id, scheduledDate: date, status: "scheduled" });
+    const invoice = { id: "in_confirmation_retry", subscription: sub.stripeSubscriptionId,
+      payment_intent: "pi_confirmation_retry", paid: true, currency: "gbp", amount_paid: 350 };
+    const create = jest.spyOn(CustomerNotification, "create").mockRejectedValueOnce(new Error("confirmation write failed"));
+    try {
+      await expect(subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice)).rejects.toThrow("confirmation write failed");
+      expect(await Order.countDocuments({ subscription: sub._id, stripeInvoiceId: invoice.id })).toBe(1);
+      await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+      await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "subscription_upcoming_delivery" })).toBe(1);
+      // A pre-deployment confirmation's linked order is also a durable identity.
+      await CustomerNotification.updateMany({ relatedSubscription: sub._id }, { $unset: { sourceEventId: 1 } });
+      await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "subscription_upcoming_delivery" })).toBe(1);
+      expect(await Order.countDocuments({ subscription: sub._id, stripeInvoiceId: invoice.id })).toBe(1);
     } finally { create.mockRestore(); }
   });
   beforeEach(() => {

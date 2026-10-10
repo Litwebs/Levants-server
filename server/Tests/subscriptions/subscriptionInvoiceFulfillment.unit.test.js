@@ -52,6 +52,7 @@ beforeEach(() => {
   jest.spyOn(Customer, "findById").mockImplementation(() => query({ _id: "c", stripeCustomerId: "cus" }));
   jest.spyOn(settings, "getOrCreateSettings").mockResolvedValue({ deliveryDays: [0, 3], cutoffDaysBefore: 0, cutoffTime: "23:59" });
   jest.spyOn(Notification, "create").mockResolvedValue({});
+  jest.spyOn(Notification, "exists").mockResolvedValue(true);
   jest.spyOn(Payment, "findOneAndUpdate").mockResolvedValue({});
   stripe.customers.retrieve.mockResolvedValue({ invoice_settings: { default_payment_method: "pm" } });
   stripe.invoices.list.mockResolvedValue({ data: [{ id: "paid-invoice", amount_paid: 350, payment_intent: "old-pi" }] });
@@ -118,4 +119,31 @@ it("rejects a new invoice whose captured amount does not fund its current delive
   await expect(HandleSubscriptionInvoicePaid({ id: "short-invoice", subscription: "stripe-sub",
     payment_intent: "old-pi", paid: true, amount_paid: 349 })).rejects.toThrow("does not match the delivery plan");
   expect(create).not.toHaveBeenCalled();
+});
+
+it("recovers a confirmation write failure after fulfillment has already completed", async () => {
+  sub.status = "active";
+  sub.customer = { _id: "c" };
+  const existing = { _id: "original-order", orderId: "ORDER", status: "paid", deliveryDate: future[0].scheduledDate };
+  jest.spyOn(Order, "find").mockImplementation(() => query([existing]));
+  Order.findOne.mockImplementation(() => query(existing));
+  jest.spyOn(Delivery, "findOne").mockResolvedValue({ order: existing._id });
+  jest.spyOn(Payment, "exists").mockResolvedValue(true);
+  const createOrder = jest.spyOn(Order, "create");
+  Plan.findOne.mockReturnValue({ lean: async () => ({ _id: "plan", completedAt: new Date(),
+    billingWindowEnd: future[1].scheduledDate, deliveries: [{ scheduledDate: existing.deliveryDate,
+      orderId: existing._id, amountMinor: 350 }] }) });
+  Notification.exists.mockResolvedValue(false);
+  Notification.create.mockRejectedValueOnce(new Error("confirmation write failed"));
+  const invoice = { id: "paid-invoice", subscription: "stripe-sub", payment_intent: "old-pi", paid: true, amount_paid: 350 };
+  await expect(HandleSubscriptionInvoicePaid(invoice)).rejects.toThrow("confirmation write failed");
+  await HandleSubscriptionInvoicePaid(invoice);
+  Notification.exists.mockResolvedValue(true);
+  await HandleSubscriptionInvoicePaid(invoice);
+  expect(Notification.create).toHaveBeenCalledTimes(2);
+  expect(Notification.create).toHaveBeenLastCalledWith(expect.objectContaining({ sourceEventId: "invoice:paid-invoice:confirmed" }));
+  expect(createOrder).not.toHaveBeenCalled();
+  expect(Notification.exists).toHaveBeenLastCalledWith(expect.objectContaining({
+    $or: expect.arrayContaining([{ relatedOrder: { $in: [existing._id] } }]),
+  }));
 });
