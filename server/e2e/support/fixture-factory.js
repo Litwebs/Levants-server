@@ -487,6 +487,11 @@ async function replaceDeliverySchedule({
       reservationExpiresAt: new Date(Date.now() + DAY_MS),
       stripePaymentIntentId: paymentIntentId,
       stripeInvoiceId: invoice.id,
+      // Match invoice fulfillment's delivery ledger. Several paid deliveries
+      // share this capture; each may refund only its own allocated total.
+      paymentAllocations: [{ paymentIntentId, stripeInvoiceId: invoice.id,
+        source: "subscription_invoice", amountMinor: Math.round(total * 100),
+        idempotencyKey: `fixture:${invoice.id}:${index}` }],
       paidAt: new Date(),
       amountPaid: total,
       orderType: "subscription_generated",
