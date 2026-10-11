@@ -44,7 +44,7 @@ function refundFailure(error) {
 
 async function refundAcrossSubscriptionPayments(subscription, customer, primaryId, amountMinor, metadataType, operationKey, orderId) {
   const filter = { _id: orderId, subscription: subscription._id, customer: customer._id };
-  let order = await Order.findOne(filter).select("+subscriptionRefundPlan paymentAllocations refunds").lean();
+  let order = await Order.findOne(filter).select("+subscriptionRefundPlan paymentAllocations refunds amountPaid stripePaymentIntentId").lean();
   if (!order) throw new Error("Refund delivery order not found");
   let plan = order.subscriptionRefundPlan;
   let confirmedMinor = 0;
@@ -62,8 +62,22 @@ async function refundAcrossSubscriptionPayments(subscription, customer, primaryI
         if (!Number.isSafeInteger(total)) throw new Error("Refund allocation needs reconciliation");
         allocations.set(allocation.paymentIntentId, total);
       }
-      // A primary invoice may cover several deliveries. It is not evidence of
-      // how much belongs to this order; missing ledgers require reconciliation.
+      // Legacy orders can lack the base allocation, including when an add-on
+      // later introduced a partial ledger. Infer it only for an independently
+      // owned capture, never for a shared invoice or from Stripe's whole balance.
+      if (primaryId && primaryId === order.stripePaymentIntentId && !allocations.has(primaryId)) {
+        const paidMinor = Math.round(Number(order.amountPaid) * 100);
+        const otherMinor = [...allocations.values()].reduce((sum, minor) => sum + minor, 0);
+        const priorMinor = (order.refunds || []).filter(refund => refund.status === "succeeded")
+          .reduce((sum, refund) => sum + Number(refund.amountMinor ?? Math.round(Number(refund.amount) * 100)), 0);
+        const basis = paidMinor + priorMinor - otherMinor;
+        if (!Number.isSafeInteger(basis) || basis <= 0 || await Order.countDocuments({
+          customer: customer._id,
+          $or: [{ stripePaymentIntentId: primaryId }, { "paymentAllocations.paymentIntentId": primaryId }],
+        }) !== 1) throw new Error("Legacy refund allocation needs reconciliation");
+        allocations.set(primaryId, basis);
+      }
+      // A primary invoice alone is not evidence of a delivery's ownership.
       const intentIds = [...allocations.keys()].sort((a, b) => a === primaryId ? -1 : b === primaryId ? 1 : 0);
       const steps = [];
       let remaining = amountMinor;

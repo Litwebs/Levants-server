@@ -147,3 +147,27 @@ it.each([undefined, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid allo
   await expect(run()).rejects.toThrow("allocation needs reconciliation");
   expect(stripe.refunds.create).not.toHaveBeenCalled();
 });
+it("preserves bounded refunds for a uniquely owned legacy capture", async () => {
+  stored.paymentAllocations = [];
+  stored.stripePaymentIntentId = "pi_base";
+  stored.amountPaid = 8;
+  stripe.paymentIntents.retrieve.mockResolvedValue({ customer: "cus", status: "succeeded", amount_received: 2000 });
+  await run();
+  expect(stripe.refunds.create.mock.calls[0][0].amount).toBe(800);
+});
+it("does not infer a missing legacy allocation from a shared invoice", async () => {
+  stored.paymentAllocations = [];
+  stored.stripePaymentIntentId = "pi_base";
+  stored.amountPaid = 8;
+  Order.countDocuments.mockResolvedValue(2);
+  await expect(run()).rejects.toThrow("Legacy refund allocation needs reconciliation");
+  expect(stripe.refunds.create).not.toHaveBeenCalled();
+});
+it("recovers only the independent base amount when a legacy ledger contains an add-on", async () => {
+  stored.paymentAllocations = [{ paymentIntentId: "pi_extra", amountMinor: 300 }];
+  stored.stripePaymentIntentId = "pi_base";
+  stored.amountPaid = 8;
+  stripe.paymentIntents.retrieve.mockResolvedValue({ customer: "cus", status: "succeeded", amount_received: 2000 });
+  await run();
+  expect(stripe.refunds.create.mock.calls.map(([params]) => params.amount)).toEqual([500, 300]);
+});
