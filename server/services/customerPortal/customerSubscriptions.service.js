@@ -1,6 +1,7 @@
 "use strict";
 
 const mongoose = require("mongoose");
+const { subscriptionDatabaseWrite } = require("../../utils/subscriptionDatabaseWrite.util");
 const { withSubscriptionLifecycleLock } = require("../subscriptions/subscriptionLifecycleLock.service");
 const { assertAddOnFulfillmentEligible } = require("./subscriptionAddOnFulfillment.service");
 const { prepareSingleDayTransition } = require("./subscriptionSingleDayTransition.service");
@@ -317,12 +318,12 @@ async function markSubscriptionOrderPaymentRefunded({
     paymentFilter.subscription = subscriptionId;
   }
 
-  await Payment.updateMany(paymentFilter, {
+  await subscriptionDatabaseWrite(session => Payment.updateMany(paymentFilter, {
     $set: {
       status: "refunded",
       refundedAt: refundedAt || new Date(subscriptionClock.now()),
     },
-  });
+  }, { session }));
 }
 
 /**
@@ -3644,27 +3645,33 @@ async function PauseSubscription({
     });
   }
 
-  subscription.status = "paused";
-  subscription.pausedAt = new Date(subscriptionClock.now());
-  subscription.pausedUntil = pauseResume.resumeDate;
-  subscription.pauseReason = "customer";
-  await subscription.save();
-
-  await SubscriptionDelivery.updateMany(
-    { _id: { $in: openDeliveries.map((delivery) => delivery._id) } },
-    {
-      $set: { status: "cancelled" },
-    },
-  );
-
-  await CustomerNotification.create({
-    customer: customerId,
-    type: "subscription_paused",
-    title: "Subscription paused",
-    message: `Your subscription has been paused until ${formatDateLabel(
-      pauseResume.resumeDate,
-    )}. Deliveries past cut-off remain scheduled; eligible deliveries before the resume date have been skipped.`,
-    relatedSubscription: subscription._id,
+  const pauseMessage = `Subscription paused until ${formatDateLabel(pauseResume.resumeDate)}.`;
+  // Provider settlement has finished and is durably checkpointed. Commit the
+  // local pause, skipped slots, notification and replay response together.
+  // A transient conflict retries this database callback, never a Stripe refund.
+  await subscriptionDatabaseWrite(async session => {
+    subscription.status = "paused";
+    subscription.pausedAt = new Date(subscriptionClock.now());
+    subscription.pausedUntil = pauseResume.resumeDate;
+    subscription.pauseReason = "customer";
+    await subscription.save({ session });
+    await SubscriptionDelivery.updateMany(
+      { _id: { $in: openDeliveries.map(delivery => delivery._id) } },
+      { $set: { status: "cancelled" } }, { session },
+    );
+    await CustomerNotification.create([{
+      customer: customerId,
+      type: "subscription_paused",
+      title: "Subscription paused",
+      message: `Your subscription has been paused until ${formatDateLabel(pauseResume.resumeDate)}. Deliveries past cut-off remain scheduled; eligible deliveries before the resume date have been skipped.`,
+      relatedSubscription: subscription._id,
+    }], { session });
+    if (operationId) await SubscriptionMutation.updateOne(
+      { customer: customerId, operationId },
+      { $set: { status: "completed", completedAt: new Date(), lastError: null,
+        response: Response(true, pauseMessage, { subscription: subscription.toObject(), refundedMinor, creditedMinor }),
+      } }, { session },
+    );
   });
 
   await sendSubscriptionUpdateEmail({

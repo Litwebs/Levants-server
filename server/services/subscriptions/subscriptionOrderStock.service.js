@@ -1,5 +1,6 @@
 "use strict";
 const mongoose = require("mongoose");
+const { subscriptionDatabaseWrite } = require("../../utils/subscriptionDatabaseWrite.util");
 const Variant = require("../../models/variant.model");
 const { consumeStock } = require("./subscriptionStock.service");
 function totals(items) {
@@ -45,7 +46,7 @@ async function updateRecurringInventory(order, items, { operationId, session, in
   }
 }
 async function saveRefundedOrder(order) {
-  if (!order.subscriptionStockItems?.length && !order.subscriptionAddOnStockItems?.length) return order.save();
+  if (!order.subscriptionStockItems?.length && !order.subscriptionAddOnStockItems?.length) return subscriptionDatabaseWrite(session => order.save({ session }));
   return mongoose.connection.transaction(async session => {
     const fresh = await order.constructor.findById(order._id).session(session);
     if (!fresh || fresh.deliveryStatus !== "ordered") throw new Error("The refunded delivery's stock needs reconciliation before cancellation.");
