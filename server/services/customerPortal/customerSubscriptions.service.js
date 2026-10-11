@@ -3477,7 +3477,7 @@ async function PauseSubscription({
   refundMethod = "refund",
   operationId,
 } = {}) {
-  const subscription = await Subscription.findOne({
+  let subscription = await Subscription.findOne({
     _id: subscriptionId,
     customer: customerId,
   });
@@ -3650,6 +3650,11 @@ async function PauseSubscription({
   // local pause, skipped slots, notification and replay response together.
   // A transient conflict retries this database callback, never a Stripe refund.
   await subscriptionDatabaseWrite(async session => {
+    // Reload on each transaction attempt: Mongoose resets dirty paths after
+    // abort, but a custom revision increment in a save hook is not rewound.
+    const fresh = await Subscription.findOne({ _id: subscription._id, customer: customerId, status: "active" }).session(session);
+    if (!fresh) throw new Error("The subscription changed before the pause could be committed. Retry the original pause.");
+    subscription = fresh;
     subscription.status = "paused";
     subscription.pausedAt = new Date(subscriptionClock.now());
     subscription.pausedUntil = pauseResume.resumeDate;
