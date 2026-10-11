@@ -1300,6 +1300,14 @@ export default function SubscriptionDetailsPage() {
                     <td>
                       {String(row.currency || "GBP").toUpperCase()}{" "}
                       {Number(row.amount || 0).toFixed(2)}
+                      {row.orderSettlement && (
+                        <div>
+                          Order collected {Number(row.orderSettlement.capturedAmount).toFixed(2)}
+                          {" · "}Card refunded {Number(row.orderSettlement.refundedAmount).toFixed(2)}
+                          {row.orderSettlement.creditedAmount > 0 && <> · Credit {Number(row.orderSettlement.creditedAmount).toFixed(2)}</>}
+                          {" · "}Order remaining paid {Number(row.orderSettlement.netAmount).toFixed(2)}
+                        </div>
+                      )}
                     </td>
                     <td>{row.providerReference || "-"}</td>
                     <td>{formatDate(row.paidAt || row.createdAt)}</td>
