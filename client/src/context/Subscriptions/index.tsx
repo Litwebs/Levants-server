@@ -103,6 +103,12 @@ export type SubscriptionManageResult = {
 export type SubscriptionPayment = {
   _id: string;
   amount: number;
+  orderSettlement?: {
+    capturedAmount: number;
+    refundedAmount: number;
+    creditedAmount: number;
+    netAmount: number;
+  };
   currency: string;
   status: "pending" | "paid" | "failed" | "refunded" | string;
   createdAt: string;

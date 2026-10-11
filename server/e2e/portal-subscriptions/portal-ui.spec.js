@@ -7,10 +7,13 @@ const {
   finalizeCancellation,
   getState,
   login,
+  portalHeaders,
   reset,
   setPaymentOutcome,
 } = require("../support/e2e-client");
 const { CLIENT_ORIGIN } = require("../support/constants");
+const crypto = require("crypto");
+const { retryTransientResponse } = require("../support/retry-transient-response");
 
 const DAY_NAMES = [
   "Sunday",
@@ -1610,4 +1613,40 @@ test("portal reduces two delivery days to one and preserves the surviving produc
   expect(quantities(after.subscription.items)).toEqual(quantities(expectedItems));
   await page.reload();
   await expect(section.getByRole('button', { name: 'Save delivery details', exact: true })).toBeDisabled();
+});
+
+test("payment history keeps partially refunded delivery net and gross amounts consistent", async ({ request, page }) => {
+  const fixture = await createFixture(request, { cadence: "weekly-single-day", timing: "before-cutoff", funds: "sufficient" });
+  const token = await login(request, fixture.credentials);
+  const headers = portalHeaders(token);
+  const initial = await getState(request, fixture.subscriptionId);
+  const milk = subscriptionItem(initial, fixture.variants.MILK.id);
+  const url = `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/items/${milk._id}`;
+  const edit = async data => {
+    const body = { ...data, operationId: crypto.randomUUID() };
+    return expectApiSuccess(await retryTransientResponse(() => request.patch(url, { headers, data: body }),
+      async response => response.status() === 409 && (await response.json()).data?.subscriptionBusy === true));
+  };
+  await edit({ quantity: Number(milk.quantity) + 1 });
+  await edit({ quantity: Number(milk.quantity), refundMethod: "refund" });
+  const final = await getState(request, fixture.subscriptionId);
+  const order = final.orders.find(order => order.status === "partially_refunded");
+  expect(order).toBeTruthy();
+  const list = await expectApiSuccess(await request.get(`${API_ORIGIN}/api/portal/payments`, { headers }));
+  const payment = list.data.payments.find(payment => id(payment.order?._id) === id(order._id));
+  const collected = order.paymentAllocations.reduce((sum, allocation) => sum + Number(allocation.amountMinor), 0) / 100;
+  const refunded = order.refunds.filter(refund => refund.status === "succeeded")
+    .reduce((sum, refund) => sum + Number(refund.amountMinor), 0) / 100;
+  expect(payment).toMatchObject({ status: "partially_refunded", capturedAmount: collected, refundedAmount: refunded,
+    amount: collected - refunded, netAmount: collected - refunded });
+  await signIn(page, fixture.credentials, "/portal/payments");
+  const row = page.getByText(order.orderId, { exact: true }).locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' py-3 ')][1]");
+  const money = amount => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount);
+  await expect(row.getByText("Partially Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(collected - refunded)}`);
+  await expect(row).toContainText(`Refunded ${money(refunded)}`);
+  const netTotal = list.data.payments.filter(p => ["paid", "partially_refunded", "refund_pending"].includes(p.status))
+    .reduce((sum, p) => sum + Number(p.netAmount), 0);
+  await expect(page.getByText("Net Paid (Page)", { exact: true }).locator("..")).toContainText(money(netTotal));
 });

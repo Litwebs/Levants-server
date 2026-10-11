@@ -1,5 +1,6 @@
 "use strict";
 
+const { summarizeOrderPayment } = require("./paymentReporting.util");
 const Payment = require("../../models/payment.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const Order = require("../../models/order.model");
@@ -124,7 +125,7 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
   const total = await Order.countDocuments(orderFilter);
   const orders = await Order.find(orderFilter)
     .select(
-      "_id orderId status subtotal deliveryFee total amountPaid currency paidAt createdAt updatedAt stripePaymentIntentId stripeCheckoutSessionId refunds refund refundedAt failedAt subscription",
+      "_id orderId status subtotal deliveryFee total amountPaid currency paidAt createdAt updatedAt stripePaymentIntentId stripeCheckoutSessionId refunds refund refundedAt failedAt subscription paymentAllocations orderType",
     )
     .populate("subscription", "subscriptionNumber")
     .sort({ paidAt: -1, createdAt: -1 })
@@ -133,9 +134,9 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
     .lean();
 
   const toPaymentStatus = (orderStatus, stripeStatus) => {
-    if (orderStatus === "refunded" || orderStatus === "partially_refunded") {
-      return "refunded";
-    }
+    if (orderStatus === "refunded") return "refunded";
+    if (orderStatus === "partially_refunded") return "partially_refunded";
+    if (orderStatus === "refund_pending") return "refund_pending";
     if (stripeStatus === "succeeded") return "paid";
     if (
       stripeStatus === "requires_payment_method" ||
@@ -173,9 +174,11 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
         }
       }
 
+      const settlement = summarizeOrderPayment(order);
       return {
+        ...settlement,
         _id: `order-${String(order._id)}`,
-        amount: Number(order.amountPaid ?? order.total ?? 0),
+        amount: settlement.netAmount,
         currency: order.currency || "GBP",
         status: toPaymentStatus(order.status, stripeStatus),
         providerReference:
@@ -433,12 +436,24 @@ async function AdminListPayments({
   const filter = {};
   if (customerId) filter.customer = customerId;
   if (subscriptionId) filter.subscription = subscriptionId;
-  if (status) filter.status = status;
+  if (status) {
+    // Historical payment rows can say refunded while their order retained
+    // paid value. Filter the same derived status that the response displays.
+    const orderScope = {};
+    if (customerId) orderScope.customer = customerId;
+    if (subscriptionId) orderScope.subscription = subscriptionId;
+    const settledOrders = await Order.find({ ...orderScope, status: { $in: ["refunded", "partially_refunded"] } })
+      .select("_id status").lean();
+    filter.$or = [
+      { status, order: { $nin: settledOrders.map(order => order._id) } },
+      { order: { $in: settledOrders.filter(order => order.status === status).map(order => order._id) } },
+    ];
+  }
 
   const total = await Payment.countDocuments(filter);
   const payments = await Payment.find(filter)
     .populate("customer", "firstName lastName email")
-    .populate("order", "orderId status total refund refunds")
+    .populate("order", "orderId status total amountPaid orderType paymentAllocations refund refunds")
     .populate("subscription", "subscriptionNumber")
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
@@ -460,7 +475,8 @@ async function AdminListPayments({
 
     return {
       ...payment,
-      status: "refunded",
+      status: orderStatus,
+      orderSettlement: summarizeOrderPayment(payment.order),
       refundedAt:
         payment.refundedAt ||
         latestRefundedAt ||
@@ -478,12 +494,13 @@ async function AdminListPayments({
 async function AdminGetPayment({ paymentId } = {}) {
   const payment = await Payment.findById(paymentId)
     .populate("customer", "firstName lastName email phone")
-    .populate("order", "orderId status total items")
+    .populate("order", "orderId status total amountPaid orderType paymentAllocations refund refunds items")
     .populate("subscription", "subscriptionNumber status frequency")
     .lean();
 
   if (!payment) return Response(false, "Payment not found", null);
-  return Response(true, null, { payment });
+  return Response(true, null, { payment: payment.order && ["refunded", "partially_refunded"].includes(payment.order.status)
+    ? { ...payment, status: payment.order.status, orderSettlement: summarizeOrderPayment(payment.order) } : payment });
 }
 
 async function AdminUpdatePaymentStatus({
