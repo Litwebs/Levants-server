@@ -1706,62 +1706,11 @@ test("multi-day edit preview names only changed days and labels the full cycle",
   const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];
   const card = section.getByText(new RegExp(`^Order [0-9]+: ${firstDayName}$`))
     .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
-  const increase = card.getByRole("button", { name: new RegExp(`^Increase .+ quantity for ${firstDayName}test("multi-day edit preview names only changed days and labels the full cycle", async ({ page, request }) => {
-  const fixture = await createFixture(request, {
-    cadence: "weekly-multi-day", timing: "before-cutoff", funds: "sufficient",
-  });
-  const token = await login(request, fixture.credentials);
-  const response = await request.get(`${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}`, {
-    headers: portalHeaders(token),
-  });
-  const body = await expectApiSuccess(response);
-  const cutoff = body.data.cutoff;
-  await signIn(page, fixture.credentials, `/portal/subscriptions/${fixture.subscriptionId}`);
-  await expect(page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })).toBeVisible();
-  const section = productsSection(page);
-  const firstDayName = DAY_NAMES[fixture.deliveryDays[0]];
-  const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];
-  const card = section.getByText(new RegExp(`^Order [0-9]+: ${firstDayName}$`))
-    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
-) }).first();
-  const decrease = card.getByRole("button", { name: new RegExp(`^Decrease .+ quantity for ${firstDayName}test("multi-day edit preview names only changed days and labels the full cycle", async ({ page, request }) => {
-  const fixture = await createFixture(request, {
-    cadence: "weekly-multi-day", timing: "before-cutoff", funds: "sufficient",
-  });
-  const token = await login(request, fixture.credentials);
-  const response = await request.get(`${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}`, {
-    headers: portalHeaders(token),
-  });
-  const body = await expectApiSuccess(response);
-  const cutoff = body.data.cutoff;
-  await signIn(page, fixture.credentials, `/portal/subscriptions/${fixture.subscriptionId}`);
-  await expect(page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })).toBeVisible();
-  const section = productsSection(page);
-  const firstDayName = DAY_NAMES[fixture.deliveryDays[0]];
-  const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];
-  const card = section.getByText(new RegExp(`^Order [0-9]+: ${firstDayName}$`))
-    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
-) }).first();
+  const increase = card.getByRole("button", { name: new RegExp(`^Increase .+ quantity for ${firstDayName}$`) }).first();
+  const decrease = card.getByRole("button", { name: new RegExp(`^Decrease .+ quantity for ${firstDayName}$`) }).first();
   await expect(increase).toHaveAttribute("type", "button");
   await expect(decrease).toHaveAttribute("type", "button");
-  await expect(card.getByRole("button", { name: new RegExp(`^Include .+ in ${firstDayName} deliverytest("multi-day edit preview names only changed days and labels the full cycle", async ({ page, request }) => {
-  const fixture = await createFixture(request, {
-    cadence: "weekly-multi-day", timing: "before-cutoff", funds: "sufficient",
-  });
-  const token = await login(request, fixture.credentials);
-  const response = await request.get(`${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}`, {
-    headers: portalHeaders(token),
-  });
-  const body = await expectApiSuccess(response);
-  const cutoff = body.data.cutoff;
-  await signIn(page, fixture.credentials, `/portal/subscriptions/${fixture.subscriptionId}`);
-  await expect(page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })).toBeVisible();
-  const section = productsSection(page);
-  const firstDayName = DAY_NAMES[fixture.deliveryDays[0]];
-  const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];
-  const card = section.getByText(new RegExp(`^Order [0-9]+: ${firstDayName}$`))
-    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
-) }).first()).toHaveAttribute("aria-pressed", "true");
+  await expect(card.getByRole("button", { name: new RegExp(`^Include .+ in ${firstDayName} delivery$`) }).first()).toHaveAttribute("aria-pressed", "true");
   await increase.press("Enter");
   const preview = section.getByRole("list", { name: "Product change preview" });
   await expect(preview.getByRole("listitem")).toHaveCount(1);
