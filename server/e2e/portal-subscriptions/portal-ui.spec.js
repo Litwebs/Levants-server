@@ -1639,7 +1639,7 @@ test("payment history keeps partially refunded delivery net and gross amounts co
     .reduce((sum, refund) => sum + Number(refund.amountMinor), 0) / 100;
   expect(payment).toMatchObject({ status: "partially_refunded", capturedAmount: collected, refundedAmount: refunded,
     amount: collected - refunded, netAmount: collected - refunded });
-  await page.route("**/api/portal/payments", async route => {
+  const legacyHandler = async route => {
     const response = await route.fetch();
     const body = await response.json();
     for (const payment of body.data.payments) {
@@ -1650,7 +1650,8 @@ test("payment history keeps partially refunded delivery net and gross amounts co
       if (payment.status === "partially_refunded") payment.status = "refunded";
     }
     await route.fulfill({ response, json: body });
-  });
+  };
+  await page.route("**/api/portal/payments", legacyHandler);
   await signIn(page, fixture.credentials, "/portal/payments");
   const row = page.getByText(order.orderId, { exact: true }).locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' py-3 ')][1]");
   const money = amount => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount);
@@ -1667,4 +1668,19 @@ test("payment history keeps partially refunded delivery net and gross amounts co
   await expect(row).toContainText(`Collected ${money(collected)}`);
   await expect(row).toContainText(`Remaining ${money(collected - refunded)}`);
   await expect(page.getByText("Net Paid (Page)", { exact: true }).locator("..")).toContainText(money(netTotal));
+  const cancelData = { operationId: crypto.randomUUID(), refundMethod: "refund" };
+  await expectApiSuccess(await retryTransientResponse(() => request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/cancel`, { headers, data: cancelData }),
+    async response => response.status() === 409 && (await response.json()).data?.subscriptionBusy === true));
+  await page.route("**/api/portal/payments", legacyHandler);
+  await page.reload();
+  await expect(row.getByText("Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(0)}`);
+  await expect(row).toContainText(`Refunded ${money(collected)}`);
+  await page.unroute("**/api/portal/payments");
+  await page.reload();
+  await expect(row.getByText("Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(0)}`);
 });
