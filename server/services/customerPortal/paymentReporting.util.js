@@ -21,8 +21,13 @@ function summarizeOrderPayment(order = {}) {
   const subscription = order.orderType === "subscription_generated";
   const paidMinor = minor(order.amountPaid ?? order.total);
   const fullReturn = order.status === "refunded";
+  const hasCreditLedger = order.reportingCreditedMinor != null;
+  const ledgerCreditMinor = finiteMinor(order.reportingCreditedMinor);
+  const knownReturnedMinor = refundMinor + ledgerCreditMinor;
   const grossMinor = allocatedMinor || (subscription && !fullReturn
-    ? paidMinor + refundMinor : Math.max(paidMinor, refundMinor));
+    ? paidMinor + refundMinor + ledgerCreditMinor
+    : fullReturn && hasCreditLedger && knownReturnedMinor > 0
+      ? knownReturnedMinor : Math.max(paidMinor, refundMinor));
   if (fullReturn && !refundMinor && !(order.refunds || []).length && order.refund?.stripeRefundId && order.refund?.refundedAt) {
     refundMinor = grossMinor;
   }
@@ -34,12 +39,15 @@ function summarizeOrderPayment(order = {}) {
   }
   if (fullReturn) remainingMinor = 0;
   const settledMinor = grossMinor - remainingMinor;
+  const creditedMinor = hasCreditLedger ? ledgerCreditMinor : Math.max(0, settledMinor - refundMinor);
   return {
     capturedAmount: grossMinor / factor,
     refundedAmount: Math.min(refundMinor, grossMinor) / factor,
-    creditedAmount: Math.max(0, settledMinor - refundMinor) / factor,
+    creditedAmount: creditedMinor / factor,
     netAmount: remainingMinor / factor,
     settledAmount: settledMinor / factor,
+    ...(hasCreditLedger && settledMinor > refundMinor + creditedMinor
+      ? { reconciliationRequired: true } : {}),
   };
 }
 

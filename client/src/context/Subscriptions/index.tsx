@@ -104,6 +104,7 @@ export type SubscriptionPayment = {
   _id: string;
   amount: number;
   orderSettlement?: {
+    reconciliationRequired?: boolean;
     capturedAmount: number;
     refundedAmount: number;
     creditedAmount: number;

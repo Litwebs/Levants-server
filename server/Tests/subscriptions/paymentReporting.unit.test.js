@@ -44,6 +44,18 @@ test("legacy full card refund uses its confirmation without invented credit", ()
 test("zero-decimal currency minor entries are not divided by 100", () => {
   expect(summarizeOrderPayment({ currency: "JPY", total: 1000, refunds: [refund(200)] }).netAmount).toBe(800);
 });
+test("legacy full mixed card/credit return reconstructs gross from both ledgers", () => {
+  expect(summarizeOrderPayment({ ...subscription, status: "refunded", paymentAllocations: [], reportingCreditedMinor: 6100 }))
+    .toMatchObject({ capturedAmount: 73, refundedAmount: 12, creditedAmount: 61, netAmount: 0 });
+});
+test("legacy partial credit return reconstructs original collections without an allocation ledger", () => {
+  expect(summarizeOrderPayment({ ...subscription, paymentAllocations: [], reportingCreditedMinor: 800, amountPaid: 53 }))
+    .toMatchObject({ capturedAmount: 73, refundedAmount: 12, creditedAmount: 8, netAmount: 53 });
+});
+test("legacy full return with missing settlement evidence is flagged instead of inventing store credit", () => {
+  expect(summarizeOrderPayment({ status: "refunded", amountPaid: 13, reportingCreditedMinor: 0 }))
+    .toMatchObject({ creditedAmount: 0, netAmount: 0, reconciliationRequired: true });
+});
 function chain(rows) {
   const query = {};
   for (const method of ["select", "populate", "sort", "skip", "limit"]) query[method] = jest.fn(() => query);
