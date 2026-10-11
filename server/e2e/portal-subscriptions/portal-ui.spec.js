@@ -1639,6 +1639,18 @@ test("payment history keeps partially refunded delivery net and gross amounts co
     .reduce((sum, refund) => sum + Number(refund.amountMinor), 0) / 100;
   expect(payment).toMatchObject({ status: "partially_refunded", capturedAmount: collected, refundedAmount: refunded,
     amount: collected - refunded, netAmount: collected - refunded });
+  await page.route("**/api/portal/payments", async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const payment of body.data.payments) {
+      delete payment.capturedAmount;
+      delete payment.refundedAmount;
+      delete payment.creditedAmount;
+      delete payment.netAmount;
+      if (payment.status === "partially_refunded") payment.status = "refunded";
+    }
+    await route.fulfill({ response, json: body });
+  });
   await signIn(page, fixture.credentials, "/portal/payments");
   const row = page.getByText(order.orderId, { exact: true }).locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' py-3 ')][1]");
   const money = amount => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount);
@@ -1648,5 +1660,11 @@ test("payment history keeps partially refunded delivery net and gross amounts co
   await expect(row).toContainText(`Refunded ${money(refunded)}`);
   const netTotal = list.data.payments.filter(p => ["paid", "partially_refunded", "refund_pending"].includes(p.status))
     .reduce((sum, p) => sum + Number(p.netAmount), 0);
+  await expect(page.getByText("Net Paid (Page)", { exact: true }).locator("..")).toContainText(money(netTotal));
+  await page.unroute("**/api/portal/payments");
+  await page.reload();
+  await expect(row.getByText("Partially Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(collected - refunded)}`);
   await expect(page.getByText("Net Paid (Page)", { exact: true }).locator("..")).toContainText(money(netTotal));
 });
