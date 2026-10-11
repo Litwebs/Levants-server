@@ -1,5 +1,5 @@
 "use strict";
-jest.mock("../../models/order.model", () => ({ init: async () => {}, findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn(), exists: jest.fn() }));
+jest.mock("../../models/order.model", () => ({ init: async () => {}, findOne: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn(), exists: jest.fn(), countDocuments: jest.fn() }));
 jest.mock("../../utils/stripe.util", () => ({ paymentIntents: { retrieve: jest.fn() }, refunds: { create: jest.fn(), retrieve: jest.fn(), list: jest.fn() } }));
 const Order = require("../../models/order.model");
 const stripe = require("../../utils/stripe.util");
@@ -10,7 +10,8 @@ const query = value => ({ select: () => ({ lean: async () => clone(value) }) });
 const run = () => refund({ _id: "sub", subscriptionNumber: "SUB-1" }, { _id: "customer", stripeCustomerId: "cus" }, "pi_base", 800, "pause", "op", "order");
 beforeEach(() => {
   jest.resetAllMocks();
-  stored = { paymentAllocations: [{ paymentIntentId: "pi_extra" }], refunds: [] };
+  stored = { paymentAllocations: [{ paymentIntentId: "pi_base", amountMinor: 500 }, { paymentIntentId: "pi_extra", amountMinor: 500 }], refunds: [] };
+  Order.countDocuments.mockResolvedValue(1);
   Order.findOne.mockImplementation(() => query(stored));
   Order.findOneAndUpdate.mockImplementation((filter, update) => {
     stored.subscriptionRefundPlan = clone(update.$set.subscriptionRefundPlan);
@@ -101,11 +102,48 @@ it("checks all history pages and reserves pending refunds before starting", asyn
 it("does not use unrelated payments to cover an order's refund", async () => {
   stored.paymentAllocations = [];
   await expect(run()).rejects.toThrow("Insufficient captured");
-  expect(stripe.paymentIntents.retrieve).toHaveBeenCalledTimes(1);
+  expect(stripe.paymentIntents.retrieve).not.toHaveBeenCalled();
   expect(stripe.refunds.create).not.toHaveBeenCalled();
 });
 it("rejects a payment owned by another Stripe customer", async () => {
   stripe.paymentIntents.retrieve.mockResolvedValue({ status: "succeeded", customer: "cus_other", amount: 1000 });
   await expect(run()).rejects.toThrow("owner mismatch");
+  expect(stripe.refunds.create).not.toHaveBeenCalled();
+});
+it("splits a delivery refund without consuming another delivery's shared capture", async () => {
+  stored.paymentAllocations = [{ paymentIntentId: "pi_base", amountMinor: 1300 }, { paymentIntentId: "pi_extra", amountMinor: 1200 }];
+  stripe.paymentIntents.retrieve.mockImplementation(async id => ({ id, customer: "cus", status: "succeeded", amount_received: id === "pi_base" ? 2600 : 1200 }));
+  await refund({ _id: "sub" }, { _id: "customer", stripeCustomerId: "cus" }, "pi_base", 2500, "pause", "op", "order");
+  expect(stripe.refunds.create.mock.calls.map(([params]) => [params.payment_intent, params.amount])).toEqual([["pi_base", 1300], ["pi_extra", 1200]]);
+});
+it("does not double-count a prior refund present in Stripe and the delivery ledger", async () => {
+  stored.refunds = [{ stripeRefundId: "re_prior", paymentIntentId: "pi_base", amountMinor: 200, status: "succeeded" }];
+  stripe.paymentIntents.retrieve.mockResolvedValue({ customer: "cus", status: "succeeded", amount_received: 2000 });
+  stripe.refunds.list.mockImplementation(async ({ payment_intent }) => ({ data: payment_intent === "pi_base" ? [{ id: "re_prior", amount: 200, status: "succeeded", metadata: { orderId: "order" } }] : [], has_more: false }));
+  await run();
+  expect(stripe.refunds.create.mock.calls.map(([params]) => params.amount)).toEqual([300, 500]);
+});
+it("reserves a pending local refund even before provider history includes it", async () => {
+  stored.refunds = [{ stripeRefundId: "re_pending", paymentIntentId: "pi_base", amountMinor: 250, status: "pending" }];
+  stripe.paymentIntents.retrieve.mockResolvedValue({ customer: "cus", status: "succeeded", amount_received: 2000 });
+  await expect(run()).rejects.toThrow("Insufficient captured");
+  expect(stripe.refunds.create).not.toHaveBeenCalled();
+});
+it("fails closed on an unattributed refund on a shared payment", async () => {
+  Order.countDocuments.mockResolvedValue(2);
+  stripe.refunds.list.mockResolvedValue({ data: [{ id: "re_unknown", amount: 100, status: "succeeded" }], has_more: false });
+  await expect(run()).rejects.toThrow("unattributed refund");
+  expect(Order.findOneAndUpdate).not.toHaveBeenCalled();
+  expect(stripe.refunds.create).not.toHaveBeenCalled();
+});
+it("does not subtract another delivery's refund from this delivery's allocation", async () => {
+  stripe.paymentIntents.retrieve.mockResolvedValue({ customer: "cus", status: "succeeded", amount_received: 2000 });
+  stripe.refunds.list.mockResolvedValue({ data: [{ id: "re_other", amount: 600, status: "succeeded", metadata: { orderId: "other" } }], has_more: false });
+  await run();
+  expect(stripe.refunds.create.mock.calls.map(([params]) => params.amount)).toEqual([500, 300]);
+});
+it.each([undefined, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])("rejects invalid allocation amounts (%s) before sending money", async amountMinor => {
+  stored.paymentAllocations[0].amountMinor = amountMinor;
+  await expect(run()).rejects.toThrow("allocation needs reconciliation");
   expect(stripe.refunds.create).not.toHaveBeenCalled();
 });

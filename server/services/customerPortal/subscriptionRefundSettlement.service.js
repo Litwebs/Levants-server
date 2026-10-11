@@ -44,7 +44,7 @@ function refundFailure(error) {
 
 async function refundAcrossSubscriptionPayments(subscription, customer, primaryId, amountMinor, metadataType, operationKey, orderId) {
   const filter = { _id: orderId, subscription: subscription._id, customer: customer._id };
-  let order = await Order.findOne(filter).select("+subscriptionRefundPlan paymentAllocations").lean();
+  let order = await Order.findOne(filter).select("+subscriptionRefundPlan paymentAllocations refunds").lean();
   if (!order) throw new Error("Refund delivery order not found");
   let plan = order.subscriptionRefundPlan;
   let confirmedMinor = 0;
@@ -52,8 +52,19 @@ async function refundAcrossSubscriptionPayments(subscription, customer, primaryI
     if (!plan) {
       // Only payment intents actually allocated to this order may fund its refund.
       // Retrieve directly: old payments must not disappear beyond a customer-list page.
-      const intentIds = [...new Set([primaryId, ...(order.paymentAllocations || [])
-        .map(allocation => allocation.paymentIntentId)].filter(Boolean))];
+      if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) throw new Error("Invalid refund amount");
+      const allocations = new Map();
+      for (const allocation of order.paymentAllocations || []) {
+        if (!allocation.paymentIntentId || !Number.isSafeInteger(allocation.amountMinor) || allocation.amountMinor < 0) {
+          throw new Error("Refund allocation needs reconciliation");
+        }
+        const total = (allocations.get(allocation.paymentIntentId) || 0) + allocation.amountMinor;
+        if (!Number.isSafeInteger(total)) throw new Error("Refund allocation needs reconciliation");
+        allocations.set(allocation.paymentIntentId, total);
+      }
+      // A primary invoice may cover several deliveries. It is not evidence of
+      // how much belongs to this order; missing ledgers require reconciliation.
+      const intentIds = [...allocations.keys()].sort((a, b) => a === primaryId ? -1 : b === primaryId ? 1 : 0);
       const steps = [];
       let remaining = amountMinor;
       for (const id of intentIds) {
@@ -62,11 +73,34 @@ async function refundAcrossSubscriptionPayments(subscription, customer, primaryI
         if (intent.status !== "succeeded") continue;
         const intentCustomer = typeof intent.customer === "string" ? intent.customer : intent.customer?.id;
         if (intentCustomer && intentCustomer !== customer.stripeCustomerId) throw new Error("Refund payment owner mismatch");
-        const history = await listRefunds(id);
-        const reserved = history.filter(refund => !["failed", "canceled"].includes(refund.status))
+        const history = (await listRefunds(id)).filter(refund => !["failed", "canceled"].includes(refund.status));
+        const local = (order.refunds || []).filter(refund => refund.paymentIntentId === id &&
+          !["failed", "canceled"].includes(refund.status));
+        const localIds = new Set(local.map(refund => refund.stripeRefundId).filter(Boolean));
+        const ambiguous = history.some(refund => !refund.metadata?.orderId && !localIds.has(refund.id));
+        if (ambiguous && await Order.countDocuments({ subscription: subscription._id,
+          $or: [{ stripePaymentIntentId: id }, { "paymentAllocations.paymentIntentId": id }] }) !== 1) {
+          throw new Error("A shared payment has an unattributed refund; support reconciliation is required");
+        }
+        const returned = new Map();
+        for (const refund of local) {
+          const minor = refund.amountMinor ?? Math.round(Number(refund.amount) * 100);
+          if (!refund.stripeRefundId || !Number.isSafeInteger(minor) || minor < 0) throw new Error("Refund ledger needs reconciliation");
+          returned.set(refund.stripeRefundId, minor);
+        }
+        for (const refund of history) {
+          if (refund.metadata?.orderId === String(orderId) || localIds.has(refund.id) || (ambiguous && !refund.metadata?.orderId)) {
+            returned.set(refund.id, refund.amount);
+          }
+        }
+        const returnedMinor = [...returned.values()].reduce((sum, minor) => {
+          if (!Number.isSafeInteger(minor) || minor < 0 || !Number.isSafeInteger(sum + minor)) throw new Error("Refund ledger needs reconciliation");
+          return sum + minor;
+        }, 0);
+        const reserved = history
           .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
         const available = Math.max(0, Number(intent.amount_received ?? intent.amount ?? 0) - reserved);
-        const amount = Math.min(remaining, available);
+        const amount = Math.min(remaining, available, Math.max(0, allocations.get(id) - returnedMinor));
         if (!amount) continue;
         const stepKey = crypto.createHash("sha256").update(`${operationKey}:${orderId}:${id}`).digest("hex");
         steps.push({ idempotencyKey: `subscription-refund:${stepKey}`,
