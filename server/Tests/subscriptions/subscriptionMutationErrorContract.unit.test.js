@@ -17,3 +17,17 @@ test.each([
   expect(res.status).toHaveBeenCalledWith(409);
   expect(res.json).toHaveBeenCalledWith(response);
 });
+
+
+test.each([
+  { paymentPending: true, deliveryDay: 3 },
+  { reconciliationRequired: true },
+])("preserves settlement safety details in the rejection: %j", async data => {
+  const response = { success: false, message: "No settlement was applied", data };
+  mutate.mockResolvedValueOnce(response);
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+  await UpdateSubscription({ customer: { _id: "c" }, params: { subscriptionId: "s" },
+    body: { operationId: "explicit-operation" } }, res);
+  expect(res.status).toHaveBeenCalledWith(400);
+  expect(res.json).toHaveBeenCalledWith(response);
+});
