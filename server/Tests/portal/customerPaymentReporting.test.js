@@ -11,7 +11,7 @@ test("persisted partial refunds return correct customer amounts and consistent a
   const customer = id();
   const order = await Order.create({ orderId: `ORD-REPORT-${id()}`, customer,
     orderType: "subscription_generated", status: "partially_refunded", subtotal: 60, deliveryFee: 1, total: 61, amountPaid: 61,
-    paidAt: new Date(), stripePaymentIntentId: "pi_reporting",
+    paidAt: new Date(), stripePaymentIntentId: "pi_reporting", reservationExpiresAt: new Date(Date.now() + 60000),
     items: [{ product: id(), variant: id(), name: "Reporting test", sku: "report", price: 12, quantity: 5, subtotal: 60 }],
     deliveryAddress: { line1: "Test", city: "Test", postcode: "BD1 1AA", country: "UK" }, location: { lat: 53.8, lng: -1.75 },
     paymentAllocations: [{ paymentIntentId: "pi_reporting", source: "subscription_invoice", amountMinor: 6100 },
