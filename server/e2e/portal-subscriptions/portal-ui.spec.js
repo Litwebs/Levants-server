@@ -1111,7 +1111,9 @@ test("increases quantity before cut-off and updates Mongo, the paid order, and S
   // selector to the named product card and select its plus icon.
   await itemCard.locator("button:has(svg.lucide-plus)").click();
   await expect(itemCard.getByText("3", { exact: true })).toBeVisible();
-  await expect(section).toContainText("charged to your card now");
+  await expect(section.getByRole("list", { name: "Product change preview" })).toContainText("charged when you save");
+  await expect(section).toContainText("Current products per delivery");
+  await expect(section).toContainText("Delivery fees are shown separately below.");
 
   const updateResponsePromise = waitForApiResponse(
     page,
@@ -1203,9 +1205,9 @@ test("stages an after-cutoff removal while preserving the locked delivery order"
     .click();
 
   await expect(section).toContainText(
-    "has passed, so this change applies from the delivery after that",
+    "The upcoming delivery is locked. This change is scheduled for a later delivery",
   );
-  await expect(section).toContainText("You won't be charged now");
+  await expect(section).toContainText("no payment or refund is made now");
 
   const removeResponsePromise = waitForApiResponse(
     page,
@@ -1684,4 +1686,45 @@ test("payment history keeps partially refunded delivery net and gross amounts co
   await expect(row.getByText("Refunded", { exact: true })).toBeVisible();
   await expect(row).toContainText(`Collected ${money(collected)}`);
   await expect(row).toContainText(`Remaining ${money(0)}`);
+});
+
+
+test("multi-day edit preview names only changed days and labels the full cycle", async ({ page, request }) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-multi-day", timing: "before-cutoff", funds: "sufficient",
+  });
+  const token = await login(request, fixture.credentials);
+  const response = await request.get(`${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}`, {
+    headers: portalHeaders(token),
+  });
+  const body = await expectApiSuccess(response);
+  const cutoff = body.data.cutoff;
+  await signIn(page, fixture.credentials, `/portal/subscriptions/${fixture.subscriptionId}`);
+  await expect(page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })).toBeVisible();
+  const section = productsSection(page);
+  const firstDayName = DAY_NAMES[fixture.deliveryDays[0]];
+  const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];
+  const card = section.getByText(new RegExp(`^Order [0-9]+: ${firstDayName}$`))
+    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
+  await card.locator("button:has(svg.lucide-plus)").first().click();
+  const preview = section.getByRole("list", { name: "Product change preview" });
+  await expect(preview.getByRole("listitem")).toHaveCount(1);
+  await expect(preview).toContainText(firstDayName);
+  await expect(preview).not.toContainText(secondDayName);
+  const day = cutoff.deliveryDayCutoffs.find(entry => entry.day === fixture.deliveryDays[0]);
+  const date = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", timeZone: cutoff.timeZone,
+  }).format(new Date(day.deliveryDate));
+  await expect(preview).toContainText(`from ${date}`);
+  await expect(preview).toContainText("charged when you save");
+  await expect(section).toContainText("Current products per cycle");
+  await expect(section).toContainText("New products per cycle");
+  const snapshot = page.getByRole("heading", { name: "Snapshot", exact: true }).locator("..");
+  await expect(snapshot).toContainText("Cycle total");
+  await expect(snapshot).not.toContainText("Per-day totals");
+  await card.locator("button:has(svg.lucide-minus)").first().click();
+  await expect(preview).toHaveCount(0);
+  await card.locator("button:has(svg.lucide-minus)").first().click();
+  await expect(preview).toContainText("returned to your card or store credit");
+  await expect(preview.getByRole("listitem")).toHaveCount(1);
 });
