@@ -1150,6 +1150,7 @@ describe("Portal Subscriptions", () => {
     expect(order.status).toBe("paid");
     order.deliveryDate = deliveries[0].scheduledDate;
     await order.save();
+    const versionBefore = (await Subscription.findById(sub._id)).customerVersion;
     const operationId = crypto.randomUUID();
     const resumeOn = new Date(Date.now() + 21 * 86400000).toISOString();
     const collection = stage === "claim" ? Subscription.collection : stage === "finalize" ? SubscriptionDelivery.collection : SubscriptionMutation.collection;
@@ -1177,6 +1178,7 @@ describe("Portal Subscriptions", () => {
       expect(injected).toBe(true);
       expect(response.status).toBe(200);
       expect((await Subscription.findById(sub._id)).status).toBe("paused");
+      expect((await Subscription.findById(sub._id)).customerVersion).toBe(versionBefore + 1);
       expect((await Order.findById(order._id)).status).toBe("refunded");
       const changedSlots = await SubscriptionDelivery.find({ _id: { $in: deliveries.filter(d => d.scheduledDate < new Date(resumeOn)).map(d => d._id) } });
       expect(changedSlots.length).toBeGreaterThan(0);
