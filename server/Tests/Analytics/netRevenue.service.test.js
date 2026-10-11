@@ -4,8 +4,8 @@ const { createCustomer, createProduct, createVariant, createOrder } = require(".
 
 const refund = (id, amountMinor, status = "succeeded") => ({ stripeRefundId: id, amountMinor, amount: amountMinor / 100, status });
 test.each([
-  ["subscription card refund", { status: "partially_refunded", orderType: "subscription_generated", total: 61, amountPaid: 61, paymentAllocations: [{ paymentIntentId: "pi", amountMinor: 7300 }], refunds: [refund("re", 1200)] }, 61],
-  ["subscription store credit", { status: "partially_refunded", orderType: "subscription_generated", total: 61, amountPaid: 61, paymentAllocations: [{ paymentIntentId: "pi", amountMinor: 7300 }] }, 61],
+  ["subscription card refund", { status: "partially_refunded", orderType: "subscription_generated", total: 61, amountPaid: 61, paymentAllocations: [{ paymentIntentId: "pi", source: "subscription_invoice", amountMinor: 7300 }], refunds: [refund("re", 1200)] }, 61],
+  ["subscription store credit", { status: "partially_refunded", orderType: "subscription_generated", total: 61, amountPaid: 61, paymentAllocations: [{ paymentIntentId: "pi", source: "subscription_invoice", amountMinor: 7300 }] }, 61],
   ["ordinary partial refund with duplicate ledger", { status: "partially_refunded", total: 73, amountPaid: 73, refunds: [refund("re", 1200), refund("re", 1200), refund("pending", 500, "pending"), refund("failed", 500, "failed")] }, 61],
   ["legacy subscription without allocations", { status: "partially_refunded", orderType: "subscription_generated", total: 61, amountPaid: 61, refunds: [refund("re", 1200)] }, 61],
   ["partial capture", { status: "partially_paid", total: 73, amountPaid: 32 }, 32],
