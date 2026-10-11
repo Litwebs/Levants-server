@@ -1143,6 +1143,56 @@ describe("Portal Subscriptions", () => {
     expect(res.body.message).toMatch(/up to 28 days/i);
   });
 
+  it.each(["claim", "finalize", "result"])("recovers a transient %s write conflict without replaying a pause refund", async stage => {
+    const sub = await createBasicSubscription();
+    const deliveries = await prepareUpcomingDeliveries(sub._id);
+    const order = await Order.findOne({ subscription: sub._id, status: "paid" });
+    expect(order).not.toBeNull();
+    order.deliveryDate = deliveries[0].scheduledDate;
+    await order.save();
+    const operationId = crypto.randomUUID();
+    const resumeOn = new Date(Date.now() + 21 * 86400000).toISOString();
+    const collection = stage === "claim" ? Subscription.collection : stage === "finalize" ? SubscriptionDelivery.collection : SubscriptionMutation.collection;
+    const method = stage === "claim" ? "findOneAndUpdate" : stage === "finalize" ? "updateMany" : "updateOne";
+    const original = collection[method].bind(collection);
+    let injected = false, completedWrites = 0;
+    const spy = jest.spyOn(collection, method).mockImplementation(async (...args) => {
+      const update = args[1];
+      if (stage === "result" && update?.$set?.status === "completed") completedWrites++;
+      const target = stage === "claim" ? Boolean(update?.$set?.customerMutationLock)
+        : stage === "finalize" ? update?.$set?.status === "cancelled"
+        : update?.$set?.status === "completed" && completedWrites >= 2;
+      if (target && !injected) {
+        injected = true;
+        const error = new mongoose.mongo.MongoServerError({ message: "Injected write conflict", code: 112 });
+        error.addErrorLabel("TransientTransactionError");
+        throw error;
+      }
+      return original(...args);
+    });
+    stripe.refunds.create.mockClear();
+    try {
+      const response = await request(app).post(`/api/portal/subscriptions/${sub._id}/pause`)
+        .set("Authorization", `Bearer ${accessToken}`).send({ operationId, resumeOn });
+      expect(injected).toBe(true);
+      expect(response.status).toBe(200);
+      expect((await Subscription.findById(sub._id)).status).toBe("paused");
+      expect((await Order.findById(order._id)).status).toBe("refunded");
+      const changedSlots = await SubscriptionDelivery.find({ _id: { $in: deliveries.filter(d => d.scheduledDate < new Date(resumeOn)).map(d => d._id) } });
+      expect(changedSlots.length).toBeGreaterThan(0);
+      expect(changedSlots.every(d => d.status === "cancelled")).toBe(true);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "subscription_paused" })).toBe(1);
+      expect((await SubscriptionMutation.findOne({ customer: customer._id, operationId })).status).toBe("completed");
+      expect(stripe.refunds.create).toHaveBeenCalledTimes(1);
+      const replay = await request(app).post(`/api/portal/subscriptions/${sub._id}/pause`)
+        .set("Authorization", `Bearer ${accessToken}`).send({ operationId, resumeOn });
+      expect(replay.status).toBe(200);
+      expect(replay.body.data.refundedMinor).toBe(response.body.data.refundedMinor);
+      expect(stripe.refunds.create).toHaveBeenCalledTimes(1);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "subscription_paused" })).toBe(1);
+    } finally { spy.mockRestore(); }
+  });
+
   it("rejects pause on already paused subscription", async () => {
     const sub = await createBasicSubscription();
 

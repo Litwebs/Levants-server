@@ -7,6 +7,7 @@ const Subscription = require("../../models/subscription.model");
 const SubscriptionMutation = require("../../models/subscriptionMutation.model");
 const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
 const { Response } = require("../../utils/response.util");
+const { subscriptionDatabaseWrite } = require("../../utils/subscriptionDatabaseWrite.util");
 const { withLease } = require("../../utils/subscriptionLease.util");
 
 const PROCESSING_LEASE_MS = 2 * 60 * 1000;
@@ -150,7 +151,7 @@ async function claimSubscriptionMutationLock({
         }
       : { customerVersion: currentVersion };
 
-  const claimed = await Subscription.findOneAndUpdate(
+  const claimed = await subscriptionDatabaseWrite(async session => Subscription.findOneAndUpdate(
     {
       _id: subscriptionId,
       customer: customerId,
@@ -178,8 +179,9 @@ async function claimSubscriptionMutationLock({
       new: true,
       timestamps: false,
       select: "customerVersion +customerMutationLock",
+      session,
     },
-  ).lean();
+  ).lean());
 
   if (!claimed) {
     const latest = await readSubscriptionConcurrencyState(
@@ -216,15 +218,15 @@ async function releaseSubscriptionMutationLock({
   lockOperationId,
 }) {
   if (!subscriptionId || !lockOperationId) return;
-  await Subscription.updateOne(
+  await subscriptionDatabaseWrite(async session => Subscription.updateOne(
     {
       _id: subscriptionId,
       customer: customerId,
       "customerMutationLock.operationId": lockOperationId,
     },
     { $unset: { customerMutationLock: 1 } },
-    { timestamps: false },
-  ).catch(() => {});
+    { timestamps: false, session },
+  )).catch(() => {});
 }
 
 async function executeSubscriptionConcurrencyGuard({
@@ -235,12 +237,13 @@ async function executeSubscriptionConcurrencyGuard({
   mutationType,
   execute,
 }) {
-  const claim = await claimSubscriptionMutationLock({
-    customerId,
-    subscriptionId,
-    expectedVersion,
-    operationId,
-  });
+  let claim;
+  try {
+    claim = await claimSubscriptionMutationLock({ customerId, subscriptionId, expectedVersion, operationId });
+  } catch (error) {
+    if (error?.code === 112) return busyResponse(null);
+    throw error;
+  }
   if (!claim.ok) return claim.response;
   const heartbeat = startSubscriptionLockHeartbeat(subscriptionId, claim.lockOperationId);
 
@@ -282,6 +285,9 @@ async function executeSubscriptionConcurrencyGuard({
     }
     return subscriptionId ? await withLease({ kind: "subscription", id: subscriptionId,
       token: claim.lockOperationId }, execute) : await execute();
+  } catch (error) {
+    if (error?.code === 112) return busyResponse(claim.currentVersion);
+    throw error;
   } finally {
     clearInterval(heartbeat);
     await releaseSubscriptionMutationLock({
@@ -419,32 +425,36 @@ async function executeIdempotentSubscriptionMutation({
         }),
     });
 
-    if (result?.success) {
-      await SubscriptionMutation.updateOne(
-        { _id: mutation._id },
-        {
-          $set: {
-            status: "completed",
-            response: persistedResponse(result),
-            completedAt: new Date(),
-            lockedAt: new Date(),
-            lastError: null,
+    await subscriptionDatabaseWrite(async session => {
+      if (result?.success) {
+        await SubscriptionMutation.updateOne(
+          { _id: mutation._id },
+          {
+            $set: {
+              status: "completed",
+              response: persistedResponse(result),
+              completedAt: new Date(),
+              lockedAt: new Date(),
+              lastError: null,
+            },
           },
-        },
-      );
-    } else {
-      await SubscriptionMutation.updateOne(
-        { _id: mutation._id },
-        {
-          $set: {
-            status: "failed",
-            response: result ? persistedResponse(result) : null,
-            lockedAt: new Date(),
-            lastError: result?.message || "Mutation failed",
+          { session },
+        );
+      } else {
+        await SubscriptionMutation.updateOne(
+          { _id: mutation._id, status: { $ne: "completed" } },
+          {
+            $set: {
+              status: "failed",
+              response: result ? persistedResponse(result) : null,
+              lockedAt: new Date(),
+              lastError: result?.message || "Mutation failed",
+            },
           },
-        },
-      );
-    }
+          { session },
+        );
+      }
+    });
 
     return result;
     });
@@ -459,6 +469,7 @@ async function executeIdempotentSubscriptionMutation({
         },
       },
     ).catch(() => {});
+    if (error?.code === 112) return busyResponse(null);
     throw error;
   }
 }

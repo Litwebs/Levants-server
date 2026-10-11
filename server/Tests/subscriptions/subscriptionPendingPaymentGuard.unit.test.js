@@ -1,4 +1,5 @@
 "use strict";
+jest.mock("../../utils/subscriptionDatabaseWrite.util", () => ({ subscriptionDatabaseWrite: async execute => execute(null) }));
 const Subscription = require("../../models/subscription.model");
 const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
 const Mutation = require("../../models/subscriptionMutation.model");
@@ -49,4 +50,12 @@ it("blocks conflicts while a completed purchase is being refunded", async () => 
 });
 it("lets the original removal finish its saved settlement", async () => {
   expect((await run({ status: "completed", addOnSnapshot: { settlement: { operationId: "new-operation" } } })).success).toBe(true);
+});
+
+it("an exhausted database conflict returns a retryable conflict without rerunning provider work", async () => {
+  execute.mockRejectedValueOnce(Object.assign(new Error("Write conflict"), { code: 112 }));
+  const response = await run(null);
+  expect(response.success).toBe(false);
+  expect(response.data).toMatchObject({ subscriptionBusy: true, retryable: true });
+  expect(execute).toHaveBeenCalledTimes(1);
 });
