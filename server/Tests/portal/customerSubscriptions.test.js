@@ -1146,8 +1146,8 @@ describe("Portal Subscriptions", () => {
   it.each(["claim", "finalize", "result"])("recovers a transient %s write conflict without replaying a pause refund", async stage => {
     const sub = await createBasicSubscription();
     const deliveries = await prepareUpcomingDeliveries(sub._id);
-    const order = await Order.findOne({ subscription: sub._id, status: "paid" });
-    expect(order).not.toBeNull();
+    const order = await createPaidOrderFor(sub);
+    expect(order.status).toBe("paid");
     order.deliveryDate = deliveries[0].scheduledDate;
     await order.save();
     const operationId = crypto.randomUUID();
@@ -5858,11 +5858,12 @@ describe("Portal Subscriptions", () => {
       stripe.paymentIntents.create.mockRejectedValueOnce(new Error("response lost after capture"));
     } else {
       const original = Mutation.updateOne.bind(Mutation);
-      let injected = false;
+      let injected = false, completedWrites = 0;
       fault = jest.spyOn(Mutation, "updateOne").mockImplementation((filter, update, options) => {
+        if (update.$set?.status === "completed") completedWrites++;
         const target = failurePoint === "payment-checkpoint"
           ? update.$set?.["itemIncreaseSnapshot.paymentIntent"]
-          : update.$set?.status === "completed" && !options?.session;
+          : update.$set?.status === "completed" && completedWrites >= 2;
         if (target && !injected) { injected = true; throw new Error("injected checkpoint failure"); }
         return original(filter, update, options);
       });
