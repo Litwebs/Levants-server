@@ -1306,6 +1306,7 @@ export default function SubscriptionDetailsPage() {
                           {" · "}Card refunded {Number(row.orderSettlement.refundedAmount).toFixed(2)}
                           {row.orderSettlement.creditedAmount > 0 && <> · Credit {Number(row.orderSettlement.creditedAmount).toFixed(2)}</>}
                           {" · "}Order remaining paid {Number(row.orderSettlement.netAmount).toFixed(2)}
+                          {row.orderSettlement.reconciliationRequired && <div>Historical settlement details need reconciliation.</div>}
                         </div>
                       )}
                     </td>

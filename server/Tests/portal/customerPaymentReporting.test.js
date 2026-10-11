@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 jest.mock("../../utils/stripe.util", () => ({ paymentIntents: { retrieve: jest.fn().mockResolvedValue({ status: "succeeded" }) } }));
 const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
+const Credit = require("../../models/storeCreditTransaction.model");
 const service = require("../../services/customerPortal/customerPayments.service");
 
 test("persisted partial refunds return correct customer amounts and consistent admin filters/details", async () => {
@@ -30,4 +31,8 @@ test("persisted partial refunds return correct customer amounts and consistent a
   const detail = await service.AdminGetPayment({ paymentId: payment._id });
   expect(detail.data.payment.status).toBe("partially_refunded");
   expect((await Payment.findById(payment._id)).amount).toBe(61);
+  await Order.updateOne({ _id: order._id }, { $set: { status: "refunded", paymentAllocations: [] } });
+  await Credit.create({ customer, order: order._id, type: "subscription_refund", amount: 6100, balanceAfter: 6100 });
+  const legacy = await service.ListPayments({ customerId: customer });
+  expect(legacy.data.payments[0]).toMatchObject({ status: "refunded", capturedAmount: 73, refundedAmount: 12, creditedAmount: 61, netAmount: 0 });
 });

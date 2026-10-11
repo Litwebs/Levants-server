@@ -5,6 +5,7 @@ const Payment = require("../../models/payment.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
+const StoreCreditTransaction = require("../../models/storeCreditTransaction.model");
 const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
 const { setCustomerDefaultCard, deleteCustomerCard, resumePendingCardOperation } = require("./subscriptionPaymentMethod.service");
@@ -103,6 +104,19 @@ function normalizeStripeCard(paymentMethod) {
 
 // ===== Customer-facing =====
 
+async function attachLegacyCreditLedger(orders, customerId) {
+  const legacy = orders.filter(order => order && !(order.paymentAllocations || []).length &&
+    ["refunded", "partially_refunded"].includes(order.status));
+  if (!legacy.length) return;
+  const filter = { order: { $in: legacy.map(order => order._id) }, type: "subscription_refund", amount: { $gt: 0 } };
+  if (customerId) filter.customer = customerId;
+  const entries = await StoreCreditTransaction.find(filter).select("order amount").lean();
+  for (const order of legacy) {
+    order.reportingCreditedMinor = entries.filter(entry => String(entry.order) === String(order._id))
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  }
+}
+
 async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
   const safePage = Math.max(1, Number(page) || 1);
   const safePageSize = Math.min(100, Math.max(1, Number(pageSize) || 20));
@@ -132,6 +146,8 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
     .skip((safePage - 1) * safePageSize)
     .limit(safePageSize)
     .lean();
+
+  await attachLegacyCreditLedger(orders, customerId);
 
   const toPaymentStatus = (orderStatus, stripeStatus) => {
     if (orderStatus === "refunded") return "refunded";
@@ -460,6 +476,7 @@ async function AdminListPayments({
     .limit(pageSize)
     .lean();
 
+  await attachLegacyCreditLedger(payments.map(payment => payment.order), customerId);
   const normalizedPayments = payments.map((payment) => {
     const orderStatus = String(payment?.order?.status || "").toLowerCase();
     if (orderStatus !== "refunded" && orderStatus !== "partially_refunded") {
@@ -499,6 +516,7 @@ async function AdminGetPayment({ paymentId } = {}) {
     .lean();
 
   if (!payment) return Response(false, "Payment not found", null);
+  await attachLegacyCreditLedger([payment.order]);
   return Response(true, null, { payment: payment.order && ["refunded", "partially_refunded"].includes(payment.order.status)
     ? { ...payment, status: payment.order.status, orderSettlement: summarizeOrderPayment(payment.order) } : payment });
 }
