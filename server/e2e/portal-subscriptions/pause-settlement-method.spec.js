@@ -62,6 +62,11 @@ test("customer can choose store credit when pausing a prepaid subscription", asy
     name: "Pause Subscription?",
   });
   await expect(pauseDialog).toBeVisible();
+  await expect(pauseDialog).toContainText("Eligible prepaid amounts are returned");
+  await expect(pauseDialog).toContainText("Deliveries past cut-off remain scheduled");
+  await expect(pauseDialog).toContainText("Deliveries on or after your resume date are not skipped");
+  await expect(pauseDialog).not.toContainText("Any already-billed upcoming delivery remains scheduled");
+  await expect(pauseDialog.getByLabel("Resume on", { exact: true })).toBeVisible();
 
   const settlementMethod = pauseDialog.getByRole("combobox", {
     name: "Settlement method",
@@ -141,6 +146,11 @@ test("customer can recover with store credit when a card refund has no captured 
     name: "Pause Subscription?",
   });
   await expect(pauseDialog).toBeVisible();
+  await expect(pauseDialog).toContainText("Eligible prepaid amounts are returned");
+  await expect(pauseDialog).toContainText("Deliveries past cut-off remain scheduled");
+  await expect(pauseDialog).toContainText("Deliveries on or after your resume date are not skipped");
+  await expect(pauseDialog).not.toContainText("Any already-billed upcoming delivery remains scheduled");
+  await expect(pauseDialog.getByLabel("Resume on", { exact: true })).toBeVisible();
   await pauseDialog.locator('input[type="date"]').fill(fixture.resumeOn);
 
   const failedResponsePromise = waitForPauseResponse(
@@ -157,6 +167,11 @@ test("customer can recover with store credit when a card refund has no captured 
   expect(failedBody?.success).toBe(false);
   expect(failedBody?.message).toMatch(/choose store credit instead/i);
   await expect(pauseDialog).toBeVisible();
+  await expect(pauseDialog).toContainText("Eligible prepaid amounts are returned");
+  await expect(pauseDialog).toContainText("Deliveries past cut-off remain scheduled");
+  await expect(pauseDialog).toContainText("Deliveries on or after your resume date are not skipped");
+  await expect(pauseDialog).not.toContainText("Any already-billed upcoming delivery remains scheduled");
+  await expect(pauseDialog.getByLabel("Resume on", { exact: true })).toBeVisible();
 
   const afterFailedRefund = await getState(request, fixture.subscriptionId);
   expect(afterFailedRefund.subscription.status).toBe("active");
