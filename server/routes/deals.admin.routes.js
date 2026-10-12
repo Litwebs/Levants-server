@@ -1,7 +1,7 @@
 const express = require("express");
 
 const asyncHandler = require("../utils/asyncHandler.util");
-const { requireAuth } = require("../middleware/auth.middleware");
+const { requireDealsAdminAuth } = require("../middleware/deals.auth.middleware");
 const { requirePermission } = require("../middleware/permission.middleware");
 const { authLimiter } = require("../middleware/rateLimit.middleware");
 const {
@@ -19,7 +19,7 @@ const {
 
 const router = express.Router();
 
-router.use(requireAuth);
+router.use(requireDealsAdminAuth);
 router.use(authLimiter);
 
 router.get(
