@@ -108,3 +108,18 @@ describe("Deals / refunds and payment recovery", () => {
     expect((await Order.findById(fixture.order.id)).total).toBe(12.5);
   });
 });
+
+test("a refund webhook arriving before the admin response does not lose or duplicate the requested restock", async () => {
+  const fixture = await paidPackage();
+  stripe.refunds.create.mockImplementationOnce(async params => {
+    await applyStripeRefundSucceeded({ paymentIntentId: fixture.order.stripePaymentIntentId, stripeRefundId: "re_webhook_winner", amountMinor: params.amount, currency: "gbp", orderId: fixture.order.id });
+    return { id: "re_webhook_winner", amount: params.amount, status: "succeeded" };
+  });
+  expect((await RefundOrder({ orderId: fixture.order.id, restock: true })).success).toBe(true);
+  const saved = await Order.findById(fixture.order.id);
+  expect(saved.refunds).toHaveLength(1);
+  expect(saved.metadata.refundRestockedAt).toBeTruthy();
+  expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(20);
+  await applyStripeRefundSucceeded({ paymentIntentId: fixture.order.stripePaymentIntentId, stripeRefundId: "re_webhook_winner", amountMinor: 1250, currency: "gbp", orderId: fixture.order.id });
+  expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(20);
+});

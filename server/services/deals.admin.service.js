@@ -207,6 +207,7 @@ function mapDeal(deal, resolution) {
     ...deal,
     publicationStatus: deal.publicationStatus || "published",
     pricingMode: deal.pricingMode || "fixed_price",
+    packagePrice,
     originalValue,
     savings: Number(savings.toFixed(2)),
     savingsPercent,
@@ -637,6 +638,7 @@ async function publishDeal({ dealId, userId }) {
   const deal = await Deal.findById(dealId);
   if (!deal) return { success: false, statusCode: 404, message: "Deal not found" };
   if (deal.archivedAt) return { success: false, statusCode: 409, message: "Archived deals cannot be published" };
+  if (deal.publicationStatus === "published") return getDeal({ dealId });
   if (!deal.items.length) return { success: false, statusCode: 400, message: "Add at least one product to publish" };
   if (deal.endsAt && deal.endsAt <= new Date()) return { success: false, statusCode: 400, message: "An expired deal cannot be published" };
   if (deal.startsAt && deal.endsAt && deal.endsAt <= deal.startsAt) return { success: false, statusCode: 400, message: "End date must be after the start date" };
@@ -649,7 +651,6 @@ async function publishDeal({ dealId, userId }) {
     try { await resolveImage(String(deal.image), userId); }
     catch (error) { return { success: false, statusCode: error.statusCode || 400, message: "Deal image is unavailable" }; }
   }
-  if (deal.publicationStatus === "published") return getDeal({ dealId });
   deal.publicationStatus = "published";
   deal.packagePrice = pricing.data.packagePrice;
   deal.publishedAt = new Date();

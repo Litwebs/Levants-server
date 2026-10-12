@@ -292,6 +292,7 @@ async function RefundOrder({
       latest.stripePaymentIntentId ||= paymentIntentId;
       latest.refunds = Array.isArray(latest.refunds) ? latest.refunds : [];
       const existing = latest.refunds.find(record => record.stripeRefundId === refund.id);
+      const alreadyRestocked = Boolean(latest.metadata?.refundRestockedAt) || (previousStatus === "refunded" && existing?.restock === true);
       if (!existing) latest.refunds.push(refundRecord);
       else {
         existing.restock = existing.restock || Boolean(restock);
@@ -303,7 +304,7 @@ async function RefundOrder({
         refundedAt: mappedStatus === "succeeded" ? new Date() : latest.refund?.refundedAt,
       };
       latest.status = computeRefundDerivedOrderStatus(latest);
-      if (Boolean(restock) && latest.status === "refunded" && previousStatus !== "refunded" && !latest.metadata?.refundRestockedAt) {
+      if (Boolean(restock) && latest.status === "refunded" && !alreadyRestocked) {
         for (const item of latest.items) {
           await ProductVariant.findByIdAndUpdate(item.variant, { $inc: { stockQuantity: item.quantity } }, { session });
         }
