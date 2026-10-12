@@ -1,0 +1,36 @@
+name: Production read-only preflight
+on:
+  push:
+    branches: [uat]
+    paths:
+      - .github/workflows/production-read-only-preflight.yml
+      - server/scripts/productionReadOnlyPreflight.cjs
+permissions:
+  contents: read
+concurrency:
+  group: production-read-only-preflight
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/uat'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check isolated read-only probe
+        run: node --check server/scripts/productionReadOnlyPreflight.cjs
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+      - name: Inspect existing production through stdin without deploying
+        env:
+          PREFLIGHT_HOST: ${{ secrets.VPS_HOST }}
+          PREFLIGHT_PORT: ${{ secrets.VPS_PORT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PREFLIGHT_PORT" "$PREFLIGHT_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PREFLIGHT_PORT" "root@$PREFLIGHT_HOST" \
+            'set -eu; cd /root/LWS-Scripts/Levants-server/server; printf "PRODUCTION_HEAD_BEFORE "; git rev-parse HEAD; NODE_ENV=production node; printf "PRODUCTION_HEAD_AFTER "; git rev-parse HEAD' \
+            < server/scripts/productionReadOnlyPreflight.cjs
