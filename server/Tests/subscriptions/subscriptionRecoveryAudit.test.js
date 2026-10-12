@@ -20,15 +20,20 @@ test("alerts on stale financial recovery and held invoices, while allowing new d
   const draft = { subscription: sub, billingWindowStart: new Date(), billingWindowEnd: new Date(), deliveries: [] };
   await Plan.create({ ...draft, invoiceId: "new-draft" });
   await Plan.create({ ...draft, invoiceId: "stock-held", inventoryBlocked: true });
-  const error = jest.spyOn(logger, "error").mockImplementation(() => {});
+  const output = jest.spyOn(console, "error").mockImplementation(() => {});
   try {
     const report = await audit({ now });
     expect(report.count).toBe(2);
     expect(report.mutations.map(item => item.operationId)).toEqual(["unknown-outcome"]);
     expect(report.invoices.map(item => item.invoiceId)).toEqual(["stock-held"]);
-    expect(error).toHaveBeenCalledTimes(1);
+    expect(output).toHaveBeenCalledTimes(1);
+    const message = output.mock.calls[0][0];
+    expect(message).toContain("unknown-outcome");
+    expect(message).toContain("stock-held");
+    expect(message).not.toContain("unpaid-decline");
+    expect(message).not.toContain("new-draft");
     expect(JSON.stringify(report)).not.toContain("email");
-  } finally { error.mockRestore(); }
+  } finally { output.mockRestore(); }
 });
 test("flags an interrupted customer identity without leaking its request details", async () => {
   const now = Date.now();

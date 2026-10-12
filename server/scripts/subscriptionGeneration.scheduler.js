@@ -32,6 +32,9 @@ const {
   withSchedulerLease,
 } = require("../services/schedulerLease.service");
 
+const { SUBSCRIPTION_CRON_EXPRESSION, SUBSCRIPTION_CRON_TIME_ZONE,
+  isDailySubscriptionMaintenanceTime } = require("../utils/subscriptionSchedule.util");
+
 const RECONCILIATION_LEASE_MS = 30 * 60 * 1000;
 const DAILY_MAINTENANCE_LEASE_MS = 3 * 60 * 60 * 1000;
 const SCHEDULER_BATCH_SIZE = 100;
@@ -111,7 +114,7 @@ async function ScheduleUpcomingSlots({ renewLease } = {}) {
 function startSubscriptionGenerationCron() {
   // Pull-based safety net: an endpoint configuration mistake or a transient
   // delivery failure must not silently separate billing from fulfillment.
-  cron.schedule("*/15 * * * *", async () => {
+  cron.schedule(SUBSCRIPTION_CRON_EXPRESSION, async () => {
     try {
       const run = await withSchedulerLease(
         "subscription-reconciliation",
@@ -144,12 +147,13 @@ function startSubscriptionGenerationCron() {
     } catch (err) {
       logger.error("[SubscriptionCron] Invoice/price reconciliation failed", err);
     }
-  }, { timezone: SUBSCRIPTION_TIME_ZONE });
+  }, { timezone: SUBSCRIPTION_CRON_TIME_ZONE });
 
-  // Run once daily at 06:00 to pre-schedule upcoming delivery slots and audit
+  // Check a UTC heartbeat for 06:00 business time to pre-schedule upcoming delivery slots and audit
   // every active recurring price. The full audit catches historical divergence
   // that predates the stripePriceSyncPending reliability marker.
-  cron.schedule("0 6 * * *", async () => {
+  cron.schedule(SUBSCRIPTION_CRON_EXPRESSION, async () => {
+    if (!isDailySubscriptionMaintenanceTime()) return;
     try {
       const run = await withSchedulerLease(
         "subscription-daily-maintenance",
@@ -169,7 +173,7 @@ function startSubscriptionGenerationCron() {
     } catch (err) {
       logger.error("[SubscriptionCron] Slot scheduling cron failed", err);
     }
-  }, { timezone: SUBSCRIPTION_TIME_ZONE });
+  }, { timezone: SUBSCRIPTION_CRON_TIME_ZONE });
 
   logger.cron(
     `Subscription invoice/price reconciliation (15 min) and slot scheduling + full price audit (daily 06:00 ${SUBSCRIPTION_TIME_ZONE})`,
