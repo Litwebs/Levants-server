@@ -5,19 +5,21 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { CreateDealPage } from "@/pages/Deals/CreateDealPage";
 import { DealsPage } from "@/pages/Deals/DealsPage";
 
-const { createDeal, listDeals, getCatalog, showToast, updateDeal } = vi.hoisted(
+const { createDeal, listDeals, getCatalog, showToast, updateDeal, getDeal } = vi.hoisted(
   () => ({
     createDeal: vi.fn(),
     listDeals: vi.fn(),
     getCatalog: vi.fn(),
     showToast: vi.fn(),
     updateDeal: vi.fn(),
+    getDeal: vi.fn(),
   }),
 );
 vi.mock("@/context/Deals", () => ({
   createDeal,
   listDeals,
   updateDeal,
+  getDeal,
   deactivateDeal: vi.fn(),
   archiveDeal: vi.fn(),
 }));
@@ -44,7 +46,7 @@ beforeEach(() => {
     data: {
       data: {
         variants: [variant],
-        pagination: { page: 1, pageSize: 8, total: 1, totalPages: 1 },
+        pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
       },
     },
   });
@@ -69,17 +71,16 @@ async function fillOffer(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
     await screen.findByRole("button", { name: "Add variant Whole milk 1L" }),
   );
-  await user.click(screen.getByRole("button", { name: "Continue to details" }));
+  await user.click(screen.getByRole("button", { name: "Details & pricing" }));
   await user.type(screen.getByLabelText("Deal name *"), "Fresh milk offer");
   expect(
-    (screen.getByLabelText("Storefront URL") as HTMLInputElement).value,
+    (screen.getByLabelText("Storefront URL *") as HTMLInputElement).value,
   ).toBe("fresh-milk-offer");
-  await user.click(screen.getByRole("button", { name: "Set pricing" }));
   await user.type(screen.getByLabelText("Package price (£) *"), "3");
   await user.click(screen.getByRole("button", { name: "Review & publish" }));
 }
 describe("admin deal creation with existing components", () => {
-  test("flags active offers that no longer save money after retail prices change", async () => {
+  test("lists live price and value for existing offers", async () => {
     listDeals.mockResolvedValue({
       deals: [
         {
@@ -101,13 +102,15 @@ describe("admin deal creation with existing components", () => {
         <DealsPage />
       </MemoryRouter>,
     );
-    expect(await screen.findByText("Review price")).toBeTruthy();
+    expect(await screen.findByText("Milk offer")).toBeTruthy();
+    expect(screen.getByText("£6.00")).toBeTruthy();
+    expect(screen.getByText("£5.00")).toBeTruthy();
   });
   test("blocks empty contents before advancing", async () => {
     const user = userEvent.setup();
     mount();
     await user.click(
-      screen.getByRole("button", { name: "Continue to details" }),
+      screen.getByRole("button", { name: "Details & pricing" }),
     );
     expect(screen.getByRole("alert").textContent).toMatch(/Add at least one/);
     expect(createDeal).not.toHaveBeenCalled();
@@ -134,7 +137,7 @@ describe("admin deal creation with existing components", () => {
     expect(getCatalog).toHaveBeenCalledWith(
       "/admin/deals/catalog",
       expect.objectContaining({
-        params: expect.objectContaining({ page: 1, pageSize: 8 }),
+        params: expect.objectContaining({ page: 1, pageSize: 20 }),
       }),
     );
   });
@@ -142,7 +145,7 @@ describe("admin deal creation with existing components", () => {
     const user = userEvent.setup();
     mount();
     await fillOffer(user);
-    await user.click(screen.getByRole("button", { name: "Pricing" }));
+    await user.click(screen.getByRole("button", { name: /Details & Pricing/i }));
     await user.clear(screen.getByLabelText("Package price (£) *"));
     await user.type(screen.getByLabelText("Package price (£) *"), "5");
     await user.click(screen.getByRole("button", { name: "Review & publish" }));
@@ -166,9 +169,9 @@ describe("admin deal creation with existing components", () => {
         expect.objectContaining({ message: "Deal slug already exists" }),
       ),
     );
-    expect(
-      screen.getByRole("heading", { name: "Fresh milk offer" }),
-    ).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /Details & Pricing/i }));
+    expect((screen.getByLabelText("Deal name *") as HTMLInputElement).value).toBe("Fresh milk offer");
+    await user.click(screen.getByRole("button", { name: "Review & publish" }));
     expect(
       screen
         .getByRole("button", { name: "Create product package" })
@@ -228,24 +231,27 @@ describe("admin deal creation with existing components", () => {
     });
     updateDeal.mockRejectedValueOnce(new Error("Save failed"));
     const user = userEvent.setup();
+    getDeal.mockResolvedValue(deal);
     render(
-      <MemoryRouter>
-        <DealsPage />
+      <MemoryRouter initialEntries={["/deals/deal-1/edit"]}>
+        <Routes>
+          <Route path="/deals/:dealId/edit" element={<CreateDealPage />} />
+          <Route path="/deals" element={<h1>Saved deals</h1>} />
+        </Routes>
       </MemoryRouter>,
     );
-    await user.click(
-      await screen.findByRole("button", { name: "Edit", exact: true }),
-    );
+    await user.click(await screen.findByRole("button", { name: "Details & pricing" }));
     const name = screen.getByLabelText("Deal name *") as HTMLInputElement;
     await user.clear(name);
     await user.type(name, "Changed milk offer");
+    await user.click(screen.getByRole("button", { name: "Review & publish" }));
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(showToast).toHaveBeenCalledWith(
         expect.objectContaining({ type: "error" }),
       ),
     );
-    expect(name.value).toBe("Changed milk offer");
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", expect.objectContaining({ name: "Changed milk offer" }));
     expect(
       screen
         .getByRole("button", { name: "Save changes" })
@@ -286,9 +292,9 @@ describe("admin deal creation with existing components", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "Cannot load offers",
     );
-    await user.click(screen.getByRole("button", { name: "Retry" }));
-    expect(await screen.findByText("No product packages yet.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "New Deal" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByText("No deals match these filters.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New deal" })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
