@@ -13,6 +13,22 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  analytics:
+    name: Analytics merge regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm test -- Tests/Analytics
+        working-directory: server
+
   deals:
     name: Deals API regression
     runs-on: ubuntu-latest

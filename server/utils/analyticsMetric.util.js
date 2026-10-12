@@ -5,6 +5,7 @@ const {
   parseDateRange,
   buildEventDateMatch,
 } = require("./analyticsDate.util");
+const { NET_REVENUE_EXPRESSION } = require("./analyticsNetRevenue.util");
 const {
   ACTIVE_ORDER_MATCH,
   buildOrderSourceMatch,
@@ -65,7 +66,67 @@ const EFFECTIVE_PAID_AT_EXPRESSION = {
   $ifNull: ["$paidAt", "$createdAt"],
 };
 
-const COLLECTED_AMOUNT_EXPRESSION = {
+// Subscription settlement stores amountPaid net of successful refunds. Preserve
+// event-based analytics by recovering the collected gross amount at the sale,
+// then counting each successful refund once at its own event date.
+const UNIQUE_SUCCESSFUL_REFUNDS_EXPRESSION = {
+  $let: {
+    vars: {
+      unique: {
+        $reduce: {
+          input: { $ifNull: ["$refunds", []] },
+          initialValue: { ids: [], items: [] },
+          in: {
+            $cond: [
+              { $and: [
+                { $eq: ["$$this.status", "succeeded"] },
+                { $or: [
+                  { $eq: [{ $ifNull: ["$$this.stripeRefundId", null] }, null] },
+                  { $not: [{ $in: ["$$this.stripeRefundId", "$$value.ids"] }] },
+                ] },
+              ] },
+              {
+                ids: { $concatArrays: ["$$value.ids", [{ $ifNull: ["$$this.stripeRefundId", null] }]] },
+                items: { $concatArrays: ["$$value.items", ["$$this"]] },
+              },
+              "$$value",
+            ],
+          },
+        },
+      },
+    },
+    in: "$$unique.items",
+  },
+};
+
+const refundAmountExpression = (field) => ({
+  $let: {
+    vars: {
+      factor: { $switch: {
+        branches: [
+          { case: { $in: [{ $toUpper: { $ifNull: [field + ".currency", { $ifNull: ["$currency", "GBP"] }] } }, ZERO_DECIMAL_CURRENCIES] }, then: 1 },
+          { case: { $in: [{ $toUpper: { $ifNull: [field + ".currency", { $ifNull: ["$currency", "GBP"] }] } }, ["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"]] }, then: 1000 },
+        ],
+        default: 100,
+      } },
+    },
+    in: { $cond: [
+      { $ne: [{ $ifNull: [field + ".amountMinor", null] }, null] },
+      { $divide: [field + ".amountMinor", "$$factor"] },
+      { $ifNull: [field + ".amount", 0] },
+    ] },
+  },
+});
+
+const SUCCESSFUL_REFUND_TOTAL_EXPRESSION = {
+  $sum: { $map: {
+    input: UNIQUE_SUCCESSFUL_REFUNDS_EXPRESSION,
+    as: "refund",
+    in: refundAmountExpression("$$refund"),
+  } },
+};
+
+const RECORDED_PAID_AMOUNT_EXPRESSION = {
   $cond: [
     { $ne: [{ $ifNull: ["$amountPaid", null] }, null] },
     { $ifNull: ["$amountPaid", 0] },
@@ -77,6 +138,21 @@ const COLLECTED_AMOUNT_EXPRESSION = {
       ],
     },
   ],
+};
+
+const COLLECTED_AMOUNT_EXPRESSION = {
+  $let: {
+    vars: { paid: RECORDED_PAID_AMOUNT_EXPRESSION, refunded: SUCCESSFUL_REFUND_TOTAL_EXPRESSION },
+    in: { $cond: [
+      { $and: [
+        { $eq: ["$orderType", "subscription_generated"] },
+        { $ne: [{ $ifNull: ["$metadata.manualImport", false] }, true] },
+        { $ne: [{ $ifNull: ["$amountPaid", null] }, null] },
+      ] },
+      { $add: [NET_REVENUE_EXPRESSION, "$$refunded"] },
+      { $max: ["$$paid", "$$refunded"] },
+    ] },
+  },
 };
 
 const COLLECTED_FRACTION_EXPRESSION = {
@@ -123,29 +199,8 @@ const COLLECTED_DISCOUNT_EXPRESSION = {
   ],
 };
 
-const REFUND_AMOUNT_EXPRESSION = {
-  $ifNull: [
-    "$refunds.amount",
-    {
-      $cond: [
-        {
-          $in: [
-            {
-              $toUpper: {
-                $ifNull: ["$refunds.currency", { $ifNull: ["$currency", "GBP"] }],
-              },
-            },
-            ZERO_DECIMAL_CURRENCIES,
-          ],
-        },
-        { $ifNull: ["$refunds.amountMinor", 0] },
-        {
-          $divide: [{ $ifNull: ["$refunds.amountMinor", 0] }, 100],
-        },
-      ],
-    },
-  ],
-};
+const REFUND_AMOUNT_EXPRESSION = refundAmountExpression("$refunds");
+const DEDUPLICATE_REFUNDS_STAGE = { $set: { refunds: UNIQUE_SUCCESSFUL_REFUNDS_EXPRESSION } };
 
 const compactAnd = (...parts) => {
   const clauses = parts.filter(
@@ -263,6 +318,7 @@ module.exports = {
   COLLECTED_DELIVERY_EXPRESSION,
   COLLECTED_DISCOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
+  DEDUPLICATE_REFUNDS_STAGE,
   buildSalesOrderMatch,
   buildRefundLedgerPrefilter,
   buildRefundEventMatch,

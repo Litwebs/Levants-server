@@ -32,6 +32,7 @@ const {
   COLLECTED_DELIVERY_EXPRESSION,
   COLLECTED_DISCOUNT_EXPRESSION,
   REFUND_AMOUNT_EXPRESSION,
+  DEDUPLICATE_REFUNDS_STAGE,
   buildSalesOrderMatch,
   buildRefundLedgerPrefilter,
   buildRefundEventMatch,
@@ -333,6 +334,7 @@ async function GetPerformanceMetrics({
 
     Order.aggregate([
       { $match: { ...refundBaseMatch, ...buildRefundLedgerPrefilter({ range, from, to, timeZone }) } },
+      DEDUPLICATE_REFUNDS_STAGE,
       { $unwind: "$refunds" },
       {
         $match: buildRefundEventMatch({
@@ -727,6 +729,7 @@ async function GetSalesBreakdown({
           _analyticsChannel: SALES_CHANNEL_EXPRESSION,
         },
       },
+      DEDUPLICATE_REFUNDS_STAGE,
       { $unwind: "$refunds" },
       {
         $match: buildRefundEventMatch({
@@ -1549,6 +1552,7 @@ async function GetRevenueSeries({
           _analyticsChannel: SALES_CHANNEL_EXPRESSION,
         },
       },
+      DEDUPLICATE_REFUNDS_STAGE,
       { $unwind: "$refunds" },
       {
         $match: buildRefundEventMatch({
