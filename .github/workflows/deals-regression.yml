@@ -10,8 +10,34 @@ concurrency:
   group: deals-regression-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  changes:
+    name: Select regression checks
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.paths.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          python3 - <<'PYTHON'
+          import os, re, subprocess
+          before = os.environ.get('BEFORE_SHA', '')
+          backend = True
+          if os.environ['EVENT_NAME'] == 'push' and re.fullmatch('[0-9a-f]{40}', before) and before != '0' * 40:
+              paths = subprocess.check_output(['git', 'diff', '--name-only', before, 'HEAD'], text=True).splitlines()
+              backend = any(not (path.startswith('server/IntegrationTests/Deals/') or path.startswith('docs/') or path == '.github/workflows/deals-regression.yml') for path in paths)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('backend=' + str(backend).lower() + '\n')
+          PYTHON
   backend:
     name: Complete backend regression
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -36,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
-          ref: ca4889e5b813fddcb3e2548d640d217a52331ca2
+          ref: 41d3b17b67b7b1621bdb43081b4330cb93b6d923
           path: client-storefront
       - uses: actions/setup-node@v4
         with:

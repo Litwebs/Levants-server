@@ -71,12 +71,15 @@ async function openBasket(creditBalance = 0) {
   await context.addInitScript(() => localStorage.setItem("portal-authenticated", "true"));
   page = await context.newPage();
   // The browser's actual client requests go to the actual Express API and Mongo
-  // replica set. Only external payment/geocoding/email transports are mocked.
+  // replica set. External payment, geocoding, email and site-status providers are mocked.
   await page.route("**/api/**", async route => {
     const request = route.request();
     const url = new URL(request.url());
+    if (url.hostname === "admin.litwebs.co.uk" && url.pathname === "/api/websites/status") {
+      return route.fulfill({ headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Content-Type" }, json: { data: { status: "live" } } });
+    }
     if (!url.pathname.startsWith("/api/")) return route.continue();
-    const incoming = request.headers();
+    const incoming = await request.allHeaders();
     const headers = {};
     for (const name of ["cookie", "authorization", "content-type", "accept"]) {
       if (incoming[name]) headers[name] = incoming[name];
