@@ -104,8 +104,8 @@ const refundAmountExpression = (field) => ({
     vars: {
       factor: { $switch: {
         branches: [
-          { case: { $in: [{ $toUpper: { $ifNull: [field + ".currency", { $ifNull: ["$currency", "GBP"] }] } }, ZERO_DECIMAL_CURRENCIES] }, then: 1 },
-          { case: { $in: [{ $toUpper: { $ifNull: [field + ".currency", { $ifNull: ["$currency", "GBP"] }] } }, ["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"]] }, then: 1000 },
+          { case: { $in: [{ $toUpper: { $ifNull: ["$currency", { $ifNull: [field + ".currency", "GBP"] }] } }, ZERO_DECIMAL_CURRENCIES] }, then: 1 },
+          { case: { $in: [{ $toUpper: { $ifNull: ["$currency", { $ifNull: [field + ".currency", "GBP"] }] } }, ["BHD", "IQD", "JOD", "KWD", "LYD", "OMR", "TND"]] }, then: 1000 },
         ],
         default: 100,
       } },

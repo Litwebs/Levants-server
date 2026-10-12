@@ -66,11 +66,11 @@ jobs:
         run: |
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]] || [[ -z "$BEFORE_SHA" ]] || [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
             echo "full=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BEFORE_SHA" HEAD -- server | grep -qv '^server/Tests/Deals/'; then
+          elif git diff --name-only "$BEFORE_SHA" HEAD -- server | grep -qvE '^server/(Tests/(Deals|Analytics)/|services/analytics.admin.service.js$|utils/analytics(Metric|NetRevenue).util.js$)'; then
             echo "full=true" >> "$GITHUB_OUTPUT"
           else
             echo "full=false" >> "$GITHUB_OUTPUT"
-            echo "Only deals tests changed; the dedicated Deals API job covers them."
+            echo "Only deals or analytics files changed; dedicated regression jobs cover them."
           fi
       - run: npm ci
         if: steps.scope.outputs.full == 'true'
