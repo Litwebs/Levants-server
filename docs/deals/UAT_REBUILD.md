@@ -1,6 +1,6 @@
 # Deals-only integration on UAT
 
-Base: `2265d0eb007279abdb2d72a540017b1df1baf616`. Previous branch preserved at `backup/deals-before-uat-rebuild-20261012`.
+Base: `c943bf6ceb6a2fd647534b95b021aaa2156fad51`. Previous branch preserved at `backup/deals-before-uat-rebuild-20261012`.
 
 Only backend deals changes are included. Existing frontend/admin client, workflows, scripts, package files, order models, analytics, subscription and delivery implementations come unchanged from UAT.
 
@@ -20,4 +20,10 @@ All other existing UAT files are unchanged. Catalog browsing is implemented in a
 
 All previous deals suites are restored in `server/Tests/Deals`, with a deals-only wrapper around UAT's test app and deals-only model initialization. Existing test files and shared test setup are unchanged. Coverage includes administration, publication, roles, images, indexes, catalog, stock, pricing modes, guest/customer checkout, store credit, claim tampering, stale claims, concurrent reservations, payment recovery, refunds and component restock replay.
 
-Four isolated pricing/image/schema/token-purpose suites passed locally (52 tests). Database-backed local verification is blocked by MongoDB aborting on this workspace's runtime; a draft PR uses existing backend CI without modifying workflows or deploying UAT. Initial hosted regression: 1,552 passed and one deals token-purpose assertion failed. A deals-only authentication guard corrects this without modifying UAT authentication; final hosted verification is running. The baseline has 164 suites / 1,354 tests, with 18 additional deals suites / 209 tests. No historical branch-wide results are used as proof for this rebuild.
+Hosted backend verification before the final UAT refresh passed **1,563 tests across 182 suites**: all **1,354 UAT tests / 164 suites**, plus **209 deals tests / 18 suites**. All suites passed; no tests were skipped. Tested code: `c2bd66f6b1a2417ce4022ba8c43544781c9a5b68`.
+
+[Backend verification run](https://github.com/Litwebs/Levants-server/actions/runs/38298704159).
+
+Local verification: 52 unit tests, 13 UAT safety tests, JavaScript syntax and a Git tree audit passed. The audit confirms 886 existing UAT files identical and only seven existing server files changed for deals integration; all additions are deals files. Database-backed local execution is blocked by MongoDB aborting in the workspace, so database tests were verified in hosted CI.
+
+The verification draft used the existing workflow without changing any workflow file. Its tested merge tree was identical to the feature head. Release-only Stripe/browser gates did not run in draft, so the overall release-gate check is red; the backend test job passed. No deployment or merge was performed by this work. The final refresh incorporates the subsequent UAT cancellation-presentation changes verbatim, including its new test suite. The deals implementation remains identical to the tested commit; the complete combined tree after this upstream refresh has not been rerun in hosted CI.

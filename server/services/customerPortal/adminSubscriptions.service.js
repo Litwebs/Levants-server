@@ -1,4 +1,5 @@
 "use strict";
+const { presentCancelledSubscriptionOrders } = require("../subscriptions/subscriptionOrderPresentation.service");
 
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
@@ -590,7 +591,7 @@ async function AdminGetSubscriptionOrders({
     .skip((page - 1) * pageSize)
     .limit(pageSize)
     .lean();
-  return Response(true, null, { orders, meta: { page, pageSize, total } });
+  return Response(true, null, { orders: await presentCancelledSubscriptionOrders(orders), meta: { page, pageSize, total } });
 }
 
 module.exports = {

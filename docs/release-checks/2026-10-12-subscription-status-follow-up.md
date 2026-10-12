@@ -34,3 +34,9 @@ An older schema that rejects that value must not be used as an automatic rollbac
 after new cancellations have been saved. Use a schema-compatible rollback or a
 forward fix; do not turn cancelled deliveries back into ordered records to satisfy
 an old enum.
+
+Legacy display compatibility is read-only: customer/admin order reads show a fully
+refunded ordered subscription order as cancelled only when its own linked slot is
+explicitly cancelled on the same London delivery date. Other fulfillment, mismatched
+slots and paid/partially refunded orders are preserved. Historical records are not
+rewritten by these read paths.
