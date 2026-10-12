@@ -7,6 +7,13 @@ jest.mock("../../Integration/google.geocode", () => ({
   geocodeAddress: jest.fn(async () => ({ lat: 53.79, lng: -1.75 })),
 }));
 
+jest.mock("../../Integration/emailTransport", () => ({
+  createEmailTransport: () => ({
+    emails: { send: jest.fn(async () => ({ data: { id: "mail_deals_fixture" } })) },
+    batch: { send: jest.fn(async () => ({ data: { data: [] } })) },
+  }),
+}));
+
 const app = require("../../Tests/Deals/helpers/testApp");
 const { createPackage } = require("../../Tests/Deals/helpers/dealFactory");
 const { createCustomer } = require("../../Tests/Orders/helpers/orderFactory");
@@ -21,6 +28,7 @@ const { HandlePaymentSuccess } = require("../../services/orders/orders.webhook.s
 jest.setTimeout(120000);
 let browser, apiServer, storefrontServer, apiOrigin, origin, context, page;
 const responses = [];
+const checkoutBodies = [];
 
 async function listen(serverApp) {
   const server = await new Promise(resolve => {
@@ -66,6 +74,7 @@ async function openBasket(creditBalance = 0) {
   customer.addresses = [{ line1: "1 Test Street", city: "Bradford", postcode: "BD1 1AA", country: "GB", isDefault: true }];
   await customer.save();
   responses.length = 0;
+  checkoutBodies.length = 0;
   context = await browser.newContext();
   await context.addCookies([{ name: "customerAccessToken", value: jwt.signCustomerAccessToken(customer), url: origin }]);
   await context.addInitScript(() => localStorage.setItem("portal-authenticated", "true"));
@@ -88,8 +97,10 @@ async function openBasket(creditBalance = 0) {
       method: request.method(), headers,
       body: ["GET", "HEAD"].includes(request.method()) ? undefined : request.postData(),
     });
+    const body = await response.text();
     responses.push([url.pathname, response.status]);
-    await route.fulfill({ status: response.status, contentType: "application/json", body: await response.text() });
+    if (url.pathname === "/api/portal/orders/checkout") checkoutBodies.push(JSON.parse(body));
+    await route.fulfill({ status: response.status, contentType: "application/json", body });
   });
   await page.route("https://cdn.test.com/**", route => route.fulfill({
     contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="green"/></svg>',
@@ -99,6 +110,7 @@ async function openBasket(creditBalance = 0) {
   const card = page.locator("#all-deals .card-product").filter({ has: page.getByRole("heading", { name: fixture.deal.name, exact: true }) });
   await browserExpect(card.getByText("Save £3.25", { exact: true })).toBeVisible();
   await card.getByRole("button", { name: "Add to basket", exact: true }).click();
+  await browserExpect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("levants-dairy-cart") || "{}").deals?.[0]?.quantity)).toBe(1);
   await page.goto(origin + "/checkout");
   await browserExpect(page.getByRole("button", { name: "Place Order - £12.50", exact: true })).toBeVisible();
   return { ...fixture, customer };
@@ -125,12 +137,15 @@ test.each([0, 500, 2000])("real storefront package checkout and fulfillment with
   await page.getByRole("button", { name: `Place Order - £${due.toFixed(2)}`, exact: true }).click();
   const result = await checkoutResponse;
   expect(result.status()).toBe(200);
-  const body = await result.json();
+  // Stripe navigation can discard Chrome’s old response-body handle. The bridge
+  // retains the exact API body delivered to that browser request.
+  const body = checkoutBodies.at(-1);
   let order = await Order.findById(body.data.orderId);
   expect(order).toMatchObject({ subtotal: 14.75, discountAmount: 3.25, total: 12.5, creditApplied: credit });
   expect(order.metadata.deals[0]).toMatchObject({ dealId: fixture.deal.id, packagePrice: 11.5, quantity: 1 });
   expect(order.items.map(item => item.quantity)).toEqual([2, 3]);
   if (due > 0) {
+    await browserExpect(page.getByRole("heading", { name: "Test payment transport" })).toBeVisible();
     expect(stripe.coupons.create).toHaveBeenCalledWith(expect.objectContaining({ amount_off: 325 + credit }));
     expect((await Customer.findById(fixture.customer.id)).creditBalance).toBe(creditBalance);
     const paid = { id: order.stripeCheckoutSessionId, payment_intent: `pi_${order.id}`, metadata: { orderId: order.id }, currency: "gbp", amount_subtotal: 1575, amount_total: 1250 - credit, total_details: { amount_discount: 325 + credit } };
