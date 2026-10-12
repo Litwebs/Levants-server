@@ -28,3 +28,9 @@ client editing policy, real Stripe/browser status cases, cancellation after paus
 and separate refunded payment/cancelled delivery display in admin and customer views.
 The latest exact-commit UAT and production storefront preparation runs are the
 authoritative evidence. Production merge/deployment still requires owner approval.
+
+Rollback compatibility: this change adds `cancelled` to Order.deliveryStatus.
+An older schema that rejects that value must not be used as an automatic rollback
+after new cancellations have been saved. Use a schema-compatible rollback or a
+forward fix; do not turn cancelled deliveries back into ordered records to satisfy
+an old enum.

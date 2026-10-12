@@ -1337,7 +1337,10 @@ test("scheduled cancellation notice remains visible through the final protected 
   await expect(
     page.getByText(/Subscription scheduled for cancellation/i),
   ).toHaveCount(0);
-  await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })
+      .locator("xpath=ancestor::div[3]").getByText("Cancelled", { exact: true }),
+  ).toBeVisible();
 
   const finalState = await getState(request, fixture.subscriptionId);
   expect(finalState.subscription.status).toBe("cancelled");
