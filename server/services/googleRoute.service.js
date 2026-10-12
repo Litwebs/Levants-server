@@ -4,7 +4,9 @@ const { GoogleAuth } = require("google-auth-library");
 
 const PROJECT_ID = process.env.GOOGLE_PROJECT_ID;
 
-const keyPath = path.resolve(
+const keyPath = process.env.APP_ENV === "uat"
+  ? "/etc/levants-uat/google-service-account.json"
+  : path.resolve(
   __dirname,
   "../keys/levan-487614-d7b7d1383186.json",
 );
@@ -21,6 +23,9 @@ async function getAccessToken() {
 }
 
 async function optimizeRoutes(requestBody) {
+  if (process.env.APP_ENV === "uat" && process.env.UAT_GOOGLE_MODE !== "enabled") {
+    throw Object.assign(new Error("Google integrations are disabled in UAT"), { statusCode: 503 });
+  }
   const accessToken = await getAccessToken();
 
   const response = await axios.post(

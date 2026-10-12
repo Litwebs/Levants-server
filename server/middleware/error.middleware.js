@@ -25,6 +25,7 @@ function errorHandler(err, req, res, next) {
   // Use simplified error shape across the API
   return sendErr(res, {
     statusCode: mapped.statusCode,
+    code: mapped.code,
     message: mapped.message,
     details: mapped.details,
   });

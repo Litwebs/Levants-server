@@ -293,6 +293,7 @@ async function HandleRefundFailed(refund) {
       stripeRefundId: refund.id,
       amountMinor: refund.amount,
       currency: refund.currency,
+      orderId: refund.metadata?.orderId,
     });
     return;
   }

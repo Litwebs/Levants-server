@@ -1,3 +1,4 @@
+const { retryTransientResponse } = require("../support/retry-transient-response");
 "use strict";
 
 const crypto = require("crypto");
@@ -212,7 +213,7 @@ test("one-time add-on charges once and changes only the upcoming delivery", asyn
     timeout: 60_000,
   });
   const retryBody = await expectSuccessfulResponse(retryResponse);
-  expect(retryBody.message).toMatch(/already paid/i);
+  expect(retryBody).toEqual(body);
 
   const after = await getState(request, fixture.subscriptionId);
   expect(subscriptionMutationSnapshot(after.subscription)).toEqual(
@@ -334,17 +335,14 @@ test("separate add-on purchases accumulate on one delivery and charge each opera
     data: secondPayload,
     timeout: 60_000,
   });
-  expect((await expectSuccessfulResponse(second)).data.chargedMinor).toBe(
-    secondChargeMinor,
-  );
+  const secondBody = await expectSuccessfulResponse(second);
+  expect(secondBody.data.chargedMinor).toBe(secondChargeMinor);
   const secondRetry = await request.post(endpoint, {
     headers: portalHeaders(token),
     data: secondPayload,
     timeout: 60_000,
   });
-  expect((await expectSuccessfulResponse(secondRetry)).message).toMatch(
-    /already paid/i,
-  );
+  expect(await expectSuccessfulResponse(secondRetry)).toEqual(secondBody);
 
   const after = await getState(request, fixture.subscriptionId);
   expect(subscriptionMutationSnapshot(after.subscription)).toEqual(
@@ -500,17 +498,19 @@ test("cut-off, paused-state, ownership, and payload guards reject add-ons withou
     funds: "sufficient",
   });
   const pausedToken = await login(request, pausedFixture.credentials);
-  const pausedResponse = await request.post(
+  const pausedOperationId = crypto.randomUUID();
+  const pausedResponse = await retryTransientResponse(() => request.post(
     `${API_ORIGIN}/api/portal/subscriptions/${pausedFixture.subscriptionId}/next-delivery/add-ons`,
     {
       headers: portalHeaders(pausedToken),
       data: {
-        operationId: crypto.randomUUID(),
+        operationId: pausedOperationId,
         items: [{ variantId: pausedFixture.variants.EGGS.id, quantity: 1 }],
       },
       timeout: 60_000,
     },
-  );
+  ), async response => response.status() === 409 &&
+    (await response.json()).data?.subscriptionBusy === true);
   expect(pausedResponse.status()).toBe(400);
   expect((await responseBody(pausedResponse)).message).toMatch(/active/i);
 
@@ -996,6 +996,14 @@ test("automatic resume charges a delivery whose prior invoice was fully refunded
       0,
     ),
   ).toBe(fixture.resumeRequiredMinor);
+  for (const intent of resumeCharges) {
+    const ledger = after.payments.filter(payment => payment.providerReference === intent.id);
+    expect.soft(ledger).toHaveLength(1);
+    expect.soft(ledger[0]?.status).toBe("paid");
+    expect.soft(Math.round(Number(ledger[0]?.amount || 0) * 100)).toBe(Number(intent.amountReceived));
+    expect.soft(after.orders.some(order => order.paymentAllocations?.some(allocation =>
+      allocation.source === "resume" && allocation.paymentIntentId === intent.id))).toBe(true);
+  }
   expect.soft(after.subscription.status).toBe("active");
   expect.soft(after.stripe.remoteSubscription.pauseCollection).toBeNull();
 });

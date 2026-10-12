@@ -327,6 +327,11 @@ const orderSchema = new mongoose.Schema(
       },
     },
 
+    subscriptionRefundPlan: { type: mongoose.Schema.Types.Mixed, default: null, select: false },
+    subscriptionStockItems: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    subscriptionAddOnStockItems: { type: [mongoose.Schema.Types.Mixed], default: [] },
+    subscriptionStockToRestore: { type: [mongoose.Schema.Types.Mixed], default: [] },
+
     refunds: {
       type: [
         new mongoose.Schema(
@@ -520,5 +525,6 @@ orderSchema.index(
   { "items.variant": 1, status: 1, paidAt: 1 },
   { name: "analytics_variant_status_paidAt" },
 );
+require("../utils/subscriptionLease.util").leaseFencingPlugin(orderSchema, { guardSubscriptionOrders: true });
 
 module.exports = mongoose.model("Order", orderSchema);

@@ -29,6 +29,9 @@ const Payment = require("../models/payment.model");
 const PaymentMethod = require("../models/paymentMethod.model");
 const CustomerNotification = require("../models/customerNotification.model");
 const SupportRequest = require("../models/supportRequest.model");
+const {
+  addCalendarMonthPreservingWeekdayOccurrence,
+} = require("../utils/subscriptionCadence.util");
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
@@ -270,14 +273,25 @@ async function main() {
       // Pre-create delivery slots for active subs
       if (status === "active") {
         const slots = [];
+        let scheduledDate = new Date(nextDelivery);
         for (let s = 0; s < 3; s++) {
-          const freqDays = { weekly: 7, every_two_weeks: 14, monthly: 30 }[frequency];
           slots.push({
             subscription: sub._id,
             customer: customer._id,
-            scheduledDate: addDays(nextDelivery, freqDays * s),
+            scheduledDate: new Date(scheduledDate),
             status: "scheduled",
           });
+          if (frequency === "monthly") {
+            scheduledDate = addCalendarMonthPreservingWeekdayOccurrence(
+              scheduledDate,
+              sub.preferredDeliveryDay,
+            );
+          } else {
+            scheduledDate = addDays(
+              scheduledDate,
+              frequency === "every_two_weeks" ? 14 : 7,
+            );
+          }
         }
         await SubscriptionDelivery.insertMany(slots);
       }

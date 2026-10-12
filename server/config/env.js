@@ -3,6 +3,8 @@ require("dotenv").config({
   quiet: true, // <- this suppresses that log line
 });
 
+require("./uatSafety").validateUatEnvironment();
+
 module.exports = {
   env: process.env.NODE_ENV,
   port: Number(process.env.PORT || 5000),

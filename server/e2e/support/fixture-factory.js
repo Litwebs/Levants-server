@@ -1,3 +1,4 @@
+const { retryTransientResponse } = require("./retry-transient-response");
 "use strict";
 
 const crypto = require("crypto");
@@ -6,12 +7,14 @@ const mongoose = require("mongoose");
 const Customer = require("../../models/customer.model");
 const Order = require("../../models/order.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
+const Payment = require("../../models/payment.model");
 const Product = require("../../models/product.model");
 const ProductVariant = require("../../models/variant.model");
 const Review = require("../../models/review.model");
 const StoreCreditTransaction = require("../../models/storeCreditTransaction.model");
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
+const InvoiceFulfillment = require("../../models/subscriptionInvoiceFulfillment.model");
 const SubscriptionSettings = require("../../models/subscriptionSettings.model");
 const passwordUtil = require("../../utils/password.util");
 const stripe = require("../../utils/stripe.util");
@@ -518,6 +521,7 @@ async function replaceDeliverySchedule({
 }) {
   await SubscriptionDelivery.deleteMany({ subscription: subscription._id });
   await Order.deleteMany({ subscription: subscription._id });
+  await InvoiceFulfillment.deleteMany({ subscription: subscription._id });
 
   subscription.nextDeliveryDate = config.dates[0];
   await subscription.save();
@@ -558,6 +562,11 @@ async function replaceDeliverySchedule({
       reservationExpiresAt: new Date(Date.now() + DAY_MS),
       stripePaymentIntentId: paymentIntentId,
       stripeInvoiceId: invoice.id,
+      // Match invoice fulfillment's delivery ledger. Several paid deliveries
+      // share this capture; each may refund only its own allocated total.
+      paymentAllocations: [{ paymentIntentId, stripeInvoiceId: invoice.id,
+        source: "subscription_invoice", amountMinor: Math.round(total * 100),
+        idempotencyKey: `fixture:${invoice.id}:${index}` }],
       paidAt: new Date(),
       amountPaid: total,
       orderType: "subscription_generated",
@@ -578,20 +587,46 @@ async function createFixture(options = {}) {
   const cadence = options.cadence || "weekly-single-day";
   const timing = options.timing || "before-cutoff";
   const config = cadenceConfig(cadence, timing);
-  if (options.portalCreationDays === true) {
-    // The customer creation form deliberately offers the business delivery
-    // days only. Keep UI fixtures deterministic instead of deriving an
-    // unsupported weekday from today's date.
+  const requestedDeliveryDays = Array.isArray(options.deliveryDays)
+    ? Array.from(
+        new Set(
+          options.deliveryDays
+            .map((day) => Number(day))
+            .filter(
+              (day) => Number.isInteger(day) && day >= 0 && day <= 6,
+            ),
+        ),
+      )
+    : [];
+
+  if (requestedDeliveryDays.length > 0) {
+    config.deliveryDays = requestedDeliveryDays;
+  } else if (options.portalCreationDays === true) {
+    // Keep the legacy UI creation fixture deterministic while allowing
+    // individual tests to supply different configured business delivery days.
     config.deliveryDays = [0, 3];
   }
+
+  const requestedCutoffDaysBefore = Number(options.cutoffDaysBefore);
+  const cutoffDaysBefore =
+    Number.isInteger(requestedCutoffDaysBefore) &&
+    requestedCutoffDaysBefore >= 0 &&
+    requestedCutoffDaysBefore <= 7
+      ? requestedCutoffDaysBefore
+      : 2;
+  const cutoffTime =
+    typeof options.cutoffTime === "string" &&
+    /^([01]\\d|2[0-3]):[0-5]\\d$/.test(options.cutoffTime)
+      ? options.cutoffTime
+      : "22:00";
 
   await SubscriptionSettings.findOneAndUpdate(
     { singletonKey: "subscription-settings" },
     {
       singletonKey: "subscription-settings",
       deliveryDays: config.deliveryDays,
-      cutoffDaysBefore: 2,
-      cutoffTime: "22:00",
+      cutoffDaysBefore,
+      cutoffTime,
     },
     { upsert: true, new: true },
   );
@@ -660,6 +695,7 @@ async function createFixture(options = {}) {
   let result;
   try {
     result = await subscriptionService.CreateSubscription({
+      operationId: crypto.randomUUID(),
       customerId: customerData.customer._id,
       frequency: config.frequency,
       preferredDeliveryDay: config.deliveryDays[0],
@@ -713,7 +749,7 @@ async function createFixture(options = {}) {
     });
     resumeFundingRefundId = refund.id;
   }
-  const createPaidOrders = options.lifecycle !== "resume";
+  const createPaidOrders = options.lifecycle !== "resume" || options.resumeRequiresPayment === true;
   const { deliveries, orders } = await replaceDeliverySchedule({
     subscription,
     config,
@@ -870,10 +906,23 @@ async function preparePaymentRetry(subscriptionId) {
   subscription.nextDeliveryDate = delivery.scheduledDate;
   await subscription.save();
 
-  return {
-    invoiceId: `in_e2e_retry_${fixture.scenarioId.replace(/[^a-z0-9]/gi, "")}`,
-    deliveryDate: delivery.scheduledDate,
-  };
+  const invoice = await stripe.invoices.create({
+    customer: fixture.stripeCustomerId, subscription: fixture.stripeSubscriptionId,
+    auto_advance: false, collection_method: "send_invoice", days_until_due: 7,
+  });
+  await stripe.invoiceItems.create({ customer: fixture.stripeCustomerId, invoice: invoice.id,
+    currency: "gbp", amount: Math.round((subscription.items.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity, 0) + 1) * 100),
+  });
+  await stripe.invoices.finalizeInvoice(invoice.id, { auto_advance: false });
+  const decliningMethod = await attachMethod(fixture.stripeCustomerId, DECLINING_METHOD);
+  try {
+    await stripe.invoices.pay(invoice.id, { payment_method: decliningMethod });
+    throw new Error("Expected retry fixture payment to decline");
+  } catch (error) {
+    if (error.type !== "StripeCardError") throw error;
+  }
+  return { invoiceId: invoice.id, deliveryDate: delivery.scheduledDate };
 }
 
 async function deliverSignedInvoiceEvent(subscriptionId, type, invoiceId) {
@@ -883,37 +932,30 @@ async function deliverSignedInvoiceEvent(subscriptionId, type, invoiceId) {
     throw new Error(`Unsupported E2E invoice event ${type}`);
   }
 
+  if (type === "invoice.payment_succeeded") {
+    const method = await attachMethod(fixture.stripeCustomerId, SUCCESS_METHOD);
+    const current = await stripe.invoices.retrieve(invoiceId);
+    if (!current.paid) await stripe.invoices.pay(invoiceId, { payment_method: method });
+  }
+  const invoice = await stripe.invoices.retrieve(invoiceId);
   const payload = JSON.stringify({
     id: `evt_e2e_${crypto.randomUUID().replace(/-/g, "")}`,
-    object: "event",
-    type,
-    data: {
-      object: {
-        id: invoiceId,
-        object: "invoice",
-        subscription: fixture.stripeSubscriptionId,
-        currency: "gbp",
-        ...(type === "invoice.payment_succeeded"
-          ? {
-              payment_intent: `pi_e2e_retry_${fixture.scenarioId.replace(/[^a-z0-9]/gi, "")}`,
-              status_transitions: { paid_at: Math.floor(Date.now() / 1000) },
-            }
-          : {}),
-      },
-    },
+    object: "event", type, data: { object: type === "invoice.payment_failed"
+      ? { ...invoice, status: "open", paid: false } : invoice },
   });
   const signature = stripe.webhooks.generateTestHeaderString({
     payload,
     secret: process.env.STRIPE_WEBHOOK_SECRET,
   });
-  const response = await fetch(`${API_ORIGIN}/api/webhooks/stripe`, {
+  const response = await retryTransientResponse(() => fetch(`${API_ORIGIN}/api/webhooks/stripe`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "stripe-signature": signature,
     },
     body: payload,
-  });
+  }), async response => response.status === 503 &&
+    (await response.clone().json()).error?.code === "SUBSCRIPTION_LIFECYCLE_BUSY");
   if (!response.ok) {
     throw new Error(
       `Signed ${type} delivery failed (${response.status}): ${await response.text()}`,
@@ -931,6 +973,15 @@ async function crossCutoff(subscriptionId) {
     if (fixture.cadence === "weekly-single-day") cutoffDaysBefore = 14;
     if (fixture.cadence === "fortnightly") cutoffDaysBefore = 21;
   }
+  if (fixture.cadence === "weekly-multi-day") {
+    // Lock exactly the first two fixture deliveries, even across London
+    // midnight. A fixed seven-day cutoff can also lock the third occurrence.
+    const { formatDateKeyInTimeZone } = require("../../utils/subscriptionCutoff.util");
+    const londonDay = date => Date.parse(`${formatDateKeyInTimeZone(date)}T00:00:00Z`);
+    cutoffDaysBefore = Math.max(0, Math.round(
+      (londonDay(new Date(fixture.deliveryDates[1])) - londonDay(new Date())) / DAY_MS,
+    ));
+  }
   await SubscriptionSettings.findOneAndUpdate(
     { singletonKey: "subscription-settings" },
     { cutoffDaysBefore, cutoffTime: "00:00" },
@@ -940,10 +991,12 @@ async function crossCutoff(subscriptionId) {
 }
 
 async function autoResume(subscriptionId) {
+  let subscriptionBusy = false;
   const resumed = await subscriptionService.AutoResumePausedSubscriptions({
     subscriptionId,
+    onError: error => { if (error.code === "SUBSCRIPTION_LIFECYCLE_BUSY") subscriptionBusy = true; },
   });
-  return { resumed };
+  return { resumed, subscriptionBusy };
 }
 
 async function finalizeCancellation(subscriptionId, referenceDate) {
@@ -1029,7 +1082,7 @@ async function stripeState(subscription, customer) {
 async function getState(subscriptionId) {
   const subscription = await Subscription.findById(subscriptionId).lean();
   if (!subscription) throw new Error("Subscription fixture not found");
-  const [customer, deliveries, orders, credits] = await Promise.all([
+  const [customer, deliveries, orders, credits, payments] = await Promise.all([
     Customer.findById(subscription.customer).lean(),
     SubscriptionDelivery.find({ subscription: subscription._id })
       .sort({ scheduledDate: 1 })
@@ -1040,6 +1093,7 @@ async function getState(subscriptionId) {
     StoreCreditTransaction.find({ subscription: subscription._id })
       .sort({ createdAt: 1 })
       .lean(),
+    Payment.find({ subscription: subscription._id }).sort({ createdAt: 1 }).lean(),
   ]);
   const remote = await stripeState(subscription, customer);
 
@@ -1054,6 +1108,7 @@ async function getState(subscriptionId) {
       deliveries,
       orders,
       credits,
+      payments,
       stripe: remote,
     }),
   );

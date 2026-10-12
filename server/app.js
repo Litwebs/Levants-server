@@ -93,10 +93,9 @@ app.use(
         ],
         fontSrc: ["'self'", "https:", "data:"],
         connectSrc: [
-          // "'self'",
-          "https://levantsdairy.co.uk",
-          "https://api.levantsdairy.co.uk",
-          "http://localhost:8080",
+          ...(process.env.APP_ENV === "uat"
+            ? ["'self'", ...allowedOrigins]
+            : ["https://levantsdairy.co.uk", "https://api.levantsdairy.co.uk", "http://localhost:8080"]),
         ],
         objectSrc: ["'none'"],
         frameAncestors: ["'self'"],
@@ -106,7 +105,7 @@ app.use(
   }),
 );
 
-if (env === "development") {
+if (env === "development" || process.env.APP_ENV === "uat") {
   // CORS (enabled for both dev and prod with explicit allowed origins)
   app.use(
     cors({
@@ -147,9 +146,11 @@ app.use(
     await seedBusinessInfo();
 
     // ⏰ START CRON JOBS
-    startOrderExpirationCron();
-    startInvitationCleanupCron();
-    startSubscriptionGenerationCron();
+    if (process.env.BACKGROUND_JOBS_ENABLED !== "false") {
+      startOrderExpirationCron();
+      startInvitationCleanupCron();
+      startSubscriptionGenerationCron();
+    }
   } catch (err) {
     logger.error("Startup failed", err);
     process.exit(1);
@@ -161,6 +162,9 @@ app.get("/health", (req, res) => {
   return sendOk(res, {
     message: "API is healthy",
     env,
+    deploymentEnvironment: process.env.APP_ENV || env,
+    release: process.env.RELEASE_SHA || null,
+    ...(process.env.APP_ENV === "uat" ? { backgroundJobsEnabled: process.env.BACKGROUND_JOBS_ENABLED === "true" } : {}),
     timestamp: new Date().toISOString(),
   });
 });

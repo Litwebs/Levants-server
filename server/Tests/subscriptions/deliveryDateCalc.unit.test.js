@@ -4,16 +4,25 @@ const {
   calculateNextDeliveryDate,
   addFrequencyDays,
 } = require("../../services/customerPortal/customerSubscriptions.service");
+const {
+  formatDateKeyInTimeZone,
+  weekdayInTimeZone,
+  zonedDateTimeToUtc,
+} = require("../../utils/subscriptionCutoff.util");
 
-// Helper: return the day-of-week (0=Sun … 6=Sat) for a Date
-const dow = (d) => new Date(d).getDay();
+const BUSINESS_TZ = "Europe/London";
+const dow = (value) => weekdayInTimeZone(value, BUSINESS_TZ);
 
-// Helper: create a Date at midnight UTC for a given ISO date string
 const day = (iso) => {
-  const d = new Date(`${iso}T00:00:00.000Z`);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  const [year, month, date] = iso.split("-").map(Number);
+  return zonedDateTimeToUtc(
+    { year, month, day: date, hour: 0, minute: 0, second: 0 },
+    BUSINESS_TZ,
+  );
 };
+
+const localDateParts = (value) =>
+  formatDateKeyInTimeZone(value, BUSINESS_TZ).split("-").map(Number);
 
 describe("calculateNextDeliveryDate — SUB-MULTI-14", () => {
   // Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6
@@ -37,7 +46,7 @@ describe("calculateNextDeliveryDate — SUB-MULTI-14", () => {
 
   it("skips today even when today matches a selected day (distance 0 becomes 7)", () => {
     // Today = Sunday (0), which is one of the selected days; distance 0 → 7
-    // Wed distance = (3-0+7)%7 = 3, so nearest is Wednesday
+    // Wed distance = (3-0+7)%7=3, so nearest is Wednesday
     const sunday = day("2026-07-26"); // 2026-07-26 is a Sunday
     const result = calculateNextDeliveryDate(0, "weekly", sunday, [0, 3]);
     expect(dow(result)).toBe(3); // Wednesday, not today's Sunday
@@ -91,11 +100,26 @@ describe("addFrequencyDays — SUB-MULTI-15 recurring cadence", () => {
     expect(diff).toBe(14);
   });
 
-  it("monthly steps exactly 30 days", () => {
-    const start = day("2026-07-01");
-    const next = addFrequencyDays(start, "monthly", [0]);
-    const diff = Math.round((next.getTime() - start.getTime()) / 86_400_000);
-    expect(diff).toBe(30);
+  it("monthly advances by one calendar month and preserves the selected weekday occurrence", () => {
+    const firstWednesday = day("2026-07-01");
+    const august = addFrequencyDays(firstWednesday, "monthly", [3]);
+    const september = addFrequencyDays(august, "monthly", [3]);
+
+    expect(dow(august)).toBe(3);
+    expect(dow(september)).toBe(3);
+    expect(localDateParts(august)).toEqual([2026, 8, 5]);
+    expect(localDateParts(september)).toEqual([2026, 9, 2]);
+  });
+
+  it("monthly last-week cadence stays on the last selected weekday through February", () => {
+    const lastSunday = day("2027-01-31");
+    const february = addFrequencyDays(lastSunday, "monthly", [0]);
+    const march = addFrequencyDays(february, "monthly", [0]);
+
+    expect(localDateParts(february)).toEqual([2027, 2, 28]);
+    expect(localDateParts(march)).toEqual([2027, 3, 28]);
+    expect(dow(february)).toBe(0);
+    expect(dow(march)).toBe(0);
   });
 
   it("generates a continuous weekly multi-day cadence over a full week", () => {
@@ -107,4 +131,15 @@ describe("addFrequencyDays — SUB-MULTI-15 recurring cadence", () => {
       expect(dow(current)).toBe(expected);
     }
   });
+  it("steps by business calendar days across the spring DST change", () => {
+    const start = day("2026-03-29");
+    const next = addFrequencyDays(start, "weekly", [0]);
+
+    expect(formatDateKeyInTimeZone(next, BUSINESS_TZ)).toBe("2026-04-05");
+    expect(dow(next)).toBe(0);
+    // The week contains the spring clock change, so it is 167 elapsed hours,
+    // not a hard-coded 168-hour duration.
+    expect((next.getTime() - start.getTime()) / 3_600_000).toBe(167);
+  });
+
 });

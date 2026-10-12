@@ -1,0 +1,119 @@
+name: Real Stripe and browser integration tests
+on:
+  workflow_call:
+    secrets:
+      STRIPE_TEST_SECRET_KEY:
+        required: true
+      STRIPE_TEST_PUBLISHABLE_KEY:
+        required: true
+      PORTAL_CLIENT_READ_TOKEN:
+        required: false
+permissions:
+  contents: read
+jobs:
+  subscription-e2e:
+    name: Subscription E2E (Stripe test mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+      STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
+      JWT_ACCESS_SECRET: ci-only-subscription-access-secret
+      JWT_REFRESH_SECRET: ci-only-subscription-refresh-secret
+      STRIPE_DEFAULT_CURRENCY: GBP
+      TZ: Europe/London
+      E2E_CLIENT_DIR: ${{ github.workspace }}/portal-client
+    steps:
+      - name: Checkout exact server PR merge
+        uses: actions/checkout@v4
+
+      - name: Read pinned customer portal commit
+        id: portal-ref
+        run: |
+          python3 - <<'PYTHON'
+          import json, os, re
+          pin = json.load(open('deployment/uat/portal.json'))
+          assert pin['repository'] == 'Litwebs/Levants-client'
+          assert re.fullmatch('[0-9a-f]{40}', pin['sha'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('sha=' + pin['sha'] + '\n')
+              output.write('ref=' + pin['sha'] + '\n')
+          PYTHON
+
+      - name: Checkout exact customer portal commit
+        uses: actions/checkout@v4
+        with:
+          repository: Litwebs/Levants-client
+          token: ${{ secrets.PORTAL_CLIENT_READ_TOKEN || github.token }}
+          ref: ${{ steps.portal-ref.outputs.sha }}
+          path: portal-client
+
+      - name: Record exact release-gate SHAs
+        shell: bash
+        run: |
+          set -euo pipefail
+          server_sha="$(git rev-parse HEAD)"
+          portal_sha="$(git -C portal-client rev-parse HEAD)"
+
+          test "$portal_sha" = "${{ steps.portal-ref.outputs.sha }}"
+
+          {
+            echo "### Production release gate"
+            echo "- Server merge SHA: $server_sha"
+            echo "- Customer portal ref: ${{ steps.portal-ref.outputs.ref }}"
+            echo "- Customer portal SHA: $portal_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require Stripe test-mode secrets
+        shell: bash
+        run: |
+          [[ "$STRIPE_SECRET_KEY" == sk_test_* ]]
+          [[ "$STRIPE_PUBLISHABLE_KEY" == pk_test_* ]]
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+            portal-client/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Install customer portal dependencies
+        working-directory: portal-client
+        run: npm ci
+
+      - name: Install admin client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: server
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Stripe CLI
+        run: |
+          curl -s https://packages.stripe.dev/api/security/keypair/stripe-cli-gpg/public | gpg --dearmor | sudo tee /usr/share/keyrings/stripe.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/stripe.gpg] https://packages.stripe.dev/stripe-cli-debian-local stable main" | sudo tee /etc/apt/sources.list.d/stripe.list
+          sudo apt-get update
+          sudo apt-get install -y stripe
+
+      - name: Run all subscription and signed-webhook E2E tests
+        working-directory: server
+        run: npm run test:e2e:subscriptions:ci
+
+      - name: Store E2E diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: subscription-e2e-diagnostics
+          path: |
+            server/playwright-report
+            server/test-results/playwright
+          if-no-files-found: ignore
+          retention-days: 7

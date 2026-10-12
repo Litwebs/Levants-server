@@ -145,6 +145,7 @@ const OrderDetailContent = ({
     canRefundPermission &&
     Boolean(selectedOrder?.id) &&
     !selectedOrder?.isManualImport &&
+    !selectedOrder?.isSubscriptionGenerated &&
     !isAlreadyRefunded &&
     !isRefundPending;
 
@@ -295,6 +296,9 @@ const OrderDetailContent = ({
         >
           {isPaid ? "Mark Unpaid" : "Mark Paid"}
         </Button>
+      ) : null}
+      {canRefundPermission && selectedOrder?.isSubscriptionGenerated ? (
+        <span>Use subscription cancellation or item adjustments to refund this delivery.</span>
       ) : null}
       {canRefundPermission ? (
         <Button

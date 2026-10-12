@@ -15,11 +15,15 @@ function buildAddressString(address) {
 }
 
 async function geocodeAddress(address) {
+  if (process.env.APP_ENV === "uat" && process.env.UAT_GOOGLE_MODE !== "enabled") {
+    throw Object.assign(new Error("Google integrations are disabled in UAT"), { statusCode: 503 });
+  }
   const fullAddress = buildAddressString(address);
 
   const { data } = await axios.get(
     "https://maps.googleapis.com/maps/api/geocode/json",
     {
+      ...(process.env.APP_ENV === "uat" ? { timeout: 20000 } : {}),
       params: {
         address: fullAddress,
         key: GOOGLE_API_KEY,

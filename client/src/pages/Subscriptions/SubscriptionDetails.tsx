@@ -27,6 +27,7 @@ import {
   Trash2,
 } from "lucide-react";
 import styles from "./SubscriptionDetails.module.css";
+import { buildSubscriptionSettingsPatch } from "./subscriptionSettingsPatch";
 
 const DAY_OPTIONS = [
   { value: "0", label: "Sunday" },
@@ -223,10 +224,9 @@ export default function SubscriptionDetailsPage() {
   const hasFormChanges = useMemo(() => {
     if (!subscription || subscription.isPendingSetup) return false;
     return (
-      frequency !== subscription.frequency ||
-      Number(preferredDeliveryDay) !==
-        Number(subscription.preferredDeliveryDay) ||
-      notes.trim() !== String(subscription.notes || "").trim() ||
+      Object.keys(buildSubscriptionSettingsPatch(subscription, {
+        frequency, preferredDeliveryDay, notes,
+      })).length > 0 ||
       statusDraft !== subscription.status
     );
   }, [frequency, preferredDeliveryDay, notes, statusDraft, subscription]);
@@ -424,25 +424,29 @@ export default function SubscriptionDetailsPage() {
     try {
       let next = subscription;
 
-      const hasSettingsChanges =
-        frequency !== subscription.frequency ||
-        Number(preferredDeliveryDay) !==
-          Number(subscription.preferredDeliveryDay) ||
-        notes.trim() !== String(subscription.notes || "").trim();
+      const settingsPatch = buildSubscriptionSettingsPatch(subscription, {
+        frequency, preferredDeliveryDay, notes,
+      });
 
-      if (hasSettingsChanges) {
-        next = await updateSubscription(subscription._id, {
-          frequency,
-          preferredDeliveryDay: Number(preferredDeliveryDay),
-          notes: notes.trim() || null,
-        });
+      if (Object.keys(settingsPatch).length > 0) {
+        next = await updateSubscription(
+          subscription._id,
+          settingsPatch,
+          Number(subscription.customerVersion || 0),
+        );
       }
 
       if (statusDraft !== next.status) {
         if (statusDraft === "paused" && next.status === "active") {
-          next = await pauseSubscription(next._id);
+          next = await pauseSubscription(
+            next._id,
+            Number(next.customerVersion || 0),
+          );
         } else if (statusDraft === "active" && next.status === "paused") {
-          next = await resumeSubscription(next._id);
+          next = await resumeSubscription(
+            next._id,
+            Number(next.customerVersion || 0),
+          );
         }
       }
 
@@ -478,6 +482,7 @@ export default function SubscriptionDetailsPage() {
       const next = await cancelSubscription(
         subscription._id,
         cancelModalReason.trim() || undefined,
+        Number(subscription.customerVersion || 0),
       );
       applySubscriptionPatch(next);
       setCancelModalReason("");
@@ -588,7 +593,9 @@ export default function SubscriptionDetailsPage() {
           <div className={styles.summaryValue}>
             {isPendingSetup
               ? "Awaiting setup"
-              : formatDate(subscription.nextDeliveryDate)}
+              : subscription.status === "cancelled"
+                ? "None scheduled"
+                : formatDate(subscription.nextDeliveryDate)}
           </div>
         </Card>
 
@@ -1295,6 +1302,15 @@ export default function SubscriptionDetailsPage() {
                     <td>
                       {String(row.currency || "GBP").toUpperCase()}{" "}
                       {Number(row.amount || 0).toFixed(2)}
+                      {row.orderSettlement && (
+                        <div>
+                          Order collected {Number(row.orderSettlement.capturedAmount).toFixed(2)}
+                          {" · "}Card refunded {Number(row.orderSettlement.refundedAmount).toFixed(2)}
+                          {row.orderSettlement.creditedAmount > 0 && <> · Credit {Number(row.orderSettlement.creditedAmount).toFixed(2)}</>}
+                          {" · "}Order remaining paid {Number(row.orderSettlement.netAmount).toFixed(2)}
+                          {row.orderSettlement.reconciliationRequired && <div>Historical settlement details need reconciliation.</div>}
+                        </div>
+                      )}
                     </td>
                     <td>{row.providerReference || "-"}</td>
                     <td>{formatDate(row.paidAt || row.createdAt)}</td>

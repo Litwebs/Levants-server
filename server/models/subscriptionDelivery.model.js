@@ -120,12 +120,19 @@ subscriptionDeliverySchema.index(
   { unique: true },
 );
 subscriptionDeliverySchema.index({ scheduledDate: 1, status: 1 });
+subscriptionDeliverySchema.index({
+  subscription: 1,
+  status: 1,
+  scheduledDate: 1,
+});
 
 subscriptionDeliverySchema.method("toJSON", function () {
   const obj = this.toObject();
   delete obj.__v;
   return obj;
 });
+
+require("../utils/subscriptionLease.util").leaseFencingPlugin(subscriptionDeliverySchema);
 
 module.exports = mongoose.model(
   "SubscriptionDelivery",
