@@ -81,15 +81,35 @@ See `server/Tests/Deals/README.md` for suite ownership and commands.
 
 ## Validation
 
-- All 590 existing backend JavaScript files parsed successfully before new tests.
-- Local admin typecheck passed after the UAT merge.
-- Hosted admin release checks passed on `17ae89de55b2f82f0499f86215684406fdd2dd16`: 20 Vitest tests across three suites (18 deals tests plus two modal regressions),
-  typechecking, lint (0 errors, 335 legacy warnings), production build, analytics
-  checks, map/CSP checks and 12 subscription-settings regression cases.
-- All 19 deals schema unit assertions passed locally without the database setup.
-- Backend hosted CI results are recorded after execution.
-- Local MongoDB 8 aborted in CPU discovery and MongoDB 7 aborted in partition-cache
-  initialization before any database tests ran. Those are execution-environment
-  failures, not passing or failing application assertions.
-- `Deals regression` runs the full backend test suite and admin release checks on
-  `feature/deals`; it does not deploy this branch or contact live Stripe/email.
+Final tested code commit: `ceb209f31a33dfdbcff8668b7d042151394544d0`.
+Green verification run: https://github.com/Litwebs/Levants-server/actions/runs/38269859659
+
+| Check | Result |
+|---|---|
+| Deals backend API/service/database suites | 142 tests passed across 11 suites, including 79 additional backend cases. |
+| Admin Vitest suites | 20 tests passed across three suites: 18 deals tests (including 10 new preview-maths cases) and two modal regressions. |
+| Admin release checks | Typechecking, production build and lint passed; lint has 0 errors and 335 legacy warnings. Existing map/CSP, analytics and 12 subscription-settings checks also passed. |
+| Analytics after UAT integration fixes | All 196 tests passed across 60 suites. An additional regression preserves separate sale/refund event dates for net subscription settlements. |
+| Initial full backend merge run | 238 suites passed; one analytics suite had five failures, out of 239 suites / 1,700 tests. The affected suite and all other analytics suites passed after the fixes below. |
+| Browser / real Stripe | Not run for this paired feature: customer branch selection and outdated admin browser selectors/actions still require work. |
+
+The full merge run exposed financial differences between UAT and the newer
+feature-branch analytics. The merge follow-up restores UAT's subscription net
+settlement semantics, deduplicates successful refund ledger entries, handles
+legacy currency defaults using the order's currency, and preserves the newer
+sale/refund event-date reporting. All analytics suites were rerun after the final
+fix; the unrelated backend suites passed in the earlier full run. A complete
+full-backend run was not repeated on the final currency-only revision.
+
+The change adds 89 deals test cases (79 backend plus 10 admin preview cases),
+refreshes the eight existing admin component scenarios, and adds one analytics
+merge regression. Existing deals tests remain in place.
+
+Local MongoDB 8 aborted in CPU discovery and MongoDB 7 aborted in partition-cache
+initialization before database assertions ran. The database-backed pass counts
+above are from GitHub-hosted runners using the real isolated test replica set.
+
+`Deals regression` exposes dedicated Deals API, analytics and admin checks.
+Broader backend changes and manual runs also execute the full backend suite;
+deals-test-only or narrowly scoped analytics changes use their complete dedicated
+suites. No run deploys this branch or contacts live Stripe/email.

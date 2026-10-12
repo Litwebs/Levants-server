@@ -32,6 +32,7 @@ providers. The Playwright `e2e/portal-subscriptions/deals.spec.js` tests browser
 and real Stripe test-mode payments; those are separate verification levels.
 
 The `Deals regression` Actions workflow exposes a dedicated Deals API check and admin release checks on pushes to
-`feature/deals`. Backend code or other backend test changes also run all backend
+`feature/deals`. Broader backend code or test changes also run all backend
 regressions; manual runs always run the full suite. Deals-test-only changes use the
-dedicated API job. The workflow does not deploy the branch.
+dedicated API job, and narrowly scoped analytics changes use the complete analytics
+regression job. The workflow does not deploy the branch.
