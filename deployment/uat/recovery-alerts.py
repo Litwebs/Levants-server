@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Configure UAT only, or verify one synthetic recovery alert in an isolated DB."""
-import fcntl,json,os,re,secrets,subprocess,sys,urllib.parse,urllib.request
+import fcntl,grp,json,os,re,secrets,stat,subprocess,sys,urllib.parse,urllib.request
 from pathlib import Path
 ROOT=Path('/srv/levants-uat'); CONFIG=Path('/etc/levants-uat/api.env')
 report={'uatOnly':True,'completed':False}; clone=None; owned=False; stage='guards'
@@ -25,7 +25,8 @@ try:
     phase,sha,recipient=sys.argv[1:]
     if phase not in {'configure','verify'} or not re.fullmatch('[0-9a-f]{40}',sha) or len(recipient)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',recipient): raise RuntimeError('arguments_guard')
     lock=open('/run/lock/levants-uat-deploy.lock','a');fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-    if CONFIG.is_symlink() or CONFIG.stat().st_uid!=0 or CONFIG.stat().st_mode&0o077: raise RuntimeError('configuration_guard')
+    meta=CONFIG.stat(); mode=stat.S_IMODE(meta.st_mode)
+    if CONFIG.is_symlink() or meta.st_uid!=0 or mode not in {0o600,0o640} or (mode==0o640 and meta.st_gid!=grp.getgrnam('levants-uat').gr_gid): raise RuntimeError('configuration_guard')
     original=CONFIG.read_text(); values=parse_env(original)
     source=urllib.parse.urlsplit(values.get('MONGO_URI',''))
     if values.get('APP_ENV')!='uat' or source.hostname!='127.0.0.1' or source.port!=27018 or source.path!='/levants_uat' or not values.get('STRIPE_SECRET_KEY','').startswith('sk_test_'): raise RuntimeError('configuration_guard')
@@ -41,6 +42,7 @@ try:
             lines += [key+'='+json.dumps(value) for key,value in updates.items()]
             temp=CONFIG.parent/('api.recovery-'+secrets.token_hex(8)+'.env')
             fd=os.open(temp,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            os.fchown(fd,meta.st_uid,meta.st_gid);os.fchmod(fd,mode)
             with os.fdopen(fd,'w') as file: file.write('\n'.join(lines)+'\n')
             os.replace(temp,CONFIG)
         report.update({'completed':True,'configured':True,'restartDeferredToGatedUatDeployment':True})
