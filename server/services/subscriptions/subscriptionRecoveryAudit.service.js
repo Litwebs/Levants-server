@@ -26,7 +26,7 @@ async function auditUnresolvedSubscriptionOperations({ now = Date.now() } = {}) 
   ]);
   const report = { mutations, invoices, customersWithCardRecovery: cards, resumes, agedInventoryHolds: inventory };
   const count = Object.values(report).reduce((sum, entries) => sum + entries.length, 0);
-  if (count) logger.error("[SubscriptionRecovery] Unresolved operations require review with the recovery command", report);
+  if (count) logger.error("[SubscriptionRecovery] Unresolved operations require review with the recovery command", JSON.stringify(report));
   return { count, ...report };
 }
 module.exports = { auditUnresolvedSubscriptionOperations };
