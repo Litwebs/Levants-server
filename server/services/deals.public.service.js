@@ -1,3 +1,4 @@
+const { calculateDealPricing, publishedDealFilter } = require("../utils/dealPricing.util");
 const Deal = require("../models/deal.model");
 
 function activeWindowFilter(now = new Date()) {
@@ -5,6 +6,7 @@ function activeWindowFilter(now = new Date()) {
     isActive: true,
     archivedAt: null,
     $and: [
+      publishedDealFilter(),
       { $or: [{ startsAt: null }, { startsAt: { $exists: false } }, { startsAt: { $lte: now } }] },
       { $or: [{ endsAt: null }, { endsAt: { $exists: false } }, { endsAt: { $gt: now } }] },
     ],
@@ -89,10 +91,9 @@ function mapPublicDeal(deal) {
 
   if (!Number.isFinite(maxPackages)) return null;
 
-  const packagePrice = Number(deal.packagePrice || 0);
-  const savings = originalValue - packagePrice;
-
-  if (packagePrice <= 0 || savings <= 0) return null;
+  const pricing = calculateDealPricing(deal, originalValue);
+  if (!pricing.success) return null;
+  const { packagePrice, savings } = pricing.data;
 
   const fallbackImage =
     items.find((item) => item.variant.thumbnailImage?.url)?.variant.thumbnailImage
@@ -112,6 +113,8 @@ function mapPublicDeal(deal) {
     savings: Number(savings.toFixed(2)),
     savingsPercent: Math.round((savings / originalValue) * 100),
     currency: deal.currency || "GBP",
+    pricingMode: deal.pricingMode || "fixed_price",
+    savingValue: deal.savingValue ?? null,
     isFeatured: Boolean(deal.isFeatured),
     startsAt: deal.startsAt || null,
     endsAt: deal.endsAt || null,
@@ -283,7 +286,9 @@ async function validateDealsForOrder({ dealClaims, resolvedItems, session }) {
       originalValuePerPackage += livePrice * quantityPerPackage;
     }
 
-    const packagePrice = Number(deal.packagePrice || 0);
+    const pricing = calculateDealPricing(deal, originalValuePerPackage);
+    if (!pricing.success) return { success: false, message: "This deal price is no longer valid" };
+    const packagePrice = pricing.data.packagePrice;
     if (
       Math.round(packagePrice * 100) !==
       Math.round(claim.expectedPackagePrice * 100)
@@ -310,6 +315,8 @@ async function validateDealsForOrder({ dealClaims, resolvedItems, session }) {
       name: deal.name,
       slug: deal.slug,
       quantity: claim.quantity,
+      pricingMode: deal.pricingMode || "fixed_price",
+      savingValue: deal.savingValue ?? null,
       packagePrice: Number(packagePrice.toFixed(2)),
       originalValue: Number(originalValuePerPackage.toFixed(2)),
       saving: Number(savingPerPackage.toFixed(2)),

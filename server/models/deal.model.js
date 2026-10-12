@@ -49,13 +49,18 @@ const dealSchema = new mongoose.Schema(
       type: [dealItemSchema],
       required: true,
       validate: {
-        validator: (items) => Array.isArray(items) && items.length > 0,
+        validator: function (items) { return this.publicationStatus === "draft" || (Array.isArray(items) && items.length > 0); },
         message: "A deal must contain at least one item",
       },
     },
+    publicationStatus: { type: String, enum: ["draft", "published"], default: "published", index: true },
+    publishedAt: { type: Date, default: null },
+    publishedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    pricingMode: { type: String, enum: ["fixed_price", "fixed_saving", "percentage_saving"], default: "fixed_price" },
+    savingValue: { type: Number, default: null, min: 0.01 },
     packagePrice: {
       type: Number,
-      required: true,
+      required: function () { return this.publicationStatus !== "draft" && this.pricingMode === "fixed_price"; },
       min: 0.01,
     },
     currency: {

@@ -5,6 +5,11 @@ seeded roles and business information, and mocked Stripe/email provider boundary
 No test reads or writes the production database.
 
 | Concern | Suite |
+| Draft, publication, legacy compatibility and permission boundaries | `deals.publication.e2e.test.js` |
+| Defined savings arithmetic and rounding | `deals.pricing.unit.test.js` |
+| Live savings modes through preview and checkout | `deals.savings-pricing.e2e.test.js` |
+| Package refunds, historical snapshots and payment recovery | `deals.refunds-recovery.e2e.test.js` |
+| Store-credit compensation on failed settlement | `deals.credit-compensation.e2e.test.js` |
 |---|---|
 | Admin lifecycle and publication windows | `deals.lifecycle.test.js` |
 | Admin edits, filtering, search, sorting and pagination | `deals.admin-management.service.test.js` |

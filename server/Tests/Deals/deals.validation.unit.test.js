@@ -28,7 +28,7 @@ describe("Deals / request schemas", () => {
   test("list filters normalise query strings", () => {
     expect(listDealsQuerySchema.validate({ page: "2", pageSize: "100", featured: "false", search: " milk " }).value).toEqual({ page: 2, pageSize: 100, featured: false, search: "milk" });
   });
-  test.each([{ page: 0 }, { pageSize: 101 }, { sort: "invalid" }, { status: "published" }])("unsupported list filter %j is rejected", query => {
+  test.each([{ page: 0 }, { pageSize: 101 }, { sort: "invalid" }, { status: "invalid" }])("unsupported list filter %j is rejected", query => {
     expect(listDealsQuerySchema.validate(query).error).toBeDefined();
   });
   test("catalog defaults browse without filtering available stock", () => {

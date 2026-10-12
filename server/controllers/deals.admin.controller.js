@@ -86,7 +86,17 @@ const ArchiveDeal = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const lifecycleController = (method) => async (req, res) => {
+  const result = await service[method]({ dealId: req.params.dealId, userId: req.user?._id });
+  if (!result.success) return sendErr(res, { statusCode: result.statusCode || 400, message: result.message });
+  return sendOk(res, result.data);
+};
+const PublishDeal = lifecycleController("publishDeal");
+const UnpublishDeal = lifecycleController("unpublishDeal");
+
 module.exports = {
+  PublishDeal,
+  UnpublishDeal,
   CreateDeal,
   ListDeals,
   GetDeal,

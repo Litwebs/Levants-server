@@ -1,3 +1,4 @@
+const { calculateDealPricing, publishedDealFilter } = require("../utils/dealPricing.util");
 const sharp = require("sharp");
 const File = require("../models/file.model");
 const Deal = require("../models/deal.model");
@@ -189,7 +190,8 @@ async function resolveItems(items) {
 
 function mapDeal(deal, resolution) {
   const originalValue = resolution?.originalValue ?? 0;
-  const packagePrice = Number(deal.packagePrice || 0);
+  const pricing = calculateDealPricing(deal, originalValue);
+  const packagePrice = pricing.success ? pricing.data.packagePrice : Number(deal.packagePrice || 0);
   const savings = Math.max(0, originalValue - packagePrice);
   const savingsPercent =
     originalValue > 0 ? Math.round((savings / originalValue) * 100) : 0;
@@ -203,6 +205,8 @@ function mapDeal(deal, resolution) {
 
   return {
     ...deal,
+    publicationStatus: deal.publicationStatus || "published",
+    pricingMode: deal.pricingMode || "fixed_price",
     originalValue,
     savings: Number(savings.toFixed(2)),
     savingsPercent,
@@ -263,18 +267,18 @@ async function createDeal({ body, userId }) {
     };
   }
 
-  const resolution = await resolveItems(body.items);
+  const draft = body.publicationStatus === "draft";
+  const resolution = await resolveItems(body.items || []);
   if (!resolution.success) return resolution;
 
-  const packagePrice = Number(body.packagePrice);
-  if (packagePrice >= resolution.data.originalValue) {
-    return {
-      success: false,
-      statusCode: 400,
-      message:
-        "Package price must be lower than the current combined product value",
-    };
-  }
+  const pricingMode = body.pricingMode || "fixed_price";
+  const pricing = calculateDealPricing({ ...body, pricingMode }, resolution.data.originalValue);
+  if (!draft && !pricing.success) return { ...pricing, statusCode: 400 };
+  const packagePrice = pricing.success ? pricing.data.packagePrice : (body.packagePrice ?? null);
+  if (body.publicationStatus === "published" && resolution.data.maxPackages < 1)
+    return { success: false, statusCode: 400, message: "Deal contents do not have enough available stock to publish" };
+  if (body.publicationStatus === "published" && body.endsAt && new Date(body.endsAt) <= new Date())
+    return { success: false, statusCode: 400, message: "An expired deal cannot be published" };
 
   let imageId;
   try {
@@ -296,6 +300,11 @@ async function createDeal({ body, userId }) {
       image: imageId ?? null,
       items: resolution.data.items,
       packagePrice,
+      publicationStatus: draft ? "draft" : "published",
+      publishedAt: draft ? null : new Date(),
+      publishedBy: draft ? null : userId || null,
+      pricingMode,
+      savingValue: pricingMode === "fixed_price" ? null : body.savingValue ?? null,
       currency: body.currency || "GBP",
       isActive: body.isActive !== false,
       isFeatured: Boolean(body.isFeatured),
@@ -352,10 +361,13 @@ async function listDeals({
       { slug: { $regex: escaped, $options: "i" } },
     ];
   }
-  if (status === "active") Object.assign(filter, { isActive: true, archivedAt: null });
+  const searchConditions = filter.$or;
+  if (status === "active") Object.assign(filter, publishedDealFilter(), { isActive: true, archivedAt: null });
   if (status === "inactive") Object.assign(filter, { isActive: false, archivedAt: null });
   if (status === "featured") Object.assign(filter, { isFeatured: true, archivedAt: null });
   if (status === "archived") filter.archivedAt = { $ne: null };
+  if (status === "draft") Object.assign(filter, { publicationStatus: "draft", archivedAt: null });
+  if (status === "published") Object.assign(filter, publishedDealFilter(), { archivedAt: null });
 
   const sortBy = {
     newest: { createdAt: -1, _id: -1 },
@@ -364,6 +376,11 @@ async function listDeals({
     "price-high": { packagePrice: -1, _id: -1 },
     "price-low": { packagePrice: 1, _id: 1 },
   }[sort] || { createdAt: -1, _id: -1 };
+
+  if (normalizedSearch && ["active", "published"].includes(status)) {
+    filter.$and = [{ $or: searchConditions }, publishedDealFilter()];
+    delete filter.$or;
+  }
 
   const [total, deals] = await Promise.all([
     Deal.countDocuments(filter),
@@ -490,14 +507,10 @@ async function updateDeal({ dealId, body, userId }) {
   const resolution = await resolveItems(nextItems);
   if (!resolution.success) return resolution;
 
-  if (nextPrice >= resolution.data.originalValue) {
-    return {
-      success: false,
-      statusCode: 400,
-      message:
-        "Package price must be lower than the current combined product value",
-    };
-  }
+  const nextPricingMode = body.pricingMode ?? current.pricingMode ?? "fixed_price";
+  const nextSavingValue = body.savingValue !== undefined ? body.savingValue : current.savingValue;
+  const pricing = calculateDealPricing({ pricingMode: nextPricingMode, savingValue: nextSavingValue, packagePrice: nextPrice }, resolution.data.originalValue);
+  if (current.publicationStatus !== "draft" && !pricing.success) return { ...pricing, statusCode: 400 };
 
   current.name = nextName;
   current.slug = nextSlug;
@@ -523,7 +536,9 @@ async function updateDeal({ dealId, body, userId }) {
   }
 
   current.items = resolution.data.items;
-  current.packagePrice = nextPrice;
+  current.packagePrice = pricing.success ? pricing.data.packagePrice : (body.packagePrice !== undefined ? body.packagePrice : current.packagePrice);
+  current.pricingMode = nextPricingMode;
+  current.savingValue = nextPricingMode === "fixed_price" ? null : nextSavingValue;
   current.currency = body.currency ?? current.currency;
   current.isActive = body.isActive ?? current.isActive;
   current.isFeatured = body.isFeatured ?? current.isFeatured;
@@ -618,7 +633,53 @@ async function archiveDeal({ dealId }) {
   return { success: true, data: { deal: deal.toObject() } };
 }
 
+async function publishDeal({ dealId, userId }) {
+  const deal = await Deal.findById(dealId);
+  if (!deal) return { success: false, statusCode: 404, message: "Deal not found" };
+  if (deal.archivedAt) return { success: false, statusCode: 409, message: "Archived deals cannot be published" };
+  if (!deal.items.length) return { success: false, statusCode: 400, message: "Add at least one product to publish" };
+  if (deal.endsAt && deal.endsAt <= new Date()) return { success: false, statusCode: 400, message: "An expired deal cannot be published" };
+  if (deal.startsAt && deal.endsAt && deal.endsAt <= deal.startsAt) return { success: false, statusCode: 400, message: "End date must be after the start date" };
+  const resolution = await resolveItems(deal.items.map(item => ({ variantId: String(item.variant), quantity: item.quantity })));
+  if (!resolution.success) return resolution;
+  if (resolution.data.maxPackages < 1) return { success: false, statusCode: 400, message: "Deal contents do not have enough available stock to publish" };
+  const pricing = calculateDealPricing(deal, resolution.data.originalValue);
+  if (!pricing.success) return { ...pricing, statusCode: 400 };
+  if (deal.image) {
+    try { await resolveImage(String(deal.image), userId); }
+    catch (error) { return { success: false, statusCode: error.statusCode || 400, message: "Deal image is unavailable" }; }
+  }
+  if (deal.publicationStatus === "published") return getDeal({ dealId });
+  deal.publicationStatus = "published";
+  deal.packagePrice = pricing.data.packagePrice;
+  deal.publishedAt = new Date();
+  deal.publishedBy = userId || null;
+  try { await deal.save(); }
+  catch (error) {
+    if (error.name === "VersionError") return { success: false, statusCode: 409, message: "This deal changed. Refresh and try again." };
+    throw error;
+  }
+  return getDeal({ dealId });
+}
+
+async function unpublishDeal({ dealId }) {
+  const deal = await Deal.findById(dealId);
+  if (!deal) return { success: false, statusCode: 404, message: "Deal not found" };
+  if (deal.archivedAt) return { success: false, statusCode: 409, message: "Archived deals cannot be modified" };
+  if (deal.publicationStatus !== "draft") {
+    deal.publicationStatus = "draft";
+    try { await deal.save(); }
+    catch (error) {
+      if (error.name === "VersionError") return { success: false, statusCode: 409, message: "This deal changed. Refresh and try again." };
+      throw error;
+    }
+  }
+  return getDeal({ dealId });
+}
+
 module.exports = {
+  publishDeal,
+  unpublishDeal,
   createDeal,
   listDeals,
   getDeal,

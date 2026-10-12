@@ -11,6 +11,9 @@ const dealItemSchema = Joi.object({
   quantity: Joi.number().integer().min(1).max(999).required(),
 }).unknown(false);
 
+const pricingMode = Joi.string().valid("fixed_price", "fixed_saving", "percentage_saving");
+const savingValue = Joi.number().precision(2).positive().allow(null);
+
 const createDealSchema = Joi.object({
   name: Joi.string().trim().min(2).max(140).required(),
   slug: Joi.string()
@@ -21,8 +24,11 @@ const createDealSchema = Joi.object({
     .optional(),
   description: Joi.string().trim().max(3000).allow("").optional(),
   image: imageField,
-  items: Joi.array().items(dealItemSchema).min(1).max(30).required(),
-  packagePrice: Joi.number().precision(2).positive().required(),
+  publicationStatus: Joi.string().valid("draft", "published").default("published"),
+  pricingMode: pricingMode.default("fixed_price"),
+  savingValue: savingValue.when("pricingMode", { is: "percentage_saving", then: Joi.number().less(100) }),
+  items: Joi.array().items(dealItemSchema).max(30).when("publicationStatus", { is: "draft", then: Joi.optional(), otherwise: Joi.array().min(1).required() }),
+  packagePrice: Joi.number().precision(2).positive().allow(null).when("publicationStatus", { is: "draft", then: Joi.optional(), otherwise: Joi.when("pricingMode", { is: "fixed_price", then: Joi.number().required().invalid(null), otherwise: Joi.optional() }) }),
   currency: Joi.string().trim().uppercase().valid("GBP").default("GBP"),
   isActive: Joi.boolean().default(true),
   isFeatured: Joi.boolean().default(false),
@@ -41,6 +47,8 @@ const updateDealSchema = Joi.object({
     .optional(),
   description: Joi.string().trim().max(3000).allow("").optional(),
   image: imageField,
+  pricingMode: pricingMode.optional(),
+  savingValue: savingValue.optional(),
   items: Joi.array().items(dealItemSchema).min(1).max(30).optional(),
   packagePrice: Joi.number().precision(2).positive().optional(),
   currency: Joi.string().trim().uppercase().valid("GBP").optional(),
@@ -59,7 +67,7 @@ const listDealsQuerySchema = Joi.object({
   featured: Joi.boolean().optional(),
   search: Joi.string().trim().max(100).allow("").optional(),
   status: Joi.string()
-    .valid("all", "active", "inactive", "featured", "archived")
+    .valid("all", "active", "inactive", "featured", "archived", "draft", "published")
     .optional(),
   sort: Joi.string()
     .valid("newest", "oldest", "name", "price-high", "price-low")

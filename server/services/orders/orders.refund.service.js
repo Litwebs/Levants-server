@@ -282,37 +282,35 @@ async function RefundOrder({
       createdAt: new Date(),
     };
 
-    order.refunds = Array.isArray(order.refunds) ? order.refunds : [];
-    order.refunds.push(refundRecord);
-
-    // Keep legacy field populated for older clients/filters.
-    order.refund = {
-      ...(order.refund || {}),
-      refundedBy: adminUserId,
-      reason: reason || null,
-      restock: Boolean(restock),
-      stripeRefundId: refund.id,
-      refundedAt:
-        mappedStatus === "succeeded" ? new Date() : order.refund?.refundedAt,
-    };
-
-    // If Stripe returned succeeded immediately, compute derived status now.
-    // Otherwise keep it pending until webhook updates it.
-    order.status =
-      mappedStatus === "pending"
-        ? "refund_pending"
-        : computeRefundDerivedOrderStatus(order);
-
-    // Restock only when we are now fully refunded.
-    if (Boolean(restock) === true && order.status === "refunded") {
-      for (const item of order.items) {
-        await ProductVariant.findByIdAndUpdate(item.variant, {
-          $inc: { stockQuantity: item.quantity },
-        });
+    // Stripe may notify us before this response is persisted. Reload inside
+    // the transaction so the ledger and component restock cannot overwrite a
+    // webhook winner or apply inventory twice.
+    await mongoose.connection.transaction(async session => {
+      const latest = await Order.findById(order._id).session(session);
+      if (!latest) throw new Error("Order no longer exists");
+      const previousStatus = latest.status;
+      latest.stripePaymentIntentId ||= paymentIntentId;
+      latest.refunds = Array.isArray(latest.refunds) ? latest.refunds : [];
+      const existing = latest.refunds.find(record => record.stripeRefundId === refund.id);
+      if (!existing) latest.refunds.push(refundRecord);
+      else {
+        existing.restock = existing.restock || Boolean(restock);
+        if (existing.status !== "succeeded") Object.assign(existing, refundRecord);
       }
-    }
-
-    await order.save();
+      latest.refund = {
+        ...(latest.refund || {}), refundedBy: adminUserId, reason: reason || null,
+        restock: Boolean(restock), stripeRefundId: refund.id,
+        refundedAt: mappedStatus === "succeeded" ? new Date() : latest.refund?.refundedAt,
+      };
+      latest.status = computeRefundDerivedOrderStatus(latest);
+      if (Boolean(restock) && latest.status === "refunded" && previousStatus !== "refunded" && !latest.metadata?.refundRestockedAt) {
+        for (const item of latest.items) {
+          await ProductVariant.findByIdAndUpdate(item.variant, { $inc: { stockQuantity: item.quantity } }, { session });
+        }
+        latest.metadata = { ...(latest.metadata || {}), refundRestockedAt: new Date().toISOString() };
+      }
+      await latest.save({ session });
+    });
 
     return {
       success: true,
@@ -452,7 +450,7 @@ async function applyStripeRefundSucceeded({
 
     // If restock was requested for the refund that completes the order, do it transactionally.
     const nextStatus = computeRefundDerivedOrderStatus(order);
-    if (nextStatus === "refunded") {
+    if (nextStatus === "refunded" && order.status !== "refunded" && !order.metadata?.refundRestockedAt) {
       const last = order.refunds.find(
         (r) => r?.stripeRefundId === stripeRefundId,
       );
@@ -464,6 +462,7 @@ async function applyStripeRefundSucceeded({
             { session },
           );
         }
+        order.metadata = { ...(order.metadata || {}), refundRestockedAt: new Date().toISOString() };
       }
     }
 

@@ -61,6 +61,9 @@ router.patch(
   asyncHandler(controller.UpdateDeal),
 );
 
+router.post("/:dealId/publish", requirePermission("promotions.update"), validateParams(dealIdParamSchema), asyncHandler(controller.PublishDeal));
+router.post("/:dealId/unpublish", requirePermission("promotions.update"), validateParams(dealIdParamSchema), asyncHandler(controller.UnpublishDeal));
+
 router.post(
   "/:dealId/archive",
   requirePermission("promotions.delete"),
