@@ -95,9 +95,12 @@ test("cancelling an unfulfilled order restores recurring and add-on stock exactl
     subscriptionStockItems: [{ variant: String(variant._id), quantity: 1 }],
     subscriptionAddOnStockItems: [{ variant: String(variant._id), quantity: 1 }] });
   order.status = "refunded";
-  await saveRefundedOrder(order);
-  await saveRefundedOrder(await Order.findById(order._id));
+  await saveRefundedOrder(order, { cancelDelivery: true });
+  await saveRefundedOrder(await Order.findById(order._id), { cancelDelivery: true });
   expect((await Variant.findById(variant._id)).stockQuantity).toBe(2);
+  expect((await Order.findById(order._id)).toObject()).toMatchObject({
+    status: "refunded", deliveryStatus: "cancelled", portalDeliveryStatus: "cancelled",
+  });
   expect((await Order.findById(order._id)).subscriptionStockToRestore).toHaveLength(2);
 });
 
@@ -112,4 +115,21 @@ test("repeated equal-price transitions without a request ID conserve inventory",
   await edit(next); await edit([]); await edit(next);
   expect((await Variant.findById(variant._id)).stockQuantity).toBe(3);
   expect(order.subscriptionStockItems).toEqual([{ variant: String(variant._id), quantity: 1 }]);
+});
+
+test("a cancelled legacy delivery does not infer or return unproven stock", async () => {
+  const order = await Order.create({ customer: new mongoose.Types.ObjectId(), subscription, orderType: "subscription_generated",
+    items: [{ product: variant.product, variant: variant._id, name: "Milk", sku: variant.sku, price: 2, quantity: 1, subtotal: 2 }],
+    deliveryAddress: { line1: "1 Street", city: "London", postcode: "SW1A 1AA", country: "UK" },
+    location: { lat: 51, lng: 0 }, deliveryDate: new Date(), subtotal: 2, total: 2,
+    amountPaid: 2, status: "refunded", deliveryStatus: "ordered", reservationExpiresAt: new Date() });
+  await saveRefundedOrder(order, { cancelDelivery: true });
+  await saveRefundedOrder(await Order.findById(order._id), { cancelDelivery: true });
+  expect((await Order.findById(order._id)).toObject()).toMatchObject({ status: "refunded", deliveryStatus: "cancelled", portalDeliveryStatus: "cancelled" });
+  expect((await Variant.findById(variant._id)).stockQuantity).toBe(1);
+});
+test.each(["dispatched", "in_transit", "delivered", "returned"])("cancellation does not rewrite %s fulfillment", async deliveryStatus => {
+  const order = { status: "refunded", deliveryStatus };
+  await expect(saveRefundedOrder(order, { cancelDelivery: true })).rejects.toThrow("unfulfilled refunded");
+  expect(order.deliveryStatus).toBe(deliveryStatus);
 });

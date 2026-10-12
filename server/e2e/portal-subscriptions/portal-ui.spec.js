@@ -630,7 +630,7 @@ test("paused subscriptions cannot open or purchase a one-time add-on", async ({
   await page.goto(`${detailPath}/next-delivery/add-ons`);
   await expect(
     page.getByText(
-      "One-time add-ons are available only while the subscription is active.",
+      "One-time add-ons are unavailable while this subscription is paused, cancelled or scheduled for cancellation.",
       { exact: true },
     ),
   ).toBeVisible();

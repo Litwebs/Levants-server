@@ -12,7 +12,7 @@ it("keeps a credit-reduced but still paid delivery eligible", () => {
   expect(canChangeOrderAddress({ ...base, status: "partially_refunded" }, settings, new Date(now), now)).toBe(true);
 });
 it.each([
-  { deliveryStatus: "dispatched" }, { deliveryStatus: "in_transit" },
+  { deliveryStatus: "cancelled" }, { deliveryStatus: "dispatched" }, { deliveryStatus: "in_transit" },
   { deliveryStatus: "delivered" }, { status: "refunded" },
   { deliveryDate: null }, { deliveryDate: new Date("2026-08-09") },
   { deliveryDate: new Date("2026-08-11T09:00:00Z") },
