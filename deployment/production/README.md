@@ -17,11 +17,16 @@ existing failure trap consequently restores the compatible fallback commit.
 Already-compatible previous commits are returned unchanged. Missing, unknown or
 invalid schemas fail closed before the new application is checked out.
 
-The UAT-only preparation workflow first runs ten isolated Git/schema tests and
-five rehearsals using the inspected helper fixture. On the VPS it repeats those
-rehearsals using the actual current helper with temporary repositories and inert
-npm/PM2/HTTP stubs, validates the real installed Mongoose model, backs up the helper,
-then installs the preparation hook atomically. Production HEAD remains unchanged.
+The one-time preparation passed ten isolated Git/schema tests and five rehearsals
+using the inspected helper fixture. On the VPS it repeated those rehearsals using
+the actual helper with temporary repositories and inert npm/PM2/HTTP stubs, validated
+the installed Mongoose model, backed up the helper and installed the hook without
+changing production HEAD. The owner approved retaining that installation.
+
+The automatic UAT-triggered production installation workflow has been removed at
+the owner's request. UAT pushes no longer invoke this rollback installer on the
+production VPS. Any future production rollback-configuration installation requires
+separate explicit approval; do not reintroduce that automatic trigger.
 The original helper backup and the fallback report are root-only:
 - `/root/LWS-Scripts/05-auto-deploy.before-compatible-rollback.sh`
 - `/root/LWS-Scripts/production-compatible-rollback.json`

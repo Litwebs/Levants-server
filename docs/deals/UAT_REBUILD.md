@@ -1,6 +1,6 @@
 # Deals integration on UAT
 
-UAT baseline: `761a680e2ff9be4b2bd95e061dc4c020b5054768`.
+UAT baseline: `f916abdfaee697b3deb90e329f765854174c1d97`.
 
 Existing UAT workflows, scripts, package files, shared test setup, order models, analytics, subscription and delivery implementations remain unchanged. A separate deals regression workflow adds verification without replacing the UAT suites.
 
