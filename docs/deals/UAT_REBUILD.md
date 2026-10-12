@@ -1,29 +1,22 @@
-# Deals-only integration on UAT
+# Deals integration on UAT
 
-Base: `c943bf6ceb6a2fd647534b95b021aaa2156fad51`. Previous branch preserved at `backup/deals-before-uat-rebuild-20261012`.
+UAT baseline: `761a680e2ff9be4b2bd95e061dc4c020b5054768`.
 
-Only backend deals changes are included. Existing frontend/admin client, workflows, scripts, package files, order models, analytics, subscription and delivery implementations come unchanged from UAT.
+Existing UAT workflows, scripts, package files, shared test setup, order models, analytics, subscription and delivery implementations remain unchanged. A separate deals regression workflow adds verification without replacing the UAT suites.
 
-## Necessary shared integration
+## Shared application integration
 
-- `server/app.js`: mount admin and public deals routes.
-- `server/config/db.js`: initialize deal indexes explicitly.
-- `server/services/files.service.js`: preserve images referenced by deals.
-- `server/validators/order.validators.js`: accept bounded optional deal claims on checkout only.
-- `server/controllers/orders.public.controller.js`: forward deal claims; authenticated portal checkout already forwards validated fields without modification.
-- `server/services/orders/orders.public.service.js`: validate package claims in the existing stock transaction; apply package savings; retain price snapshots in order metadata; combine deal savings with store credit in Stripe. Requests without deals retain UAT behavior.
-- `server/services/orders/orders.refund.service.js`: delegate only deal order refunds to a new transaction helper and guard deal component restock on webhook replay. The existing ordinary-order refund path is unchanged.
+Only seven existing application files change for deals: app route mounting, database deal indexes, public checkout controller and validator, image reference tracking, public order pricing and deal refund delegation. Ordinary orders retain the existing UAT paths. Catalog search, authentication guards and refund transaction handling for deals use dedicated new modules.
 
-All other existing UAT files are unchanged. Catalog browsing is implemented in a new deals service rather than altering generic variant search. No unrelated product-name snapshots, analytics changes, delivery changes or test-runner changes were brought over.
+The UAT portal manifest pins the tested customer storefront commit `41d3b17b67b7b1621bdb43081b4330cb93b6d923` so the server release includes the Deals UI.
 
-## Tests
+## Verification
 
-All previous deals suites are restored in `server/Tests/Deals`, with a deals-only wrapper around UAT's test app and deals-only model initialization. Existing test files and shared test setup are unchanged. Coverage includes administration, publication, roles, images, indexes, catalog, stock, pricing modes, guest/customer checkout, store credit, claim tampering, stale claims, concurrent reservations, payment recovery, refunds and component restock replay.
+- Backend: **1,571 tests across 183 suites**, including all 1,362 existing UAT tests across 165 suites and 209 deals tests across 18 suites. [Passing backend job](https://github.com/Litwebs/Levants-server/actions/runs/38311787355/job/115019000981).
+- Storefront: 28 unit tests, type checking, lint, production build and 20 browser checks. [Passing client workflow](https://github.com/Litwebs/Levants-client/actions/runs/38312744667).
+- Actual storefront / Express API / MongoDB integration: four passing checkout cases covering card payment, partial credit, full credit and stale-price refresh. Assertions cover package prices, underlying quantities, stock, credit and payment replay. [Passing integration job](https://github.com/Litwebs/Levants-server/actions/runs/38313840900/job/115025656690).
+- Existing client UAT/subscription Node tests: 29 passing tests.
 
-Hosted backend verification before the final UAT refresh passed **1,563 tests across 182 suites**: all **1,354 UAT tests / 164 suites**, plus **209 deals tests / 18 suites**. All suites passed; no tests were skipped. Tested code: `c2bd66f6b1a2417ce4022ba8c43544781c9a5b68`.
+Integration tests replace external Stripe, geocoding, mail and site-status transports. They do not establish real Stripe payment or deployed UAT readiness.
 
-[Backend verification run](https://github.com/Litwebs/Levants-server/actions/runs/38298704159).
-
-Local verification: 52 unit tests, 13 UAT safety tests, JavaScript syntax and a Git tree audit passed. The audit confirms 886 existing UAT files identical and only seven existing server files changed for deals integration; all additions are deals files. Database-backed local execution is blocked by MongoDB aborting in the workspace, so database tests were verified in hosted CI.
-
-The verification draft used the existing workflow without changing any workflow file. Its tested merge tree was identical to the feature head. Release-only Stripe/browser gates did not run in draft, so the overall release-gate check is red; the backend test job passed. No deployment or merge was performed by this work. The final refresh incorporates the subsequent UAT cancellation-presentation changes verbatim, including its new test suite. The deals implementation remains identical to the tested commit; the complete combined tree after this upstream refresh has not been rerun in hosted CI.
+The full backend run tested the final application and regular test code. Subsequent changes were limited to the integration harness, verification workflow, documentation and portal version pin.
