@@ -57,5 +57,39 @@ protections, live webhook configuration/processing, scheduler/restart rehearsal,
 notification delivery, backup/restore and rollback rehearsal, and verification of
 the exact eventual deployed server/customer portal pair.
 
-Admin subscription list/detail still present a next billing/schedule date after
-cancellation; this display needs separate review. No admin settings were modified.
+## Additional verified display corrections
+
+Server review `437ef5b10f52f23b0f86fd2a890238e972fd1602` corrects the
+cancelled next-delivery date in admin list/detail. Live UAT verifies "None scheduled"
+in both views, with active dates retained.
+
+Client review `70115f633fbb75bcc0fea5f112b441e2b72d7607` applies the same
+authoritative date handling to customer cards. Multi-day card totals are now
+labelled "Products per cycle" rather than "Per delivery"; single-day totals are
+labelled "Products per delivery". Delivery-fee copy identifies these as product
+totals. The fixture's £24 products correspond to a £26 cycle after two £1 fees.
+[Client CI](https://github.com/Litwebs/Levants-client/actions/runs/38211580355)
+and [UAT deployment](https://github.com/Litwebs/Levants-client/actions/runs/38211600914)
+passed; UAT portal SHA is `cb5bf9a7c77f386db2a4049d49f85053ee1e347d`.
+
+[Paired review CI](https://github.com/Litwebs/Levants-server/actions/runs/38209379281)
+for the preceding portal revision passed **160 suites / 1,310 backend tests**,
+**109 real Stripe/browser tests**, admin lint/build and the release gate.
+[Paired UAT verification](https://github.com/Litwebs/Levants-server/actions/runs/38209410019)
+passed the same counts, deployed the admin correction and passed all eight existing
+configured-provider checks. The final storefront pair is being rechecked after
+this checkpoint update.
+
+## Independent sandbox verification checkpoint
+
+The CI sandbox key cannot read this UAT fixture's initial PaymentIntent
+(`resource_missing`). The diagnostic workflow used only reads and is not evidence
+of a refund failure. A read-only fixture audit is now attached to the configured
+UAT provider checker, using the deployed sandbox credentials. It requires all
+three payments and all successful refunds to balance to £50 collected / £50
+returned / £0 remaining, and verifies remote cancellation. Its final pipeline
+result is pending at this checkpoint.
+
+Read-only repository checks found both main branches unprotected and both ruleset
+lists empty. No repository protection settings were changed. No admin settings
+were modified.
