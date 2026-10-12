@@ -1,0 +1,41 @@
+name: Prepare compatible production rollback
+on:
+  push:
+    branches: [uat]
+    paths:
+      - .github/workflows/production-rollback.yml
+      - deployment/production/compatible-rollback.py
+      - deployment/production/test-compatible-rollback.py
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/uat'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+      - name: Inspect helper source without executing it
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$VPS_PORT" "root@$VPS_HOST" 'python3 -' <<'PY'
+          import hashlib,json,re,subprocess
+          from pathlib import Path
+          root=Path('/root/LWS-Scripts')
+          repo=root/'Levants-server'
+          head=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
+          assert head=='144badd63cb5263ad8eb89ce4f353816515f0fd4'
+          source=(root/'05-auto-deploy.sh').read_text()
+          # This helper is application deployment code, never emit credentials.
+          assert not re.search(r'(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+|gh[pousr]_[A-Za-z0-9]+',source)
+          print(json.dumps({'readOnly':True,'head':head,'helperSource':source,'sha256':hashlib.sha256(source.encode()).hexdigest()}))
+          PY
