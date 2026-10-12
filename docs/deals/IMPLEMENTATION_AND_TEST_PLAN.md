@@ -23,7 +23,7 @@ does not contain the customer deals implementation. It was not modified.
 | Defined savings | Admin percentage shortcuts convert a chosen percentage into a fixed package price. There is no persisted fixed-saving or percentage-saving pricing mode that recalculates when retail prices change. |
 | Dates and Featured flag | Implemented; inclusive start, exclusive end, optional dates, featured sorting/filtering and display order. |
 | Price/savings preview and availability | Builder uses integer pennies for preview. Backend recomputes live value/savings and capacity from the limiting component after reservations. Sold-out deals remain visible with zero capacity. The admin management page no longer displays the previous “Review price” warning when savings disappear. |
-| Featured deals at top of homepage | Partial on customer branch: `FeaturedDeals` exists and the API prioritises featured deals, but the component fetches the first three general offers without `featured=true`. Position at the very top is not established by this implementation. |
+| Featured deals at top of homepage | Partial on customer branch: `FeaturedDeals` exists and the API prioritises featured deals, but the component fetches the first three general offers without `featured=true`. It appears after the hero, order-type choices and category section, rather than at the top. |
 | Dedicated featured section on Deals page | Missing on inspected customer branch; it has one paginated grid sorted by the API, without a separate featured section. |
 | Cards, details and one-click basket | Implemented on the separate customer branch: names, images, contents, original value, price, savings, details and package basket entries. Not present on storefront UAT. |
 | Pricing, checkout, inventory and fulfilment | Backend validates claims and optional content fingerprints, rechecks live prices/availability/dates, expands component quantities, stores immutable price/name snapshots and applies package savings. Guest/signed-in checkout and store credit are supported; discount codes cannot stack with deals. Orders retain normal product lines for fulfilment. |
@@ -42,6 +42,9 @@ Existing suites are retained. Additional suites cover:
   after retail increases, no-saving rejection, order-independent fingerprints,
   Stripe creation failure rollback, settlement and component reservation release.
 - HTTP update schema rejection with unchanged persisted records and malformed IDs.
+- Oversized/type-mismatched image rejection, archived/non-image file references,
+  managed image reuse, image clearing, failed replacement persistence, and
+  best-effort orphan cleanup.
 - Schema boundaries/defaulting for create/update/list/catalog.
 - Admin price-preview maths, pennies, empty totals, independent drafts, stock and
   image mapping; existing component tests updated to the current three-step builder
@@ -70,8 +73,8 @@ See `server/Tests/Deals/README.md` for suite ownership and commands.
 6. Add package-specific refund/payment reporting regressions: full/partial refund,
    discount allocation across components, delivery fees, mixed deal/normal baskets,
    cancelled/expired checkout recovery, credit restoration and historical order display.
-7. Add component/image failure and concurrency edges: unsupported/archived managed
-   images, oversized/type-mismatched content, upload followed by failed persistence,
+7. Add remaining component/image failure and concurrency edges: pixel-limit handling,
+   upload followed by failed persistence,
    optimistic edit conflicts, simultaneous archive/update and deletion after carting.
 8. Before release, smoke-test the deployed pair: image provider, email, Stripe event
    configuration, index creation with autoIndex disabled and fulfilment documents.
@@ -80,8 +83,11 @@ See `server/Tests/Deals/README.md` for suite ownership and commands.
 
 - All 590 existing backend JavaScript files parsed successfully before new tests.
 - Local admin typecheck passed after the UAT merge.
-- The eight refreshed admin component tests passed locally; final combined checks
-  and hosted CI results are recorded after execution.
+- Hosted admin release checks passed on `17ae89de55b2f82f0499f86215684406fdd2dd16`: 20 Vitest tests across three suites (18 deals tests plus two modal regressions),
+  typechecking, lint (0 errors, 335 legacy warnings), production build, analytics
+  checks, map/CSP checks and 12 subscription-settings regression cases.
+- All 19 deals schema unit assertions passed locally without the database setup.
+- Backend hosted CI results are recorded after execution.
 - Local MongoDB 8 aborted in CPU discovery and MongoDB 7 aborted in partition-cache
   initialization before any database tests ran. Those are execution-environment
   failures, not passing or failing application assertions.
