@@ -57,7 +57,7 @@ try:
         if admin.get('username')!='levants_uat_admin': raise RuntimeError('admin_guard')
         root_uri='mongodb://'+urllib.parse.quote(admin['username'],safe='')+':'+urllib.parse.quote(admin['password'],safe='')+'@127.0.0.1:27018/admin?authSource=admin&replicaSet=levants-uat'
         clone='levants_uat_alert_'+secrets.token_hex(12)
-        environment={**os.environ,**values,'MONGO_URI':root_uri.replace('/admin?','/'+clone+'?')}
+        environment={**os.environ,**{key:str(value) for key,value in values.items()},'MONGO_URI':root_uri.replace('/admin?','/'+clone+'?')}
         common="const fs=require('fs'),assert=require('assert/strict'),mongoose=require('mongoose');const input=JSON.parse(fs.readFileSync(0,'utf8'));let client;async function main(){"
         ending="}main().catch(()=>process.exitCode=1).finally(async()=>{await mongoose.disconnect();await client?.close();});"
         node(common+"client=new mongoose.mongo.MongoClient(input.uri);await client.connect();assert.equal((await client.db().admin().listDatabases()).databases.some(d=>d.name===input.db),false);console.log(JSON.stringify({fresh:true}));"+ending,{'uri':root_uri,'db':clone},environment)

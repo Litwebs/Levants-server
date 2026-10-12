@@ -51,9 +51,11 @@ async function notifySubscriptionRecovery(report, { now = Date.now(), send, paus
   const keys = found.map(incident => `recovery:${namespace}:${incident.key}`);
   const summary = { enabled: true, sent: 0, failed: 0, needsReview: 0, observed: found.length };
   const run = await withSchedulerLease(`subscription-recovery-alerts:${namespace}`, async ({ renew }) => {
+    await renew();
     await Alert.updateMany({ namespace, active: true, _id: { $nin: keys } }, { $set: { active: false } });
     let attempted = 0;
     for (const [index, incident] of found.entries()) {
+      await renew();
       const id = keys[index];
       await Alert.updateOne({ _id: id }, { $set: { lastSeenAt: new Date(now) }, $setOnInsert: { namespace, active: true, notified: false, generation: 0 } }, { upsert: true });
       await Alert.updateOne({ _id: id, active: false }, { $set: { active: true, notified: false }, $inc: { generation: 1 },
@@ -74,13 +76,15 @@ async function notifySubscriptionRecovery(report, { now = Date.now(), send, paus
       if (!claimed.requestKey) {
         claimed.requestKey = `subscription-recovery/${randomUUID()}`;
         claimed.payload = payloadFor(incident, recipient, environment, now);
-        await Alert.updateOne(fence, { $set: { requestKey: claimed.requestKey, payload: claimed.payload, firstAttemptAt: new Date(now) } });
+        const prepared = await Alert.updateOne(fence, { $set: { requestKey: claimed.requestKey, payload: claimed.payload, firstAttemptAt: new Date(now) } });
+        if (prepared.modifiedCount !== 1) throw Error("claim_lost");
       }
       try {
         if (attempted) await pause(600);
         await renew();
         attempted++;
-        await Alert.updateOne(fence, { $set: { lastAttemptAt: new Date(now) } });
+        const attempt = await Alert.updateOne(fence, { $set: { lastAttemptAt: new Date(now) } });
+        if (attempt.matchedCount !== 1) throw Error("claim_lost");
         const deliver = send || ((payload, options) => require("../../Integration/emailTransport").createEmailTransport().emails.send(payload, options));
         const response = await deliver(claimed.payload, { idempotencyKey: claimed.requestKey });
         const providerId = response?.data?.id || response?.id;
