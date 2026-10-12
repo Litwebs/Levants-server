@@ -1,0 +1,37 @@
+name: Production deployment read-only review
+on:
+  push:
+    branches: [uat]
+    paths:
+      - .github/workflows/production-deployment-review.yml
+      - deployment/production/read-only-inventory.py
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/uat'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check probe syntax
+        run: python3 -c "compile(open('deployment/production/read-only-inventory.py').read(), 'probe', 'exec')"
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+      - name: Read production configuration without executing deployment
+        env:
+          REVIEW_HOST: ${{ secrets.VPS_HOST }}
+          REVIEW_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$REVIEW_PORT" "$REVIEW_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$REVIEW_PORT" "root@$REVIEW_HOST" \
+            'python3 -' < deployment/production/read-only-inventory.py | tee production-deployment-inventory.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-deployment-inventory
+          path: production-deployment-inventory.json
+          retention-days: 14

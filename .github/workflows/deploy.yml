@@ -75,10 +75,22 @@ jobs:
   # Mark it Ready for review only when the exact PR head is intended to ship.
   # Any later commit to a ready PR triggers this suite again automatically.
   subscription-e2e:
-    name: Subscription E2E (Stripe test mode)
+    name: Real Stripe and browser release checks
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit
+
+  # Keep the required branch-protection context stable across reusable workflows.
+  subscription-e2e-status:
+    name: Subscription E2E (Stripe test mode)
+    if: always()
+    needs: subscription-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the actual Stripe and browser workflow to succeed
+        env:
+          E2E_RESULT: ${{ needs.subscription-e2e.result }}
+        run: test "$E2E_RESULT" = "success"
 
   uat-verification:
     name: Exact release passed UAT
@@ -103,7 +115,7 @@ jobs:
     needs:
       - backend-tests
       - client-quality
-      - subscription-e2e
+      - subscription-e2e-status
       - uat-verification
     runs-on: ubuntu-latest
     steps:
@@ -112,7 +124,7 @@ jobs:
         env:
           BACKEND_RESULT: ${{ needs.backend-tests.result }}
           CLIENT_RESULT: ${{ needs.client-quality.result }}
-          E2E_RESULT: ${{ needs.subscription-e2e.result }}
+          E2E_RESULT: ${{ needs.subscription-e2e-status.result }}
           UAT_RESULT: ${{ needs.uat-verification.result }}
         run: |
           set -euo pipefail

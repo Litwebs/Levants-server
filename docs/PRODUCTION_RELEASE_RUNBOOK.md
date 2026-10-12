@@ -37,9 +37,9 @@ The VPS helper must honor `DEPLOY_SHA`; checking the remote `HEAD` afterward
 detects a mismatch but does not undo a restart of the wrong code.
 
 Record the server merge SHA and customer portal SHA from the E2E job summary.
-For server PRs ending in `-server`, CI uses the matching portal branch when it
-exists; otherwise it uses portal `main`. The server push-to-main run uses portal
-`main`. Protect the portal repository's `main` with its own applicable checks,
+CI checks out the exact portal commit pinned in `deployment/uat/portal.json`
+for both PR and main checks. The promotion gate requires the tested UAT source
+tree and ancestry, so promote with a merge and keep the reviewed tree unchanged. Protect the portal repository's `main` with its own applicable checks,
 coordinate both releases, and verify the deployed portal SHA separately: this
 server workflow does not deploy the customer portal. A green server PR alone
 does not verify the eventual production pair.
@@ -213,3 +213,6 @@ Before release, record the owner, time, environment, and result for:
 If any evidence is unavailable, mark that item **pending** and withhold production
 sign-off. Do not treat an empty audit as coverage of scheduler, browser, email,
 deployment, or rollback behavior that the script does not exercise.
+
+For the current completed preparation, historical exceptions and server-first
+compatibility window, see [the reviewed release procedure](release-checks/2026-10-12-production-release-review.md).

@@ -114,6 +114,11 @@ async function main() {
     const counts=new Map(); for(const d of slots) {const k=dayKey(d.scheduledDate);counts.set(k,(counts.get(k)||0)+1);}
     report.subscriptions.push({number:s.subscriptionNumber,status:s.status,frequency:s.frequency,orderCount:localOrders.length,slotCount:slots.length,
       paidInvoiceCount:invoices.filter(i=>i.paid||i.status==="paid").length,
+      preferredDeliveryDays:s.preferredDeliveryDays?.length?s.preferredDeliveryDays:[s.preferredDeliveryDay],
+      nextDeliveryDate:s.nextDeliveryDate||null,
+      upcomingSlots:slots.filter(d=>new Date(d.scheduledDate)>=new Date()&&!["cancelled","delivered","skipped"].includes(d.status))
+        .sort((a,b)=>new Date(a.scheduledDate)-new Date(b.scheduledDate)).slice(0,3)
+        .map(d=>({date:dayKey(d.scheduledDate),status:d.status,linkedOrder:d.order?orders.find(o=>String(o._id)===String(d.order))?.orderId||"missing":null})),
       unlinkedPaidInvoiceCount:unlinked.length,unlinkedPaidMinorByCurrency:unlinked.reduce((a,i)=>{a[i.currency]=(a[i.currency]||0)+i.amount_paid;return a;},{}),
       duplicateLondonDates:[...counts].filter(([,n])=>n>1).map(([date,count])=>({date,count})),
       paidOrdersMissingStockProof:localOrders.filter(o=>o.deliveryStatus==="ordered"&&["paid","partially_refunded"].includes(o.status)&&!(o.subscriptionStockItems||[]).length&&!(o.subscriptionAddOnStockItems||[]).length).length,
