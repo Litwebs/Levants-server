@@ -387,7 +387,7 @@ test("admin subscription order rows show refunded payment and cancelled delivery
   }));
   await page.goto(ADMIN_ORIGIN + "/subscriptions/cancelled-view");
   await expect(page.getByRole("heading", { name: "SUB-CANCELLED-VIEW", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await page.getByRole("button", { name: "Orders History", exact: true }).click();
   const row = page.getByRole("row").filter({ hasText: "ORD-CANCELLED-VIEW" });
   await expect(row).toContainText("refunded");
   await expect(row).toContainText("cancelled");

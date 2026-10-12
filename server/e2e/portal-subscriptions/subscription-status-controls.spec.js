@@ -48,8 +48,16 @@ for (const state of ["paused", "cancelled", "scheduled"]) {
       await expect(page.getByRole("button", { name: "Cancel Subscription", exact: true })).toBeEnabled();
     }
     await page.goto(path + "/add-products");
-    await expect(page.getByRole("status")).toContainText("Products cannot be changed");
+    await expect(page.getByRole("status").filter({ hasText: "Products cannot be changed" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save selected products", exact: true })).toHaveCount(0);
+    if (state === "paused") {
+      const pending = { operationId: crypto.randomUUID(), deliveryId: before.deliveries[0]?._id || "0123456789abcdef01234567",
+        deliveryDate: before.deliveries[0]?.scheduledDate || new Date().toISOString(),
+        items: [{ variantId: "0123456789abcdef01234567", productName: "Stored retry", variantName: "Milk", unitPrice: 2, quantity: 1 }] };
+      await page.evaluate(({ subscriptionId, pending }) => sessionStorage.setItem(
+        "portal:add-on-purchase:" + subscriptionId, JSON.stringify(pending)),
+        { subscriptionId: fixture.subscriptionId, pending });
+    }
     await page.goto(path + "/next-delivery/add-ons");
     await expect(page.getByText(/One-time add-ons are unavailable while this subscription/)).toBeVisible();
     await expect(page.getByRole("button", { name: /Pay £.+ and add once/ })).toHaveCount(0);
