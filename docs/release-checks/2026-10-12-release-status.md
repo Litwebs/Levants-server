@@ -34,13 +34,13 @@ Prior exact deployed UAT: [38222542171 attempt 2](https://github.com/Litwebs/Lev
 
 Runtime checks: [38227286164](https://github.com/Litwebs/Levants-server/actions/runs/38227286164), actual London spring/autumn maintenance gating, actionable recovery logs, rollback/restoration and production identity preservation passed.
 
-The consolidation adds operational scripts, evidence and three automated index regression tests. It does not alter subscription business handlers. Its exact commit must pass [the UAT pipeline](https://github.com/Litwebs/Levants-server/actions/workflows/uat.yml); use that commit's checks and configured-provider report as the authoritative result for the newly packaged UAT release.
+The earlier index consolidation added operational scripts, evidence and three automated index regression tests. The subsequent recovery-alert work adds an opt-in email dispatcher to the recovery audit, a durable notification-state collection and regression coverage. It does not perform financial repairs or change subscription payment ownership. Its exact commit must pass [the UAT pipeline](https://github.com/Litwebs/Levants-server/actions/workflows/uat.yml); use that commit's checks and configured-provider report as the authoritative result for the newly packaged UAT release.
 
 ## Remaining prerequisites
 
 - Production Stripe endpoint still needs invoice.created, invoice.voided, invoice.marked_uncollectible, refund.created and refund.updated; owner will add them later. Reinspect afterward.
-- Recovery log identifiers are verified; an operator notification destination and delivery verification remain outstanding. Existing new-order email delivery does not prove recovery-alert delivery.
-- Main-branch protections are prepared in main-branch-protection.json but unapplied. The connector has no branch-protection write operation; browser fallback requires owner approval.
+- Recovery-alert recipient selected by the owner: hm.mousavi.02@gmail.com. Configurable notification delivery, persistent deduplication, claim fencing and provider-safe retries are implemented on UAT; consult the latest exact-commit UAT pipeline and attached recovery-alert report for validation. Production activation remains part of the approved release. See [configuration and behavior](../../SUBSCRIPTION_RECOVERY_ALERTS.md).
+- Server main protection is now confirmed by the GitHub branch API, requiring Client lint and build, Backend tests, and Subscription E2E (Stripe test mode). Owner screenshots also show PR approval, current-branch, conversation-resolution, administrator enforcement, force-push and deletion settings; the connector cannot independently read those administration details. Client main protection still needs checking. The owner chose to leave UAT without a protection rule for now. The earlier main-branch-protection.json is a historical proposal, not a live configuration export.
 - Historical records are not fully cleared: 13 funded upcoming orders lack stock-consumption journals; warehouse/operator evidence is required before inventory correction. One record has a planned 23 August delivery but recorded delivery on 19 August; operator confirmation is required before changing dates.
 - No historical customer records, inventory, refunds or invoice allocations have been repaired speculatively.
 
