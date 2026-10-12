@@ -69,9 +69,12 @@ await mongoose.connection.db.collection('subscriptioninvoicefulfillments').inser
 const audit=require('./services/subscriptions/subscriptionRecoveryAudit.service').auditUnresolvedSubscriptionOperations;
 assert.equal((await audit()).count,1);const alert=await Alerts.findOne({notified:true}).lean();assert.ok(alert?.providerId);assert.equal(alert.payload.to,input.recipient);assert.ok(alert.payload.text.includes(marker));
 assert.equal((await audit()).count,1);assert.equal(await Alerts.countDocuments({notified:true}),1);
+await Alerts.updateOne({_id:alert._id},{$set:{notified:false,claimOwner:'simulated-dead-worker',claimUntil:new Date(Date.now()-1)}});
+await new Promise(resolve=>setTimeout(resolve,1000));
+assert.equal((await audit()).count,1);const retried=await Alerts.findById(alert._id).lean();assert.equal(retried.notified,true);assert.equal(retried.providerId,alert.providerId);assert.equal(retried.requestKey,alert.requestKey);
 await mongoose.connection.db.collection('subscriptioninvoicefulfillments').updateOne({_id:invoice._id},{$set:{inventoryBlocked:false,completedAt:new Date()}});
 assert.equal((await audit()).count,0);assert.equal((await Alerts.findById(alert._id).lean()).active,false);
-console.log(JSON.stringify({passed:true,syntheticMarker:marker,providerAccepted:true,repeatSuppressed:true,resolutionObserved:true,release:input.sha}));"""+ending
+console.log(JSON.stringify({passed:true,syntheticMarker:marker,providerAccepted:true,repeatSuppressed:true,crashRetryProviderIdMatched:true,resolutionObserved:true,release:input.sha}));"""+ending
         report['verification']=node(code,{'db':clone,'recipient':recipient,'sha':sha},environment)
         report['completed']=True
 except Exception as error:
