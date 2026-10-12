@@ -348,7 +348,9 @@ export default function SubscriptionsPage() {
                         .join(", ")}
                     </td>
                     <td className="text-sm">
-                      {sub.nextDeliveryDate
+                      {sub.status === "cancelled"
+                        ? "None scheduled"
+                        : sub.nextDeliveryDate
                         ? new Date(sub.nextDeliveryDate).toLocaleDateString(
                             "en-GB",
                           )

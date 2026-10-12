@@ -593,7 +593,9 @@ export default function SubscriptionDetailsPage() {
           <div className={styles.summaryValue}>
             {isPendingSetup
               ? "Awaiting setup"
-              : formatDate(subscription.nextDeliveryDate)}
+              : subscription.status === "cancelled"
+                ? "None scheduled"
+                : formatDate(subscription.nextDeliveryDate)}
           </div>
         </Card>
 
