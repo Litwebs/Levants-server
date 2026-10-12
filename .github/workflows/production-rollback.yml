@@ -6,6 +6,7 @@ on:
       - .github/workflows/production-rollback.yml
       - deployment/production/compatible-rollback.py
       - deployment/production/test-compatible-rollback.py
+      - deployment/production/fixtures/auto-deploy.before-compatible.sh
 permissions:
   contents: read
 jobs:
@@ -13,13 +14,28 @@ jobs:
     if: github.ref == 'refs/heads/uat'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Install dependencies for offline schema validation
+        working-directory: server
+        run: npm ci
+      - name: Verify Git isolation and automatic rollback using the exact helper fixture
+        env:
+          ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
+        run: python3 deployment/production/test-compatible-rollback.py
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
           log-public-key: false
-      - name: Inspect helper source without executing it
+      - name: Rehearse the current VPS helper and install compatible rollback configuration
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
@@ -27,15 +43,12 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$VPS_PORT" "root@$VPS_HOST" 'python3 -' <<'PY'
-          import hashlib,json,re,subprocess
-          from pathlib import Path
-          root=Path('/root/LWS-Scripts')
-          repo=root/'Levants-server'
-          head=subprocess.check_output(['git','-C',str(repo),'rev-parse','HEAD'],text=True).strip()
-          assert head=='144badd63cb5263ad8eb89ce4f353816515f0fd4'
-          source=(root/'05-auto-deploy.sh').read_text()
-          # This helper is application deployment code, never emit credentials.
-          assert not re.search(r'(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+|gh[pousr]_[A-Za-z0-9]+',source)
-          print(json.dumps({'readOnly':True,'head':head,'helperSource':source,'sha256':hashlib.sha256(source.encode()).hexdigest()}))
-          PY
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$VPS_PORT" "root@$VPS_HOST" \
+            'set -eu; umask 077; staged=$(mktemp /root/LWS-Scripts/.compatible-rollback.XXXXXX.py); trap '\''rm -f "$staged"'\'' EXIT; cat > "$staged"; python3 "$staged" install' \
+            < deployment/production/compatible-rollback.py | tee compatible-rollback-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-compatible-rollback-${{ github.sha }}
+          path: compatible-rollback-report.json
+          retention-days: 30
+          if-no-files-found: error

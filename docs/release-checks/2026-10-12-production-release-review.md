@@ -1,6 +1,6 @@
 # Production release decision and server-first procedure — 12 October 2026
 
-The application release source is server UAT and portal UAT `0cc2e7e855d1385fcecfe717eb397f6fe270841d`.
+The application release source is server UAT and portal UAT `568861e6369d254307bcafecb66f3bfc11a6352e`.
 Promote by merge with the tested tree unchanged; the server promotion gate rejects
 squash/rebase or changes that have not passed UAT. Production application code has
 not been merged, deployed or restarted by these preparation checks.
@@ -49,7 +49,9 @@ suite verifies the intended new server/new portal pair, not every old UI interac
 1. Owner adds the five deferred events on the live production webhook. Recheck
    coverage, retaining existing checkout/order events.
 2. Obtain explicit release approval, including the server-first creation window.
-   Record previous server HEAD and gh-pages HEAD for rollback.
+   Record the compatible server fallback SHA from the successful rollback
+   preparation report and the previous gh-pages HEAD. The unmodified old server
+   schema rejects cancelled deliveries and must not be used as this release's rollback.
 3. Approve/merge the server UAT PR without altering the tested tree. Let the exact
    merged commit pass every release check; the server workflow deploys only afterward.
 4. During approved deployment, configure the protected production server .env:
@@ -72,8 +74,9 @@ suite verifies the intended new server/new portal pair, not every old UI interac
    smoke-test customer login, subscription list/details, admin and payment reporting.
    Verify production alert acceptance/delivery using an isolated synthetic probe
    scoped to production transport (not a fake financial record in the live database).
-8. Monitor the first billing/delivery cycle. Roll back code/artifacts through the
-   recorded revisions if needed; financial writes require case-specific review.
+8. Monitor the first billing/delivery cycle. Roll back server code through the recorded compatible fallback and portal
+   artifacts through the recorded gh-pages revision if needed; financial writes
+   require case-specific review. See deployment/production/README.md.
 
 ## Historical subscription behaviour
 

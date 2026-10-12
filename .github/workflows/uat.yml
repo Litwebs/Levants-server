@@ -61,6 +61,10 @@ jobs:
       - name: Run backend release tests
         run: npm run test:release
         working-directory: server
+      - name: Verify production rollback isolation and automatic recovery
+        env:
+          ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
+        run: python3 deployment/production/test-compatible-rollback.py
       - name: Install admin dependencies
         run: npm ci
         working-directory: client
