@@ -23,7 +23,10 @@
     "seed-portal": "node scripts/seedPortalData.js",
     "seed-portal:fresh": "node scripts/seedPortalData.js --fresh",
     "seed-orders:bradford": "node scripts/generateBradfordOrders.js",
-    "stripe:recreate-products": "node scripts/recreateStripeProducts.js"
+    "stripe:recreate-products": "node scripts/recreateStripeProducts.js",
+    "test:delivery-navigation": "jest --runInBand Tests/Delivery/navigation",
+    "test:e2e:delivery-navigation": "playwright test --config playwright.navigation.config.js",
+    "test:delivery-navigation:unit": "jest --runInBand --config jest.navigation-unit.config.js"
   },
   "keywords": [],
   "author": "",
