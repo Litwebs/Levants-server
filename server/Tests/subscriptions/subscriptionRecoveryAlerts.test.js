@@ -112,3 +112,11 @@ test("does not call the provider when ownership is lost before persisting its re
   await expect(notify(report(), options(send))).rejects.toThrow("claim_lost");
   expect(send).not.toHaveBeenCalled();
 });
+
+test("a hung provider is bounded and preserves the original request for safe retry", async () => {
+  const found = report();
+  const send = jest.fn().mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce({ data: { id: "email-after-timeout" } });
+  expect(await notify(found, { ...options(send), deliveryTimeoutMs: 10 })).toMatchObject({ failed: 1, sent: 0 });
+  expect(await notify(found, options(send))).toMatchObject({ sent: 1 });
+  expect(send.mock.calls[0]).toEqual(send.mock.calls[1]);
+});

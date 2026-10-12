@@ -23,6 +23,7 @@ For this task, the owner selected hm.mousavi.02@gmail.com. UAT configuration use
 - Shared worker leases and persistent claims prevent concurrent sends; the provider idempotency key and frozen request payload cover retries after ambiguous responses or a worker crash.
 - Successfully accepted incidents remain suppressed across restarts until a later scan observes resolution. A subsequent recurrence can trigger a new notification.
 - Each scan sends at most five new/retry notifications, with pacing between requests. Remaining incidents stay queued for later scans.
+- Email API waits are bounded to 15 seconds per request; a timeout is an uncertain outcome and keeps the original provider request/key for retry. A late provider response does not block the financial recovery audit.
 - Failed sends remain pending. Uncertain deliveries older than 23 hours are logged as requiring operator review instead of automatically creating a new provider request outside Resend's 24-hour idempotency retention.
 - Emails contain projected operation/invoice/subscription/reservation identifiers and detection time, with escaped HTML. They exclude customer contact information and request/card details.
 - Email acceptance is not proof of inbox delivery; the labelled UAT test must also be checked in the recipient's inbox.

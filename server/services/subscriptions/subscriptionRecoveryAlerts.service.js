@@ -38,7 +38,16 @@ function payloadFor(incident, recipient, environment, now) {
     html: `<h2>Subscription recovery requires review</h2><p>${note}</p><p>Environment: ${escape(environment)}<br>Detected: ${escape(new Date(now).toISOString())}</p><ul>${lines.map(line => `<li>${escape(line)}</li>`).join("")}</ul>`,
   };
 }
-async function notifySubscriptionRecovery(report, { now = Date.now(), send, pause = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+async function deliverWithDeadline(deliver, payload, options, timeoutMs) {
+  let timer;
+  try {
+    return await Promise.race([
+      deliver(payload, options),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(Error("provider_timeout")), timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+async function notifySubscriptionRecovery(report, { now = Date.now(), send, deliveryTimeoutMs = 15000, pause = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   if (process.env.SUBSCRIPTION_RECOVERY_ALERTS_ENABLED !== "true") return { enabled: false, sent: 0 };
   const recipient = String(process.env.SUBSCRIPTION_RECOVERY_ALERT_EMAIL || "").trim().toLowerCase();
   if (recipient.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
@@ -86,7 +95,7 @@ async function notifySubscriptionRecovery(report, { now = Date.now(), send, paus
         const attempt = await Alert.updateOne(fence, { $set: { lastAttemptAt: new Date(now) } });
         if (attempt.matchedCount !== 1) throw Error("claim_lost");
         const deliver = send || ((payload, options) => require("../../Integration/emailTransport").createEmailTransport().emails.send(payload, options));
-        const response = await deliver(claimed.payload, { idempotencyKey: claimed.requestKey });
+        const response = await deliverWithDeadline(deliver, claimed.payload, { idempotencyKey: claimed.requestKey }, Math.max(1, Math.min(Number(deliveryTimeoutMs) || 15000, 15000)));
         const providerId = response?.data?.id || response?.id;
         if (response?.error || !providerId) throw Error("provider_not_accepted");
         await renew();
