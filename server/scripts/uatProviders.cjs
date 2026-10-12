@@ -122,6 +122,12 @@ async function main() {
       await mongoose.disconnect();
     }
   });
+  // Explicit checkpoint for the user-approved disposable UAT fixture.
+  await check('Stripe sandbox refund fixture reconciliation', async () => {
+    report.fixtureRefundAudit = await require('./uatRefundFixtureAudit.cjs')(
+      stripe, require('./uatRefundFixture.json'),
+    );
+  });
   report.success = report.checks.every(check => check.passed);
 }
 main().catch(() => { report.checks.push({ name: 'UAT configuration preflight', passed: false }); }).finally(() => {
