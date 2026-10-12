@@ -25,7 +25,7 @@ function createEmailTransport() {
     const { Resend } = require("resend");
     const provider = new Resend(process.env.RESEND_EMAIL_KEY);
     return {
-      emails: { send: (payload) => provider.emails.send(prepareUatEmail(payload)) },
+      emails: { send: (payload, options) => provider.emails.send(prepareUatEmail(payload), options) },
       batch: { send: (payloads) => provider.batch.send(payloads.map(prepareUatEmail)) },
     };
   }

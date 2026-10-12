@@ -27,6 +27,11 @@ async function auditUnresolvedSubscriptionOperations({ now = Date.now() } = {}) 
   const report = { mutations, invoices, customersWithCardRecovery: cards, resumes, agedInventoryHolds: inventory };
   const count = Object.values(report).reduce((sum, entries) => sum + entries.length, 0);
   if (count) logger.error("[SubscriptionRecovery] Unresolved operations require review with the recovery command", JSON.stringify(report));
+  try {
+    await require("./subscriptionRecoveryAlerts.service").notifySubscriptionRecovery(report, { now });
+  } catch {
+    logger.error("[SubscriptionRecoveryAlerts] Notification check failed; recovery audit remains available in logs");
+  }
   return { count, ...report };
 }
 module.exports = { auditUnresolvedSubscriptionOperations };
