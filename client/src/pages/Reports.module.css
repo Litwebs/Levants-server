@@ -1034,6 +1034,17 @@
   min-width: 0;
 }
 
+.subscriptionTrendGrid .variantHeader {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.subscriptionTrendGrid .variantMeta {
+  max-width: 100%;
+  text-align: left;
+}
+
 .subscriptionCardQuiet .subscriptionRankings,
 .subscriptionCardQuiet .subscriptionTrendGrid {
   display: none;
