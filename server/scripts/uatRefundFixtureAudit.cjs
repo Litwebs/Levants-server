@@ -30,6 +30,14 @@ module.exports = async function auditUatRefundFixture(stripe, fixture) {
   assert.equal(addOns.length, 1);
   assert.equal(modifications[0].amount_received, fixture.increaseMinor);
   assert.equal(addOns[0].amount_received, fixture.addOnMinor);
+  const subscriptions = await stripe.subscriptions.search({
+    query: "metadata['subscriptionId']:'" + fixture.subscriptionId + "'", limit: 100,
+  });
+  assert.equal(subscriptions.has_more, false);
+  assert.equal(subscriptions.data.length, 1);
+  assert.equal(subscriptions.data[0].livemode, false);
+  assert.equal(subscriptions.data[0].customer, original.customer);
+  assert.equal(subscriptions.data[0].status, "canceled");
   const rows = [];
   for (const intent of intents.values()) {
     assert.equal(intent.currency, "gbp");
@@ -63,5 +71,5 @@ module.exports = async function auditUatRefundFixture(stripe, fixture) {
   assert.equal(refunded, collected);
   return { fixture: fixture.subscriptionNumber, mode: "sandbox", readOnly: true,
     payments: rows, collectedMinor: collected, refundedMinor: refunded,
-    remainingMinor: 0, success: true };
+    remainingMinor: 0, subscriptionStatus: "canceled", success: true };
 };
