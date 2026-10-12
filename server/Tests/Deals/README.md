@@ -31,5 +31,7 @@ The `.e2e.test.js` Jest files test HTTP/service/database integration with mocked
 providers. The Playwright `e2e/portal-subscriptions/deals.spec.js` tests browsers
 and real Stripe test-mode payments; those are separate verification levels.
 
-The `Deals regression` Actions workflow exposes a dedicated Deals API check alongside all backend regressions and the
-admin release checks on pushes to `feature/deals`, without deploying the branch.
+The `Deals regression` Actions workflow exposes a dedicated Deals API check and admin release checks on pushes to
+`feature/deals`. Backend code or other backend test changes also run all backend
+regressions; manual runs always run the full suite. Deals-test-only changes use the
+dedicated API job. The workflow does not deploy the branch.
