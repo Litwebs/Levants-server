@@ -1,5 +1,5 @@
-jest.mock("../../../models/route.model", () => ({ findById: jest.fn() }));
-jest.mock("../../../models/stop.model", () => ({ find: jest.fn() }));
+jest.mock("../../../models/route.model", () => ({ findById: jest.fn(), init: jest.fn(async () => {}) }));
+jest.mock("../../../models/stop.model", () => ({ find: jest.fn(), init: jest.fn(async () => {}) }));
 jest.mock("../../../services/route.service", () => ({ generateRoutesForBatch: jest.fn() }));
 jest.mock("../../../services/warehouse.service", () => ({ getRouteStockAggregation: jest.fn() }));
 const Route = require("../../../models/route.model");
