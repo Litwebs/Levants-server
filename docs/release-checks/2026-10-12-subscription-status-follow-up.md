@@ -31,9 +31,11 @@ authoritative evidence. Production merge/deployment still requires owner approva
 
 Rollback compatibility: this change adds `cancelled` to Order.deliveryStatus.
 An older schema that rejects that value must not be used as an automatic rollback
-after new cancellations have been saved. Use a schema-compatible rollback or a
-forward fix; do not turn cancelled deliveries back into ordered records to satisfy
-an old enum.
+after new cancellations have been saved. The compatible rollback preparation workflow builds and retains the old
+application with only its delivery-status enum updated, then hooks that fallback
+into the actual VPS helper. Its preparation/rehearsal and exact-tree UAT runs must
+pass before release. See deployment/production/README.md. Do not turn cancelled
+deliveries back into ordered records to satisfy an old enum.
 
 Legacy display compatibility is read-only: customer/admin order reads show a fully
 refunded ordered subscription order as cancelled only when its own linked slot is

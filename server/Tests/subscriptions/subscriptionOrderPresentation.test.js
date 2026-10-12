@@ -1,7 +1,7 @@
 "use strict";
 jest.mock("../../utils/stripe.util", () => ({}));
 jest.mock("../../Integration/google.geocode", () => ({ geocodeAddress: jest.fn() }));
-jest.mock("../../services/subscriptions/subscriptionEmailNotifications.service", () => ({}));
+jest.mock("../../services/customerPortal/subscriptionEmailNotifications.service", () => ({}));
 const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
@@ -25,7 +25,7 @@ beforeEach(async () => {
     items: [{ product, variant, name: "Milk", sku: "MILK", quantity: 1, price: 2, subtotal: 2 }],
     deliveryAddress: address, location: { lat: 51.5, lng: 0 }, deliveryDate: new Date("2026-10-18T09:00:00Z"),
     subtotal: 2, total: 2, amountPaid: 2, status: "refunded", deliveryStatus: "ordered", reservationExpiresAt: new Date() });
-  slot = await Delivery.create({ subscription: subscription._id, order: order._id,
+  slot = await Delivery.create({ customer: owner, subscription: subscription._id, order: order._id,
     scheduledDate: order.deliveryDate, status: "cancelled" });
 });
 test("presents an explicit cancelled legacy slot without altering its historical order or payment", async () => {
