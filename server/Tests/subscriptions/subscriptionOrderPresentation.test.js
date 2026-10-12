@@ -1,7 +1,7 @@
 "use strict";
 jest.mock("../../utils/stripe.util", () => ({}));
 jest.mock("../../Integration/google.geocode", () => ({ geocodeAddress: jest.fn() }));
-jest.mock("../../services/subscriptions/subscriptionEmailNotifications.service", () => ({}));
+jest.mock("../../services/customerPortal/subscriptionEmailNotifications.service", () => ({}));
 const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");

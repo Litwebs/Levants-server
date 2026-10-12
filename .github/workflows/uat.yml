@@ -14,12 +14,31 @@ concurrency:
   cancel-in-progress: ${{ contains(github.event.head_commit.message, '[supersede-validation]') }}
 
 jobs:
+  status-regressions:
+    name: Focused status and legacy-display checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Verify status persistence and legacy read paths
+        run: npx jest --runInBand --no-watchman Tests/subscriptions/subscriptionOrderPresentation.test.js Tests/subscriptions/subscriptionStock.test.js
+        working-directory: server
+
   subscription-e2e:
+    needs: status-regressions
     name: Real Stripe and browser checks
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit
 
   verify:
+    needs: status-regressions
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
