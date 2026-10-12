@@ -46,3 +46,10 @@ test("flags an interrupted customer identity without leaking its request details
     expect(JSON.stringify(report)).not.toContain("private@example.com");
   } finally { error.mockRestore(); }
 });
+
+test("email notification failure does not prevent returning the financial recovery audit", async () => {
+  const alerts = require("../../services/subscriptions/subscriptionRecoveryAlerts.service");
+  jest.spyOn(alerts, "notifySubscriptionRecovery").mockRejectedValueOnce(new Error("notification unavailable"));
+  const result = await audit();
+  expect(result.count).toBe(0);
+});

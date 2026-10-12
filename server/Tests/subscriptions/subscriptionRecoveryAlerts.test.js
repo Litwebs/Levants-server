@@ -102,3 +102,13 @@ test("UAT labels real-provider requests and forwards the idempotency key", async
   await transport.emails.send({ subject: "Recovery test", to: "alerts@example.com" }, { idempotencyKey: "recovery-test-key" });
   expect(providerSend).toHaveBeenCalledWith(expect.objectContaining({ subject: "[UAT] Recovery test" }), { idempotencyKey: "recovery-test-key" });
 });
+test("does not call the provider when ownership is lost before persisting its request", async () => {
+  const originalUpdate = Alert.updateOne.bind(Alert);
+  jest.spyOn(Alert, "updateOne").mockImplementation((filter, update, settings) => {
+    if (update.$set?.requestKey) return Promise.resolve({ modifiedCount: 0, matchedCount: 0 });
+    return originalUpdate(filter, update, settings);
+  });
+  const send = jest.fn();
+  await expect(notify(report(), options(send))).rejects.toThrow("claim_lost");
+  expect(send).not.toHaveBeenCalled();
+});
