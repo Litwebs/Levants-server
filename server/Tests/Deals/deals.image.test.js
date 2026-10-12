@@ -1,3 +1,4 @@
+require("./helpers/setup");
 const mongoose = require("mongoose");
 
 const firstImageId = new mongoose.Types.ObjectId();

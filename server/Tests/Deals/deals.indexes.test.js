@@ -1,3 +1,4 @@
+require("./helpers/setup");
 const Deal = require("../../models/deal.model");
 const {
   createProduct,

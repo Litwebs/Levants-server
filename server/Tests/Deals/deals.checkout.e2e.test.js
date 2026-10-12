@@ -1,5 +1,6 @@
+require("./helpers/setup");
 const request = require("supertest");
-const app = require("../testApp");
+const app = require("./helpers/testApp");
 const stripe = require("../../utils/stripe.util");
 const jwtUtil = require("../../utils/jwt.util");
 const Deal = require("../../models/deal.model");

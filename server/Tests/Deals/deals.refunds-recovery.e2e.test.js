@@ -1,5 +1,6 @@
+require("./helpers/setup");
 const request = require("supertest");
-const app = require("../testApp");
+const app = require("./helpers/testApp");
 const Deal = require("../../models/deal.model");
 const Order = require("../../models/order.model");
 const Variant = require("../../models/variant.model");
