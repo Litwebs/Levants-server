@@ -68,6 +68,14 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Install schema validation dependencies
+        run: npm ci
+        working-directory: server
       - name: Verify rollback isolation and automatic recovery
         env:
           ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
