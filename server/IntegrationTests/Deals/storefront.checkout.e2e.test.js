@@ -205,23 +205,23 @@ test("admin API publication, editing, deactivation and archive control the real 
   const detail = origin + "/deals/" + deal.slug;
   await page.goto(detail);
   await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
-  expect((await adminRequest("post", `/${deal.id}/publish`)).status()).toBe(200);
+  expect((await adminRequest("post", `/${deal._id}/publish`)).status()).toBe(200);
   await page.reload();
   await browserExpect(page.getByRole("heading", { name: deal.name, exact: true })).toBeVisible();
   await browserExpect(page.getByText("You save £4.75", { exact: true })).toBeVisible();
   await browserExpect(page.getByText("Test Variant × 2", { exact: true })).toBeVisible();
   await browserExpect(page.getByText("Test Variant × 3", { exact: true })).toBeVisible();
-  expect((await adminRequest("patch", `/${deal.id}`, { packagePrice: 12, description: "Edited browser package" })).status()).toBe(200);
+  expect((await adminRequest("patch", `/${deal._id}`, { packagePrice: 12, description: "Edited browser package" })).status()).toBe(200);
   await page.reload();
   await browserExpect(page.getByText("You save £2.75", { exact: true })).toBeVisible();
   await browserExpect(page.getByText("Edited browser package", { exact: true })).toBeVisible();
-  expect((await adminRequest("post", `/${deal.id}/deactivate`)).status()).toBe(200);
+  expect((await adminRequest("post", `/${deal._id}/deactivate`)).status()).toBe(200);
   await page.reload();
   await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
-  expect((await adminRequest("patch", `/${deal.id}`, { isActive: true })).status()).toBe(200);
+  expect((await adminRequest("patch", `/${deal._id}`, { isActive: true })).status()).toBe(200);
   await page.reload();
   await browserExpect(page.getByRole("heading", { name: deal.name, exact: true })).toBeVisible();
-  expect((await adminRequest("post", `/${deal.id}/archive`)).status()).toBe(200);
+  expect((await adminRequest("post", `/${deal._id}/archive`)).status()).toBe(200);
   await page.reload();
   await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
 }));
@@ -295,6 +295,12 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
     expect(session.amount_total).toBe(1250);
     expect(session.total_details.amount_discount).toBe(325);
     await page.waitForURL("https://checkout.stripe.com/**");
+    // Hosted Checkout geolocates CI runners to the US. Select the actual UK
+    // billing country and GBP rather than entering a postcode into a US ZIP field.
+    const country = page.locator("#billingCountry");
+    if (await country.count()) await country.selectOption("GB");
+    const sterling = page.getByText("£12.50", { exact: true });
+    if (await sterling.count()) await sterling.first().click();
     await page.locator("#cardNumber").fill("4242424242424242");
     await page.locator("#cardExpiry").fill("1234");
     await page.locator("#cardCvc").fill("123");
@@ -302,6 +308,8 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
     if (await name.count()) await name.fill("Deals Browser Test");
     const postcode = page.locator("#billingPostalCode");
     if (await postcode.count()) await postcode.fill("BD1 1AA");
+    const saveToLink = page.getByRole("checkbox", { name: /Save my information/i });
+    if (await saveToLink.count()) await saveToLink.uncheck();
     await page.getByRole("button", { name: /Pay|Complete payment/i }).click();
     await browserExpect.poll(async () => {
       session = await provider.checkout.sessions.retrieve(session.id);
