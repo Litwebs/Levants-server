@@ -164,6 +164,7 @@ const App = () => (
                           }
                         >
                           <Route path="/" element={<HomeRoute />} />
+                          <Route path="/analytics/*" element={<Navigate to="/" replace />} />
                           <Route
                             path="/orders"
                             element={
