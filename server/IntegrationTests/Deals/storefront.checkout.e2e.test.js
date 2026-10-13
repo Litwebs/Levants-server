@@ -311,7 +311,7 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
     if (await postcode.count()) await postcode.fill("BD1 1AA");
     const saveToLink = page.getByRole("checkbox", { name: /Save my information/i });
     if (await saveToLink.count()) await saveToLink.uncheck();
-    await page.getByRole("button", { name: /Pay|Complete payment/i }).click();
+    await page.getByTestId("hosted-payment-submit-button").click();
     await browserExpect.poll(async () => {
       session = await provider.checkout.sessions.retrieve(session.id);
       return session.payment_status;
