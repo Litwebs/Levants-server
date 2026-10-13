@@ -25,6 +25,8 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: server/package-lock.json
+      - name: Verify provider diagnostics do not expose credentials
+        run: node --test deployment/uat/test-provider-diagnostics.cjs
       - run: npm ci
         working-directory: server
       - name: Verify status persistence and legacy read paths
