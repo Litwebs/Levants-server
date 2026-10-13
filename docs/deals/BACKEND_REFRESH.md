@@ -19,7 +19,7 @@ The credit-assisted refund correction is restricted to Deals orders; ordinary or
 
 ## Validation
 
-The first refresh was tested at `ab2cdea94c7d40bab1cdd6191edba2f8d67b403c`. UAT advanced with delivery-navigation work during validation; the final combined backend is being rerun.
+The first refresh was tested at `ab2cdea94c7d40bab1cdd6191edba2f8d67b403c`. UAT advanced with delivery-navigation work during validation; the final combined backend was verified at `79d55f32e52e8f09041f1c6d58c91db78272966c`.
 
 - Server JavaScript/CJS syntax and Git scope audit passed.
 - UAT safety: 13/13 passed locally.
@@ -32,4 +32,14 @@ The first refresh was tested at `ab2cdea94c7d40bab1cdd6191edba2f8d67b403c`. UAT 
 
 Frontend validation is deferred as requested. The restored UI still needs to be reviewed for backend draft/publication and savings-mode support before complete feature sign-off. No merge into UAT or production is authorized.
 
-Final combined backend regression after the delivery-navigation UAT refresh: pending.
+## Final combined verification
+
+[The final workflow](https://github.com/Litwebs/Levants-server/actions/runs/38370379659) completed successfully on the exact combined commit `79d55f32e52e8f09041f1c6d58c91db78272966c`.
+
+- **1,612 tests / 186 suites passed, with no skipped tests**, in [the full backend job](https://github.com/Litwebs/Levants-server/actions/runs/38370379659/job/115205637138): all 1,400 current UAT tests / 168 suites plus 212 Deals tests / 18 suites.
+- The 12 storefront/API integration scenarios and both real Stripe sandbox payment/refund cases passed again after the navigation update.
+- The 32 navigation unit/service tests passed locally using UAT's navigation-only Jest configuration.
+- UAT safety and provider diagnostics passed again after the final refresh.
+- The final scope audit confirms current UAT delivery/navigation code, models, shared Jest setup, deployment configuration and existing release workflows are unchanged. The owner's pushed Deals admin editor/context/tests remain byte-identical.
+
+Only documentation changed after this verified commit. Backend verification is complete; the frontend phase remains deferred.
