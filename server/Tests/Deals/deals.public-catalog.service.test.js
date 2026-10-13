@@ -1,3 +1,4 @@
+require("./helpers/setup");
 const Deal = require("../../models/deal.model");
 const service = require("../../services/deals.public.service");
 const { createPackage } = require("./helpers/dealFactory");

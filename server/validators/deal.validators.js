@@ -1,8 +1,12 @@
 const Joi = require("joi");
+const { parseDealImageData } = require("../utils/dealImage.util");
 
 const objectId = Joi.string().hex().length(24);
 const imageField = Joi.alternatives()
-  .try(objectId, Joi.string().max(7_000_000).pattern(/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/))
+  .try(objectId, Joi.string().max(7_000_000).custom((value, helpers) => {
+    try { parseDealImageData(value); return value; }
+    catch (error) { return helpers.message(error.message); }
+  }))
   .allow(null, "")
   .optional();
 

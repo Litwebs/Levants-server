@@ -1,6 +1,7 @@
 "use strict";
 
 const Order = require("../../models/order.model");
+const { presentCancelledSubscriptionOrders } = require("../subscriptions/subscriptionOrderPresentation.service");
 const Customer = require("../../models/customer.model");
 const CustomerNotification = require("../../models/customerNotification.model");
 const subscriptionSettingsService = require("../subscriptionSettings.service");
@@ -70,7 +71,7 @@ async function ListOrders({
     .lean();
 
   return Response(true, null, {
-    orders,
+    orders: await presentCancelledSubscriptionOrders(orders),
     meta: { page: safePage, pageSize: safePageSize, total },
   });
 }
@@ -120,7 +121,7 @@ async function GetOrder({ customerId, orderId } = {}) {
     deliveryChangeCutoffAt: cutoffAt,
   };
 
-  return Response(true, null, { order: normalizedOrder });
+  return Response(true, null, { order: (await presentCancelledSubscriptionOrders([normalizedOrder]))[0] });
 }
 
 async function UpdateOrderDelivery({

@@ -1,3 +1,4 @@
+const { parseDealImageData } = require("../utils/dealImage.util");
 const { calculateDealPricing, publishedDealFilter } = require("../utils/dealPricing.util");
 const sharp = require("sharp");
 const File = require("../models/file.model");
@@ -24,25 +25,15 @@ async function resolveImage(imageValue, userId) {
   if (!imageValue) return undefined;
 
   if (typeof imageValue === "string" && imageValue.startsWith("data:")) {
-    const match = imageValue.match(
-      /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/,
-    );
-    if (!match)
-      throw Object.assign(new Error("Choose a JPG, PNG or WEBP image"), {
-        statusCode: 400,
-      });
-    const buffer = Buffer.from(match[2], "base64");
-    if (buffer.length > 5 * 1024 * 1024)
-      throw Object.assign(new Error("Deal images must be 5 MB or smaller"), {
-        statusCode: 400,
-      });
+    const imageData = parseDealImageData(imageValue);
+    const buffer = Buffer.from(imageData.encoded, "base64");
     try {
       const metadata = await sharp(buffer, {
         limitInputPixels: 40_000_000,
       }).metadata();
       if (
         !["jpeg", "png", "webp"].includes(metadata.format) ||
-        metadata.format !== match[1] ||
+        metadata.format !== imageData.format ||
         !metadata.width ||
         !metadata.height ||
         metadata.width * metadata.height > 40_000_000

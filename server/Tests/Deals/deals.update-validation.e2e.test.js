@@ -1,5 +1,6 @@
+require("./helpers/setup");
 const request = require("supertest");
-const app = require("../testApp");
+const app = require("./helpers/testApp");
 const Deal = require("../../models/deal.model");
 const { createUser } = require("../helpers/authTestData");
 const { getSetCookieHeader } = require("../helpers/cookies");

@@ -1,9 +1,10 @@
+require("./helpers/setup");
 jest.mock("../../services/orders/orders.stock.service", () => {
   const actual = jest.requireActual("../../services/orders/orders.stock.service");
   return { ...actual, finalizeStockForOrder: jest.fn(actual.finalizeStockForOrder) };
 });
 const request = require("supertest");
-const app = require("../testApp");
+const app = require("./helpers/testApp");
 const Customer = require("../../models/customer.model");
 const Variant = require("../../models/variant.model");
 const Order = require("../../models/order.model");

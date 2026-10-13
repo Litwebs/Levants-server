@@ -630,7 +630,7 @@ test("paused subscriptions cannot open or purchase a one-time add-on", async ({
   await page.goto(`${detailPath}/next-delivery/add-ons`);
   await expect(
     page.getByText(
-      "One-time add-ons are available only while the subscription is active.",
+      "One-time add-ons are unavailable while this subscription is paused, cancelled or scheduled for cancellation.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -1337,7 +1337,10 @@ test("scheduled cancellation notice remains visible through the final protected 
   await expect(
     page.getByText(/Subscription scheduled for cancellation/i),
   ).toHaveCount(0);
-  await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })
+      .locator("xpath=ancestor::div[3]").getByText("Cancelled", { exact: true }),
+  ).toBeVisible();
 
   const finalState = await getState(request, fixture.subscriptionId);
   expect(finalState.subscription.status).toBe("cancelled");

@@ -1,3 +1,4 @@
+require("./helpers/setup");
 const mongoose = require("mongoose");
 const Deal = require("../../models/deal.model");
 const service = require("../../services/deals.admin.service");

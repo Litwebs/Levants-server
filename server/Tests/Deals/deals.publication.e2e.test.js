@@ -1,6 +1,7 @@
+require("./helpers/setup");
 const request = require("supertest");
 const mongoose = require("mongoose");
-const app = require("../testApp");
+const app = require("./helpers/testApp");
 const Deal = require("../../models/deal.model");
 const Variant = require("../../models/variant.model");
 const admin = require("../../services/deals.admin.service");

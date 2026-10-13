@@ -47,6 +47,11 @@ jobs:
         working-directory: server
         run: npm run test:release
 
+      - name: Verify production rollback isolation and automatic recovery
+        env:
+          ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
+        run: python3 deployment/production/test-compatible-rollback.py
+
   client-quality:
     name: Client lint and build
     runs-on: ubuntu-latest
@@ -335,6 +340,10 @@ jobs:
       REPO_DIR: ${{ github.event.repository.name }}
 
     steps:
+      - name: Checkout approved deployment configuration
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - name: Download deployment client build
         uses: actions/download-artifact@v4
         with:
@@ -351,6 +360,12 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -p ${{ secrets.VPS_PORT }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Require the tested compatible rollback configuration before deployment
+        run: |
+          set -euo pipefail
+          EXPECTED_ROLLBACK_HASH=$(sha256sum deployment/production/compatible-rollback.py | cut -d ' ' -f1)
+          ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \
+            "test \"\$(sha256sum /root/LWS-Scripts/prepare-compatible-rollback.py | cut -d ' ' -f1)\" = '$EXPECTED_ROLLBACK_HASH' && python3 /root/LWS-Scripts/prepare-compatible-rollback.py verify"
       - name: Restore stale generated admin build on VPS
         run: |
           ssh -p ${{ secrets.VPS_PORT }} root@${{ secrets.VPS_HOST }} \

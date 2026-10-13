@@ -366,6 +366,8 @@ const connectDb = async () => {
         partialFilterExpression: { subscriptionInvoiceKey: { $type: "string" } } },
     );
 
+    await require("../models/deal.model").createIndexes();
+
     if (env !== "test") {
       logger.db("MongoDB connected");
     }

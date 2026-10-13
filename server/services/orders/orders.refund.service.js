@@ -76,6 +76,13 @@ function getCapturedPaymentMinor(order, refundedMinor = 0) {
   );
   if (allocatedMinor > 0) return allocatedMinor;
 
+  // Store credit settles part of checkout outside Stripe. Only the card
+  // portion can be refunded through this payment intent.
+  const creditAppliedMinor = Number(order.creditApplied);
+  if (Number.isFinite(creditAppliedMinor) && creditAppliedMinor > 0 && order.orderType !== "subscription_generated") {
+    return Math.max(0, getOrderTotalMinor(order) - Math.round(creditAppliedMinor));
+  }
+
   const amountPaid = Number(order.amountPaid);
   if (Number.isFinite(amountPaid) && amountPaid > 0) {
     const paidMinor = toMinorUnits(amountPaid, order.currency || "GBP");

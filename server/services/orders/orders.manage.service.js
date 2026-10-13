@@ -3,6 +3,7 @@
 const mongoose = require("mongoose");
 
 const Order = require("../../models/order.model");
+const { presentCancelledSubscriptionOrders } = require("../subscriptions/subscriptionOrderPresentation.service");
 const ProductVariant = require("../../models/variant.model");
 const {
   attachProductNameSnapshots,
@@ -21,7 +22,7 @@ async function GetOrderById({ orderId }) {
     return { success: false, message: "Order not found" };
   }
 
-  return { success: true, data: order };
+  return { success: true, data: (await presentCancelledSubscriptionOrders([order]))[0] };
 }
 
 async function UpdateOrderPaymentStatus({

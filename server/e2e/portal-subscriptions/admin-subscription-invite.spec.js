@@ -370,3 +370,27 @@ test("admin keeps independent per-day baskets, reviews exact totals, preserves s
     { variantId: "variant-milk", quantity: 2 },
   ]);
 });
+
+test("admin subscription order rows show refunded payment and cancelled delivery separately", async ({ page }) => {
+  await mockAdminApi(page, () => {});
+  const subscription = { _id: "cancelled-view", subscriptionNumber: "SUB-CANCELLED-VIEW", status: "cancelled",
+    frequency: "weekly", preferredDeliveryDay: 3, preferredDeliveryDays: [3], items: [],
+    deliveryAddress: { line1: "1 Test Street", city: "London", postcode: "SW1A 1AA", country: "GB" },
+    customer: { _id: "customer-test", firstName: "Test", lastName: "Customer", email: "test@example.com" } };
+  await page.route(ADMIN_API + "/admin/subscriptions/cancelled-view", route => route.fulfill({
+    status: 200, headers: corsHeaders(), body: JSON.stringify({ success: true, data: { subscription } }),
+  }));
+  await page.route(ADMIN_API + "/admin/subscriptions/cancelled-view/orders**", route => route.fulfill({
+    status: 200, headers: corsHeaders(), body: JSON.stringify({ success: true,
+      data: { orders: [{ _id: "cancelled-order", orderId: "ORD-CANCELLED-VIEW", deliveryDate: "2026-10-18T08:00:00Z",
+        status: "refunded", deliveryStatus: "cancelled", total: 26, amountPaid: 26, items: [] }],
+        meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 } } }),
+  }));
+  await page.goto(ADMIN_ORIGIN + "/subscriptions/cancelled-view");
+  await expect(page.getByRole("heading", { name: "SUB-CANCELLED-VIEW", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Orders History", exact: true }).click();
+  const row = page.getByRole("row").filter({ hasText: "ORD-CANCELLED-VIEW" });
+  await expect(row).toContainText("refunded");
+  await expect(row).toContainText("cancelled");
+  await expect(row).not.toContainText("ordered");
+});

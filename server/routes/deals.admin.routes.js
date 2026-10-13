@@ -1,7 +1,7 @@
 const express = require("express");
 
 const asyncHandler = require("../utils/asyncHandler.util");
-const { requireAuth } = require("../middleware/auth.middleware");
+const { requireDealsAdminAuth } = require("../middleware/deals.auth.middleware");
 const { requirePermission } = require("../middleware/permission.middleware");
 const { authLimiter } = require("../middleware/rateLimit.middleware");
 const {
@@ -19,7 +19,7 @@ const {
 
 const router = express.Router();
 
-router.use(requireAuth);
+router.use(requireDealsAdminAuth);
 router.use(authLimiter);
 
 router.get(
@@ -27,7 +27,7 @@ router.get(
   requirePermission(["promotions.create", "promotions.update"]),
   validateQuery(require("../validators/deal.validators").catalogQuerySchema),
   asyncHandler(async (req, res) => {
-    const result = await require("../services/variants.admin.service").SearchVariants({ ...req.query, browse: true });
+    const result = await require("../services/deals.catalog.service").SearchVariants({ ...req.query, browse: true });
     return require("../utils/response.util").sendOk(res, result.data);
   }),
 );

@@ -1,6 +1,7 @@
+require("./helpers/setup");
 const request = require("supertest");
 
-const app = require("../testApp");
+const app = require("./helpers/testApp");
 const Role = require("../../models/role.model");
 const { createUser } = require("../helpers/authTestData");
 const { loginAs } = require("../helpers/loginAs");
