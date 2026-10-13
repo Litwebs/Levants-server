@@ -6,16 +6,18 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  ArrowLeft,
-  ChevronLeft,
+  CircleAlert,
+  CircleCheck,
+  CircleMinus,
+  CircleX,
   ChevronRight,
   Eye,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
-  Save,
   Trash2,
   X,
 } from "lucide-react";
@@ -25,7 +27,8 @@ import {
   Badge,
   Button,
   Card,
-  CardFooter,
+  DataTableCard,
+  FiltersCardLayout,
   Input,
   Modal,
   ModalFooter,
@@ -40,11 +43,13 @@ import {
   FormSection,
   FormValue,
   Select,
+  PageContainer,
 } from "../../components/common";
 import { useToast } from "../../components/common/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
 
 import styles from "./Products.module.css";
+import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 import {
   AdminProduct,
   AdminProductVariant,
@@ -428,316 +433,6 @@ const VariantCreateModal = ({
   );
 };
 
-const VariantEditModal = ({
-  isOpen,
-  onClose,
-  variant,
-  onSave,
-  canUpdateVariant,
-  canUpdateStock,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  variant: AdminProductVariant | null;
-  onSave: (variantId: string, patch: Partial<VariantForm>) => Promise<void>;
-  canUpdateVariant: boolean;
-  canUpdateStock: boolean;
-}) => {
-  const [isSaving, setIsSaving] = useState(false);
-  const [patch, setPatch] = useState<Partial<VariantForm>>({});
-
-  const thumbnailInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!isOpen || !variant) return;
-    setPatch({
-      name: variant.name,
-      description: variant.description ?? "",
-      ingredients: variant.ingredients ?? "",
-      allergens:
-        variant.allergens === undefined
-          ? undefined
-          : variant.allergens.join(", "),
-      nutritionalInformation: variant.nutritionalInformation ?? "",
-      sku: variant.sku,
-      price: variant.price,
-      stockQuantity: variant.stockQuantity,
-      lowStockAlert: variant.lowStockAlert,
-      status: variant.status,
-    });
-  }, [isOpen, variant]);
-
-  if (!variant) return null;
-
-  const handleThumbnailUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () =>
-      setPatch((p) => ({
-        ...p,
-        thumbnailImage: { _id: "", url: String(reader.result) } as MediaImage,
-      }));
-    reader.readAsDataURL(file);
-  };
-
-  const patchedThumbUrl =
-    patch.thumbnailImage !== undefined
-      ? getImageUrl(patch.thumbnailImage)
-      : null;
-  const isThumbnailExplicitlyCleared =
-    patch.thumbnailImage !== undefined && patchedThumbUrl === "";
-
-  const thumbnailToShow = isThumbnailExplicitlyCleared
-    ? ""
-    : patchedThumbUrl || getImageUrl(variant.thumbnailImage);
-
-  const canSave = canUpdateVariant || canUpdateStock;
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Edit Variant" size="lg">
-      <FormGrid>
-        <FormRow label="Variant Name" htmlFor="edit-variant-name">
-          <input
-            id="edit-variant-name"
-            value={patch.name ?? ""}
-            disabled={!canUpdateVariant}
-            onChange={(e) => setPatch((p) => ({ ...p, name: e.target.value }))}
-          />
-        </FormRow>
-
-        <FormRow label="SKU" htmlFor="edit-variant-sku">
-          <input
-            id="edit-variant-sku"
-            value={patch.sku ?? ""}
-            disabled={!canUpdateVariant}
-            onChange={(e) => setPatch((p) => ({ ...p, sku: e.target.value }))}
-          />
-        </FormRow>
-
-        <FormRow label="Price (£)" htmlFor="edit-variant-price">
-          <input
-            id="edit-variant-price"
-            type="number"
-            step="0.01"
-            min="0"
-            value={patch.price ?? ""}
-            disabled={!canUpdateVariant}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setPatch((p) => ({
-                ...p,
-                price: raw === "" ? undefined : Number(raw),
-              }));
-            }}
-          />
-        </FormRow>
-
-        <FormRow label="Stock Quantity" htmlFor="edit-variant-stock">
-          <input
-            id="edit-variant-stock"
-            type="number"
-            min="0"
-            value={patch.stockQuantity ?? ""}
-            disabled={!canUpdateStock}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setPatch((p) => ({
-                ...p,
-                stockQuantity: raw === "" ? undefined : Number(raw),
-              }));
-            }}
-          />
-        </FormRow>
-
-        <FormRow label="Low Stock Alert" htmlFor="edit-variant-low">
-          <input
-            id="edit-variant-low"
-            type="number"
-            min="0"
-            value={patch.lowStockAlert ?? ""}
-            disabled={!canUpdateStock}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setPatch((p) => ({
-                ...p,
-                lowStockAlert: raw === "" ? undefined : Number(raw),
-              }));
-            }}
-          />
-        </FormRow>
-
-        <FormRow label="Status" htmlFor="edit-variant-status">
-          <select
-            id="edit-variant-status"
-            value={(patch.status as VariantStatus) ?? variant.status}
-            disabled={!canUpdateVariant}
-            onChange={(e) =>
-              setPatch((p) => ({
-                ...p,
-                status: e.target.value as VariantStatus,
-              }))
-            }
-          >
-            <option value="active">active</option>
-            <option value="inactive">inactive</option>
-          </select>
-        </FormRow>
-
-        <FormSection title="Product Information">
-          <FormGrid>
-            <FormRow label="Description" htmlFor="edit-variant-description">
-              <textarea
-                id="edit-variant-description"
-                rows={3}
-                value={patch.description ?? ""}
-                disabled={!canUpdateVariant}
-                onChange={(e) =>
-                  setPatch((p) => ({ ...p, description: e.target.value }))
-                }
-              />
-            </FormRow>
-
-            <FormRow label="Ingredients" htmlFor="edit-variant-ingredients">
-              <textarea
-                id="edit-variant-ingredients"
-                rows={3}
-                value={patch.ingredients ?? ""}
-                disabled={!canUpdateVariant}
-                onChange={(e) =>
-                  setPatch((p) => ({ ...p, ingredients: e.target.value }))
-                }
-              />
-            </FormRow>
-
-            <FormRow label="Allergens" htmlFor="edit-variant-allergens">
-              <input
-                id="edit-variant-allergens"
-                value={patch.allergens ?? ""}
-                disabled={!canUpdateVariant}
-                onChange={(e) =>
-                  setPatch((p) => ({ ...p, allergens: e.target.value }))
-                }
-                placeholder="Comma-separated (e.g. Milk, Nuts)"
-              />
-            </FormRow>
-
-            <FormRow
-              label="Nutritional Information"
-              htmlFor="edit-variant-nutrition"
-            >
-              <textarea
-                id="edit-variant-nutrition"
-                rows={5}
-                value={patch.nutritionalInformation ?? ""}
-                disabled={!canUpdateVariant}
-                onChange={(e) =>
-                  setPatch((p) => ({
-                    ...p,
-                    nutritionalInformation: e.target.value,
-                  }))
-                }
-              />
-            </FormRow>
-          </FormGrid>
-        </FormSection>
-
-        <FormSection title="Thumbnail Image">
-          <div className={styles.thumbnailUpload}>
-            <div className={styles.thumbnailPreviewArea}>
-              <div className={styles.thumbnailPreview}>
-                {thumbnailToShow ? (
-                  <img src={thumbnailToShow} alt="Variant thumbnail" />
-                ) : (
-                  <div className={styles.uploadPlaceholder}>
-                    <span>No thumbnail</span>
-                  </div>
-                )}
-
-                {canUpdateVariant ? (
-                  patch.thumbnailImage !== undefined ? (
-                    <button
-                      type="button"
-                      className={styles.removeImageBtn}
-                      onClick={() =>
-                        setPatch((p) => ({ ...p, thumbnailImage: undefined }))
-                      }
-                      title="Revert"
-                    >
-                      <X size={14} />
-                    </button>
-                  ) : getImageUrl(variant.thumbnailImage) ? (
-                    <button
-                      type="button"
-                      className={styles.removeImageBtn}
-                      onClick={() =>
-                        setPatch((p) => ({
-                          ...p,
-                          thumbnailImage: { _id: "", url: "" } as MediaImage,
-                        }))
-                      }
-                      title="Remove"
-                    >
-                      <X size={14} />
-                    </button>
-                  ) : null
-                ) : null}
-              </div>
-
-              <div
-                className={styles.uploadPlaceholder}
-                onClick={() => {
-                  if (!canUpdateVariant) return;
-                  thumbnailInputRef.current?.click();
-                }}
-              >
-                <span>Click to upload new thumbnail</span>
-              </div>
-            </div>
-
-            <input
-              ref={thumbnailInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleThumbnailUpload}
-              className={styles.hiddenInput}
-            />
-          </div>
-        </FormSection>
-      </FormGrid>
-
-      <ModalFooter>
-        <Button variant="outline" onClick={onClose} disabled={isSaving}>
-          Cancel
-        </Button>
-        {canSave ? (
-          <Button
-            onClick={async () => {
-              setIsSaving(true);
-              try {
-                await onSave(variant._id, patch);
-                onClose();
-              } catch {
-                // Error toast is handled by onSave; keep modal open.
-              } finally {
-                setIsSaving(false);
-              }
-            }}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <Loader2 size={16} className={styles.spinnerIcon} />
-            ) : (
-              <Save size={16} />
-            )}
-            Save
-          </Button>
-        ) : null}
-      </ModalFooter>
-    </Modal>
-  );
-};
-
 const ProductVariantsPage = () => {
   const { productId } = useParams();
   const navigate = useNavigate();
@@ -772,9 +467,6 @@ const ProductVariantsPage = () => {
     pageSize: number;
   }>({ total: 0, totalPages: 1, page: 1, pageSize: 20 });
 
-  const [paginationAction, setPaginationAction] = useState<
-    "prev" | "next" | null
-  >(null);
   const [disablingVariantId, setDisablingVariantId] = useState<string | null>(
     null,
   );
@@ -787,7 +479,6 @@ const ProductVariantsPage = () => {
     useState<AdminProductVariant | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
 
   const pageRef = useRef(page);
   const pageSizeRef = useRef(pageSize);
@@ -901,12 +592,6 @@ const ProductVariantsPage = () => {
     refreshProduct();
   }, [productId]);
 
-  useEffect(() => {
-    if (!isLoading) {
-      setPaginationAction(null);
-    }
-  }, [isLoading]);
-
   const didMountSearchRef = useRef(false);
 
   // Match Customers search UX: reset to page 1 when search changes
@@ -977,68 +662,6 @@ const ProductVariantsPage = () => {
     }
   };
 
-  const updateVariant = async (
-    variantId: string,
-    patch: Partial<VariantForm>,
-  ) => {
-    if (!canEditVariant) return;
-
-    const body: Record<string, any> = {
-      ...(canUpdateVariant
-        ? {
-            name: patch.name,
-            description: patch.description,
-            ingredients: patch.ingredients,
-            allergens:
-              patch.allergens === undefined
-                ? undefined
-                : parseAllergens(patch.allergens),
-            nutritionalInformation: patch.nutritionalInformation,
-            sku: patch.sku,
-            price: patch.price,
-            thumbnailImage: patch.thumbnailImage?.url,
-            status: patch.status,
-          }
-        : {}),
-      ...(canUpdateStock
-        ? {
-            stockQuantity: patch.stockQuantity,
-            lowStockAlert: patch.lowStockAlert,
-          }
-        : {}),
-    };
-
-    Object.keys(body).forEach((k) => {
-      if (body[k] === undefined) delete body[k];
-    });
-
-    try {
-      const res = await api.put(`/admin/products/variants/${variantId}`, body);
-      showToast({ type: "success", title: "Variant updated" });
-
-      if (res?.data?.success) {
-        await refreshProduct();
-      }
-    } catch (e: any) {
-      const status = e?.response?.status;
-      const apiMessage = e?.response?.data?.message;
-      const code = e?.response?.data?.error?.code;
-
-      showToast({
-        type: "error",
-        title:
-          status === 409 ? "SKU already exists" : "Failed to update variant",
-        message:
-          apiMessage ||
-          (code === "DUPLICATE_KEY_ERROR"
-            ? "SKU already exists"
-            : e?.message || "Request failed"),
-      });
-
-      throw e;
-    }
-  };
-
   const disableVariant = async (variantId: string) => {
     if (disablingVariantId) return;
 
@@ -1071,16 +694,15 @@ const ProductVariantsPage = () => {
 
   const total = paginationMeta.total ?? 0;
   const totalPages = paginationMeta.totalPages ?? 1;
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = total === 0 ? 0 : Math.min(page * pageSize, total);
-
   return (
-    <div className={styles.container}>
+    <PageContainer className={`${styles.container} ${styles.variantsPage}`}>
+      <nav aria-label="Breadcrumb" className={styles.variantsBreadcrumb}>
+        <Link to="/products">Products</Link>
+        <ChevronRight size={14} aria-hidden="true" />
+        <Link to={`/products/${productId}/edit`}>{product?.name || "Product"}</Link>
+      </nav>
       <div className={styles.header}>
         <div className={styles.titleSection}>
-          <Button variant="outline" onClick={() => navigate("/products")}>
-            <ArrowLeft size={18} /> Back
-          </Button>
           <div>
             <h1 className={styles.title}>{product?.name || "Product"}</h1>
             <div className={styles.subtitleRow}>
@@ -1098,61 +720,51 @@ const ProductVariantsPage = () => {
           </div>
         </div>
 
-        {canCreateVariant ? (
-          <Button onClick={() => setIsCreateOpen(true)} disabled={isLoading}>
-            {isLoading ? (
-              <Loader2 size={18} className={styles.spinnerIcon} />
-            ) : (
-              <Plus size={18} />
-            )}
-            Add Variant
-          </Button>
-        ) : null}
+        <div className={styles.headerActions}>
+          <Button variant="outline" size="sm" leftIcon={<RefreshCw size={16} />} onClick={() => void refreshProduct()} disabled={isLoading}>Refresh</Button>
+        </div>
       </div>
 
-      <div className={styles.statsGrid}>
-        <Card className={styles.statCard}>
-          <span className={styles.statLabel}>Active</span>
-          <span className={`${styles.statValue} ${styles.success}`}>
-            {variantStats.active}
-          </span>
-        </Card>
-
-        <Card className={styles.statCard}>
-          <span className={styles.statLabel}>Inactive</span>
-          <span className={styles.statValue}>{variantStats.inactive}</span>
-        </Card>
-
-        <Card className={styles.statCard}>
-          <span className={styles.statLabel}>Low Stock</span>
-          <span className={`${styles.statValue} ${styles.warning}`}>
-            {variantStats.lowStock}
-          </span>
-        </Card>
-
-        <Card className={styles.statCard}>
-          <span className={styles.statLabel}>Out of Stock</span>
-          <span className={`${styles.statValue} ${styles.danger}`}>
-            {variantStats.outOfStock}
-          </span>
-        </Card>
-      </div>
+      <Card padding="none" className={styles.catalogStats}>
+        <dl className={styles.catalogStatsList} aria-label="Variant overview">
+          {[
+            { label: "Active", value: variantStats.active, description: "Available for sale", icon: <CircleCheck size={19} />, tone: styles.successIcon },
+            { label: "Inactive", value: variantStats.inactive, description: "Hidden from sale", icon: <CircleMinus size={19} />, tone: "" },
+            { label: "Low stock", value: variantStats.lowStock, description: "Needs attention", icon: <CircleAlert size={19} />, tone: styles.warningIcon },
+            { label: "Out of stock", value: variantStats.outOfStock, description: "Currently unavailable", icon: <CircleX size={19} />, tone: styles.dangerIcon },
+          ].map((item) => (
+            <div className={styles.catalogStatItem} key={item.label}>
+              <span className={`${styles.statIcon} ${item.tone}`} aria-hidden="true">{item.icon}</span>
+              <div className={styles.statContent}>
+                <dt className={styles.statLabel}>{item.label}</dt>
+                <dd className={styles.statDetail}>
+                  <span className={styles.statValue}>{item.value}</span>
+                  <span className={styles.statDescription}>{item.description}</span>
+                </dd>
+              </div>
+            </div>
+          ))}
+        </dl>
+      </Card>
 
       {product && (
-        <Card className={styles.filtersCard}>
-          <div className={styles.variantsStats}>
-            {/* <div className={styles.variantsFilters}> */}
+        <FiltersCardLayout className={sharedFilterStyles.filtersCard} topRow={
+          <div className={sharedFilterStyles.searchRow}>
+            <div className={sharedFilterStyles.searchInput}>
             <Input
+              aria-label="Search variants"
               placeholder="Search variants..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
               }}
               leftIcon={<Search size={18} />}
-              className={styles.searchInput}
+              className={sharedFilterStyles.searchControl}
             />
+            </div>
 
             <Select
+              aria-label="Filter variants by status"
               className={styles.filterSelect}
               value={statusFilter}
               disabled={isLoading}
@@ -1168,13 +780,39 @@ const ProductVariantsPage = () => {
                 { value: "all", label: "All" },
               ]}
             />
+            {canCreateVariant ? (
+              <Button size="sm" leftIcon={<Plus size={16} />} onClick={() => setIsCreateOpen(true)} disabled={isLoading}>Add Variant</Button>
+            ) : null}
           </div>
-          {/* </div> */}
-        </Card>
+        } />
       )}
 
-      <Card className={styles.variantsTableCard}>
-        <Table className={styles.variantsTableScroll}>
+      <DataTableCard
+        className={styles.productsTableCard}
+        loading={isLoading}
+        loadingText="Loading variants…"
+        pagination={{
+          page, pageSize, total, totalPages,
+          setPage: (next) => {
+            const nextPage = typeof next === "function" ? next(page) : next;
+            setPage(nextPage);
+            refreshProduct({ page: nextPage });
+          },
+          setPageSize: (nextSize) => {
+            setPageSize(nextSize);
+            setPage(1);
+            refreshProduct({ page: 1, pageSize: nextSize });
+          },
+          pageSizeOptions: [
+            { value: "10", label: "10 / page" },
+            { value: "20", label: "20 / page" },
+            { value: "50", label: "50 / page" },
+          ],
+          loading: isLoading,
+          footerClassName: styles.productsPagination,
+        }}
+      >
+        <Table withWrapper={false} tableClassName={styles.responsiveVariantsTable}>
           <TableHeader>
             <TableRow>
               <TableHead>Variant</TableHead>
@@ -1184,7 +822,7 @@ const ProductVariantsPage = () => {
               <TableHead>Reserved</TableHead>
               <TableHead>Available</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className={styles.actionsCell}>Actions</TableHead>
+              <TableHead width={80}>Actions</TableHead>
             </TableRow>
           </TableHeader>
 
@@ -1198,7 +836,7 @@ const ProductVariantsPage = () => {
                     : () => {
                         setSelectedVariant(v);
                         if (canEditVariant) {
-                          setIsEditOpen(true);
+                          navigate(`/products/${productId}/variants/${v._id}/edit`);
                         } else {
                           setIsViewOpen(true);
                         }
@@ -1293,80 +931,7 @@ const ProductVariantsPage = () => {
           </TableBody>
         </Table>
 
-        <CardFooter className={styles.paginationFooter}>
-          <div className={styles.paginationInfo}>
-            Showing {rangeStart}–{rangeEnd} of {total}
-          </div>
-
-          <div className={styles.paginationControls}>
-            <Select
-              className={styles.pageSizeSelect}
-              value={String(pageSize)}
-              disabled={isLoading}
-              onChange={(v) => {
-                const nextSize = Number(v);
-                setPaginationAction(null);
-                setPageSize(nextSize);
-                setPage(1);
-                refreshProduct({ page: 1, pageSize: nextSize });
-              }}
-              options={[
-                { value: "10", label: "10 / page" },
-                { value: "20", label: "20 / page" },
-                { value: "50", label: "50 / page" },
-              ]}
-            />
-
-            <div className={styles.pageButtons}>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isLoading || page <= 1}
-                onClick={() => {
-                  setPaginationAction("prev");
-                  const nextPage = Math.max(1, page - 1);
-                  setPage(nextPage);
-                  refreshProduct({ page: nextPage });
-                }}
-              >
-                {isLoading && paginationAction === "prev" ? (
-                  <Loader2 size={14} className={styles.spinnerIcon} />
-                ) : (
-                  <>
-                    <ChevronLeft size={16} />
-                    Prev
-                  </>
-                )}
-              </Button>
-
-              <div className={styles.pageLabel}>
-                Page {page} / {totalPages}
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isLoading || page >= totalPages}
-                onClick={() => {
-                  setPaginationAction("next");
-                  const nextPage = Math.min(totalPages, page + 1);
-                  setPage(nextPage);
-                  refreshProduct({ page: nextPage });
-                }}
-              >
-                {isLoading && paginationAction === "next" ? (
-                  <Loader2 size={14} className={styles.spinnerIcon} />
-                ) : (
-                  <>
-                    Next
-                    <ChevronRight size={16} />
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-        </CardFooter>
-      </Card>
+      </DataTableCard>
 
       <VariantViewModal
         isOpen={isViewOpen}
@@ -1378,15 +943,6 @@ const ProductVariantsPage = () => {
         isOpen={canCreateVariant ? isCreateOpen : false}
         onClose={() => setIsCreateOpen(false)}
         onCreate={createVariant}
-      />
-
-      <VariantEditModal
-        isOpen={canEditVariant ? isEditOpen : false}
-        onClose={() => setIsEditOpen(false)}
-        variant={selectedVariant}
-        onSave={updateVariant}
-        canUpdateVariant={canUpdateVariant}
-        canUpdateStock={canUpdateStock}
       />
 
       <VariantDeleteModal
@@ -1403,7 +959,7 @@ const ProductVariantsPage = () => {
         )}
         canDelete={canDeleteVariant}
       />
-    </div>
+    </PageContainer>
   );
 };
 

@@ -1,0 +1,14 @@
+.discardButton.discardButton {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.discardButton.discardButton:hover:not(:disabled) {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.discardButton.discardButton:focus-visible {
+  outline-color: var(--color-error);
+}

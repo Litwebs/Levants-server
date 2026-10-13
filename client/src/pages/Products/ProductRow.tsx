@@ -11,7 +11,6 @@ const ProductRow = ({
   setSelectedProduct,
   setIsViewModalOpen,
   setIsDeleteModalOpen,
-  handleEditProduct,
 }: any) => {
   const variantCount = counts?.total ?? product.variants?.length ?? 0;
   const lowCount = counts?.low ?? 0;
@@ -25,7 +24,7 @@ const ProductRow = ({
   return (
     <tr
       onClick={() => {
-        handleEditProduct(product);
+        navigate(canUpdateProduct ? `/products/${product._id}/edit` : `/products/${product._id}`, { state: { product } });
       }}
       className={styles.clickableRow}
     >
@@ -85,7 +84,7 @@ const ProductRow = ({
               size="sm"
               onClick={(e) => {
                 e.stopPropagation();
-                handleEditProduct(product);
+                navigate(`/products/${product._id}/edit`, { state: { product } });
               }}
             >
               <Edit2 size={16} />

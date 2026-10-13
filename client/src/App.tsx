@@ -13,6 +13,8 @@ import Orders from "./pages/Orders/Orders";
 import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";
 import ProductVariantsPage from "./pages/Products/ProductVariantsPage";
+import ProductCreatePage from "./pages/Products/ProductCreatePage";
+import VariantEditPage from "./pages/Products/VariantEditPage";
 import Customers from "./pages/Customers/Customers";
 import CustomerDetailsPage from "./pages/Customers/CustomerDetailsPage";
 import Promotions from "./pages/Promotions";
@@ -209,6 +211,18 @@ const App = () => (
                                 <Products />
                               </RequirePermission>
                             }
+                          />
+                          <Route
+                            path="/products/new"
+                            element={<RequirePermission permission="products.create"><ProductCreatePage /></RequirePermission>}
+                          />
+                          <Route
+                            path="/products/:productId/edit"
+                            element={<RequirePermission permission="products.update"><ProductCreatePage /></RequirePermission>}
+                          />
+                          <Route
+                            path="/products/:productId/variants/:variantId/edit"
+                            element={<RequirePermission permission="products.read"><VariantEditPage /></RequirePermission>}
                           />
                           <Route
                             path="/products/:productId"

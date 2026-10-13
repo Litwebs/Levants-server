@@ -11,6 +11,7 @@ export * from './Tabs';
 export * from './FormGrid';
 export * from './PageToolbar';
 export * from './LoadingScreen';
+export * from './PageContainer';
 export * from './DataTableCard';
 export * from './FiltersCardLayout';
 export * from './CreateSearch';

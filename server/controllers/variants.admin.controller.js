@@ -35,6 +35,12 @@ const ListVariants = async (req, res) => {
   return sendOk(res, result.data, { meta: result.meta });
 };
 
+const GetVariant = async (req, res) => {
+  const result = await service.GetVariant({ variantId: req.params.variantId });
+  if (!result.success) return sendErr(res, { statusCode: result.statusCode, message: result.message });
+  return sendOk(res, result.data);
+};
+
 const UpdateVariant = async (req, res) => {
   const result = await service.UpdateVariant({
     variantId: req.params.variantId,
@@ -77,6 +83,7 @@ const SearchVariants = async (req, res) => {
 module.exports = {
   CreateVariant,
   ListVariants,
+  GetVariant,
   UpdateVariant,
   DeleteVariant,
   SearchVariants,

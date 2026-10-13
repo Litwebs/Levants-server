@@ -16,6 +16,54 @@
   box-sizing: border-box;
 }
 
+.variantsPage {
+  gap: var(--space-5);
+}
+
+.variantsBreadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  color: var(--color-gray-600);
+  font-size: var(--text-sm);
+}
+
+.variantsBreadcrumb a {
+  color: var(--color-primary-light);
+  text-decoration: none;
+}
+
+.variantsBreadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.variantsBreadcrumb [aria-current="page"] {
+  color: var(--color-gray-800);
+  font-weight: var(--font-medium);
+}
+
+/* Variant listing follows the Products header, stats, filters, and table layout. */
+.variantsPage .filterSelect {
+  min-width: 170px;
+  margin-left: auto;
+}
+
+.variantsPage .responsiveVariantsTable {
+  min-width: 920px;
+}
+
+@media (max-width: 768px) {
+  .variantsPage .header {
+    flex-wrap: wrap;
+  }
+
+  .variantsPage .filterSelect {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
 .header {
   display: flex;
   justify-content: space-between;

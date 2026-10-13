@@ -323,7 +323,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         <nav className={styles.nav}>
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname === item.path;
+            const isActive = location.pathname === item.path ||
+              (item.path === "/products" && location.pathname.startsWith("/products/")) ||
+              (item.path === "/orders" && location.pathname.startsWith("/orders/"));
             const badge = (item as any).badgeKey
               ? navCounts[(item as any).badgeKey as keyof NavCounts]
               : 0;
