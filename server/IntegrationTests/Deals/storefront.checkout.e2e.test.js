@@ -270,7 +270,7 @@ test("package detail, repeated additions and page reload preserve contents and p
 }));
 
 const realStripeTest = process.env.DEALS_REAL_STRIPE === "1" ? test : test.skip;
-realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay and real refund", () => diagnostic(async () => {
+realStripeTest.each([0, 500])("Stripe test-mode hosted browser payment with %i pence credit, signed webhook replay and real refund", creditBalance => diagnostic(async () => {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key?.startsWith("sk_test_") || key === "sk_test_123") throw new Error("Real Stripe browser verification requires a configured Stripe test secret");
   const RealStripe = jest.requireActual("stripe");
@@ -284,24 +284,27 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
   };
   for (const [group, method] of [["coupons", "create"], ["checkout.sessions", "create"], ["checkout.sessions", "retrieve"], ["paymentIntents", "retrieve"], ["refunds", "create"], ["refunds", "retrieve"], ["refunds", "list"], ["webhooks", "constructEvent"]]) forward(group, method);
   let session;
+  const cardMinor = 1250 - creditBalance;
+  const price = (cardMinor / 100).toFixed(2);
   try {
-    const fixture = await openBasket();
+    const fixture = await openBasket(creditBalance);
+    if (creditBalance) await page.getByRole("checkbox", { name: /Apply store credit/ }).check();
     await page.unroute("https://checkout.stripe.com/**");
     const response = page.waitForResponse(value => new URL(value.url()).pathname === "/api/portal/orders/checkout");
-    await page.getByRole("button", { name: "Place Order - £12.50", exact: true }).click();
+    await page.getByRole("button", { name: `Place Order - £${price}`, exact: true }).click();
     expect((await response).status()).toBe(200);
     let order = await Order.findById(checkoutBodies.at(-1).data.orderId);
     session = await provider.checkout.sessions.retrieve(order.stripeCheckoutSessionId);
     expect(session.livemode).toBe(false);
-    expect(session.amount_total).toBe(1250);
-    expect(session.total_details.amount_discount).toBe(325);
+    expect(session.amount_total).toBe(cardMinor);
+    expect(session.total_details.amount_discount).toBe(325 + creditBalance);
     await page.waitForURL("https://checkout.stripe.com/**");
     await browserExpect(page.locator("#cardNumber")).toBeVisible({ timeout: 30000 });
     // Hosted Checkout geolocates CI runners to the US. Select the actual UK
     // billing country and GBP rather than entering a postcode into a US ZIP field.
     const country = page.locator("#billingCountry");
     await country.selectOption("GB");
-    const sterling = page.getByText("£12.50", { exact: true });
+    const sterling = page.getByText(`£${price}`, { exact: true });
     if (await sterling.count()) await sterling.first().click();
     await page.locator("#cardNumber").fill("4242424242424242");
     await page.locator("#cardExpiry").fill("1234");
@@ -330,12 +333,14 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
     }
     order = await Order.findById(order.id);
     expect(order.status).toBe("paid");
+    expect(order.creditApplied).toBe(creditBalance);
+    expect((await Customer.findById(fixture.customer.id)).creditBalance).toBe(0);
     expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(18);
     expect((await Variant.findById(fixture.eggsVariant.id)).stockQuantity).toBe(6);
     const refunded = await require("../../services/orders/orders.refund.service").RefundOrder({ orderId: order.id, restock: true });
     expect(refunded.success).toBe(true);
     const refund = await provider.refunds.retrieve(refunded.data.refundId);
-    expect(refund).toMatchObject({ amount: 1250, status: "succeeded" });
+    expect(refund).toMatchObject({ amount: cardMinor, status: "succeeded" });
     expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(20);
     expect((await Variant.findById(fixture.eggsVariant.id)).stockQuantity).toBe(9);
   } finally {
@@ -344,7 +349,7 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
       if (current.status === "open") await provider.checkout.sessions.expire(session.id);
       if (current.payment_status === "paid") {
         const refunds = await provider.refunds.list({ payment_intent: current.payment_intent });
-        if (!refunds.data.some(refund => refund.status === "succeeded" && refund.amount === 1250)) await provider.refunds.create({ payment_intent: current.payment_intent });
+        if (!refunds.data.some(refund => refund.status === "succeeded" && refund.amount === cardMinor)) await provider.refunds.create({ payment_intent: current.payment_intent });
       }
     }
     for (const [mock, implementation] of original) mock.mockImplementation(implementation);
