@@ -19,7 +19,7 @@ test.describe("Orders / Listing, details and filters", () => {
     await expect(detail.getByText("£11.00", { exact: true })).toBeVisible();
     await expect(detail.getByText("Leave in the porch", { exact: true })).toBeVisible();
   });
-  for (const [name, query, key] of [["order reference", "ORD-E2E-005", "websiteUnpaid"], ["customer name", "Bob", "websiteUnpaid"], ["customer email", "bob@orders-e2e.example.invalid", "websiteUnpaid"]]) {
+  for (const [name, query, key] of [["order reference", "ORD-E2E-004", "websitePaid"], ["customer name", "Bob", "otherCustomerPaid"], ["customer email", "bob@orders-e2e.example.com", "otherCustomerPaid"]]) {
     test(`searches by ${name} through the real API`, async ({ page }) => {
       await login(page, f.users.admin); await page.getByPlaceholder("Search orders...").fill(query);
       await expect(page.locator("table").first().locator("tbody tr")).toHaveCount(1);
@@ -32,7 +32,7 @@ test.describe("Orders / Listing, details and filters", () => {
     await page.getByRole("button", { name: "Clear Filters", exact: true }).click(); await expect(row(page, f.orders.importedPaid)).toBeVisible();
   });
   for (const [label, value, key, excluded] of [
-    ["Delivery Status", "delivered", "delivered", "websitePaid"], ["Payment Status", "unpaid", "websiteUnpaid", "websitePaid"],
+    ["Delivery Status", "delivered", "delivered", "websitePaid"], ["Payment Status", "unpaid", "importedUnpaid", "websitePaid"],
     ["Order Source", "imported", "importedPaid", "websitePaid"], ["Order Source", "subscription", "subscription", "websitePaid"],
   ]) test(`filters ${label}: ${value}`, async ({ page }) => {
     await login(page, f.users.admin); await page.getByRole("button", { name: "Filters", exact: true }).click();
@@ -177,12 +177,12 @@ test.describe("Orders / Bulk actions and deletion", () => {
     await page.reload(); await expect(row(page, order)).toHaveCount(0); expect((await page.request.get(`${API}/admin/orders/${order.id}`)).status()).toBe(404);
   });
   test("bulk delete archives selected orders only and selection can be cleared", async ({ page, request }) => {
-    await login(page, f.users.deleter); for (const order of [f.orders.websiteUnpaid, f.orders.importedUnpaid]) await row(page, order).getByRole("checkbox").check();
+    await login(page, f.users.deleter); for (const order of [f.orders.otherCustomerPaid, f.orders.importedUnpaid]) await row(page, order).getByRole("checkbox").check();
     await page.getByRole("button", { name: "Clear Selection", exact: true }).click(); await expect(page.locator('tbody input[type="checkbox"]:checked')).toHaveCount(0);
-    for (const order of [f.orders.websiteUnpaid, f.orders.importedUnpaid]) await row(page, order).getByRole("checkbox").check(); await page.getByRole("button", { name: "Delete…", exact: true }).click();
+    for (const order of [f.orders.otherCustomerPaid, f.orders.importedUnpaid]) await row(page, order).getByRole("checkbox").check(); await page.getByRole("button", { name: "Delete…", exact: true }).click();
     const confirm = page.getByRole("heading", { name: /Delete.*orders/i }).locator("..").locator("..");
     const response = page.waitForResponse(r => new URL(r.url()).pathname === "/api/admin/orders/bulk" && r.request().method() === "DELETE"); await confirm.getByRole("button", { name: /Delete/i }).last().click(); expect((await response).status()).toBe(200);
-    for (const order of [f.orders.websiteUnpaid, f.orders.importedUnpaid]) expect((await state(request, order.id)).order.archived).toBe(true); expect((await state(request, f.orders.websitePaid.id)).order.archived).toBe(false);
+    for (const order of [f.orders.otherCustomerPaid, f.orders.importedUnpaid]) expect((await state(request, order.id)).order.archived).toBe(true); expect((await state(request, f.orders.websitePaid.id)).order.archived).toBe(false);
   });
   test("read-only staff can inspect orders but cannot see mutation controls", async ({ page }) => {
     await login(page, f.users.reader); await expect(row(page, f.orders.websitePaid).getByRole("button", { name: "Delete", exact: true })).toHaveCount(0); const detail = await open(page, f.orders.importedPaid);

@@ -47,13 +47,13 @@ async function create(options = {}) {
   for (const [key, values] of Object.entries(permissions)) {
     const name = key === "driver" ? "driver" : `orders-e2e-${key}`;
     const role = await Role.findOneAndUpdate({ name }, { $set: { permissions: values } }, { upsert: true, new: true });
-    const email = `${key}@orders-e2e.example.invalid`;
+    const email = `${key}@orders-e2e.example.com`;
     const user = await User.create({ name: `Orders ${key}`, email, passwordHash, role: role._id, status: "active", emailVerifiedAt: new Date() });
     users[key] = { id: String(user._id), email, password: PASSWORD };
   }
   const customers = [];
   for (const firstName of ["Alice", "Bob"]) customers.push(await Customer.create({
-    firstName, lastName: "Orders", email: `${firstName.toLowerCase()}@orders-e2e.example.invalid`, phone: "07000000000",
+    firstName, lastName: "Orders", email: `${firstName.toLowerCase()}@orders-e2e.example.com`, phone: "07000000000",
     passwordHash, isGuest: false, status: "active", emailVerifiedAt: new Date(), addresses: [{ ...ADDRESS, label: "Home", isDefault: true }],
   }));
   const product = await createProduct({ name: "Orders E2E Dairy", slug: "orders-e2e-dairy" });
@@ -69,11 +69,12 @@ async function create(options = {}) {
     importedUnpaid: { status: "unpaid", metadata: { manualImport: true } },
     importedPaid: { status: "paid", metadata: { manualImport: true } },
     importedPartial: { status: "partially_paid", amountPaid: 3, metadata: { manualImport: true } },
-    websitePaid: { status: "paid" }, websiteUnpaid: { status: "unpaid" }, pending: { status: "pending" },
+    websitePaid: { status: "paid" }, websiteUnpaid: { status: "unpaid" }, pending: { status: "pending", metadata: { manualImport: true } },
     delivered: { status: "paid", deliveryStatus: "delivered" }, returned: { status: "paid", deliveryStatus: "returned" },
     refunded: { status: "refunded" }, refundPending: { status: "refund_pending" },
     subscription: { status: "paid", orderType: "subscription_generated", subscription: new mongoose.Types.ObjectId() },
     archived: { status: "paid", archived: true, archivedAt: new Date() },
+    otherCustomerPaid: { status: "paid" },
   };
   if (options.pagination) for (let i = 0; i < 55; i++) specs[`page${i}`] = { status: "paid" };
   const orders = {};
@@ -83,7 +84,7 @@ async function create(options = {}) {
     const total = manual ? 11 : 10;
     const order = await Order.create({
       orderId: `ORD-E2E-${String(++index).padStart(3, "0")}`,
-      customer: customers[key === "websiteUnpaid" ? 1 : 0]._id,
+      customer: customers[["websiteUnpaid", "otherCustomerPaid"].includes(key) ? 1 : 0]._id,
       items: [{ product: product._id, variant: variants.milk._id, name: variants.milk.name, sku: variants.milk.sku, price: 5, quantity: 2, subtotal: 10 }],
       subtotal: 10, total, totalBeforeDiscount: total, deliveryFee: manual ? 1 : 0, discountAmount: 0,
       deliveryAddress: ADDRESS, deliveryDate: future, location: { lat: 53.79, lng: -1.75 },

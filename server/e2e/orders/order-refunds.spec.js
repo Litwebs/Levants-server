@@ -49,6 +49,6 @@ test.describe("Orders / Real Stripe test refunds", () => {
     const confirm = modal(page, "Confirm refund"); let release; const held = new Promise(resolve => { release = resolve; }); let count = 0;
     await page.route(`**/api/admin/orders/${order.id}/refund`, async route => { count++; await held; await route.continue(); });
     await confirm.getByRole("button", { name: "Refund", exact: true }).click(); await expect(confirm.getByRole("button", { name: /Refund/i }).last()).toBeDisabled();
-    expect(count).toBe(1); release(); await expect.poll(async () => (await state(request, order.id)).order.status).toBe("refunded"); expect(count).toBe(1); expect((await state(request, order.id)).refunds).toHaveLength(1);
+    await expect.poll(() => count).toBe(1); release(); await expect.poll(async () => (await state(request, order.id)).order.status).toBe("refunded"); expect(count).toBe(1); expect((await state(request, order.id)).refunds).toHaveLength(1);
   });
 });

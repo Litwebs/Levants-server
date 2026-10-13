@@ -33,7 +33,7 @@ test.describe("Orders API / Authentication and granular permissions", () => {
     const login = await request.post(`${API}/portal/auth/login`, { data: { email: f.customers[0].email, password: f.customers[0].password } }); expect(login.ok()).toBeTruthy();
     const token = (await login.json()).data.accessToken; const headers = { Authorization: `Bearer ${token}` };
     expect((await request.get(`${API}/portal/orders/${f.orders.websitePaid.id}`, { headers })).status()).toBe(200);
-    expect([403, 404]).toContain((await request.get(`${API}/portal/orders/${f.orders.websiteUnpaid.id}`, { headers })).status());
+    expect([403, 404]).toContain((await request.get(`${API}/portal/orders/${f.orders.otherCustomerPaid.id}`, { headers })).status());
     expect([401, 403]).toContain((await request.get(`${API}/admin/orders`, { headers })).status());
   });
 });
