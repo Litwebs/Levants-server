@@ -317,9 +317,27 @@ realStripeTest.each([0, 500])("Stripe test-mode hosted browser payment with %i p
     if (await postcode.count()) await postcode.fill("BD1 1AA");
     const saveToLink = page.getByRole("checkbox", { name: /Save my information/i });
     if (await saveToLink.count()) await saveToLink.uncheck();
-    await page.getByTestId("hosted-payment-submit-button").click();
+    const submitPayment = page.getByTestId("hosted-payment-submit-button");
+    await browserExpect(country).toHaveValue("GB");
+    await page.locator("#cardCvc").press("Tab");
+    await browserExpect(submitPayment).toBeEnabled();
+    await submitPayment.click();
+    const submittedAt = Date.now();
+    let retriedSubmission = false;
     await browserExpect.poll(async () => {
       session = await provider.checkout.sessions.retrieve(session.id);
+      // A cold hosted Checkout page can consume the first click while its
+      // currency/card UI settles. Retry once only if the same sandbox session
+      // remains unpaid and its payment button is still available. Checkout
+      // permits one payment per session; the assertions below still require
+      // the exact charge, signed replay, inventory consumption and real refund.
+      if (!retriedSubmission && session.payment_status === "unpaid" &&
+          Date.now() - submittedAt >= 5000 && page.url().startsWith("https://checkout.stripe.com/") &&
+          await submitPayment.isVisible() && await submitPayment.isEnabled()) {
+        retriedSubmission = true;
+        console.warn("Retrying the same unpaid sandbox Checkout submission once");
+        await submitPayment.click();
+      }
       return session.payment_status;
     }, { timeout: 90000 }).toBe("paid");
     await page.waitForURL(origin + "/checkout/success**", { timeout: 30000 });
