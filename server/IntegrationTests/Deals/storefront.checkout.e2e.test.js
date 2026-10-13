@@ -96,7 +96,9 @@ async function openBasket(creditBalance = 0) {
     if (url.hostname === "admin.litwebs.co.uk" && url.pathname === "/api/websites/status") {
       return route.fulfill({ headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Content-Type" }, json: { data: { status: "live" } } });
     }
-    if (!url.pathname.startsWith("/api/")) return route.continue();
+    // Stripe also owns /api paths (including /api/get-cookie). Forward only
+    // our storefront's API calls; third-party browser traffic stays untouched.
+    if (url.origin !== origin || !url.pathname.startsWith("/api/")) return route.continue();
     const incoming = await request.allHeaders();
     const headers = {};
     for (const name of ["cookie", "authorization", "content-type", "accept"]) {
