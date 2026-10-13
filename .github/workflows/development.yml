@@ -1,0 +1,43 @@
+name: Quick development checks
+on:
+  pull_request:
+    branches-ignore: [main]
+permissions:
+  contents: read
+concurrency:
+  group: development-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  quick:
+    name: Quick safety, unit and admin build checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: CI scheduling policy
+        run: node --test deployment/ci/workflow-policy.test.cjs
+      - name: UAT promotion evidence rules
+        run: python3 deployment/uat/test-promotion-gate.py
+      - run: npm run test:uat-safety
+        working-directory: server
+      - run: npm run test:delivery-navigation:unit
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - run: npm run test:deals
+        working-directory: client
+      - run: npm run test:deals-types
+        working-directory: client
+      - run: npm run check:release
+        working-directory: client

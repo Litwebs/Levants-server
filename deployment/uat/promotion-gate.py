@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed unless this exact source tree passed the current UAT workflow."""
+"""Fail closed unless this exact source tree passed UAT deployment and provider verification."""
 import json
 import os
 import subprocess
@@ -18,9 +18,9 @@ def accepted_run(run, sha):
 
 
 def accepted_jobs(jobs):
-    # Reusable-workflow job names include their caller. Require the browser job,
-    # not merely a workflow with the same display name from an older revision.
-    required = ['verify', 'deploy', 'Configured UAT provider checks', 'Real Stripe and browser checks / Subscription E2E (Stripe test mode)']
+    # UAT proves exact deployment and provider readiness. Full regression and
+    # Stripe/browser tests are enforced separately by the main release gate.
+    required = ['verify', 'deploy', 'Configured UAT provider checks']
     return all(any(j.get('name') == name and j.get('status') == 'completed'
                    and j.get('conclusion') == 'success' for j in jobs) for name in required)
 
@@ -55,7 +55,7 @@ def main():
             print('Verified exact UAT source tree: ' + sha)
             print('Evidence: ' + run['html_url'])
             return
-    raise SystemExit('No successful current UAT deployment, provider checks and real Stripe/browser suite for this release.')
+    raise SystemExit('No successful current UAT deployment and provider verification for this release.')
 
 
 if __name__ == '__main__':

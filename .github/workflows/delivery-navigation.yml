@@ -1,18 +1,12 @@
 name: Delivery navigation verification
 on:
-  push:
-    branches: [feature/navigation]
-  pull_request:
-    branches: [uat]
-    paths:
-      - 'client/**'
-      - 'server/**'
-      - '.github/workflows/delivery-navigation.yml'
+  workflow_call:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   verify:
-    name: Server regression and navigation browser tests
+    name: Navigation unit and desktop/mobile browser tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -31,12 +25,6 @@ jobs:
       - name: Navigation suite
         run: npm run test:delivery-navigation
         working-directory: server
-      - name: Full server release suite
-        run: npm run test:release
-        working-directory: server
-      - name: Admin release checks and build
-        run: npm run check:release
-        working-directory: client
       - run: npx playwright install --with-deps chromium
         working-directory: server
       - name: Desktop and mobile navigation selector
