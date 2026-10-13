@@ -90,3 +90,43 @@ jobs:
         with:
           name: deals-client-server-failures
           path: server/deals-integration-artifacts/
+  stripe-browser:
+    name: Real Stripe test-mode browser checkout and refund
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DEALS_REAL_STRIPE: "1"
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Litwebs/Levants-client
+          ref: 41d3b17b67b7b1621bdb43081b4330cb93b6d923
+          path: client-storefront
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client-storefront/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm ci
+        working-directory: client-storefront
+      - run: npm run build
+        working-directory: client-storefront
+        env:
+          VITE_API_BASE_URL: /api
+      - run: npx playwright install --with-deps chromium
+        working-directory: server
+      - run: npx jest --config IntegrationTests/Deals/jest.config.cjs --runInBand --testNamePattern="Stripe test-mode hosted"
+        working-directory: server
+        env:
+          DEALS_CLIENT_DIST: ${{ github.workspace }}/client-storefront/dist
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: deals-real-stripe-failures
+          path: server/deals-integration-artifacts/

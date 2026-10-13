@@ -181,3 +181,151 @@ test("real browser rejects a stale package and refreshes before retrying checkou
   expect(order).toMatchObject({ total: 13, discountAmount: 2.75 });
   expect(order.metadata.deals[0].packagePrice).toBe(12);
 }));
+
+test("admin API publication, editing, deactivation and archive control the real storefront", () => diagnostic(async () => {
+  const fixture = await openBasket();
+  const user = await require("../../Tests/helpers/authTestData").createUser({ role: "admin" });
+  const headers = { authorization: `Bearer ${jwt.signAccessToken(user)}` };
+  const adminRequest = (method, suffix, data) => context.request[method](apiOrigin + "/api/admin/deals" + suffix, { headers, data });
+  const created = await adminRequest("post", "", {
+    name: "Browser lifecycle package", publicationStatus: "draft", packagePrice: 10,
+    description: "Created through the real admin API",
+    items: fixture.contents, isFeatured: true,
+  });
+  expect(created.status()).toBe(201);
+  const { deal } = (await created.json()).data;
+  const detail = origin + "/deals/" + deal.slug;
+  await page.goto(detail);
+  await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  expect((await adminRequest("post", `/${deal.id}/publish`)).status()).toBe(200);
+  await page.reload();
+  await browserExpect(page.getByRole("heading", { name: deal.name, exact: true })).toBeVisible();
+  await browserExpect(page.getByText("You save £4.75", { exact: true })).toBeVisible();
+  await browserExpect(page.getByText("Test Variant × 2", { exact: true })).toBeVisible();
+  await browserExpect(page.getByText("Test Variant × 3", { exact: true })).toBeVisible();
+  expect((await adminRequest("patch", `/${deal.id}`, { packagePrice: 12, description: "Edited browser package" })).status()).toBe(200);
+  await page.reload();
+  await browserExpect(page.getByText("You save £2.75", { exact: true })).toBeVisible();
+  await browserExpect(page.getByText("Edited browser package", { exact: true })).toBeVisible();
+  expect((await adminRequest("post", `/${deal.id}/deactivate`)).status()).toBe(200);
+  await page.reload();
+  await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  expect((await adminRequest("patch", `/${deal.id}`, { isActive: true })).status()).toBe(200);
+  await page.reload();
+  await browserExpect(page.getByRole("heading", { name: deal.name, exact: true })).toBeVisible();
+  expect((await adminRequest("post", `/${deal.id}/archive`)).status()).toBe(200);
+  await page.reload();
+  await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+}));
+
+test.each(["draft", "inactive", "future", "expired", "archived"])("real catalog and detail conceal %s packages", state => diagnostic(async () => {
+  const fixture = await openBasket();
+  const update = {
+    draft: { publicationStatus: "draft" }, inactive: { isActive: false },
+    future: { startsAt: new Date(Date.now() + 86400000) },
+    expired: { endsAt: new Date(Date.now() - 1000) }, archived: { archivedAt: new Date() },
+  }[state];
+  await Deal.updateOne({ _id: fixture.deal.id }, update);
+  await page.goto(origin + "/deals");
+  await browserExpect(page.getByText("No deals available right now. Check back soon for new offers.", { exact: true })).toBeVisible();
+  await page.goto(origin + "/deals/" + fixture.deal.slug);
+  await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  expect(await Order.countDocuments()).toBe(0);
+}));
+
+test("sold-out package detail prevents basket addition", () => diagnostic(async () => {
+  const fixture = await openBasket();
+  await Variant.updateOne({ _id: fixture.eggsVariant.id }, { stockQuantity: 0 });
+  await page.goto(origin + "/deals/" + fixture.deal.slug);
+  await browserExpect(page.getByRole("button", { name: "Currently unavailable", exact: true })).toBeDisabled();
+  expect(await Order.countDocuments()).toBe(0);
+}));
+
+test("package detail, repeated additions and page reload preserve contents and price", () => diagnostic(async () => {
+  const fixture = await openBasket();
+  await page.goto(origin + "/deals/" + fixture.deal.slug);
+  await browserExpect(page.getByText("You save £3.25", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Add package to basket", exact: true }).click();
+  await browserExpect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("levants-dairy-cart")).deals[0].quantity)).toBe(2);
+  await page.goto(origin + "/checkout");
+  await browserExpect(page.getByRole("button", { name: "Place Order - £24.00", exact: true })).toBeVisible();
+  await page.reload();
+  await browserExpect(page.getByRole("button", { name: "Place Order - £24.00", exact: true })).toBeVisible();
+  const response = page.waitForResponse(value => new URL(value.url()).pathname === "/api/portal/orders/checkout");
+  await page.getByRole("button", { name: "Place Order - £24.00", exact: true }).click();
+  expect((await response).status()).toBe(200);
+  const order = await Order.findOne();
+  expect(order).toMatchObject({ subtotal: 29.5, discountAmount: 6.5, total: 24 });
+  expect(order.items.map(item => item.quantity)).toEqual([4, 6]);
+  expect(order.metadata.deals[0]).toMatchObject({ quantity: 2, packagePrice: 11.5 });
+}));
+
+const realStripeTest = process.env.DEALS_REAL_STRIPE === "1" ? test : test.skip;
+realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay and real refund", () => diagnostic(async () => {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key?.startsWith("sk_test_") || key === "sk_test_123") throw new Error("Real Stripe browser verification requires a configured Stripe test secret");
+  const RealStripe = jest.requireActual("stripe");
+  const provider = new RealStripe(key);
+  const original = [];
+  const forward = (group, method) => {
+    const target = group.split(".").reduce((value, part) => value[part], stripe);
+    const real = group.split(".").reduce((value, part) => value[part], provider);
+    original.push([target[method], target[method].getMockImplementation()]);
+    target[method].mockImplementation((...args) => real[method](...args));
+  };
+  for (const [group, method] of [["coupons", "create"], ["checkout.sessions", "create"], ["checkout.sessions", "retrieve"], ["paymentIntents", "retrieve"], ["refunds", "create"], ["refunds", "retrieve"], ["refunds", "list"], ["webhooks", "constructEvent"]]) forward(group, method);
+  let session;
+  try {
+    const fixture = await openBasket();
+    await page.unroute("https://checkout.stripe.com/**");
+    const response = page.waitForResponse(value => new URL(value.url()).pathname === "/api/portal/orders/checkout");
+    await page.getByRole("button", { name: "Place Order - £12.50", exact: true }).click();
+    expect((await response).status()).toBe(200);
+    let order = await Order.findById(checkoutBodies.at(-1).data.orderId);
+    session = await provider.checkout.sessions.retrieve(order.stripeCheckoutSessionId);
+    expect(session.livemode).toBe(false);
+    expect(session.amount_total).toBe(1250);
+    expect(session.total_details.amount_discount).toBe(325);
+    await page.waitForURL("https://checkout.stripe.com/**");
+    await page.locator("#cardNumber").fill("4242424242424242");
+    await page.locator("#cardExpiry").fill("1234");
+    await page.locator("#cardCvc").fill("123");
+    const name = page.locator("#billingName");
+    if (await name.count()) await name.fill("Deals Browser Test");
+    const postcode = page.locator("#billingPostalCode");
+    if (await postcode.count()) await postcode.fill("BD1 1AA");
+    await page.getByRole("button", { name: /Pay|Complete payment/i }).click();
+    await browserExpect.poll(async () => {
+      session = await provider.checkout.sessions.retrieve(session.id);
+      return session.payment_status;
+    }, { timeout: 90000 }).toBe("paid");
+    const webhookSecret = "whsec_isolated_deals_browser_test";
+    process.env.STRIPE_WEBHOOK_SECRET = webhookSecret;
+    const payload = JSON.stringify({ id: "evt_deals_browser_" + order.id, type: "checkout.session.completed", data: { object: session } });
+    const signature = provider.webhooks.generateTestHeaderString({ payload, secret: webhookSecret });
+    for (let replay = 0; replay < 2; replay++) {
+      const result = await context.request.post(apiOrigin + "/api/webhooks/stripe", { data: payload, headers: { "content-type": "application/json", "stripe-signature": signature } });
+      expect(result.status()).toBe(200);
+    }
+    order = await Order.findById(order.id);
+    expect(order.status).toBe("paid");
+    expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(18);
+    expect((await Variant.findById(fixture.eggsVariant.id)).stockQuantity).toBe(6);
+    const refunded = await require("../../services/orders/orders.refund.service").RefundOrder({ orderId: order.id, restock: true });
+    expect(refunded.success).toBe(true);
+    const refund = await provider.refunds.retrieve(refunded.data.refundId);
+    expect(refund).toMatchObject({ amount: 1250, status: "succeeded" });
+    expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(20);
+    expect((await Variant.findById(fixture.eggsVariant.id)).stockQuantity).toBe(9);
+  } finally {
+    if (session) {
+      const current = await provider.checkout.sessions.retrieve(session.id);
+      if (current.status === "open") await provider.checkout.sessions.expire(session.id);
+      if (current.payment_status === "paid") {
+        const refunds = await provider.refunds.list({ payment_intent: current.payment_intent });
+        if (!refunds.data.some(refund => refund.status === "succeeded" && refund.amount === 1250)) await provider.refunds.create({ payment_intent: current.payment_intent });
+      }
+    }
+    for (const [mock, implementation] of original) mock.mockImplementation(implementation);
+  }
+}), 180000);
