@@ -17,3 +17,25 @@ permissions, production configuration or the root-owned deployment helper.
 
 Use the latest successful exact-commit UAT pipeline as release evidence. An older
 in-progress run containing reverted feature work must not be redeployed.
+
+## Approved repair, 13 October 2026
+
+The failing check reported ETIMEDOUT at the OAuth endpoint. Independent read-only
+inspection found both current OAuth addresses missing from the Google snapshot,
+while geocoding and route-optimization addresses were covered.
+
+The owner approved a UAT-only repair. Eight isolated tests passed, then the
+one-time maintenance refreshed only google.conf and restarted only the UAT API.
+The previous policy was backed up privately. Production's health, Node processes
+and Git HEAD were checked before and after and remained unchanged; the UAT
+release identity also stayed unchanged. No database records were rewritten.
+
+[Maintenance run 38371588106](https://github.com/Litwebs/Levants-server/actions/runs/38371588106)
+records those checks. [Provider verification 38371899744](https://github.com/Litwebs/Levants-server/actions/runs/38371899744)
+then passed all nine real UAT provider checks, including Google route optimization.
+The temporary maintenance/verification workflow was removed after completion.
+
+The refresh script remains reviewable under deployment/uat for explicit future
+maintenance approval. It is not automatically installed or run on UAT pushes.
+DNS snapshots can age again; diagnose coverage before another scoped refresh.
+Use the newest exact-tree UAT pipeline as the final production-promotion evidence.
