@@ -25,5 +25,20 @@ class PromotionEvidenceTests(unittest.TestCase):
                 changed[index]['conclusion'] = result
                 self.assertFalse(gate.accepted_jobs(changed))
 
+    def test_named_browser_suites_require_the_complete_result(self):
+        jobs = [dict(name=n, status='completed', conclusion='success') for n in
+                ['verify', 'deploy', 'Configured UAT provider checks',
+                 'Browser automation / All browser suites passed']]
+        self.assertTrue(gate.accepted_jobs(jobs))
+        # Passing an individual browser suite does not satisfy promotion.
+        self.assertFalse(gate.accepted_jobs(jobs[:3] + [
+            dict(name='Browser automation / Order checkout and reviews',
+                 status='completed', conclusion='success')]))
+        for result in ['failure', 'cancelled', 'skipped']:
+            self.assertFalse(gate.accepted_jobs(jobs[:3] + [
+                dict(name=jobs[3]['name'], status='completed', conclusion=result)]))
+        self.assertFalse(gate.accepted_jobs(jobs[:3] + [
+            dict(name=jobs[3]['name'], status='in_progress', conclusion='success')]))
+
 if __name__ == '__main__':
     unittest.main()

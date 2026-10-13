@@ -35,12 +35,12 @@ jobs:
 
   subscription-e2e:
     needs: status-regressions
-    name: Real Stripe and browser checks
+    name: Browser automation
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit
 
   backend-suites:
-    name: Backend suites
+    name: Backend API and unit tests
     needs: status-regressions
     uses: ./.github/workflows/backend-suites.yml
     with:

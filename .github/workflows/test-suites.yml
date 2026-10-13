@@ -14,10 +14,10 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend suites
+    name: Backend API and unit tests
     uses: ./.github/workflows/backend-suites.yml
   admin:
-    name: Admin frontend / Quality and build
+    name: Admin frontend / Lint and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -32,11 +32,11 @@ jobs:
       - run: npm run check:release
         working-directory: client
   browser:
-    name: Browser flows and Stripe integration
+    name: Browser automation
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit
   navigation-browser:
-    name: Delivery navigation / Desktop and mobile browser
+    name: Navigation browser tests / Desktop and mobile
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -62,3 +62,10 @@ jobs:
         with:
           name: delivery-navigation-test-results
           path: server/test-results/delivery-navigation
+  promotion-safety:
+    name: Release safety / UAT promotion evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require complete browser results for promotion
+        run: python3 deployment/uat/test-promotion-gate.py

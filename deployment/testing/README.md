@@ -15,15 +15,15 @@ must be assigned explicitly. Existing test files and assertions are unchanged.
 
 Jest includes unit/service and API integration tests. A backend file named
 `e2e.test.js` usually calls the API through Supertest; it is not a browser test.
-Each suite has individual test names in its log, a per-file Actions summary and
+The Actions sidebar labels these jobs as Backend API and unit tests. Each suite has individual test names in its log, a per-file Actions summary and
 a downloadable JSON report. Independent suites run in parallel; a failure does
 not cancel the other suites. Compatible rollback has a separate safety job.
 
 ## Browser and Stripe
 
-The reusable integration workflow runs five clearly named steps, in sequence:
+The reusable integration workflow runs five separately named jobs, in sequence:
 order checkout/reviews; portal/admin invitations; subscription rules/schedules;
-Stripe payments/refunds/webhooks; and subscription emails. Each step boots its
+Stripe payments/refunds/webhooks; and subscription emails. Each job boots its
 own isolated test stack, uses Stripe test-mode credentials and produces a
 separate report. Later groups still run if an earlier group fails; the workflow
 remains failed. No retries or relaxed assertions were added. These groups
@@ -40,8 +40,8 @@ The first and third are result checks, not additional test executions.
 On UAT, the same backend suites feed the existing packaging/deployment job.
 Focused status tests remain for early feedback; full backend tests and rollback
 are no longer repeated inside the packaging job. UAT provider verification
-still runs after deployment. The existing promotion-evidence job names remain
-unchanged.
+still runs after deployment. The promotion gate accepts the previous complete browser result or the new
+All browser suites passed result; an individual passing group cannot satisfy it.
 
 The admin release check still builds for verification; main's deployment build
 remains separate. Artifact reuse and changes to production publishing are out

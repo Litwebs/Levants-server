@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   backend-suites:
-    name: Backend suites
+    name: Backend API and unit tests
     uses: ./.github/workflows/backend-suites.yml
 
   backend-tests:
@@ -68,7 +68,7 @@ jobs:
   # Mark it Ready for review only when the exact PR head is intended to ship.
   # Any later commit to a ready PR triggers this suite again automatically.
   subscription-e2e:
-    name: Browser flows and Stripe integration
+    name: Browser automation
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit

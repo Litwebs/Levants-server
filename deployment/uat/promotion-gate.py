@@ -18,11 +18,17 @@ def accepted_run(run, sha):
 
 
 def accepted_jobs(jobs):
-    # Reusable-workflow job names include their caller. Require the browser job,
-    # not merely a workflow with the same display name from an older revision.
-    required = ['verify', 'deploy', 'Configured UAT provider checks', 'Real Stripe and browser checks / Subscription E2E (Stripe test mode)']
-    return all(any(j.get('name') == name and j.get('status') == 'completed'
-                   and j.get('conclusion') == 'success' for j in jobs) for name in required)
+    # The old single browser job and the new aggregate both require the complete
+    # browser suite to succeed. Preserve previously recorded UAT evidence.
+    required = ['verify', 'deploy', 'Configured UAT provider checks']
+    browser_results = [
+        'Real Stripe and browser checks / Subscription E2E (Stripe test mode)',
+        'Browser automation / All browser suites passed',
+    ]
+    def passed(name):
+        return any(j.get('name') == name and j.get('status') == 'completed'
+                   and j.get('conclusion') == 'success' for j in jobs)
+    return all(passed(name) for name in required) and any(passed(name) for name in browser_results)
 
 
 def main():

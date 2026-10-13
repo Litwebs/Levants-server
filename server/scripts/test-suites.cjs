@@ -66,7 +66,7 @@ function summarize(reportPath, title) {
 function main(args) {
   const [command, id] = args;
   if (command === "matrix") {
-    console.log(JSON.stringify({ include: suites.backend.map(({ id, name }) => ({ id, name })) }));
+    console.log(JSON.stringify({ include: (suites[id || "backend"] || (() => { throw new Error("Unknown suite kind"); })()).map(({ id, name }) => ({ id, name })) }));
     return;
   }
   if (command === "verify") {
