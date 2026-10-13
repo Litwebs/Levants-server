@@ -7,7 +7,7 @@ const Route = require("../../models/route.model");
 const Stop = require("../../models/stop.model");
 const User = require("../../models/user.model");
 const Role = require("../../models/role.model");
-const { generateGoogleMapsLink } = require("../../utils/navigation.util");
+const { generateGoogleMapsLink, generateNavigationLinks } = require("../../utils/navigation.util");
 const { generateRoutesForBatch } = require("../route.service");
 const { getRouteStockAggregation } = require("../warehouse.service");
 const { isDriverUser, getUserId } = require("../../utils/deliveryHelpers.util");
@@ -216,6 +216,7 @@ async function getRoute({ routeId, user } = {}) {
 
     const enrichedStops = stops.map((stop) => ({
       ...stop,
+      navigationLinks: generateNavigationLinks(stop?.order?.location, stop?.order?.deliveryAddress),
       navigationUrl:
         stop?.order?.location?.lat != null && stop?.order?.location?.lng != null
           ? generateGoogleMapsLink(

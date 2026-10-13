@@ -1,0 +1,49 @@
+name: Delivery navigation verification
+on:
+  push:
+    branches: [feature/navigation]
+  pull_request:
+    branches: [uat]
+    paths:
+      - 'client/**'
+      - 'server/**'
+      - '.github/workflows/delivery-navigation.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Server regression and navigation browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - name: Navigation suite
+        run: npm run test:delivery-navigation
+        working-directory: server
+      - name: Full server release suite
+        run: npm run test:release
+        working-directory: server
+      - name: Admin release checks and build
+        run: npm run check:release
+        working-directory: client
+      - run: npx playwright install --with-deps chromium
+        working-directory: server
+      - name: Desktop and mobile navigation selector
+        run: npm run test:e2e:delivery-navigation
+        working-directory: server
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: delivery-navigation-test-results
+          path: server/test-results/delivery-navigation
