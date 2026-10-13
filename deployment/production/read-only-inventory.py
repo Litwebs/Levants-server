@@ -60,6 +60,23 @@ try:
  report['uatGoogleNetworkPolicy']={'inspection':'available','endpoints':endpoints}
 except Exception:
  report['uatGoogleNetworkPolicy']={'inspection':'unavailable'}
+# Inspect only the two public warehouse settings in UAT; do not copy production env.
+try:
+ import math,shlex
+ warehouse={}
+ for row in Path('/etc/levants-uat/api.env').read_text().splitlines():
+  key,sep,value=row.partition('=')
+  if sep and key.strip() in ['WAREHOUSE_LAT','WAREHOUSE_LNG']:
+   parts=shlex.split(value,comments=True)
+   warehouse[key.strip()]=parts[0] if len(parts)==1 else ''
+ def coordinate(name,limit):
+  value=warehouse.get(name)
+  try:number=float(value);valid=math.isfinite(number) and -limit<=number<=limit
+  except (TypeError,ValueError):valid=False
+  return {'present':value is not None,'valid':valid}
+ report['uatWarehouseConfiguration']={'latitude':coordinate('WAREHOUSE_LAT',90),'longitude':coordinate('WAREHOUSE_LNG',180)}
+except Exception:
+ report['uatWarehouseConfiguration']={'inspection':'unavailable'}
 report['productionHeadAfter']=git(BASE,'rev-parse','HEAD')
 if report['productionHeadAfter']!=EXPECTED:raise SystemExit('Production identity changed')
 print(json.dumps(report))
