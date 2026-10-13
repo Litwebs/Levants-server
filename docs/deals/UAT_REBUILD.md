@@ -1,4 +1,4 @@
-# Deals integration on UAT
+# Deals feature branch built from UAT
 
 UAT baseline: `f916abdfaee697b3deb90e329f765854174c1d97`.
 
@@ -8,15 +8,12 @@ Existing UAT workflows, scripts, package files, shared test setup, order models,
 
 Only seven existing application files change for deals: app route mounting, database deal indexes, public checkout controller and validator, image reference tracking, public order pricing and deal refund delegation. Ordinary orders retain the existing UAT paths. Catalog search, authentication guards and refund transaction handling for deals use dedicated new modules.
 
-The UAT portal manifest pins the tested customer storefront commit `41d3b17b67b7b1621bdb43081b4330cb93b6d923` so the server release includes the Deals UI.
+The portal manifest on this feature branch pins the tested customer storefront commit `41d3b17b67b7b1621bdb43081b4330cb93b6d923` for isolated verification and a potential future release.
 
 ## Verification
 
-- Backend: **1,571 tests across 183 suites**, including all 1,362 existing UAT tests across 165 suites and 209 deals tests across 18 suites. [Passing backend job](https://github.com/Litwebs/Levants-server/actions/runs/38311787355/job/115019000981).
-- Storefront: 28 unit tests, type checking, lint, production build and 20 browser checks. [Passing client workflow](https://github.com/Litwebs/Levants-client/actions/runs/38312744667).
-- Actual storefront / Express API / MongoDB integration: four passing checkout cases covering card payment, partial credit, full credit and stale-price refresh. Assertions cover package prices, underlying quantities, stock, credit and payment replay. [Passing integration job](https://github.com/Litwebs/Levants-server/actions/runs/38313840900/job/115025656690).
-- Existing client UAT/subscription Node tests: 29 passing tests.
+See [the browser verification report](BROWSER_VERIFICATION.md) for the final 13 October 2026 results and limitations. Complete backend regression passed **1,574 tests across 183 suites**: all 1,362 existing UAT tests / 165 suites, plus 212 Deals tests / 18 suites. Real-browser verification includes 12 API/storefront scenarios and two actual Stripe test-mode payment/refund cases. The client rerun passed 28 unit tests and 20 browser checks.
 
-Integration tests replace external Stripe, geocoding, mail and site-status transports. They do not establish real Stripe payment or deployed UAT readiness.
+The Deals-only refund fallback now excludes applied store credit when determining the refundable card capture. Ordinary-order handling retains the UAT path. The admin package-builder dashboard page is still absent; its browser workflow cannot yet be verified.
 
-The full backend run tested the final application and regular test code. Subsequent changes were limited to the integration harness, verification workflow, documentation and portal version pin.
+Deals work remains on `feature/deals`. The previous UAT merges were reverted at the owner's request. Merge only after an explicit instruction identifying the source and target branches.
