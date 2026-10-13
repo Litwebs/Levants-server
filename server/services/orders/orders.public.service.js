@@ -1,9 +1,6 @@
 const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
 const ProductVariant = require("../../models/variant.model");
-const {
-  attachProductNameSnapshots,
-} = require("../../utils/orderItemSnapshot.util");
 const stripe = require("../../utils/stripe.util");
 const Customer = require("../../models/customer.model");
 const { geocodeAddress } = require("../../Integration/google.geocode");
@@ -155,7 +152,7 @@ async function CreateOrder({
 
       for (const item of items) {
         const quantity = Number(item.quantity);
-        if (!Number.isInteger(quantity) || quantity <= 0) {
+        if (!Number.isFinite(quantity) || quantity <= 0) {
           await session.abortTransaction();
           session.endSession();
           return { success: false, message: "Invalid quantity" };
@@ -215,12 +212,9 @@ async function CreateOrder({
         subtotal += lineSubtotal;
       }
 
-      await attachProductNameSnapshots(resolvedItems, { session });
-      const dealValidation = await validateDealsForOrder({
-        dealClaims: deals,
-        resolvedItems,
-        session,
-      });
+      const dealValidation = hasDeals
+        ? await validateDealsForOrder({ dealClaims: deals, resolvedItems, session })
+        : { success: true, data: { snapshots: [], discountAmount: 0 } };
       if (!dealValidation.success) {
         await session.abortTransaction();
         session.endSession();
@@ -309,13 +303,9 @@ async function CreateOrder({
             customerInstructions,
             deliveryAddress,
             location,
-            metadata:
-              dealSnapshots.length > 0
-                ? {
-                    deals: dealSnapshots,
-                    dealDiscountAmount,
-                  }
-                : {},
+            ...(dealSnapshots.length > 0
+              ? { metadata: { deals: dealSnapshots, dealDiscountAmount } }
+              : {}),
             ...(deliveryDate ? { deliveryDate } : {}),
           },
         ],

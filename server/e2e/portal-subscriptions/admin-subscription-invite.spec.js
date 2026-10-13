@@ -3,8 +3,7 @@
 const { test, expect } = require("@playwright/test");
 
 const ADMIN_ORIGIN = "http://127.0.0.1:4174";
-const { API_ORIGIN } = require("../support/constants");
-const ADMIN_API = `${API_ORIGIN}/api`;
+const ADMIN_API = "http://localhost:5001/api";
 
 const adminUser = {
   id: "admin-e2e",

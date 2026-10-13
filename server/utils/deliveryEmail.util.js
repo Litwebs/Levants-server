@@ -134,16 +134,6 @@ async function persistDispatchEmailResults(results = []) {
               "metadata.dispatchedEmailSentAt": now,
               "metadata.dispatchedEmailProviderId": result.providerId || null,
             },
-            $push: {
-              emailLog: {
-                template: "orderDispatched",
-                providerId: result.providerId || null,
-                subject: `Order dispatched – ${result.orderId || ""}`,
-                to: result.to,
-                sentAt: now,
-                trigger: "delivery_dispatch",
-              },
-            },
             $unset: {
               "metadata.dispatchEmailClaimedAt": "",
               "metadata.dispatchedEmailLastError": "",

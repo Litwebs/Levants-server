@@ -15,7 +15,6 @@ const ListOrders = async (req, res) => {
   const allowedSortBy = new Set([
     "createdAt",
     "updatedAt",
-    "deliveryDate",
     "total",
     "subtotal",
     "paidAt",
@@ -63,12 +62,6 @@ const GetOrderById = async (req, res) => {
   return sendOk(res, result.data);
 };
 
-const GetOrderEmailAudit = async (req, res) => {
-  const result = await service.GetOrderEmailAudit({ orderId: req.params.orderId });
-  if (!result.success) return sendErr(res, { statusCode: result.statusCode || 400, message: result.message });
-  return sendOk(res, result.data);
-};
-
 const UpdateOrderStatus = async (req, res) => {
   const result = await service.UpdateOrderStatus({
     orderId: req.params.orderId,
@@ -77,7 +70,6 @@ const UpdateOrderStatus = async (req, res) => {
     deliveryNote: req.body.deliveryNote,
     deliveryProofFile: req.file,
     actorUserId: req.user?._id || req.user?.id,
-    actorName: req.user?.name || req.user?.email || "Admin user",
     actorRoleName: req.user?.role?.name,
     actorPermissions: req.user?.role?.permissions,
   });
@@ -140,9 +132,6 @@ const BulkUpdateDeliveryStatus = async (req, res) => {
   const result = await service.BulkUpdateDeliveryStatus({
     orderIds,
     deliveryStatus,
-    actorUserId: req.user?._id || req.user?.id,
-    actorName: req.user?.name || req.user?.email || "Admin user",
-    actorRoleName: req.user?.role?.name,
   });
 
   if (!result.success) {
@@ -249,7 +238,6 @@ const UpdateDriverNote = async (req, res) => {
 module.exports = {
   ListOrders,
   GetOrderById,
-  GetOrderEmailAudit,
   UpdateOrderStatus,
   UpdateOrderPaymentStatus,
   UpdateOrderItems,

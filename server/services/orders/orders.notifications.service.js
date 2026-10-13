@@ -123,32 +123,7 @@ async function sendNewOrderAlertEmailToUsers({ orderId }) {
   try {
     await Order.updateOne(
       { _id: order._id },
-      {
-        $set: {
-          "metadata.newOrderAlertSentAt": new Date().toISOString(),
-          ...(result?.success
-            ? {
-                "metadata.newOrderAlertProviderId":
-                  result?.response?.data?.id || result?.response?.id || null,
-              }
-            : {}),
-        },
-        ...(result?.success
-          ? {
-              $push: {
-                emailLog: {
-                  template: "newOrderAlert",
-                  providerId:
-                    result?.response?.data?.id || result?.response?.id || null,
-                  subject,
-                  to: emails.join(", "),
-                  sentAt: new Date(),
-                  trigger: "order_created",
-                },
-              },
-            }
-          : {}),
-      },
+      { $set: { "metadata.newOrderAlertSentAt": new Date().toISOString() } },
     );
   } catch {
     // ignore
@@ -311,19 +286,6 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
       {
         $set: {
           "metadata.orderConfirmationSentAt": new Date().toISOString(),
-          "metadata.orderConfirmationProviderId":
-            result?.response?.data?.id || result?.response?.id || null,
-        },
-        $push: {
-          emailLog: {
-            template: "orderConfirmation",
-            providerId:
-              result?.response?.data?.id || result?.response?.id || null,
-            subject,
-            to,
-            sentAt: new Date(),
-            trigger: "payment_confirmed",
-          },
         },
         $unset: {
           "metadata.orderConfirmationClaim": 1,
@@ -395,19 +357,6 @@ async function sendRefundConfirmationEmailToCustomer({ orderId }) {
         {
           $set: {
             "metadata.refundConfirmationSentAt": new Date().toISOString(),
-            "metadata.refundConfirmationProviderId":
-              result?.response?.data?.id || result?.response?.id || null,
-          },
-          $push: {
-            emailLog: {
-              template: "refundConfirmation",
-              providerId:
-                result?.response?.data?.id || result?.response?.id || null,
-              subject,
-              to,
-              sentAt: new Date(),
-              trigger: "refund_completed",
-            },
           },
         },
       );

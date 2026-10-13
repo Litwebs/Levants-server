@@ -7,7 +7,6 @@ const { requirePermission } = require("../middleware/permission.middleware");
 const {
   validateBody,
   validateParams,
-  validateQuery,
 } = require("../middleware/validate.middleware");
 
 const controller = require("../controllers/orders.admin.controller");
@@ -18,8 +17,6 @@ const {
   bulkAssignDeliveryDateSchema,
   updateOrderItemsSchema,
   bulkDeleteOrdersSchema,
-  listOrdersQuerySchema,
-  updateDriverNoteSchema,
 } = require("../validators/order.validators");
 
 const { refundOrderSchema } = require("../validators/orderRefund.validator");
@@ -46,17 +43,7 @@ const upload = multer({
 router.use(requireAuth);
 router.use(requirePermission("orders.read"));
 
-router.get(
-  "/",
-  validateQuery(listOrdersQuerySchema),
-  asyncHandler(controller.ListOrders),
-);
-
-router.get(
-  "/:orderId/emails",
-  validateParams(orderIdParamSchema),
-  asyncHandler(controller.GetOrderEmailAudit),
-);
+router.get("/", asyncHandler(controller.ListOrders));
 
 router.get(
   "/:orderId",
@@ -107,7 +94,6 @@ router.patch(
   "/:orderId/driver-note",
   requirePermission("orders.update"),
   validateParams(orderIdParamSchema),
-  validateBody(updateDriverNoteSchema),
   asyncHandler(controller.UpdateDriverNote),
 );
 

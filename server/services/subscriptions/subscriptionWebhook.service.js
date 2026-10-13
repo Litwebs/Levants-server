@@ -19,9 +19,6 @@ const Order = require("../../models/order.model");
 const Payment = require("../../models/payment.model");
 const { saveInvoicePayment } = require("./subscriptionInvoicePayment.service");
 const CustomerNotification = require("../../models/customerNotification.model");
-const {
-  attachProductNameSnapshots,
-} = require("../../utils/orderItemSnapshot.util");
 const logger = require("../../utils/logger.util");
 const stripe = require("../../utils/stripe.util");
 const { selectInvoicesForRecovery } = require("./subscriptionInvoiceRecovery.util");
@@ -397,7 +394,6 @@ async function HandleSubscriptionInvoicePaidUnlocked(invoice, { prepareOnly = fa
     if (!slot.orderParams) throw new Error("A legacy invoice order is missing. Its original fulfillment must be reconciled.");
     const paidAddOns = slot.addOns || [];
     const subscriptionInvoiceAmountMinor = slot.amountMinor;
-    await attachProductNameSnapshots(slot.orderParams.items);
     let order;
     try {
       await mongoose.connection.transaction(async session => {

@@ -12,7 +12,6 @@
 4. Enable **Require a pull request before merging** and **Require status checks
    to pass before merging**.
 5. Require these checks: **Backend tests**, **Client lint and build**,
-   **Analytics E2E**, **Deals E2E (desktop, mobile and Stripe test mode)**,
    **Subscription E2E (Stripe test mode)**, and **Production release gate**.
    The gate rejects failed or skipped prerequisite jobs. Draft PRs skip E2E;
    mark the release PR ready for review and wait for its current head to pass.

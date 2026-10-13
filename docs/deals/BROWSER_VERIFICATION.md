@@ -1,3 +1,5 @@
+> Historical verification record. The admin builder was restored by the owner; see BACKEND_REFRESH.md for the current backend-first refresh.
+
 # Deals browser verification
 
 The browser harness runs the pinned customer storefront against a real Express API and a temporary MongoDB replica set inside GitHub Actions. It does not deploy to UAT or production. Only `feature/deals` receives verification changes.

@@ -5,9 +5,6 @@ const DeliveryBatch = require("../../models/deliveryBatch.model");
 const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
 const ProductVariant = require("../../models/variant.model");
-const {
-  getProductNameMap,
-} = require("../../utils/orderItemSnapshot.util");
 const Route = require("../../models/route.model");
 const Stop = require("../../models/stop.model");
 const { geocodeAddress } = require("../../Integration/google.geocode");
@@ -214,10 +211,6 @@ async function createDeliveryBatch({
       (variantRows || []).map((v) => [String(v.lowerSku), v]),
     );
 
-    const productNameById = await getProductNameMap(
-      (variantRows || []).map((v) => v.product),
-    );
-
     const missingSkus = [];
     for (const skuLower of allSkuLower) {
       if (!variantsByLowerSku.has(String(skuLower))) missingSkus.push(skuLower);
@@ -292,7 +285,6 @@ async function createDeliveryBatch({
 
           resolvedItems.push({
             product: v.product,
-            productName: productNameById.get(String(v.product)) || null,
             variant: v._id,
             name: v.name,
             sku: v.sku,

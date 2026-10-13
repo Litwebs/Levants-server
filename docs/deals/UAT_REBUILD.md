@@ -1,3 +1,5 @@
+> Historical verification record. The admin builder was restored by the owner; see BACKEND_REFRESH.md for the current backend-first refresh.
+
 # Deals feature branch built from UAT
 
 UAT baseline: `f916abdfaee697b3deb90e329f765854174c1d97`.

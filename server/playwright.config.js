@@ -64,7 +64,6 @@ module.exports = defineConfig({
       reuseExistingServer: false,
       env: {
         ...process.env,
-        VITE_API_BASE_URL: `${API_ORIGIN}/api`,
       },
     },
   ],

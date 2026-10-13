@@ -54,6 +54,7 @@ async function shutdown(exitCode = 0) {
 
 async function start() {
   const { secretKey } = configureSafeEnvironment();
+  if (process.env.E2E_DEALS_BROWSER === "1") process.env.FRONTEND_URL_DEV = "http://127.0.0.1:4174";
 
   replicaSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   const mongoUri = replicaSet.getUri("levants-real-stripe-e2e");

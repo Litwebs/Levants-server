@@ -3,7 +3,7 @@
 const { spawn } = require("child_process");
 
 const EVENTS = [
-  "checkout.session.completed",
+  ...(process.env.E2E_DEALS_BROWSER === "1" ? ["checkout.session.completed"] : []),
   "invoice.created", "invoice.voided", "invoice.marked_uncollectible",
   "customer.subscription.created",
   "customer.subscription.updated",

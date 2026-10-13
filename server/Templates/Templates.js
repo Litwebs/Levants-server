@@ -8,7 +8,6 @@ const newOrderAlert = require("./newOrderAlert");
 const orderConfirmation = require("./orderConfirmation");
 const deliveryProof = require("./deliveryProof");
 const orderDispatched = require("./orderDispatched");
-const orderInTransit = require("./orderInTransit");
 const outOfStockAlert = require("./outOfStockAlert");
 const refundConfirmation = require("./refundConfirmation");
 const userInvitation = require("./userInvitation");
@@ -26,7 +25,6 @@ const emailTemplates = {
   orderConfirmation,
   deliveryProof,
   orderDispatched,
-  orderInTransit,
   refundConfirmation,
   userInvitation,
   serviceAnnouncement,

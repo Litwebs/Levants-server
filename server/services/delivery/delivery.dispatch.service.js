@@ -12,36 +12,6 @@ const {
   persistDispatchEmailResults,
 } = require("../../utils/deliveryEmail.util");
 
-async function updateOrdersToDispatched(orderIds, changedAt = new Date(), session) {
-  const orders = await Order.find({
-    _id: { $in: orderIds },
-    // Delivery-run dispatch may advance ordered orders only. In-transit,
-    // delivered and returned orders must never move backwards to dispatched.
-    deliveryStatus: "ordered",
-  }).select("_id deliveryStatus").session(session || null).lean();
-  if (!orders.length) return { matchedCount: 0, modifiedCount: 0 };
-  let modifiedCount = 0;
-  for (const order of orders) {
-    const result = await Order.updateOne(
-      { _id: order._id, deliveryStatus: order.deliveryStatus },
-      {
-        $set: { deliveryStatus: "dispatched", updatedAt: changedAt },
-        $push: {
-          statusAudit: {
-            from: order.deliveryStatus, to: "dispatched", changedAt,
-            actor: null, actorName: "Delivery dispatch system", actorRole: null,
-            source: "delivery_dispatch",
-            effects: ["Queued the dispatch notification email"],
-          },
-        },
-      },
-      { session },
-    );
-    modifiedCount += result.modifiedCount || 0;
-  }
-  return { modifiedCount };
-}
-
 async function dispatchBatch({ batchId } = {}) {
   if (!batchId) {
     return {
@@ -74,7 +44,18 @@ async function dispatchBatch({ batchId } = {}) {
     if (!batch.dispatchedAt) batch.dispatchedAt = now;
     await batch.save({ session });
     if (orderIds.length > 0) {
-      const updateRes = await updateOrdersToDispatched(orderIds, now, session);
+      const updateRes = await Order.updateMany(
+        {
+          _id: { $in: orderIds },
+          deliveryStatus: { $nin: ["delivered", "returned"] },
+        },
+        {
+          $set: {
+            deliveryStatus: "dispatched",
+          },
+        },
+        { session },
+      );
 
       ordersUpdatedCount =
         typeof updateRes?.modifiedCount === "number"
@@ -332,7 +313,14 @@ async function dispatchRoute({ batchId, routeId } = {}) {
 
   await mongoose.connection.transaction(async session => {
     if (routeOrderIds.length > 0) {
-      const updateRes = await updateOrdersToDispatched(routeOrderIds, new Date(), session);
+      const updateRes = await Order.updateMany(
+        {
+          _id: { $in: routeOrderIds },
+          deliveryStatus: { $nin: ["delivered", "returned"] },
+        },
+        { $set: { deliveryStatus: "dispatched" } },
+        { session },
+      );
 
       ordersUpdatedCount =
         typeof updateRes?.modifiedCount === "number"

@@ -47,11 +47,9 @@ const ListProducts = async (req, res) => {
     page: Number(req.query.page) || 1,
     pageSize: Number(req.query.pageSize) || 20,
     search: req.query.search,
-    sort: req.query.sort,
     filters: {
       status: req.query.status,
       category: req.query.category,
-      stock: req.query.stock,
     },
   });
 
