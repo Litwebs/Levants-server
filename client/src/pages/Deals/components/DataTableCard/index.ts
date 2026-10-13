@@ -1,1 +1,0 @@
-export { DataTableCard } from "./DataTableCard";

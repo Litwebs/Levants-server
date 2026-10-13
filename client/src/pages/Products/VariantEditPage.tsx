@@ -122,7 +122,7 @@ export default function VariantEditPage() {
 
       <header className={styles.header}>
         <div className={styles.heading}><h1>{variant.name}</h1><p>Update pricing, stock, product information and thumbnail.</p></div>
-        {(canUpdateVariant || canUpdateStock) && <Button type="submit" form="variant-form" leftIcon={<Save size={16} />} isLoading={saving} className={styles.headerSubmit}>Save changes</Button>}
+        {(canUpdateVariant || canUpdateStock) && <Button type="submit" form="variant-form" size="sm" leftIcon={<Save size={16} />} isLoading={saving} className={styles.headerSubmit}>Save changes</Button>}
       </header>
 
       <form id="variant-form" className={styles.form} onSubmit={handleSubmit}>
@@ -130,15 +130,15 @@ export default function VariantEditPage() {
           <Card className={styles.sectionCard}>
             <div className={styles.sectionHeader}><span className={styles.sectionIcon} aria-hidden="true"><Package size={20} /></span><div><h2>Variant details</h2><p>Information customers will see for this option.</p></div></div>
             <div className={styles.fieldsGrid}>
-              <Input label="Variant name" value={draft.name} onChange={(e) => update("name", e.target.value)} disabled={!canUpdateVariant} required fullWidth />
-              <Input label="SKU" value={draft.sku} onChange={(e) => update("sku", e.target.value)} disabled={!canUpdateVariant} required fullWidth />
-              <Input label="Price (£)" type="number" min="0" step="0.01" value={draft.price} onChange={(e) => update("price", e.target.value)} disabled={!canUpdateVariant} required fullWidth />
+              <Input label="Variant name" value={draft.name} onChange={(e) => update("name", e.target.value)} disabled={!canUpdateVariant} required fullWidth size="sm" />
+              <Input label="SKU" value={draft.sku} onChange={(e) => update("sku", e.target.value)} disabled={!canUpdateVariant} required fullWidth size="sm" />
+              <Input label="Price (£)" type="number" min="0" step="0.01" value={draft.price} onChange={(e) => update("price", e.target.value)} disabled={!canUpdateVariant} required fullWidth size="sm" />
               <Select label="Status" value={draft.status} onChange={(value) => update("status", value as VariantStatus)} options={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} disabled={!canUpdateVariant} fullWidth />
-              <Input label="Stock quantity" type="number" min="0" value={draft.stockQuantity} onChange={(e) => update("stockQuantity", e.target.value)} disabled={!canUpdateStock} required fullWidth />
-              <Input label="Low stock alert" type="number" min="0" value={draft.lowStockAlert} onChange={(e) => update("lowStockAlert", e.target.value)} disabled={!canUpdateStock} required fullWidth />
+              <Input label="Stock quantity" type="number" min="0" value={draft.stockQuantity} onChange={(e) => update("stockQuantity", e.target.value)} disabled={!canUpdateStock} required fullWidth size="sm" />
+              <Input label="Low stock alert" type="number" min="0" value={draft.lowStockAlert} onChange={(e) => update("lowStockAlert", e.target.value)} disabled={!canUpdateStock} required fullWidth size="sm" />
               <div className={styles.fullField}><label className={styles.fieldLabel} htmlFor="variant-description">Description</label><textarea id="variant-description" rows={5} value={draft.description} onChange={(e) => update("description", e.target.value)} disabled={!canUpdateVariant} /></div>
               <div className={styles.fullField}><label className={styles.fieldLabel} htmlFor="variant-ingredients">Ingredients</label><textarea id="variant-ingredients" rows={4} value={draft.ingredients} onChange={(e) => update("ingredients", e.target.value)} disabled={!canUpdateVariant} /></div>
-              <div className={styles.fullField}><Input label="Allergens" value={draft.allergens} onChange={(e) => update("allergens", e.target.value)} disabled={!canUpdateVariant} hint="Separate allergens with commas" fullWidth /></div>
+              <div className={styles.fullField}><Input label="Allergens" value={draft.allergens} onChange={(e) => update("allergens", e.target.value)} disabled={!canUpdateVariant} hint="Separate allergens with commas" fullWidth size="sm" /></div>
               <div className={styles.fullField}><label className={styles.fieldLabel} htmlFor="variant-nutrition">Nutritional information</label><textarea id="variant-nutrition" rows={5} value={draft.nutritionalInformation} onChange={(e) => update("nutritionalInformation", e.target.value)} disabled={!canUpdateVariant} /></div>
             </div>
           </Card>
@@ -149,13 +149,13 @@ export default function VariantEditPage() {
               <div className={styles.mediaLabelRow}><label>Thumbnail</label></div>
               {image ? <div className={styles.thumbnailPreview}>
                 <img src={image} alt={`${draft.name} thumbnail`} />
-                {canUpdateVariant && <><Button type="button" variant="outline" leftIcon={<Upload size={15} />} onClick={() => imageInputRef.current?.click()} className={styles.replaceImageButton}>Replace</Button><button type="button" className={styles.removeImageButton} onClick={() => { setImage(""); setImageChanged(true); }} aria-label="Remove thumbnail"><X size={16} /></button></>}
+                {canUpdateVariant && <><Button type="button" variant="outline" size="sm" leftIcon={<Upload size={15} />} onClick={() => imageInputRef.current?.click()} className={styles.replaceImageButton}>Replace</Button><button type="button" className={styles.removeImageButton} onClick={() => { setImage(""); setImageChanged(true); }} aria-label="Remove thumbnail"><X size={16} /></button></>}
               </div> : <button type="button" className={styles.thumbnailDropzone} onClick={() => imageInputRef.current?.click()} disabled={!canUpdateVariant}><span className={styles.uploadIcon}><Upload size={22} /></span><strong>Choose a thumbnail</strong><span>JPG, PNG or WEBP</span></button>}
               <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={handleImage} />
             </div>
           </Card>
         </div>
-        {(canUpdateVariant || canUpdateStock) && <Button type="submit" leftIcon={<Save size={16} />} isLoading={saving} className={styles.mobileSubmit}>Save changes</Button>}
+        {(canUpdateVariant || canUpdateStock) && <Button type="submit" size="sm" leftIcon={<Save size={16} />} isLoading={saving} className={styles.mobileSubmit}>Save changes</Button>}
       </form>
       {unsavedChangesDialog}
     </PageContainer>

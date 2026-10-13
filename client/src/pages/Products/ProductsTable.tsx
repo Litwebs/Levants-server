@@ -1,5 +1,13 @@
 import styles from "./Products.module.css";
-import { DataTableCard, Table } from "../../components/common";
+import {
+  DataTableCard,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/common";
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
 import ProductRow from "./ProductRow";
 import { useMemo } from "react";
@@ -13,27 +21,24 @@ const ProductsTable = ({
   setPageSize,
   paginationMeta,
   productVariantCounts,
-  setSelectedProduct,
-  setIsViewModalOpen,
   handleEditProduct,
-  setIsDeleteModalOpen,
 }: any) => {
   const total = paginationMeta?.total ?? 0;
   const totalPages = paginationMeta?.totalPages ?? 1;
   const pageSizeOptions = useMemo(
     () => [
-      { value: "50", label: "50 - page" },
-      { value: "100", label: "100 - page" },
-      { value: "200", label: "200 - page" },
+      { value: "20", label: "20 / page" },
+      { value: "50", label: "50 / page" },
+      { value: "100", label: "100 / page" },
     ],
     [],
   );
 
   return (
     <DataTableCard
-      className={styles.tableCard}
+      className={styles.productsTableCard}
       loading={isLoading}
-      loadingText="Loading..."
+      loadingText="Loading products…"
       pagination={{
         page,
         pageSize,
@@ -43,40 +48,40 @@ const ProductsTable = ({
         setPageSize,
         pageSizeOptions,
         loading: isLoading,
+        footerClassName: styles.productsPagination,
       }}
     >
-      <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Category</th>
-            <th>Status</th>
-            <th>Variants</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
+      <Table withWrapper={false} tableClassName={styles.responsiveProductsTable}>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Product</TableHead>
+            <TableHead align="center">Category</TableHead>
+            <TableHead align="center">Status</TableHead>
+            <TableHead align="center">Variants</TableHead>
+            <TableHead align="center">Low stock</TableHead>
+            <TableHead align="center">Out of stock</TableHead>
+            <TableHead align="right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
 
-        <tbody>
+        <TableBody>
           {(pagedProducts?.length ?? 0) === 0 ? (
-            <tr className={sharedTableStyles.emptyStateRow}>
-              <td className={sharedTableStyles.emptyTableCell} colSpan={5}>
-                {isLoading ? "Loading products..." : "No products found."}
-              </td>
-            </tr>
+            <TableRow className={sharedTableStyles.emptyStateRow}>
+              <TableCell className={sharedTableStyles.emptyTableCell} colSpan={7}>
+                No products found.
+              </TableCell>
+            </TableRow>
           ) : (
             pagedProducts.map((product: any) => (
               <ProductRow
                 key={product._id}
                 product={product}
                 counts={productVariantCounts?.[product._id]}
-                setSelectedProduct={setSelectedProduct}
-                setIsViewModalOpen={setIsViewModalOpen}
-                setIsDeleteModalOpen={setIsDeleteModalOpen}
                 handleEditProduct={handleEditProduct}
               />
             ))
           )}
-        </tbody>
+        </TableBody>
       </Table>
     </DataTableCard>
   );

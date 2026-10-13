@@ -27,7 +27,7 @@
 /* Match the customer site's scoped light and dark theme values, independent of admin theme. */
 .storefront { --sf-bg: hsl(40 33% 98%); --sf-fg: hsl(30 10% 15%); --sf-card: hsl(40 40% 99%); --sf-primary: hsl(150 35% 28%); --sf-primary-fg: hsl(40 33% 98%); --sf-secondary: hsl(35 30% 92%); --sf-muted: hsl(40 25% 94%); --sf-muted-fg: hsl(30 10% 45%); --sf-gold: hsl(42 90% 45%); --sf-danger: hsl(0 72% 51%); position: absolute; top: 0; left: 0; overflow: hidden; transform-origin: top left; container-type: inline-size; background: var(--sf-bg); color: var(--sf-fg); font-family: "DM Sans", system-ui, sans-serif; }
 .storefront.dark { --sf-bg: hsl(30 15% 10%); --sf-fg: hsl(40 25% 95%); --sf-card: hsl(30 12% 14%); --sf-primary: hsl(150 35% 45%); --sf-primary-fg: hsl(30 15% 10%); --sf-secondary: hsl(30 15% 20%); --sf-muted: hsl(30 12% 18%); --sf-muted-fg: hsl(35 15% 60%); --sf-gold: hsl(42 80% 40%); --sf-danger: hsl(0 65% 45%); }
-.storefront h2, .storefront h3 { color: var(--sf-fg); font-family: "Playfair Display", Georgia, serif; }
+.storefront h2, .storefront h3 { font-family: "Playfair Display", Georgia, serif; }
 .container { width: min(100% - 64px, 1280px); margin-inline: auto; }
 .listingHero { padding: 42px 0; background: color-mix(in srgb, var(--sf-secondary) 30%, var(--sf-bg)); }
 .listingHero h2 { margin: 0 0 8px; font-size: clamp(28px, 3vw, 36px); font-weight: 600; }

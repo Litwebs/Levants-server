@@ -292,6 +292,11 @@
   font-weight: var(--font-semibold);
 }
 
+.trendFlat {
+  color: var(--color-gray-600);
+  font-weight: var(--font-semibold);
+}
+
 .trendLabel {
   color: var(--color-gray-400);
 }
@@ -355,6 +360,141 @@
 .metricLabel {
   font-size: var(--text-xs);
   color: var(--color-gray-500);
+}
+
+.salesMixGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.salesMixCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  background: var(--background);
+}
+
+.salesMixHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.salesMixTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+}
+
+.salesMixShare {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+  text-align: right;
+}
+
+.salesMixPrimary {
+  margin-top: var(--space-4);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-gray-900);
+}
+
+.salesMixLabel {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.salesMixStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.salesMixStats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.salesMixStatValue {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-gray-900);
+}
+
+.salesMixStatLabel {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.salesMixRefund {
+  margin-top: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-error);
+}
+
+@media (max-width: 900px) {
+  .salesMixGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.compositionGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.compositionItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--background);
+}
+
+.compositionLabel {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.compositionValue {
+  font-size: var(--text-xl);
+  font-weight: var(--font-bold);
+  color: var(--color-gray-900);
+}
+
+.compositionMeta {
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.compositionNote {
+  margin-top: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+@media (max-width: 900px) {
+  .compositionGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .compositionGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.productRankingSection + .productRankingSection {
+  margin-top: var(--space-5);
 }
 
 /* Product/Customer Ranking */
@@ -610,8 +750,527 @@
   transition: width var(--transition-slow);
 }
 
+
+.drilldownButton {
+  width: fit-content;
+  margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  cursor: pointer;
+}
+
+.drilldownButton:hover {
+  text-decoration: underline;
+}
+
+.productDetailHeader {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.productDetailSubheading {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-gray-500);
+}
+
+.productDetailSection {
+  margin-top: var(--space-5);
+  min-width: 0;
+}
+
 .emptyState {
   text-align: center;
   color: var(--color-gray-500);
   padding: var(--space-8);
+}
+
+
+.analyticsContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.statePanel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.statePanel_error {
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+  background: color-mix(in srgb, var(--destructive) 7%, var(--card));
+}
+
+.statePanel_loading {
+  align-items: stretch;
+}
+
+.statePanel_empty {
+  background: color-mix(in srgb, var(--muted) 45%, var(--card));
+}
+
+.stateSkeletons {
+  width: min(18rem, 35%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.stateCopy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.stateTitle {
+  font-size: var(--text-sm);
+  color: var(--foreground);
+}
+
+.stateMessage {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.refreshStatus {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 700px) {
+  .statePanel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .stateSkeletons {
+    width: 100%;
+  }
+}
+
+
+.exportTableStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.exportTableSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.exportTableSection + .exportTableSection {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.exportTableHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.exportTableTitle {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--foreground);
+}
+
+.exportTableNote {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.exportCardHeader {
+  width: 100%;
+}
+
+@media (max-width: 700px) {
+  .exportTableHeader {
+    flex-direction: column;
+  }
+}
+
+
+/* Analytics layout refresh
+   Keep dense reporting readable inside the grouped admin shell and avoid
+   rendering a wall of empty period charts when the selected period is quiet. */
+.reports {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.header {
+  align-items: flex-end;
+}
+
+.headerActions {
+  gap: var(--space-2);
+}
+
+.headerActions > * {
+  min-width: 0;
+}
+
+.analyticsContent,
+.periodSections {
+  min-width: 0;
+}
+
+.analyticsContent {
+  gap: var(--space-5);
+}
+
+.periodSections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.periodSectionsHidden {
+  display: none;
+}
+
+.kpiGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.kpiCard,
+.chartCard,
+.fullWidthChart,
+.inventoryCard {
+  min-width: 0;
+}
+
+.kpiCard {
+  padding: var(--space-4);
+}
+
+.kpiContent {
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.kpiIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-lg);
+}
+
+.kpiValue {
+  font-size: var(--text-xl);
+}
+
+.metricsGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  padding: 0;
+  text-align: left;
+}
+
+.metricItem {
+  min-width: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 38%, var(--card));
+}
+
+.metricValue {
+  font-size: var(--text-xl);
+}
+
+.subscriptionCard {
+  overflow: visible;
+}
+
+.subscriptionMetricsGrid {
+  margin-bottom: var(--space-5);
+}
+
+.subscriptionRankings {
+  margin-top: 0;
+}
+
+.subscriptionTrendGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.subscriptionTrendGrid > *,
+.chartsGrid > * {
+  min-width: 0;
+}
+
+.subscriptionTrendGrid .variantHeader {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.subscriptionTrendGrid .variantMeta {
+  max-width: 100%;
+  text-align: left;
+}
+
+.subscriptionCardQuiet .subscriptionRankings,
+.subscriptionCardQuiet .subscriptionTrendGrid {
+  display: none;
+}
+
+.compactEmptyState {
+  padding: var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 26%, var(--card));
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.chartsGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.chartCard,
+.fullWidthChart {
+  padding: var(--space-5);
+}
+
+.productDetailSection,
+.productRankingSection,
+.variantHeader,
+.rankInfo,
+.simpleListMain {
+  min-width: 0;
+}
+
+.productDetailSection {
+  margin-top: var(--space-4);
+}
+
+.productRankingSection > .variantHeader,
+.productDetailSection > .variantHeader {
+  align-items: flex-start;
+}
+
+.variantMeta,
+.chartTotal,
+.compositionNote,
+.rankMeta,
+.inventoryCount {
+  overflow-wrap: anywhere;
+}
+
+.variantMeta {
+  max-width: 52%;
+  text-align: right;
+  line-height: 1.35;
+}
+
+.chartFooter {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.chartTotal {
+  line-height: 1.45;
+}
+
+.inventoryCard {
+  padding: var(--space-5);
+}
+
+.emptyState {
+  padding: var(--space-5);
+}
+
+@media (max-width: 1100px) {
+  .kpiGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chartsGrid,
+  .subscriptionTrendGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .reports {
+    gap: var(--space-4);
+  }
+
+  .header {
+    align-items: flex-start;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions > * {
+    flex: 1 1 10rem;
+  }
+
+  .kpiGrid,
+  .metricsGrid,
+  .chartsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpiCard,
+  .chartCard,
+  .fullWidthChart,
+  .inventoryCard {
+    padding: var(--space-4);
+  }
+
+  .variantMeta {
+    max-width: 58%;
+  }
+}
+
+@media (max-width: 520px) {
+  .headerActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .customDateRow {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .dateInput {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .variantHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .variantMeta {
+    max-width: 100%;
+    text-align: left;
+  }
+}
+
+
+/* Analytics section tabs */
+.analyticsTabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 38%, var(--card));
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.analyticsTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.analyticsTab {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 3px);
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.analyticsTab:hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--muted) 65%, transparent);
+}
+
+.analyticsTabActive {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.analyticsTabActive::after {
+  content: "";
+  display: block;
+  height: 2px;
+  margin: 5px auto -7px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+.tabEmptyState {
+  padding: var(--space-5);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--muted) 22%, var(--card));
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.analyticsContent [hidden] {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .analyticsTabs {
+    width: 100%;
+    margin-inline: 0;
+  }
+
+  .analyticsTab {
+    padding-inline: var(--space-3);
+  }
 }

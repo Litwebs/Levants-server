@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "@/context/api";
-import type { DealCatalogVariant as VariantSearchItem } from "./catalogTypes";
+import type { VariantSearchItem } from "@/context/Discounts";
 
 export function useDealCatalog() {
   const [query, setQuery] = useState("");

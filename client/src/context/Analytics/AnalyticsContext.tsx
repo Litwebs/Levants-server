@@ -20,14 +20,21 @@ import AnalyticsReducer, {
 } from "./AnalyticsReducer";
 
 import {
+  type AnalyticsComparisonMode,
   type AnalyticsDashboard,
   type AnalyticsDateRange,
   type AnalyticsOrderSource,
   type AnalyticsState,
+  type ProductDetail,
+  type VariantDetail,
   type RevenueOverview,
   type RevenueInterval,
   initialAnalyticsState,
 } from "./constants";
+import {
+  mergeAnalyticsFilters,
+  type AnalyticsFilterUpdate,
+} from "./filters";
 
 type ApiEnvelope<T> = {
   success: boolean;
@@ -55,17 +62,12 @@ type AnalyticsContextType = {
   from: AnalyticsState["from"];
   to: AnalyticsState["to"];
   interval: AnalyticsState["interval"];
+  comparison: AnalyticsState["comparison"];
 
   loading: AnalyticsState["loading"];
   error: AnalyticsState["error"];
 
-  setFilters: (filters: {
-    range: AnalyticsDateRange;
-    orderSource?: AnalyticsOrderSource;
-    from?: string;
-    to?: string;
-    interval?: RevenueInterval;
-  }) => void;
+  setFilters: (filters: AnalyticsFilterUpdate) => void;
 
   getDashboard: (params?: {
     range?: AnalyticsDateRange;
@@ -73,12 +75,35 @@ type AnalyticsContextType = {
     from?: string;
     to?: string;
     interval?: RevenueInterval;
+    comparison?: AnalyticsComparisonMode;
   }) => Promise<AnalyticsDashboard>;
 
   getRevenueOverview: (params?: {
     days?: number;
     orderSource?: AnalyticsOrderSource;
   }) => Promise<RevenueOverview>;
+
+  getProductDetail: (
+    productId: string,
+    params?: {
+      range?: AnalyticsDateRange;
+      orderSource?: AnalyticsOrderSource;
+      from?: string;
+      to?: string;
+      interval?: RevenueInterval;
+    },
+  ) => Promise<ProductDetail>;
+
+  getVariantDetail: (
+    variantId: string,
+    params?: {
+      range?: AnalyticsDateRange;
+      orderSource?: AnalyticsOrderSource;
+      from?: string;
+      to?: string;
+      interval?: RevenueInterval;
+    },
+  ) => Promise<VariantDetail>;
 };
 
 const AnalyticsContext = createContext<AnalyticsContextType | null>(null);
@@ -87,25 +112,30 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(AnalyticsReducer, initialAnalyticsState);
 
   const setFilters = useCallback(
-    (filters: {
-      range: AnalyticsDateRange;
-      orderSource?: AnalyticsOrderSource;
-      from?: string;
-      to?: string;
-      interval?: RevenueInterval;
-    }) => {
+    (filters: AnalyticsFilterUpdate) => {
       dispatch({
         type: ANALYTICS_SET_FILTERS,
-        payload: {
-          range: filters.range,
-          orderSource: filters.orderSource ?? state.orderSource,
-          from: filters.from ?? "",
-          to: filters.to ?? "",
-          interval: filters.interval ?? state.interval,
-        },
+        payload: mergeAnalyticsFilters(
+          {
+            range: state.range,
+            orderSource: state.orderSource,
+            from: state.from,
+            to: state.to,
+            interval: state.interval,
+            comparison: state.comparison,
+          },
+          filters,
+        ),
       });
     },
-    [state.interval],
+    [
+      state.range,
+      state.orderSource,
+      state.from,
+      state.to,
+      state.interval,
+      state.comparison,
+    ],
   );
 
   const getDashboard = useCallback(
@@ -115,6 +145,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       from?: string;
       to?: string;
       interval?: RevenueInterval;
+      comparison?: AnalyticsComparisonMode;
     }) => {
       dispatch({ type: ANALYTICS_REQUEST });
       try {
@@ -125,6 +156,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
             from: params?.from,
             to: params?.to,
             interval: params?.interval,
+            comparison: params?.comparison,
           },
         });
 
@@ -178,6 +210,73 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
     [],
   );
 
+
+  const getProductDetail = useCallback(
+    async (
+      productId: string,
+      params?: {
+        range?: AnalyticsDateRange;
+        orderSource?: AnalyticsOrderSource;
+        from?: string;
+        to?: string;
+        interval?: RevenueInterval;
+      },
+    ) => {
+      const res = await api.get(
+        `/admin/analytics/products/${encodeURIComponent(productId)}`,
+        {
+          params: {
+            range: params?.range,
+            orderSource: params?.orderSource,
+            from: params?.from,
+            to: params?.to,
+            interval: params?.interval,
+          },
+        },
+      );
+
+      const productDetail = unwrapData<ProductDetail>(res.data);
+      if (!productDetail?.productId)
+        throw new Error("Failed to load product analytics");
+
+      return productDetail;
+    },
+    [],
+  );
+
+  const getVariantDetail = useCallback(
+    async (
+      variantId: string,
+      params?: {
+        range?: AnalyticsDateRange;
+        orderSource?: AnalyticsOrderSource;
+        from?: string;
+        to?: string;
+        interval?: RevenueInterval;
+      },
+    ) => {
+      const res = await api.get(
+        `/admin/analytics/variants/${encodeURIComponent(variantId)}`,
+        {
+          params: {
+            range: params?.range,
+            orderSource: params?.orderSource,
+            from: params?.from,
+            to: params?.to,
+            interval: params?.interval,
+          },
+        },
+      );
+
+      const variantDetail = unwrapData<VariantDetail>(res.data);
+      if (!variantDetail?.variantId)
+        throw new Error("Failed to load variant analytics");
+
+      return variantDetail;
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       dashboard: state.dashboard,
@@ -191,6 +290,7 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       from: state.from,
       to: state.to,
       interval: state.interval,
+      comparison: state.comparison,
 
       loading: state.loading,
       error: state.error,
@@ -198,8 +298,17 @@ export const AnalyticsProvider = ({ children }: { children: ReactNode }) => {
       setFilters,
       getDashboard,
       getRevenueOverview,
+      getProductDetail,
+      getVariantDetail,
     }),
-    [state, setFilters, getDashboard, getRevenueOverview],
+    [
+      state,
+      setFilters,
+      getDashboard,
+      getRevenueOverview,
+      getProductDetail,
+      getVariantDetail,
+    ],
   );
 
   return (

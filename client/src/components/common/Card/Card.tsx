@@ -1,12 +1,9 @@
 import React from 'react';
 import styles from './Card.module.css';
 
-interface CardProps {
-  children: React.ReactNode;
-  className?: string;
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   padding?: 'none' | 'sm' | 'md' | 'lg';
   hover?: boolean;
-  onClick?: () => void;
 }
 
 export const Card: React.FC<CardProps> = ({
@@ -14,7 +11,8 @@ export const Card: React.FC<CardProps> = ({
   className = '',
   padding = 'md',
   hover = false,
-  onClick
+  onClick,
+  ...rest
 }) => {
   const classNames = [
     styles.card,
@@ -25,7 +23,7 @@ export const Card: React.FC<CardProps> = ({
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={classNames} onClick={onClick}>
+    <div {...rest} className={classNames} onClick={onClick}>
       {children}
     </div>
   );

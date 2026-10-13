@@ -3,7 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useAnalyticsApi } from "../../context/Analytics";
 
 import styles from "./Dashboard.module.css";
-import { dateRangeOptions, orderSourceOptions } from "./dashboard.constants";
+import {
+  comparisonOptions,
+  dateRangeOptions,
+  orderSourceOptions,
+} from "./dashboard.constants";
 import { useDashboardViewModel } from "./dashboard.viewmodel";
 
 import DashboardHeader from "./components/DashboardHeader";
@@ -27,6 +31,7 @@ const Dashboard: React.FC = () => {
     from,
     to,
     interval,
+    comparison,
     setFilters,
   } = useAnalyticsApi();
 
@@ -37,9 +42,18 @@ const Dashboard: React.FC = () => {
     void getDashboard({
       interval,
       orderSource,
+      comparison,
       ...(isCustom ? { from, to } : { range }),
     });
-  }, [range, orderSource, from, to, interval, getDashboard]);
+  }, [
+    range,
+    orderSource,
+    from,
+    to,
+    interval,
+    comparison,
+    getDashboard,
+  ]);
 
   useEffect(() => {
     // Fixed daily window; not affected by selected filters
@@ -57,9 +71,11 @@ const Dashboard: React.FC = () => {
         range={range}
         orderSource={orderSource}
         interval={interval}
+        comparison={comparison}
         setFilters={setFilters}
         dateRangeOptions={dateRangeOptions}
         orderSourceOptions={orderSourceOptions}
+        comparisonOptions={comparisonOptions}
         onViewOrders={() => navigate("/orders")}
         onCreateProduct={() => navigate("/products")}
       />

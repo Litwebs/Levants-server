@@ -822,7 +822,7 @@ const ProductVariantsPage = () => {
               <TableHead>Reserved</TableHead>
               <TableHead>Available</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead width={80}>Actions</TableHead>
+              <TableHead className={styles.actionsCell}>Actions</TableHead>
             </TableRow>
           </TableHeader>
 

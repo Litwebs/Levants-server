@@ -5,23 +5,24 @@ import OrdersHeader from "./OrdersHeader";
 import OrdersFilters from "./OrdersFilters";
 import OrdersBulkActions from "./OrdersBulkActions";
 import OrdersTable from "./OrdersTable";
-import OrderDetailModal from "./OrderDetailModal";
-import OrderStatusModal from "./OrderStatusModal";
+import { PageContainer } from "../../components/common";
 
 const Orders = () => {
   const ordersState = useOrders();
-
   return (
-    <div
+    <PageContainer
       className={`${styles.page} ${ordersState.showFilters ? styles.pageWithFilters : ""}`}
     >
       <OrdersHeader {...ordersState} />
+      {ordersState.filterError || ordersState.error ? (
+        <div className={styles.pageAlert} role="alert">
+          {ordersState.filterError || ordersState.error}
+        </div>
+      ) : null}
       <OrdersFilters {...ordersState} />
       <OrdersBulkActions {...ordersState} />
       <OrdersTable {...ordersState} />
-      <OrderDetailModal {...ordersState} />
-      <OrderStatusModal {...ordersState} />
-    </div>
+    </PageContainer>
   );
 };
 

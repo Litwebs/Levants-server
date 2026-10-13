@@ -9,6 +9,7 @@ interface FiltersCardLayoutProps {
   expandedWrapClassName?: string;
   expandedOpenClassName?: string;
   expandedInnerClassName?: string;
+  expandedId?: string;
 }
 
 export const FiltersCardLayout: React.FC<FiltersCardLayoutProps> = ({
@@ -19,12 +20,14 @@ export const FiltersCardLayout: React.FC<FiltersCardLayoutProps> = ({
   expandedWrapClassName = "",
   expandedOpenClassName = "",
   expandedInnerClassName = "",
+  expandedId,
 }) => {
   return (
     <Card className={className}>
       {topRow}
       {expandedContent ? (
         <div
+          id={expandedId}
           className={`${expandedWrapClassName} ${isExpanded ? expandedOpenClassName : ""}`.trim()}
         >
           <div className={expandedInnerClassName}>{expandedContent}</div>

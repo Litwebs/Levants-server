@@ -33,6 +33,21 @@
   transition: all var(--transition-fast);
 }
 
+.sm .input {
+  height: 32px;
+}
+
+.md .input {
+  height: 40px;
+}
+
+.lg .input {
+  height: 48px;
+  padding-right: var(--space-4);
+  padding-left: var(--space-4);
+  font-size: var(--text-base);
+}
+
 .input::placeholder {
   color: var(--color-gray-400);
 }
@@ -72,6 +87,12 @@
 .rightIcon svg {
   width: 18px;
   height: 18px;
+}
+
+.sm .leftIcon svg,
+.sm .rightIcon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .error .input {

@@ -9,7 +9,9 @@ import { AdminLayout } from "./components/layout/AdminLayout";
 import { ToastProvider } from "./components/common/Toast";
 import { LoadingScreen } from "./components/common";
 import Dashboard from "./pages/Dashboard/Dashboard";
+import Reports from "./pages/Reports";
 import Orders from "./pages/Orders/Orders";
+import OrderDetailPage from "./pages/Orders/OrderDetailPage";
 import Deliveries from "./pages/Deliveries";
 import Products from "./pages/Products/Products";
 import ProductVariantsPage from "./pages/Products/ProductVariantsPage";
@@ -33,11 +35,14 @@ import { CustomersProvider } from "./context/Customers";
 import { OrdersProvider } from "./context/Orders";
 import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
+import { RequireAdmin } from "./components/auth/RequireAdmin";
+import { RequireLitwebsEmail } from "./components/auth/RequireLitwebsEmail";
+import ComponentCatalog from "./pages/ComponentCatalog/ComponentCatalog";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
+import { DiscountsPage } from "./pages/Discounts";
 import { DealsPage } from "./pages/Deals/DealsPage";
 import { CreateDealPage } from "./pages/Deals/CreateDealPage";
-import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
 import { BroadcastsPage } from "./pages/Broadcasts/BroadcastsPage";
@@ -166,7 +171,14 @@ const App = () => (
                           }
                         >
                           <Route path="/" element={<HomeRoute />} />
-                          <Route path="/analytics/*" element={<Navigate to="/" replace />} />
+                          <Route
+                            path="/analytics"
+                            element={
+                              <RequirePermission permission="analytics.read">
+                                <Reports />
+                              </RequirePermission>
+                            }
+                          />
                           <Route
                             path="/orders"
                             element={
@@ -176,6 +188,18 @@ const App = () => (
                                   fallbackPath="/delivery-runs"
                                 >
                                   <Orders />
+                                </RequireNotRole>
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/orders/:orderId"
+                            element={
+                              <RequirePermission permission="orders.read">
+                                <RequireNotRole role="driver" fallbackPath="/delivery-runs">
+                                  <OrdersProvider>
+                                    <OrderDetailPage />
+                                  </OrdersProvider>
                                 </RequireNotRole>
                               </RequirePermission>
                             }
@@ -214,15 +238,27 @@ const App = () => (
                           />
                           <Route
                             path="/products/new"
-                            element={<RequirePermission permission="products.create"><ProductCreatePage /></RequirePermission>}
+                            element={
+                              <RequirePermission permission="products.create">
+                                <ProductCreatePage />
+                              </RequirePermission>
+                            }
                           />
                           <Route
                             path="/products/:productId/edit"
-                            element={<RequirePermission permission="products.update"><ProductCreatePage /></RequirePermission>}
+                            element={
+                              <RequirePermission permission="products.update">
+                                <ProductCreatePage />
+                              </RequirePermission>
+                            }
                           />
                           <Route
                             path="/products/:productId/variants/:variantId/edit"
-                            element={<RequirePermission permission="products.read"><VariantEditPage /></RequirePermission>}
+                            element={
+                              <RequirePermission permission="products.read">
+                                <VariantEditPage />
+                              </RequirePermission>
+                            }
                           />
                           <Route
                             path="/products/:productId"
@@ -285,9 +321,30 @@ const App = () => (
                             }
                           />
 
-                          <Route path="/deals" element={<RequirePermission permission="promotions.read"><DealsPage /></RequirePermission>} />
-                          <Route path="/deals/new" element={<RequirePermission permission="promotions.create"><CreateDealPage /></RequirePermission>} />
-                          <Route path="/deals/:dealId/edit" element={<RequirePermission permission="promotions.update"><CreateDealPage /></RequirePermission>} />
+                          <Route
+                            path="/deals"
+                            element={
+                              <RequirePermission permission="promotions.read">
+                                <DealsPage />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/deals/new"
+                            element={
+                              <RequirePermission permission="promotions.create">
+                                <CreateDealPage />
+                              </RequirePermission>
+                            }
+                          />
+                          <Route
+                            path="/deals/:dealId/edit"
+                            element={
+                              <RequirePermission permission="promotions.update">
+                                <CreateDealPage />
+                              </RequirePermission>
+                            }
+                          />
                           <Route
                             path="/discounts"
                             element={
@@ -339,10 +396,23 @@ const App = () => (
                           />
                           <Route
                             path="/reports"
-                            element={<Navigate to="/" replace />}
+                            element={<Navigate to="/analytics" replace />}
                           />
                           <Route path="/settings" element={<Settings />} />
                         </Route>
+
+                        <Route
+                          path="/component-catalog"
+                          element={
+                            <RequireAuth>
+                              <RequireLitwebsEmail>
+                                <RequireAdmin>
+                                  <ComponentCatalog />
+                                </RequireAdmin>
+                              </RequireLitwebsEmail>
+                            </RequireAuth>
+                          }
+                        />
                       </Routes>
                     </BrowserRouter>
                 </AnalyticsProvider>

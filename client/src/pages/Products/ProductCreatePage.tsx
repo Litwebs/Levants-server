@@ -417,7 +417,7 @@ const ProductCreatePage = () => {
                 autoFocus
                 required
                 fullWidth
-
+                size="sm"
               />
 
               <Select
@@ -485,7 +485,7 @@ const ProductCreatePage = () => {
                 placeholder="Milk, nuts"
                 hint="Separate multiple allergens with commas."
                 fullWidth
-
+                size="sm"
               />
 
               <div className={styles.fullField}>
@@ -497,7 +497,7 @@ const ProductCreatePage = () => {
                   }
                   placeholder="e.g. Keep refrigerated below 5°C"
                   fullWidth
-
+                  size="sm"
                 />
               </div>
             </div>
@@ -528,7 +528,7 @@ const ProductCreatePage = () => {
                   />
                   <Button
                     type="button"
-
+                    size="sm"
                     variant="outline"
                     leftIcon={<Upload size={15} />}
                     onClick={() => thumbnailInputRef.current?.click()}

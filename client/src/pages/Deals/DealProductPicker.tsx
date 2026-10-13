@@ -15,8 +15,8 @@ import {
   DataTableCard,
   Input,
   Select,
-} from "./components";
-import type { DealCatalogVariant as VariantSearchItem } from "./catalogTypes";
+} from "@/components/common";
+import type { VariantSearchItem } from "@/context/Discounts";
 import { useDealCatalog as useVariantSearch } from "./useDealCatalog";
 import {
   dealTotals,
