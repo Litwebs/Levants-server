@@ -6,7 +6,6 @@ const CreateOrder = async (req, res) => {
   const result = await service.CreateOrder({
     customerId: req.body.customerId,
     items: req.body.items,
-    deals: req.body.deals,
     discountCode: req.body.discountCode,
     creditToApplyMinor: req.body.creditToApplyMinor,
     deliveryAddress: req.body.deliveryAddress,

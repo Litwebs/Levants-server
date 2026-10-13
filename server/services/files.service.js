@@ -4,7 +4,6 @@ const cloudinary = require("../config/cloudinary.js");
 const Product = require("../models/product.model");
 const Variant = require("../models/variant.model");
 const BusinessInfo = require("../models/businessInfo.model");
-const Deal = require("../models/deal.model");
 const compressImageForUpload = require("../utils/compressImageForUpload.util");
 
 const getResourceType = (mimeType = "") => {
@@ -107,22 +106,19 @@ const isFileReferenced = async (fileId) => {
     productGalleryCount,
     variantThumbCount,
     businessLogoCount,
-    dealImageCount,
   ] =
     await Promise.all([
       Product.countDocuments({ thumbnailImage: fileId }),
       Product.countDocuments({ galleryImages: fileId }),
       Variant.countDocuments({ thumbnailImage: fileId }),
       BusinessInfo.countDocuments({ logo: fileId }),
-      Deal.countDocuments({ image: fileId }),
     ]);
 
   return (
     productThumbCount +
       productGalleryCount +
       variantThumbCount +
-      businessLogoCount +
-      dealImageCount >
+      businessLogoCount >
     0
   );
 };

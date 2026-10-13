@@ -282,14 +282,6 @@ async function RefundOrder({
       createdAt: new Date(),
     };
 
-    if (order.metadata?.deals?.length > 0) {
-      await require("../deals.refund.service").persistDealRefund({
-        order, refund, refundRecord, paymentIntentId, adminUserId, reason,
-        restock, mappedStatus, computeRefundDerivedOrderStatus,
-      });
-      return { success: true, data: { refundId: refund.id, status: refund.status } };
-    }
-
     order.refunds = Array.isArray(order.refunds) ? order.refunds : [];
     order.refunds.push(refundRecord);
 
@@ -460,9 +452,7 @@ async function applyStripeRefundSucceeded({
 
     // If restock was requested for the refund that completes the order, do it transactionally.
     const nextStatus = computeRefundDerivedOrderStatus(order);
-    const packageAlreadyRestocked = order.metadata?.deals?.length > 0 &&
-      (order.status === "refunded" || Boolean(order.metadata?.refundRestockedAt));
-    if (nextStatus === "refunded" && !packageAlreadyRestocked) {
+    if (nextStatus === "refunded") {
       const last = order.refunds.find(
         (r) => r?.stripeRefundId === stripeRefundId,
       );
@@ -473,9 +463,6 @@ async function applyStripeRefundSucceeded({
             { $inc: { stockQuantity: item.quantity } },
             { session },
           );
-        }
-        if (order.metadata?.deals?.length > 0) {
-          order.metadata = { ...(order.metadata || {}), refundRestockedAt: new Date().toISOString() };
         }
       }
     }
