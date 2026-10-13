@@ -19,6 +19,15 @@ The credit-assisted refund correction is restricted to Deals orders; ordinary or
 
 ## Validation
 
-Syntax validation and the Git scope audit passed. Hosted backend regression and safety checks are pending.
+The audited merge commit is `ab2cdea94c7d40bab1cdd6191edba2f8d67b403c`.
+
+- Server JavaScript/CJS syntax and Git scope audit passed.
+- UAT safety: 13/13 passed locally.
+- Provider diagnostics: 8/8 passed locally.
+- Promotion gate: 2/2 passed locally.
+- Compatible rollback: 10/10 tests plus five offline deployment-helper rehearsals passed locally. These tests do not access production.
+- Actual storefront/API integration: 12/12 scenarios passed in [the browser/API job](https://github.com/Litwebs/Levants-server/actions/runs/38368316662/job/115199168311).
+- Real Stripe sandbox: card-only and £5-credit-assisted payment/refund cases both passed in [the Stripe job](https://github.com/Litwebs/Levants-server/actions/runs/38368316662/job/115199167739).
+- Complete hosted backend regression: **1,574/1,574 tests across 183/183 suites passed**, with no skipped tests, in [the full backend job](https://github.com/Litwebs/Levants-server/actions/runs/38368316662/job/115199205588). This includes all 1,362 original UAT tests / 165 suites plus 212 Deals tests / 18 suites.
 
 Frontend validation is deferred as requested. The restored UI still needs to be reviewed for backend draft/publication and savings-mode support before complete feature sign-off. No merge into UAT or production is authorized.
