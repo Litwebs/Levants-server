@@ -48,6 +48,7 @@ beforeAll(async () => {
   staticApp.use(express.static(dist));
   staticApp.use((req, res) => res.sendFile(path.join(dist, "index.html")));
   ({ server: storefrontServer, origin } = await listen(staticApp));
+  process.env.CLIENT_FRONT_URL_DEV = origin;
   browser = await chromium.launch();
 });
 
@@ -316,6 +317,9 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
       session = await provider.checkout.sessions.retrieve(session.id);
       return session.payment_status;
     }, { timeout: 90000 }).toBe("paid");
+    await page.waitForURL(origin + "/checkout/success**", { timeout: 30000 });
+    await browserExpect(page.getByRole("heading", { name: "Thank You for Your Order!", exact: true })).toBeVisible({ timeout: 30000 });
+    await browserExpect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("levants-dairy-cart") || "{}").deals?.length || 0)).toBe(0);
     const webhookSecret = "whsec_isolated_deals_browser_test";
     process.env.STRIPE_WEBHOOK_SECRET = webhookSecret;
     const payload = JSON.stringify({ id: "evt_deals_browser_" + order.id, type: "checkout.session.completed", data: { object: session } });
