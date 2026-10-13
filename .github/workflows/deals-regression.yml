@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: deals-regression-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   changes:
     name: Select regression checks
@@ -30,7 +30,7 @@ jobs:
           backend = True
           if os.environ['EVENT_NAME'] == 'push' and re.fullmatch('[0-9a-f]{40}', before) and before != '0' * 40:
               paths = subprocess.check_output(['git', 'diff', '--name-only', before, 'HEAD'], text=True).splitlines()
-              backend = any(not (path.startswith('server/IntegrationTests/Deals/') or path.startswith('docs/') or path.startswith('client/') or path == '.github/workflows/deals-regression.yml') for path in paths)
+              backend = any(not (path.startswith('server/IntegrationTests/Deals/') or path.startswith('server/e2e/deals/') or path == 'server/playwright.deals.config.js' or path.startswith('docs/') or path.startswith('client/') or path == '.github/workflows/deals-regression.yml') for path in paths)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('backend=' + str(backend).lower() + '\n')
           PYTHON

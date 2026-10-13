@@ -91,6 +91,7 @@ export function CreateDealPage() {
   const [dragging, setDragging] = useState(false);
   const [imageChanged, setImageChanged] = useState(false);
   const initialState = useRef("");
+  const savedItemCount = useRef(0);
   const totals = useMemo(
     () => dealTotals(items, draft.packagePrice, draft.pricingMode, draft.savingValue),
     [items, draft.packagePrice, draft.pricingMode, draft.savingValue],
@@ -127,6 +128,7 @@ export function CreateDealPage() {
       availableQuantity: Math.max(0, Number(item.variant?.stockQuantity || 0) - Number(item.variant?.reservedQuantity || 0)),
       imageUrl: item.variant?.thumbnailImage?.url || item.product?.thumbnailImage?.url || "",
     }));
+    savedItemCount.current = nextItems.length;
     setDraft(nextDraft);
     setItems(nextItems);
     setSlugEdited(true);
@@ -238,6 +240,7 @@ export function CreateDealPage() {
       next.endsAt = "End date must be after the start date.";
     setErrors(next);
     if (Object.keys(next).length) {
+      if (!onlyStep) setStep(next.items ? 1 : next.name || next.slug || next.packagePrice || next.savingValue ? 2 : 3);
       showToast({ type: "error", title: "Check the highlighted fields" });
       window.requestAnimationFrame(() =>
         document.querySelector<HTMLElement>("[aria-invalid='true']")?.focus(),
@@ -266,6 +269,11 @@ export function CreateDealPage() {
   const submit = async (saveDraft = false) => {
     if (saving) return;
     if (saveDraft) {
+      if (editing && savedItemCount.current > 0 && !items.length) {
+        setStep(1);
+        setErrors({ items: "Keep at least one variant when updating an existing package." });
+        return;
+      }
       if (draft.name.trim().length < 2 || !isValidDealSlug(draft.slug)) {
         setStep(2);
         setErrors({ name: draft.name.trim().length < 2 ? "Enter a deal name of at least 2 characters." : undefined, slug: !isValidDealSlug(draft.slug) ? "Use lowercase letters, numbers and single hyphens only." : undefined });

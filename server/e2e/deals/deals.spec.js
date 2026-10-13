@@ -67,7 +67,7 @@ for (const viewport of [
       path: testInfo.outputPath(`admin-contents-${viewport.name}.png`),
       fullPage: true,
     });
-    await page.getByRole("button", { name: "Details & pricing" }).click();
+    await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
     const name = `Fresh milk ${viewport.name}`;
     await page.getByLabel("Deal name *").fill(name);
     await page.getByLabel("Package price (£) *").fill("8");
@@ -76,7 +76,7 @@ for (const viewport of [
       path: testInfo.outputPath(`admin-pricing-${viewport.name}.png`),
       fullPage: true,
     });
-    await page.getByRole("button", { name: "Review & publish" }).click();
+    await page.getByRole("button", { name: "Review & publish", exact: true }).click();
     const clientRoot =
       process.env.E2E_CLIENT_DIR ||
       path.resolve(__dirname, "../../../../Levants-client");
@@ -357,11 +357,11 @@ test("admin edits, schedules, deactivates, reactivates and archives with persist
   let row = page.getByRole("row").filter({ hasText: "Fresh milk package" });
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("row").filter({ hasText: data.variants.BUTTER.name }).getByRole("button", { name: "Add variant Standard", exact: true }).click();
-  await page.getByRole("button", { name: "Details & pricing" }).click();
+  await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
   const name = "Weekend milk and butter offer";
   await page.getByLabel("Deal name *").fill(name);
   await page.getByLabel("Package price (£) *").fill("10");
-  await page.getByRole("button", { name: "Review & publish" }).click();
+  await page.getByRole("button", { name: "Review & publish", exact: true }).click();
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page).toHaveURL(`${ADMIN_ORIGIN}/deals`);
   await page.reload();
@@ -373,8 +373,8 @@ test("admin edits, schedules, deactivates, reactivates and archives with persist
   };
   let saved = await read(); expect(saved.items).toHaveLength(2); expect(saved.savings).toBe(3);
   await row.getByRole("button", { name: "Edit", exact: true }).click();
-  await page.getByRole("button", { name: "Details & pricing" }).click();
-  await page.getByRole("button", { name: "Review & publish" }).click();
+  await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
+  await page.getByRole("button", { name: "Review & publish", exact: true }).click();
   await page.getByLabel("Starts at").fill(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
   await page.getByLabel("Ends at").fill(new Date(Date.now() + 172800000).toISOString().slice(0, 16));
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -382,8 +382,8 @@ test("admin edits, schedules, deactivates, reactivates and archives with persist
   await expect(row).toContainText("Scheduled");
   expect((await request.get(`${API_ORIGIN}/api/deals/${saved.slug}`)).status()).toBe(404);
   await row.getByRole("button", { name: "Edit", exact: true }).click();
-  await page.getByRole("button", { name: "Details & pricing" }).click();
-  await page.getByRole("button", { name: "Review & publish" }).click();
+  await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
+  await page.getByRole("button", { name: "Review & publish", exact: true }).click();
   await page.getByLabel("Starts at").fill(""); await page.getByLabel("Ends at").fill("");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page).toHaveURL(`${ADMIN_ORIGIN}/deals`);
@@ -474,14 +474,16 @@ for (const mode of ["fixed_saving", "percentage_saving"]) {
     await expect(row).toContainText("Draft");
     await row.getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByRole("row").filter({ hasText: data.variants.MILK.name }).getByRole("button", { name: "Add variant Standard", exact: true }).click();
-    await page.getByRole("button", { name: "Details & pricing" }).click();
+    await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
     await page.getByLabel("Pricing method").selectOption(mode);
     await page.getByLabel(mode === "fixed_saving" ? "Saving (£) *" : "Saving (%) *").fill(mode === "fixed_saving" ? "1" : "20");
-    await page.getByRole("button", { name: "Review & publish" }).click();
+    await page.getByRole("button", { name: "Review & publish", exact: true }).click();
     await page.getByRole("button", { name: "Preview storefront", exact: true }).click();
     const preview = page.getByRole("dialog", { name: "Customer storefront preview" });
     await expect(preview).toContainText("Draft");
     await preview.getByRole("button", { name: "Mobile", exact: true }).click();
+    await preview.getByRole("button", { name: "Details page", exact: true }).click();
+    await preview.getByRole("button", { name: "Show dark storefront theme", exact: true }).click();
     await assertNoOverflow(page);
     await page.screenshot({ path: testInfo.outputPath(`draft-preview-${mode}.png`), fullPage: true });
     await preview.getByRole("button", { name: "Close preview", exact: true }).click();

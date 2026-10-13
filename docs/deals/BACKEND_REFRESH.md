@@ -1,5 +1,7 @@
 # Backend-first UAT refresh
 
+Historical backend-phase report. The subsequent admin implementation and frontend scope audit are documented in [ADMIN_VERIFICATION.md](ADMIN_VERIFICATION.md).
+
 UAT baseline: `486a3478813c7a028799696c1ba9ca2112bf2a13`.
 Owner's pushed Deals baseline: `b4d3e2f78352f961b35cae66cc288a42fb2d62a9`.
 

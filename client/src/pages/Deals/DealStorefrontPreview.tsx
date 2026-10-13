@@ -108,9 +108,9 @@ export function DealStorefrontPreview({ draft, items }: Props) {
                   <button type="button" aria-pressed={view === "detail"} className={view === "detail" ? styles.activeTab : ""} onClick={() => setView("detail")}>Details page</button>
                 </div>
                 <div className={styles.deviceTabs} role="group" aria-label="Screen size">
-                  <button type="button" aria-pressed={device === "desktop"} className={device === "desktop" ? styles.activeDevice : ""} onClick={() => setDevice("desktop")} title="Desktop · 1280 pixels"><Monitor size={16} /><span>Desktop</span></button>
-                  <button type="button" aria-pressed={device === "tablet"} className={device === "tablet" ? styles.activeDevice : ""} onClick={() => setDevice("tablet")} title="Tablet · 768 pixels"><Tablet size={16} /><span>Tablet</span></button>
-                  <button type="button" aria-pressed={device === "mobile"} className={device === "mobile" ? styles.activeDevice : ""} onClick={() => setDevice("mobile")} title="Mobile · 390 pixels"><Smartphone size={16} /><span>Mobile</span></button>
+                  <button type="button" aria-pressed={device === "desktop"} className={device === "desktop" ? styles.activeDevice : ""} onClick={() => setDevice("desktop")} aria-label="Desktop" title="Desktop · 1280 pixels"><Monitor size={16} /><span>Desktop</span></button>
+                  <button type="button" aria-pressed={device === "tablet"} className={device === "tablet" ? styles.activeDevice : ""} onClick={() => setDevice("tablet")} aria-label="Tablet" title="Tablet · 768 pixels"><Tablet size={16} /><span>Tablet</span></button>
+                  <button type="button" aria-pressed={device === "mobile"} className={device === "mobile" ? styles.activeDevice : ""} onClick={() => setDevice("mobile")} aria-label="Mobile" title="Mobile · 390 pixels"><Smartphone size={16} /><span>Mobile</span></button>
                 </div>
                 <button type="button" className={styles.iconButton} onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label={`Show ${theme === "light" ? "dark" : "light"} storefront theme`}>
                   {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
