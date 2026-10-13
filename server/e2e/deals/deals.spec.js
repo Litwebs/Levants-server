@@ -481,6 +481,10 @@ for (const mode of ["fixed_saving", "percentage_saving"]) {
     await preview.getByRole("button", { name: "Mobile", exact: true }).click();
     await preview.getByRole("button", { name: "Details page", exact: true }).click();
     await preview.getByRole("button", { name: "Show dark storefront theme", exact: true }).click();
+    expect(await preview.getByRole("heading", { name, exact: true }).evaluate(element => {
+      const storefront = element.closest('div[style*="transform"]');
+      return getComputedStyle(element).color === getComputedStyle(storefront).color;
+    })).toBe(true);
     await assertNoOverflow(page);
     await page.screenshot({ path: testInfo.outputPath(`draft-preview-${mode}.png`), fullPage: true });
     await preview.getByRole("button", { name: "Close preview", exact: true }).click();
