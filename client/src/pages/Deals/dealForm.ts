@@ -1,4 +1,5 @@
 import type { VariantSearchItem } from "@/context/Discounts";
+import type { DealPricingMode } from "@/context/Deals/types";
 
 export type DealFormDraft = {
   name: string;
@@ -6,6 +7,9 @@ export type DealFormDraft = {
   description: string;
   image: string;
   packagePrice: string;
+  pricingMode: DealPricingMode;
+  savingValue: string;
+  publicationStatus: "draft" | "published";
   isActive: boolean;
   isFeatured: boolean;
   startsAt: string;
@@ -32,6 +36,9 @@ export const createEmptyDealDraft = (): DealFormDraft => ({
   description: "",
   image: "",
   packagePrice: "",
+  pricingMode: "fixed_price",
+  savingValue: "",
+  publicationStatus: "draft",
   isActive: true,
   isFeatured: false,
   startsAt: "",
@@ -80,12 +87,17 @@ export const selectedItemFromVariant = (
   imageUrl: variantImageUrl(variant),
 });
 
-export const dealTotals = (items: SelectedDealItem[], packagePrice: string) => {
+export const dealTotals = (items: SelectedDealItem[], packagePrice: string, pricingMode: DealPricingMode = "fixed_price", savingValue = "") => {
   const originalValuePence = items.reduce(
     (sum, item) => sum + item.pricePence * item.quantity,
     0,
   );
-  const packagePricePence = poundsToPence(packagePrice);
+  const derivedPricePence = pricingMode === "fixed_saving"
+    ? originalValuePence - poundsToPence(savingValue)
+    : pricingMode === "percentage_saving"
+      ? Math.round(originalValuePence * (100 - Number(savingValue || 0)) / 100)
+      : poundsToPence(packagePrice);
+  const packagePricePence = Number.isFinite(derivedPricePence) ? Math.max(0, derivedPricePence) : 0;
   const savingsPence = Math.max(0, originalValuePence - packagePricePence);
   const discountPercent = originalValuePence
     ? Math.round((savingsPence / originalValuePence) * 100)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown, Filter, Gift, Plus, RefreshCw, Search, X } from "lucide-react";
 import {
@@ -25,6 +25,8 @@ const STATUS_OPTIONS = [
   { value: "inactive", label: "Inactive" },
   { value: "featured", label: "Featured" },
   { value: "archived", label: "Archived" },
+  { value: "draft", label: "Draft" },
+  { value: "published", label: "Published" },
 ];
 const SORT_OPTIONS = [
   { value: "newest", label: "Newest first" },
@@ -44,6 +46,7 @@ const errorMessage = (error: unknown) => {
 
 const statusFor = (deal: Deal) => {
   if (deal.archivedAt) return { label: "Archived", variant: "default" as const };
+  if (deal.publicationStatus === "draft") return { label: "Draft", variant: "default" as const };
   if (!deal.isActive) return { label: "Inactive", variant: "default" as const };
   const now = Date.now();
   if (deal.startsAt && new Date(deal.startsAt).getTime() > now)
@@ -66,6 +69,7 @@ export const DealsPage = () => {
   const [bulkAction, setBulkAction] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const bulkLock = useRef(false);
   const [bulkExpanded, setBulkExpanded] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -123,8 +127,9 @@ export const DealsPage = () => {
   useEffect(() => void load(), [load]);
 
   const applyBulkAction = async () => {
-    if (bulkBusy || !selected.length || !bulkAction) return;
+    if (bulkLock.current || !selected.length || !bulkAction) return;
     if (bulkAction === "archive" ? !canArchive : !canUpdate) return;
+    bulkLock.current = true;
     setBulkBusy(true);
     const failed: string[] = [];
     let firstError = "";
@@ -145,13 +150,14 @@ export const DealsPage = () => {
     if (!failed.length) setBulkAction("");
     await load();
     setBulkBusy(false);
+    bulkLock.current = false;
     showToast({ type: failed.length ? "error" : "success", title: failed.length
       ? `${succeeded} updated, ${failed.length} failed`
       : `${succeeded} deal${succeeded === 1 ? "" : "s"} updated`, message: failed.length ? firstError : undefined });
   };
 
   const openDeal = (deal: Deal) => {
-    if (canUpdate && !bulkBusy) navigateWithDealTransition(navigate, `/deals/${deal._id}/edit`, "forward");
+    if (canUpdate && !bulkBusy && !deal.archivedAt) navigateWithDealTransition(navigate, `/deals/${deal._id}/edit`, "forward");
   };
   const clearFilters = () => {
     setSearchInput(""); setSearch(""); setStatus("all"); setSort("newest"); setPage(1);
@@ -228,8 +234,9 @@ export const DealsPage = () => {
           <TableBody>
             {!loading && deals.length === 0 ? <TableRow className={sharedTableStyles.emptyStateRow}><TableCell className={sharedTableStyles.emptyTableCell} colSpan={canSelect ? 8 : 7}>No deals match these filters.</TableCell></TableRow> : deals.map((deal) => {
               const dealStatus = statusFor(deal);
+              const editable = canUpdate && !deal.archivedAt;
               return (
-                <TableRow key={deal._id} selected={selected.includes(deal._id)} className={canUpdate ? styles.clickableRow : undefined} onClick={() => openDeal(deal)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (canUpdate && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDeal(deal); } }} tabIndex={canUpdate ? 0 : undefined} aria-label={canUpdate ? `Edit ${deal.name}` : undefined}>
+                <TableRow key={deal._id} selected={selected.includes(deal._id)} className={editable ? styles.clickableRow : undefined} onClick={() => openDeal(deal)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (editable && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDeal(deal); } }} tabIndex={editable ? 0 : undefined} aria-label={editable ? `Edit ${deal.name}` : undefined}>
                   {canSelect ? <TableCell className={orderTableStyles.checkboxCol} data-label="Select"><Checkbox aria-label={`Select ${deal.name}`} checked={selected.includes(deal._id)} disabled={bulkBusy || !!deal.archivedAt} onClick={(event) => event.stopPropagation()} onChange={(event) => setSelected((current) => event.target.checked ? [...current, deal._id] : current.filter((id) => id !== deal._id))} /></TableCell> : null}
                   <TableCell data-label="Deal"><div className={styles.dealIdentity}>{deal.image?.url ? <img src={deal.image.url} alt="" className={styles.dealThumb} /> : <div className={styles.dealPlaceholder} aria-hidden="true">D</div>}<div><strong>{deal.name}</strong><span>/{deal.slug}</span></div></div></TableCell>
                   <TableCell data-label="Products">{deal.items?.length || 0}</TableCell>
@@ -238,6 +245,7 @@ export const DealsPage = () => {
                   <TableCell data-label="Saving">£{Number(deal.savings || 0).toFixed(2)}{deal.savingsPercent ? ` (${deal.savingsPercent}%)` : ""}</TableCell>
                   <TableCell data-label="Availability">{Number(deal.maxPackages || 0)} package{Number(deal.maxPackages || 0) === 1 ? "" : "s"}</TableCell>
                   <TableCell data-label="Status"><Badge variant={dealStatus.variant}>{dealStatus.label}</Badge></TableCell>
+
                 </TableRow>
               );
             })}

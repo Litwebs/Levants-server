@@ -1,3 +1,5 @@
+export type DealPricingMode = "fixed_price" | "fixed_saving" | "percentage_saving";
+
 export type DealItem = {
   variantId: string;
   quantity: number;
@@ -27,6 +29,9 @@ export type Deal = {
   imageUrl?: string;
   items: DealItem[];
   packagePrice: number;
+  pricingMode?: DealPricingMode;
+  savingValue?: number | null;
+  publicationStatus?: "draft" | "published";
   currency?: string;
   isActive: boolean;
   isFeatured: boolean;
@@ -48,7 +53,10 @@ export type DealDraft = {
   description?: string;
   image?: string | null;
   items: Array<{ variantId: string; quantity: number }>;
-  packagePrice: number;
+  packagePrice?: number | null;
+  pricingMode?: DealPricingMode;
+  savingValue?: number | null;
+  publicationStatus?: "draft" | "published";
   currency?: string;
   isActive?: boolean;
   isFeatured?: boolean;

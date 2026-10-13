@@ -14,6 +14,7 @@ const controller = require("../controllers/discounts.admin.controller");
 const {
   createDiscountSchema,
   updateDiscountSchema,
+  listAdminDiscountsQuerySchema,
 } = require("../validators/discount.validators");
 const { objectIdParamSchema } = require("../validators/common.validators");
 
@@ -25,15 +26,7 @@ router.use(authLimiter);
 router.get(
   "/",
   requirePermission("promotions.read"),
-  validateQuery(
-    // Optional pagination params
-    require("joi")
-      .object({
-        page: require("joi").number().integer().min(1).optional(),
-        pageSize: require("joi").number().integer().min(1).max(100).optional(),
-      })
-      .unknown(false),
-  ),
+  validateQuery(listAdminDiscountsQuerySchema),
   asyncHandler(controller.ListDiscounts),
 );
 

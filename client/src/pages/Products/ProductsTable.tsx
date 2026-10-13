@@ -37,6 +37,8 @@ const ProductsTable = ({
   return (
     <DataTableCard
       className={styles.productsTableCard}
+      tableWrapperClassName={styles.productsTableScroll}
+      scrollLabel="Products table"
       loading={isLoading}
       loadingText="Loading products…"
       pagination={{

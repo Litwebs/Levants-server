@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  ChevronDown,
   Check,
   Info,
   PoundSterling,
@@ -20,13 +21,18 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { Button, Input, Toggle } from "@/components/common";
+import { Button, Input, Select, Toggle, Modal, ModalFooter } from "@/components/common";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/components/common/Toast";
 import {
   createDeal,
   getDeal,
   updateDeal,
+  publishDeal,
+  unpublishDeal,
+  archiveDeal,
   type Deal,
   type DealDraft,
 } from "@/context/Deals";
@@ -46,7 +52,7 @@ import styles from "./CreateDealPage.module.css";
 
 type FieldErrors = Partial<
   Record<
-    "name" | "slug" | "packagePrice" | "endsAt" | "items" | "image",
+    "name" | "slug" | "packagePrice" | "savingValue" | "endsAt" | "items" | "image",
     string
   >
 >;
@@ -77,6 +83,8 @@ export function CreateDealPage() {
   const navigate = useNavigate();
   const { dealId } = useParams<{ dealId: string }>();
   const editing = Boolean(dealId);
+  const { hasPermission } = usePermissions();
+  const [archiveConfirm, setArchiveConfirm] = useState(false);
   const { showToast } = useToast();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -90,9 +98,10 @@ export function CreateDealPage() {
   const [dragging, setDragging] = useState(false);
   const [imageChanged, setImageChanged] = useState(false);
   const initialState = useRef("");
+  const savingRef = useRef(false);
   const totals = useMemo(
-    () => dealTotals(items, draft.packagePrice),
-    [items, draft.packagePrice],
+    () => dealTotals(items, draft.packagePrice, draft.pricingMode, draft.savingValue),
+    [items, draft.packagePrice, draft.pricingMode, draft.savingValue],
   );
   const serializedState = JSON.stringify({ draft, items });
   const dirty = initialState.current
@@ -106,6 +115,9 @@ export function CreateDealPage() {
       description: deal.description || "",
       image: deal.image?.url || deal.imageUrl || "",
       packagePrice: String(deal.packagePrice ?? ""),
+      pricingMode: deal.pricingMode || "fixed_price",
+      savingValue: deal.savingValue == null ? "" : String(deal.savingValue),
+      publicationStatus: deal.publicationStatus || "published",
       isActive: Boolean(deal.isActive),
       isFeatured: Boolean(deal.isFeatured),
       startsAt: localDateTime(deal.startsAt),
@@ -120,7 +132,7 @@ export function CreateDealPage() {
       sku: item.variant?.sku || "",
       pricePence: Math.round(Number(item.variant?.price || 0) * 100),
       quantity: Number(item.quantity || 1),
-      availableQuantity: Math.max(0, Number(item.variant?.stockQuantity || 0) - Number(item.variant?.reservedQuantity || 0)),
+      availableQuantity: typeof item.variant?.stockQuantity === "number" ? Math.max(0, item.variant.stockQuantity - Number(item.variant.reservedQuantity || 0)) : undefined,
       imageUrl: item.variant?.thumbnailImage?.url || item.product?.thumbnailImage?.url || "",
     }));
     setDraft(nextDraft);
@@ -204,9 +216,9 @@ export function CreateDealPage() {
     navigateWithDealTransition(navigate, "/deals", "back");
   };
 
-  const validate = (onlyStep?: number) => {
+  const validate = (onlyStep?: number, saveDraft = false) => {
     const next: FieldErrors = {};
-    if ((!onlyStep || onlyStep === 1) && !items.length)
+    if (!saveDraft && (!onlyStep || onlyStep === 1) && !items.length)
       next.items = "Add at least one product variant to continue.";
     if (!onlyStep || onlyStep === 2) {
       if (draft.name.trim().length < 2)
@@ -214,13 +226,19 @@ export function CreateDealPage() {
       if (!draft.slug || !isValidDealSlug(draft.slug))
         next.slug = "Use lowercase letters, numbers and single hyphens only.";
     }
-    if (!onlyStep || onlyStep === 2) {
+    if (!saveDraft && (!onlyStep || onlyStep === 2)) {
       const price = Number(draft.packagePrice);
-      if (!draft.packagePrice || !Number.isFinite(price) || price <= 0)
+      if (draft.pricingMode !== "fixed_price" && (!draft.savingValue || !Number.isFinite(Number(draft.savingValue)) || Number(draft.savingValue) <= 0 || (draft.pricingMode === "percentage_saving" && Number(draft.savingValue) >= 100)))
+        next.savingValue = "Enter a positive saving; percentages must be below 100%.";
+      else if (draft.pricingMode === "fixed_price" && (!draft.packagePrice || !Number.isFinite(price) || price <= 0))
         next.packagePrice = "Enter a package price greater than £0.00.";
+      else if (totals.packagePricePence <= 0)
+        next.savingValue = "Savings must leave a package price greater than £0.00.";
       else if (totals.packagePricePence >= totals.originalValuePence)
-        next.packagePrice = "Package price must be below the combined value.";
+        next[draft.pricingMode === "fixed_price" ? "packagePrice" : "savingValue"] = "Package price must be below the combined value.";
     }
+    if (!onlyStep && !saveDraft && items.some(item => item.availableQuantity !== undefined && item.availableQuantity < item.quantity))
+      next.items = "The package does not have enough available stock to publish.";
     if (
       (!onlyStep || onlyStep === 3) &&
       draft.startsAt &&
@@ -230,6 +248,7 @@ export function CreateDealPage() {
       next.endsAt = "End date must be after the start date.";
     setErrors(next);
     if (Object.keys(next).length) {
+      if (!onlyStep) setStep(next.items ? 1 : next.name || next.slug || next.packagePrice || next.savingValue ? 2 : 3);
       showToast({ type: "error", title: "Check the highlighted fields" });
       window.requestAnimationFrame(() =>
         document.querySelector<HTMLElement>("[aria-invalid='true']")?.focus(),
@@ -252,10 +271,15 @@ export function CreateDealPage() {
     const pricePence = Math.round(
       totals.originalValuePence * ((100 - percent) / 100),
     );
-    update("packagePrice", (pricePence / 100).toFixed(2));
+    setDraft(current => current.pricingMode === "percentage_saving"
+      ? { ...current, savingValue: String(percent) }
+      : current.pricingMode === "fixed_saving"
+        ? { ...current, savingValue: ((totals.originalValuePence - pricePence) / 100).toFixed(2) }
+        : { ...current, packagePrice: (pricePence / 100).toFixed(2) });
   };
-  const submit = async () => {
-    if (saving || !validate()) return;
+  const submit = async (saveDraft = false) => {
+    if (savingRef.current || !validate(undefined, saveDraft)) return;
+    savingRef.current = true;
     const body: DealDraft = {
       name: draft.name.trim(),
       slug: draft.slug.trim(),
@@ -265,7 +289,10 @@ export function CreateDealPage() {
         variantId: item.variantId,
         quantity: item.quantity,
       })),
-      packagePrice: Number(draft.packagePrice),
+      packagePrice: draft.pricingMode === "fixed_price" ? draft.packagePrice ? Number(draft.packagePrice) : null : undefined,
+      pricingMode: draft.pricingMode,
+      savingValue: draft.pricingMode === "fixed_price" ? null : draft.savingValue ? Number(draft.savingValue) : null,
+      ...(!editing ? { publicationStatus: saveDraft ? "draft" as const : "published" as const } : {}),
       currency: "GBP",
       isActive: draft.isActive,
       isFeatured: draft.isFeatured,
@@ -275,7 +302,10 @@ export function CreateDealPage() {
     };
     setSaving(true);
     try {
-      if (editing && dealId) await updateDeal(dealId, body);
+      if (editing && dealId) {
+        await updateDeal(dealId, body);
+        if (!saveDraft && draft.publicationStatus === "draft") await publishDeal(dealId);
+      }
       else await createDeal(body);
       initialState.current = serializedState;
       showToast({ type: "success", title: editing ? "Deal updated" : "Product package created" });
@@ -287,6 +317,30 @@ export function CreateDealPage() {
         message: apiError(error),
       });
     } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const manageDeal = async (action: "publish" | "unpublish" | "activate" | "deactivate" | "archive") => {
+    if (!dealId || dirty || savingRef.current || !hasPermission(action === "archive" ? "promotions.delete" : "promotions.update")) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      if (action === "archive") {
+        await archiveDeal(dealId);
+        navigateWithDealTransition(navigate, "/deals", "back");
+      } else {
+        const deal = action === "publish" ? await publishDeal(dealId)
+          : action === "unpublish" ? await unpublishDeal(dealId)
+          : await updateDeal(dealId, { isActive: action === "activate" });
+        populateDeal(deal);
+      }
+      showToast({ type: "success", title: "Deal updated" });
+    } catch (error) {
+      showToast({ type: "error", title: "Deal was not updated", message: apiError(error) });
+    } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -313,6 +367,29 @@ export function CreateDealPage() {
               {editing ? "Edit deal" : "Create product package"}
             </h1>
             <p>{editing ? "Update this offer, its products and availability." : "Bundle products into one compelling offer."}</p>
+          </div>
+          <div className={styles.headerActions} aria-label="Deal actions">
+              {editing && <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" size="sm" variant="outline" disabled={saving} rightIcon={<ChevronDown size={16} />}>Manage deal</Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>{draft.publicationStatus === "draft" ? "Draft" : "Published"} · {draft.isActive ? "Active" : "Inactive"}</DropdownMenuLabel>
+                  {dirty && <DropdownMenuLabel className="whitespace-normal font-normal">Save your changes before managing this deal.</DropdownMenuLabel>}
+                  <DropdownMenuSeparator />
+                  {hasPermission("promotions.update") && <>
+                    <DropdownMenuItem disabled={saving || dirty} onSelect={() => void manageDeal(draft.publicationStatus === "draft" ? "publish" : "unpublish")}>{draft.publicationStatus === "draft" ? "Publish" : "Unpublish"}</DropdownMenuItem>
+                    <DropdownMenuItem disabled={saving || dirty} onSelect={() => void manageDeal(draft.isActive ? "deactivate" : "activate")}>{draft.isActive ? "Deactivate" : "Activate"}</DropdownMenuItem>
+                  </>}
+                  {hasPermission("promotions.delete") && <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={saving || dirty} onSelect={() => setArchiveConfirm(true)}>Archive</DropdownMenuItem>
+                  </>}
+                </DropdownMenuContent>
+              </DropdownMenu>}
+              {(!editing || draft.publicationStatus === "draft") && (
+                <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void submit(true)}>Save draft</Button>
+              )}
           </div>
         </div>
         <div className={styles.progressRow}>
@@ -379,7 +456,7 @@ export function CreateDealPage() {
                   onClick={() => void submit()}
                   isLoading={saving}
                 >
-                  {editing ? "Save changes" : "Create product package"}
+                  {editing ? draft.publicationStatus === "draft" ? "Publish deal" : "Save changes" : "Create product package"}
                 </Button>
               )}
             </div>
@@ -614,6 +691,12 @@ export function CreateDealPage() {
                 </div>
               </div>
               <div className={styles.pricingInputBlock}>
+                <Select label="Pricing method" value={draft.pricingMode} onChange={value => update("pricingMode", value as DealFormDraft["pricingMode"])} options={[
+                  { value: "fixed_price", label: "Fixed package price" },
+                  { value: "fixed_saving", label: "Fixed saving (£)" },
+                  { value: "percentage_saving", label: "Percentage saving (%)" },
+                ]} fullWidth />
+                {draft.pricingMode === "fixed_price" ? (
                 <Input
                   id="package-price"
                   label="Package price (£) *"
@@ -630,6 +713,9 @@ export function CreateDealPage() {
                   aria-invalid={Boolean(errors.packagePrice)}
                   fullWidth
                 />
+                ) : (
+                  <Input id="saving-value" label={draft.pricingMode === "fixed_saving" ? "Saving (£) *" : "Saving (%) *"} type="number" min="0.01" max={draft.pricingMode === "percentage_saving" ? "99.99" : undefined} step="0.01" value={draft.savingValue} onChange={event => update("savingValue", event.target.value)} error={errors.savingValue} aria-invalid={Boolean(errors.savingValue)} hint="The package price follows current product prices while keeping this saving." fullWidth />
+                )}
                 <div className={styles.discountPresets}>
                   <span>Quick discount</span>
                   <div>
@@ -700,6 +786,13 @@ export function CreateDealPage() {
 
         </div>
       </fieldset>
+      <Modal isOpen={archiveConfirm} onClose={() => { if (!saving) setArchiveConfirm(false); }} closeDisabled={saving} title="Archive deal" size="sm">
+        <p>Archive this deal? It will be removed from the storefront and cannot be edited.</p>
+        <ModalFooter>
+          <Button variant="outline" disabled={saving} onClick={() => setArchiveConfirm(false)}>Cancel</Button>
+          <Button variant="danger" disabled={saving || dirty} isLoading={saving} onClick={() => void manageDeal("archive")}>Archive deal</Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }

@@ -192,7 +192,7 @@ interface AdminLayoutProps {
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
   const [businessBranding, setBusinessBranding] = useState(() =>
     getBusinessBranding(),
   );
@@ -245,7 +245,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     (user as any)?.preferences?.theme === "dark" ||
     (user as any)?.preferences?.theme === "system"
       ? ((user as any).preferences.theme as "light" | "dark" | "system")
-      : "system";
+      : (() => {
+          try {
+            const stored = window.localStorage.getItem("levants:theme");
+            return stored === "dark" || stored === "light" ? stored : "system";
+          } catch { return "system"; }
+        })();
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;

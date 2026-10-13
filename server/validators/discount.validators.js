@@ -23,6 +23,16 @@ const listActiveDiscountsQuerySchema = Joi.object({
   pageSize: Joi.number().integer().min(1).max(100).optional(),
 }).unknown(false);
 
+const listAdminDiscountsQuerySchema = Joi.object({
+  page: Joi.number().integer().min(1).optional(),
+  pageSize: Joi.number().integer().min(1).max(100).optional(),
+  search: Joi.string().trim().max(120).allow("").optional(),
+  status: Joi.string().valid("all", "active", "inactive").optional(),
+  kind: Joi.string().valid("all", "percent", "amount").optional(),
+  scope: Joi.string().valid("all", "global", "category", "variant").optional(),
+  sort: Joi.string().valid("newest", "oldest", "name", "code").optional(),
+}).unknown(false);
+
 const createDiscountSchema = Joi.object({
   name: Joi.string().trim().min(2).max(120).required(),
 
@@ -77,4 +87,5 @@ module.exports = {
   updateDiscountSchema,
   validateDiscountSchema,
   listActiveDiscountsQuerySchema,
+  listAdminDiscountsQuerySchema,
 };

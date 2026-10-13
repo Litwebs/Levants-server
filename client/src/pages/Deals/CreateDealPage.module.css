@@ -35,6 +35,10 @@
   color: var(--color-primary-dark);
 }
 .titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
   margin-top: var(--space-3);
 }
 .titleRow h1 {

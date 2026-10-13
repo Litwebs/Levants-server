@@ -18,3 +18,4 @@ export * from './LoadingScreen';
 export * from './DataTableCard';
 export * from './FiltersCardLayout';
 export * from './CreateSearch';
+export * from './ListPageHeader/ListPageHeader';

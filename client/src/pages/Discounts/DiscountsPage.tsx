@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 
 import {
-  Card,
   CardFooter,
+  PageContainer,
+  ListPageHeader,
+  FiltersCardLayout,
+  DataTableCard,
   Button,
   Badge,
   Modal,
@@ -34,6 +37,9 @@ import type {
 } from "@/context/Discounts";
 
 import styles from "./DiscountsPage.module.css";
+import listStyles from "../Orders/Orders.module.css";
+import filterStyles from "@/components/common/FiltersCardLayout/SharedFilters.module.css";
+import { Search, Filter, ChevronDown, Plus, X } from "lucide-react";
 
 const formatDateTime = (value?: string) => {
   if (!value) return "—";
@@ -69,6 +75,7 @@ export const DiscountsPage = () => {
   const canUpdate = hasPermission("promotions.update");
 
   const {
+    search, setSearch, status, setStatus, kind: kindFilter, setKind, scope: scopeFilter, setScope, sort, setSort,
     discounts,
     loading,
     error,
@@ -86,8 +93,7 @@ export const DiscountsPage = () => {
   } = useDiscountsAdmin({ page: 1, pageSize: 20 });
 
   const total = meta?.total ?? 0;
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = Math.min(page * pageSize, total);
+  const [showFilters, setShowFilters] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState<CreateDiscountBody>(emptyDraft);
@@ -340,26 +346,34 @@ export const DiscountsPage = () => {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <div>
-          <div className={styles.title}>Discounts</div>
-          <div className={styles.subtitle}>
-            Stripe-backed discount codes (scoped + limited)
+    <PageContainer className={listStyles.page}>
+      <ListPageHeader title="Discounts" subtitle={`${total} discounts found`} loading={loading} refresh={refetch} />
+      {error && <div className={listStyles.pageAlert} role="alert">{error}</div>}
+      <FiltersCardLayout className={filterStyles.filtersCard}
+        isExpanded={showFilters} expandedId="discount-filters-panel"
+        expandedWrapClassName={filterStyles.filtersRowWrap}
+        expandedOpenClassName={filterStyles.filtersRowOpen}
+        expandedInnerClassName={filterStyles.filtersRowInner}
+        topRow={<div className={filterStyles.searchRow}>
+          <div className={filterStyles.searchInput}>
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search discounts..." aria-label="Search discounts" leftIcon={<Search size={18} />} fullWidth className={filterStyles.searchControl} />
+            {search && <button type="button" className={filterStyles.clearSearch} onClick={() => setSearch("")} aria-label="Clear discount search"><X size={16} /></button>}
           </div>
-        </div>
-
-        {canCreate && (
-          <Button variant="primary" onClick={openCreate}>
-            New Discount
-          </Button>
-        )}
-      </div>
-
-      <Card>
-        {error && <div className={styles.muted}>{error}</div>}
-        <div className={styles.tableWrapper}>
-          <Table>
+          <Button variant="outline" leftIcon={<Filter size={16} />} rightIcon={<ChevronDown size={16} className={`${filterStyles.filtersChevron} ${showFilters ? filterStyles.filtersChevronOpen : ""}`} />} aria-expanded={showFilters} aria-controls="discount-filters-panel" onClick={() => setShowFilters(!showFilters)} className={filterStyles.filtersToggleBtn}>Filters</Button>
+          <Select aria-label="Sort discounts" value={sort} onChange={v => setSort(v as typeof sort)} className={filterStyles.sortSelect} options={[{value:"newest",label:"Newest created"},{value:"oldest",label:"Oldest created"},{value:"name",label:"Name"},{value:"code",label:"Code"}]} />
+          {canCreate && <Button variant="primary" leftIcon={<Plus size={16} />} onClick={openCreate}>New Discount</Button>}
+        </div>}
+        expandedContent={<div className={listStyles.filtersPanel}>
+          <fieldset className={listStyles.filtersGroup}><legend className={listStyles.filtersGroupTitle}>Filter discounts</legend><div className={listStyles.filtersGroupControls}>
+            <Select label="Status" value={status} onChange={v => setStatus(v as typeof status)} options={[{value:"all",label:"All statuses"},{value:"active",label:"Active"},{value:"inactive",label:"Inactive"}]} />
+            <Select label="Kind" value={kindFilter} onChange={v => setKind(v as typeof kindFilter)} options={[{value:"all",label:"All kinds"},{value:"percent",label:"Percentage"},{value:"amount",label:"Fixed amount"}]} />
+            <Select label="Scope" value={scopeFilter} onChange={v => setScope(v as typeof scopeFilter)} options={[{value:"all",label:"All scopes"},{value:"global",label:"Global"},{value:"category",label:"Category"},{value:"variant",label:"Variant"}]} />
+          </div></fieldset>
+          <div className={listStyles.filtersActions}><Button variant="outline" onClick={() => {setSearch("");setStatus("all");setKind("all");setScope("all");setSort("newest");}}>Reset filters</Button></div>
+        </div>}
+      />
+      <DataTableCard loading={loading} pagination={{page,pageSize,total,totalPages,setPage,setPageSize,loading,pageSizeOptions:[{value:"20",label:"20 / page"},{value:"50",label:"50 / page"},{value:"100",label:"100 / page"}]}}>
+          <Table withWrapper={false}>
             <TableHeader>
               <TableRow>
                 <TableHead>Code</TableHead>
@@ -376,13 +390,7 @@ export const DiscountsPage = () => {
             </TableHeader>
 
             <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={10}>
-                    <span className={styles.muted}>Loading…</span>
-                  </TableCell>
-                </TableRow>
-              ) : discounts.length === 0 ? (
+              {discounts.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={10}>
                     <span className={styles.muted}>No discounts yet</span>
@@ -406,7 +414,7 @@ export const DiscountsPage = () => {
                         <button
                           type="button"
                           className={styles.codeLink}
-                          onClick={() => openDetails(d._id)}
+                          onClick={(e) => { e.stopPropagation(); void openDetails(d._id); }}
                         >
                           {d.code}
                         </button>
@@ -475,7 +483,7 @@ export const DiscountsPage = () => {
                               variant="danger"
                               size="sm"
                               disabled={deletingId === d._id}
-                              onClick={() => onDeactivate(d._id)}
+                              onClick={(e) => { e.stopPropagation(); void onDeactivate(d._id); }}
                             >
                               Deactivate
                             </Button>
@@ -490,63 +498,7 @@ export const DiscountsPage = () => {
               )}
             </TableBody>
           </Table>
-        </div>
-
-        <CardFooter className={styles.paginationFooter}>
-          <div className={styles.paginationInfo}>
-            {meta ? (
-              <>
-                Showing {rangeStart}–{rangeEnd} of {total}
-              </>
-            ) : (
-              <>
-                Page {page} / {totalPages}
-              </>
-            )}
-          </div>
-
-          <div className={styles.paginationControls}>
-            <Select
-              className={styles.pageSizeSelect}
-              value={String(pageSize)}
-              disabled={loading}
-              onChange={(v) => {
-                setPageSize(Number(v));
-                setPage(1);
-              }}
-              options={[
-                { value: "10", label: "10 / page" },
-                { value: "20", label: "20 / page" },
-                { value: "50", label: "50 / page" },
-              ]}
-            />
-
-            <div className={styles.pageButtons}>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={loading || page <= 1}
-                onClick={() => setPage(page - 1)}
-              >
-                Prev
-              </Button>
-
-              <div className={styles.pageLabel}>
-                Page {page} / {totalPages}
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={loading || page >= totalPages}
-                onClick={() => setPage(page + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        </CardFooter>
-      </Card>
+      </DataTableCard>
 
       <Modal
         isOpen={detailsOpen}
@@ -964,6 +916,6 @@ export const DiscountsPage = () => {
           </Button>
         </ModalFooter>
       </Modal>
-    </div>
+    </PageContainer>
   );
 };

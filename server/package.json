@@ -30,7 +30,9 @@
     "test:e2e:deals": "playwright test --config=playwright.deals.config.js",
     "test:e2e:deals:ci": "E2E_USE_STRIPE_CLI=1 playwright test --config=playwright.deals.config.js",
     "test:deals:baskets": "jest --runInBand --no-watchman --config Tests/Deals/jest.baskets.config.cjs --runTestsByPath Tests/Deals/deals.admin-baskets.e2e.test.js Tests/Deals/deals.basket-abuse.e2e.test.js",
-    "test:e2e:deals:baskets": "playwright test --config=playwright.deals.config.js basket-scenarios.spec.js"
+    "test:e2e:deals:baskets": "playwright test --config=playwright.deals.admin.config.js",
+    "test:deals:full": "npm test -- --testPathPatterns=Tests/Deals && npm --prefix ../client run test:typecheck && npm --prefix ../client run test:deals && npm run test:e2e:deals:baskets",
+    "test:e2e:admin-ui": "playwright test --config=playwright.admin-ui.config.js"
   },
   "keywords": [],
   "author": "",

@@ -6,6 +6,7 @@ import {
 } from "../../context/Subscriptions";
 import {
   DataTableCard,
+  ListPageHeader,
   FiltersCardLayout,
   Button,
   Input,
@@ -22,9 +23,9 @@ import {
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
 import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 import styles from "./Subscriptions.module.css";
+import listStyles from "../Orders/Orders.module.css";
 import {
   ChevronDown,
-  RefreshCw,
   X as XIcon,
   Search,
   Filter,
@@ -77,16 +78,17 @@ export default function SubscriptionsPage() {
   const [sortBy, setSortBy] = useState("newest");
   const [showFilters, setShowFilters] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   const fetchSubscriptions = useCallback(() => {
-    listSubscriptions({
+    void listSubscriptions({
       page,
       pageSize,
       status: statusFilter !== "all" ? statusFilter : undefined,
       frequency: frequencyFilter !== "all" ? frequencyFilter : undefined,
       search: search || undefined,
       sortBy,
-    });
+    }).finally(() => setInitialLoad(false));
   }, [
     listSubscriptions,
     page,
@@ -140,27 +142,12 @@ export default function SubscriptionsPage() {
   }, [subscriptions, sortBy]);
 
   const totalPages = meta ? Math.max(1, Math.ceil(meta.total / pageSize)) : 1;
+  const isLoading = loading || initialLoad;
 
   return (
-    <PageContainer className={styles.container}>
-      <div className={styles.header}>
-        <div>
-          <h1 className={styles.title}>Subscriptions</h1>
-          <p className={styles.subtitle}>
-            {meta?.total ?? 0} total subscriptions
-          </p>
-        </div>
-        <div className={styles.headerActions}>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchSubscriptions}
-            leftIcon={<RefreshCw size={16} />}
-          >
-            Refresh
-          </Button>
-        </div>
-      </div>
+    <PageContainer className={listStyles.page}>
+      <ListPageHeader title="Subscriptions" subtitle={`${meta?.total ?? 0} subscriptions found`} loading={isLoading} refresh={fetchSubscriptions} />
+      {error && <div className={listStyles.pageAlert} role="alert">{error}</div>}
 
       {/* Filters */}
       <FiltersCardLayout
@@ -208,6 +195,7 @@ export default function SubscriptionsPage() {
             </Button>
 
             <CommonSelect
+              aria-label="Sort subscriptions"
               value={sortBy}
               onChange={setSortBy}
               className={sharedFilterStyles.sortSelect}
@@ -245,10 +233,13 @@ export default function SubscriptionsPage() {
         expandedOpenClassName={sharedFilterStyles.filtersRowOpen}
         expandedInnerClassName={sharedFilterStyles.filtersRowInner}
         expandedContent={
-          <div className={sharedFilterStyles.filtersRow}>
+          <div className={listStyles.filtersPanel}>
+            <fieldset className={listStyles.filtersGroup}>
+            <legend className={listStyles.filtersGroupTitle}>Subscription details</legend>
+            <div className={listStyles.filtersGroupControls}>
             <div className={sharedFilterStyles.filterGroup}>
-              <label className={sharedFilterStyles.filterLabel}>Status</label>
               <CommonSelect
+                label="Status"
                 value={statusFilter}
                 onChange={setStatusFilter}
                 options={[
@@ -262,10 +253,8 @@ export default function SubscriptionsPage() {
             </div>
 
             <div className={sharedFilterStyles.filterGroup}>
-              <label className={sharedFilterStyles.filterLabel}>
-                Frequency
-              </label>
               <CommonSelect
+                label="Frequency"
                 value={frequencyFilter}
                 onChange={setFrequencyFilter}
                 options={[
@@ -290,16 +279,15 @@ export default function SubscriptionsPage() {
             >
               Clear all filters
             </Button>
+            </div>
+            </fieldset>
           </div>
         }
       />
 
       {/* Table */}
-      {error ? (
-        <div className={styles.pageAlert} role="alert">{error}</div>
-      ) : (
         <DataTableCard
-          loading={loading}
+          loading={isLoading}
           loadingText="Loading subscriptions…"
           pagination={{
             page,
@@ -313,10 +301,10 @@ export default function SubscriptionsPage() {
               { value: "50", label: "50 / page" },
               { value: "100", label: "100 / page" },
             ],
-            loading,
+            loading: isLoading,
           }}
         >
-          <Table withWrapper={false} tableClassName={styles.responsiveSubscriptionsTable}>
+          <Table withWrapper={false}>
             <TableHeader>
               <TableRow>
                 <TableHead>Ref</TableHead>
@@ -404,7 +392,6 @@ export default function SubscriptionsPage() {
             </TableBody>
           </Table>
         </DataTableCard>
-      )}
 
       <BulkSubscriptionImportModal
         isOpen={showImport}

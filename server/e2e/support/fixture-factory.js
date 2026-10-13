@@ -254,11 +254,11 @@ async function createDealFixture(options = {}) {
     },
   });
   if (options.basketScenarios) {
-    await require("../../models/businessInfo.model").create({
-      companyName: "Levants Dairy",
-      email: "basket-e2e@example.com",
-      phone: "+44 7494 927688",
-    });
+    await require("../../models/businessInfo.model").findOneAndUpdate(
+      { singletonKey: "business-info" },
+      { $set: { companyName: "Levants Dairy", email: "basket-e2e@example.com", phone: "+44 7494 927688" } },
+      { upsert: true },
+    );
     await Product.findByIdAndUpdate(fixture.variants.BUTTER.productId, { name: `E2E Honey ${fixture.scenarioId}` });
     await ProductVariant.findByIdAndUpdate(fixture.variants.BUTTER.id, { price: 4 });
     fixture.variants.BUTTER.name = `E2E Honey ${fixture.scenarioId}`;

@@ -1,0 +1,10 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.title { font-size: var(--text-3xl); font-weight: var(--font-bold); color: var(--color-gray-900); margin: 0; }
+.subtitle { color: var(--color-gray-500); margin: var(--space-1) 0 0; }
+.actions { display: flex; gap: var(--space-3); }

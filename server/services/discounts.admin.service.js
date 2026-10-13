@@ -133,7 +133,7 @@ async function CreateDiscount({ body, userId }) {
   return { success: true, data: { discount } };
 }
 
-async function ListDiscounts({ page = 1, pageSize = 20 } = {}) {
+async function ListDiscounts({ page = 1, pageSize = 20, search = "", status = "all", kind = "all", scope = "all", sort = "newest" } = {}) {
   // Keep DB state consistent: expired discounts should not remain active.
   const now = new Date();
   await Discount.updateMany(
@@ -142,10 +142,17 @@ async function ListDiscounts({ page = 1, pageSize = 20 } = {}) {
   );
 
   const skip = (page - 1) * pageSize;
+  const filter = {};
+  if (status === "active" || status === "inactive") filter.isActive = status === "active";
+  if (kind === "percent" || kind === "amount") filter.kind = kind;
+  if (["global", "category", "variant"].includes(scope)) filter.scope = scope;
+  const escaped = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (escaped) filter.$or = ["name", "code"].map(field => ({ [field]: { $regex: escaped, $options: "i" } }));
+  const ordering = { newest: { createdAt: -1, _id: -1 }, oldest: { createdAt: 1, _id: 1 }, name: { name: 1, _id: 1 }, code: { code: 1, _id: 1 } };
 
   const [total, discounts] = await Promise.all([
-    Discount.countDocuments({}),
-    Discount.find({}).sort({ createdAt: -1 }).skip(skip).limit(pageSize),
+    Discount.countDocuments(filter),
+    Discount.find(filter).sort(ordering[sort] || ordering.newest).skip(skip).limit(pageSize),
   ]);
 
   return {

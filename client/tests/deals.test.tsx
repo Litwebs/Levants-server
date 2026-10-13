@@ -22,6 +22,8 @@ vi.mock("@/context/Deals", () => ({
   getDeal,
   deactivateDeal: vi.fn(),
   archiveDeal: vi.fn(),
+  publishDeal: vi.fn(),
+  unpublishDeal: vi.fn(),
 }));
 vi.mock("@/hooks/usePermissions", () => ({
   usePermissions: () => ({ hasPermission: () => true }),

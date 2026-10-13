@@ -21,7 +21,7 @@ const ListDiscounts = async (req, res) => {
   const page = Number(req.query.page || 1);
   const pageSize = Number(req.query.pageSize || 20);
 
-  const result = await service.ListDiscounts({ page, pageSize });
+  const result = await service.ListDiscounts({ ...req.query, page, pageSize });
   return sendOk(res, result.data, { meta: result.meta });
 };
 

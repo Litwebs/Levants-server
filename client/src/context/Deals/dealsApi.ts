@@ -63,3 +63,17 @@ export async function archiveDeal(id: string) {
   if (!data?.deal) throw new Error("Failed to archive deal");
   return data.deal;
 }
+
+export async function publishDeal(id: string) {
+  const res = await api.post("/admin/deals/" + id + "/publish");
+  const data = unwrap<{ deal: Deal }>(res.data);
+  if (!data?.deal) throw new Error("Failed to publish deal");
+  return data.deal;
+}
+
+export async function unpublishDeal(id: string) {
+  const res = await api.post("/admin/deals/" + id + "/unpublish");
+  const data = unwrap<{ deal: Deal }>(res.data);
+  if (!data?.deal) throw new Error("Failed to unpublish deal");
+  return data.deal;
+}

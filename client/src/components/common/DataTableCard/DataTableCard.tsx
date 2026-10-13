@@ -35,6 +35,7 @@ interface DataTableCardProps {
   loading?: boolean;
   loadingText?: string;
   skeletonRows?: number;
+  scrollLabel?: string;
   pagination?: PaginationConfig;
   children: React.ReactNode;
 }
@@ -46,6 +47,7 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
   loading = false,
   loadingText = "Loading...",
   skeletonRows = 8,
+  scrollLabel,
   pagination,
   children,
 }) => {
@@ -57,7 +59,7 @@ export const DataTableCard: React.FC<DataTableCardProps> = ({
   return (
     <Card className={cx(styles.card, className)} padding="none">
       <div className={cx(styles.tableArea, tableAreaClassName)}>
-        <div className={cx(styles.tableWrapper, tableWrapperClassName)}>
+        <div className={cx(styles.tableWrapper, tableWrapperClassName)} role={scrollLabel ? "region" : undefined} aria-label={scrollLabel} tabIndex={scrollLabel ? 0 : undefined}>
           <DataTableLoadingContext.Provider
             value={{
               loading: isLoading,

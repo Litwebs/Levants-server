@@ -29,4 +29,13 @@ describe("Deals / price preview", () => {
   test("slugs normalise spaces, punctuation and ampersands", () => {
     expect(slugifyDealName("  Milk & Eggs!  ")).toBe("milk-and-eggs");
   });
+  test("defined savings follow retail changes and use the backend's penny rounding", () => {
+    const items = [{ variantId: "milk", variantName: "Milk", productName: "Dairy", sku: "M", pricePence: 1475, quantity: 1 }];
+    expect(dealTotals(items, "", "fixed_saving", "3")).toMatchObject({ packagePricePence: 1175, savingsPence: 300 });
+    expect(dealTotals(items, "", "percentage_saving", "20")).toMatchObject({ packagePricePence: 1180, savingsPence: 295 });
+    items[0].pricePence = 1625;
+    expect(dealTotals(items, "", "fixed_saving", "3").packagePricePence).toBe(1325);
+    expect(dealTotals(items, "", "percentage_saving", "20").packagePricePence).toBe(1300);
+    expect(dealTotals([], "", "fixed_saving", "3").packagePricePence).toBe(0);
+  });
 });

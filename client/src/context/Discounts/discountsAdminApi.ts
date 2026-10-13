@@ -24,6 +24,11 @@ const unwrapData = <T,>(payload: unknown): T | null => {
 export async function listDiscounts(params?: {
   page?: number;
   pageSize?: number;
+  search?: string;
+  status?: "all" | "active" | "inactive";
+  kind?: "all" | "percent" | "amount";
+  scope?: "all" | "global" | "category" | "variant";
+  sort?: "newest" | "oldest" | "name" | "code";
 }) {
   const res = await api.get("/admin/discounts", { params });
   const data = unwrapData<ListDiscountsResponse>(res.data);

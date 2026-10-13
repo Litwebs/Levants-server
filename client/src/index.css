@@ -2,104 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
+/* Semantic Tailwind colours match the admin palette in styles/variables.css. */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-
+    --background: 0.0000 0.0000% 98.0392%;
+    --foreground: 215.0000 27.9070% 16.8627%;
+    --card: 0.0000 0.0000% 100.0000%;
+    --card-foreground: 220.9091 39.2857% 10.9804%;
+    --popover: 0.0000 0.0000% 100.0000%;
+    --popover-foreground: 220.9091 39.2857% 10.9804%;
+    --primary: 162.2034 56.7308% 40.7843%;
+    --primary-foreground: 0.0000 0.0000% 100.0000%;
+    --secondary: 220.0000 14.2857% 95.8824%;
+    --secondary-foreground: 220.9091 39.2857% 10.9804%;
+    --muted: 210.0000 20.0000% 98.0392%;
+    --muted-foreground: 220.0000 8.9362% 46.0784%;
+    --accent: 220.0000 14.2857% 95.8824%;
+    --accent-foreground: 220.9091 39.2857% 10.9804%;
+    --destructive: 0.0000 84.2365% 60.1961%;
+    --destructive-foreground: 0.0000 0.0000% 100.0000%;
+    --border: 220.0000 13.0435% 90.9804%;
+    --input: 216.0000 12.1951% 83.9216%;
+    --ring: 162.2034 56.7308% 40.7843%;
+    --sidebar-background: 0.0000 0.0000% 100.0000%;
+    --sidebar-foreground: 214.2857 10.3448% 39.8039%;
+    --sidebar-primary: 162.2034 56.7308% 40.7843%;
+    --sidebar-primary-foreground: 0.0000 0.0000% 100.0000%;
+    --sidebar-accent: 158.5714 43.7500% 93.7255%;
+    --sidebar-accent-foreground: 220.9091 39.2857% 10.9804%;
+    --sidebar-border: 220.0000 13.0435% 90.9804%;
+    --sidebar-ring: 162.2034 56.7308% 40.7843%;
     --radius: 0.5rem;
-
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+  :root[data-theme="dark"], .dark {
+    --background: 240.0000 6.2500% 6.2745%;
+    --foreground: 240.0000 6.6667% 91.1765%;
+    --card: 240.0000 4.1667% 9.4118%;
+    --card-foreground: 240.0000 6.6667% 97.0588%;
+    --popover: 240.0000 4.1667% 9.4118%;
+    --popover-foreground: 240.0000 6.6667% 97.0588%;
+    --primary: 160.3125 52.8926% 47.4510%;
+    --primary-foreground: 0.0000 0.0000% 100.0000%;
+    --secondary: 240.0000 4.8780% 16.0784%;
+    --secondary-foreground: 240.0000 6.6667% 97.0588%;
+    --muted: 240.0000 4.9180% 11.9608%;
+    --muted-foreground: 240.0000 5.3763% 63.5294%;
+    --accent: 240.0000 4.8780% 16.0784%;
+    --accent-foreground: 240.0000 6.6667% 97.0588%;
+    --destructive: 0.0000 90.6040% 70.7843%;
+    --destructive-foreground: 0.0000 0.0000% 100.0000%;
+    --border: 240.0000 5.2632% 22.3529%;
+    --input: 240.0000 5.0633% 30.9804%;
+    --ring: 160.3125 52.8926% 47.4510%;
+    --sidebar-background: 240.0000 4.1667% 9.4118%;
+    --sidebar-foreground: 240.0000 5.5901% 68.4314%;
+    --sidebar-primary: 160.3125 52.8926% 47.4510%;
+    --sidebar-primary-foreground: 0.0000 0.0000% 100.0000%;
+    --sidebar-accent: 240.0000 5.2632% 22.3529%;
+    --sidebar-accent-foreground: 240.0000 6.6667% 97.0588%;
+    --sidebar-border: 240.0000 5.2632% 22.3529%;
+    --sidebar-ring: 160.3125 52.8926% 47.4510%;
+    --radius: 0.5rem;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply bg-background text-foreground;
-  }
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
 }
