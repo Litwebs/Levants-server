@@ -1,6 +1,6 @@
 # Backend-first UAT refresh
 
-UAT baseline: `1993566166b440cbe4172e97ac1d8bf1e50ab6bc`.
+UAT baseline: `486a3478813c7a028799696c1ba9ca2112bf2a13`.
 Owner's pushed Deals baseline: `b4d3e2f78352f961b35cae66cc288a42fb2d62a9`.
 
 The merge direction is UAT into feature/deals. UAT and main are not updated.
@@ -42,4 +42,4 @@ Frontend validation is deferred as requested. The restored UI still needs to be 
 - UAT safety and provider diagnostics passed again after the final refresh.
 - The final scope audit confirms current UAT delivery/navigation code, models, shared Jest setup, deployment configuration and existing release workflows are unchanged. The owner's pushed Deals admin editor/context/tests remain byte-identical.
 
-Only documentation changed after this verified commit. Backend verification is complete; the frontend phase remains deferred.
+After this verified commit, UAT added only its one-time Google policy repair workflow and deployment scripts. They are incorporated unchanged, and all eight offline repair tests passed. All server application/test files and client files remain byte-identical to the passing combined runtime commit. The repair workflow is restricted to UAT with its explicit approval marker and is not triggered on feature/deals. Backend verification is complete; the frontend phase remains deferred.

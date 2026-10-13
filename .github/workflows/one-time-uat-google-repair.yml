@@ -1,0 +1,39 @@
+name: One-time approved UAT Google network repair
+on:
+  push:
+    branches: [uat]
+    paths: [.github/workflows/one-time-uat-google-repair.yml]
+permissions:
+  contents: read
+jobs:
+  repair:
+    if: github.ref == 'refs/heads/uat' && contains(github.event.head_commit.message, '[approved-one-time-uat-google-repair]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the scoped repair before touching the VPS
+        run: python3 deployment/uat/test-refresh-google-network.py
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+      - name: Apply the explicitly approved UAT-only network policy refresh
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$VPS_PORT" "root@$VPS_HOST" 'python3 -' \
+            < deployment/uat/refresh-google-network.py | tee uat-google-repair-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: approved-uat-google-repair-${{ github.sha }}
+          path: uat-google-repair-report.json
+          retention-days: 30
+          if-no-files-found: error
