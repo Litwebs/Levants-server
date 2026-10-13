@@ -1,4 +1,5 @@
 "use strict";
+const { presentCancelledSubscriptionOrders } = require("../subscriptions/subscriptionOrderPresentation.service");
 
 const Subscription = require("../../models/subscription.model");
 const SubscriptionDelivery = require("../../models/subscriptionDelivery.model");
@@ -14,6 +15,15 @@ const {
   GetSubscriptionDeliveries,
 } = require("./customerSubscriptions.service");
 const { Response } = require("../../utils/response.util");
+const crypto = require("crypto");
+const {
+  executeSubscriptionConcurrencyGuard,
+} = require("./subscriptionMutation.service");
+const {
+  SUBSCRIPTION_TIME_ZONE,
+  addCalendarDaysInTimeZone,
+  formatDateKeyInTimeZone,
+} = require("../../utils/subscriptionCutoff.util");
 
 async function enrichSubscriptionWithVariantImages(subscription) {
   if (!subscription) return subscription;
@@ -396,53 +406,111 @@ async function AdminGetSubscription({ subscriptionId } = {}) {
 /**
  * Admin: pause subscription on behalf of customer.
  */
-async function AdminPauseSubscription({ subscriptionId } = {}) {
+async function AdminPauseSubscription({
+  subscriptionId,
+  expectedVersion,
+} = {}) {
   const subscription = await Subscription.findById(subscriptionId);
   if (!subscription) return Response(false, "Subscription not found", null);
-  const defaultResumeOn = new Date();
-  defaultResumeOn.setDate(defaultResumeOn.getDate() + 28);
-  return PauseSubscription({
+  const defaultResumeOn = addCalendarDaysInTimeZone(
+    new Date(),
+    28,
+    SUBSCRIPTION_TIME_ZONE,
+  );
+  return executeSubscriptionConcurrencyGuard({
     customerId: String(subscription.customer),
     subscriptionId,
-    resumeOn: defaultResumeOn.toISOString().slice(0, 10),
+    expectedVersion,
+    operationId: `admin:${crypto.randomUUID()}`,
+    execute: () =>
+      PauseSubscription({
+        customerId: String(subscription.customer),
+        subscriptionId,
+        resumeOn: formatDateKeyInTimeZone(
+          defaultResumeOn,
+          SUBSCRIPTION_TIME_ZONE,
+        ),
+      }),
   });
 }
 
 /**
  * Admin: resume subscription on behalf of customer.
  */
-async function AdminResumeSubscription({ subscriptionId } = {}) {
+async function AdminResumeSubscription({
+  subscriptionId,
+  expectedVersion,
+} = {}) {
   const subscription = await Subscription.findById(subscriptionId);
   if (!subscription) return Response(false, "Subscription not found", null);
-  return ResumeSubscription({
+  return executeSubscriptionConcurrencyGuard({
     customerId: String(subscription.customer),
     subscriptionId,
+    expectedVersion,
+    operationId: `admin:${crypto.randomUUID()}`,
+    execute: () =>
+      ResumeSubscription({
+        customerId: String(subscription.customer),
+        subscriptionId,
+      }),
   });
 }
 
 /**
  * Admin: cancel subscription on behalf of customer.
  */
-async function AdminCancelSubscription({ subscriptionId, reason } = {}) {
+async function AdminCancelSubscription({
+  subscriptionId,
+  reason,
+  expectedVersion,
+} = {}) {
   const subscription = await Subscription.findById(subscriptionId);
   if (!subscription) return Response(false, "Subscription not found", null);
-  return CancelSubscription({
+  return executeSubscriptionConcurrencyGuard({
     customerId: String(subscription.customer),
     subscriptionId,
-    reason,
+    expectedVersion,
+    operationId: `admin:${crypto.randomUUID()}`,
+    execute: () =>
+      CancelSubscription({
+        customerId: String(subscription.customer),
+        subscriptionId,
+        reason,
+      }),
   });
 }
 
 /**
  * Admin: update subscription.
  */
-async function AdminUpdateSubscription({ subscriptionId, ...fields } = {}) {
+async function AdminUpdateSubscription({
+  subscriptionId,
+  expectedVersion,
+  ...fields
+} = {}) {
+  // Product composition is customer-managed, including updates submitted
+  // through the general PATCH endpoint. Reject the whole request before any
+  // lookup, lease, settings edit, payment or refund can run.
+  if (["deliveryDayPlans", "items"].some(field =>
+    Object.prototype.hasOwnProperty.call(fields, field))) {
+    return {
+      ...Response(false, "Subscription products cannot be changed by admins", null),
+      statusCode: 403,
+    };
+  }
   const subscription = await Subscription.findById(subscriptionId);
   if (!subscription) return Response(false, "Subscription not found", null);
-  return UpdateSubscription({
+  return executeSubscriptionConcurrencyGuard({
     customerId: String(subscription.customer),
     subscriptionId,
-    ...fields,
+    expectedVersion,
+    operationId: `admin:${crypto.randomUUID()}`,
+    execute: () =>
+      UpdateSubscription({
+        customerId: String(subscription.customer),
+        subscriptionId,
+        ...fields,
+      }),
   });
 }
 
@@ -523,7 +591,7 @@ async function AdminGetSubscriptionOrders({
     .skip((page - 1) * pageSize)
     .limit(pageSize)
     .lean();
-  return Response(true, null, { orders, meta: { page, pageSize, total } });
+  return Response(true, null, { orders: await presentCancelledSubscriptionOrders(orders), meta: { page, pageSize, total } });
 }
 
 module.exports = {

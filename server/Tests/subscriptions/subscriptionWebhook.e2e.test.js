@@ -117,6 +117,113 @@ async function createSubscriptionFixture({
 }
 
 describe("Subscription Stripe webhook E2E", () => {
+  it("recovers a failed notification write after pausing without duplicate notifications", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_notification_retry",
+      nextDeliveryDate: new Date("2030-01-06T09:00:00Z"), items: [buildSubscriptionItem(product, variant, 1)] });
+    const invoice = { id: "in_notification_retry", subscription: sub.stripeSubscriptionId, status: "open", paid: false };
+    const retrieveBefore = stripe.invoices.retrieve.getMockImplementation();
+    stripe.invoices.retrieve.mockResolvedValue(invoice);
+    const create = jest.spyOn(CustomerNotification, "create").mockRejectedValueOnce(new Error("temporary notification database failure"));
+    try {
+      await expect(subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice)).rejects.toThrow("temporary notification database failure");
+      expect((await Subscription.findById(sub._id)).pauseReason).toBe("payment_failed");
+      await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
+      await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "payment_failed" })).toBe(1);
+    } finally {
+      create.mockRestore();
+      stripe.invoices.retrieve.mockReset().mockImplementation(retrieveBefore);
+    }
+  });
+  it("recovers a lost paid-invoice confirmation without duplicating orders or legacy confirmations", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const date = new Date("2030-01-06T09:00:00Z");
+    const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_confirmation_retry",
+      nextDeliveryDate: date, items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ customer: customer._id, subscription: sub._id, scheduledDate: date, status: "scheduled" });
+    const invoice = { id: "in_confirmation_retry", subscription: sub.stripeSubscriptionId,
+      payment_intent: "pi_confirmation_retry", paid: true, currency: "gbp", amount_paid: 350 };
+    const create = jest.spyOn(CustomerNotification, "create").mockRejectedValueOnce(new Error("confirmation write failed"));
+    try {
+      await expect(subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice)).rejects.toThrow("confirmation write failed");
+      expect(await Order.countDocuments({ subscription: sub._id, stripeInvoiceId: invoice.id })).toBe(1);
+      await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+      await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "subscription_upcoming_delivery" })).toBe(1);
+      // A pre-deployment confirmation's linked order is also a durable identity.
+      await CustomerNotification.updateMany({ relatedSubscription: sub._id }, { $unset: { sourceEventId: 1 } });
+      await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+      expect(await CustomerNotification.countDocuments({ relatedSubscription: sub._id, type: "subscription_upcoming_delivery" })).toBe(1);
+      expect(await Order.countDocuments({ subscription: sub._id, stripeInvoiceId: invoice.id })).toBe(1);
+    } finally { create.mockRestore(); }
+  });
+  beforeEach(() => {
+    stripe.subscriptions.retrieve = jest.fn(async id => ({ id, status: "active", pause_collection: null }));
+  });
+  it("reserves a draft invoice's original delivery and consumes stock once after a delayed paid event", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const date = new Date("2030-01-06T09:00:00Z");
+    const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_inventory_draft",
+      nextDeliveryDate: date, items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ customer: customer._id, subscription: sub._id, scheduledDate: date, status: "scheduled" });
+    const draft = { id: "in_inventory_draft", subscription: sub.stripeSubscriptionId, status: "draft", total: 350,
+      currency: "gbp", created: Math.floor(Date.now() / 1000) };
+    stripe.invoices.retrieve.mockResolvedValueOnce(draft);
+    expect((await postStripeEvent({ type: "invoice.created", data: { object: draft } })).status).toBe(200);
+    expect((await ProductVariant.findById(variant._id)).reservedQuantity).toBe(1);
+    // Simulate an operator/legacy write; a normal portal edit is blocked by the frozen invoice.
+    await Subscription.collection.updateOne({ _id: sub._id }, { $set: {
+      "items.0.quantity": 2, nextDeliveryDate: new Date("2030-01-13T09:00:00Z"), billingStateUpdatedAt: new Date(),
+    } });
+    const paid = { ...draft, status: "paid", paid: true, amount_paid: 350, payment_intent: "pi_inventory_draft" };
+    const send = () => postStripeEvent({ type: "invoice.payment_succeeded", data: { object: paid } });
+    expect((await send()).status).toBe(200);
+    expect((await send()).status).toBe(200);
+    const orders = await Order.find({ stripeInvoiceId: draft.id });
+    expect(orders).toHaveLength(1);
+    expect(orders[0].items[0].quantity).toBe(1);
+    expect(orders[0].deliveryDate).toEqual(date);
+    expect((await ProductVariant.findById(variant._id)).toObject()).toMatchObject({ stockQuantity: 99, reservedQuantity: 0 });
+  });
+
+  it("holds collection before renewal when inventory is unavailable", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_inventory_empty",
+      nextDeliveryDate: new Date("2030-01-06T09:00:00Z"), items: [buildSubscriptionItem(product, variant, 1)] });
+    await ProductVariant.updateOne({ _id: variant._id }, { $set: { stockQuantity: 0 } });
+    const invoice = { id: "in_inventory_empty", subscription: sub.stripeSubscriptionId,
+      status: "draft", total: 350, created: Math.floor(Date.now() / 1000) };
+    stripe.invoices.retrieve.mockResolvedValueOnce(invoice);
+    expect((await postStripeEvent({ type: "invoice.created", data: { object: invoice } })).status).toBe(200);
+    expect(stripe.invoices.update).toHaveBeenCalledWith(invoice.id, { auto_advance: false });
+    expect((await Subscription.findById(sub._id)).toObject()).toMatchObject({ status: "paused", pauseReason: "inventory" });
+    expect(await Order.countDocuments({ subscription: sub._id })).toBe(0);
+    expect((await ProductVariant.findById(variant._id)).reservedQuantity).toBe(0);
+  });
+
+  it("refunds an unallocated invoice whose original agreement was replaced, without using today's schedule", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const sub = await createSubscriptionFixture({ customer: customer._id, stripeSubscriptionId: "sub_delayed_unknown",
+      nextDeliveryDate: new Date("2030-01-06T09:00:00Z"), items: [buildSubscriptionItem(product, variant, 1)] });
+    await Subscription.collection.updateOne({ _id: sub._id }, { $set: { billingStateUpdatedAt: new Date() } });
+    const invoice = { id: "in_delayed_unknown", subscription: sub.stripeSubscriptionId, status: "paid", paid: true,
+      amount_paid: 350, currency: "gbp", payment_intent: "pi_delayed_unknown", created: Math.floor(Date.now() / 1000) - 100 };
+    stripe.paymentIntents.retrieve.mockResolvedValueOnce({ id: invoice.payment_intent, customer: customer.stripeCustomerId,
+      currency: "gbp", status: "succeeded", amount_received: 350 });
+    stripe.refunds.create.mockResolvedValueOnce({ id: "re_delayed_unknown", status: "succeeded", amount: 350, payment_intent: invoice.payment_intent });
+    const send = () => postStripeEvent({ type: "invoice.payment_succeeded", data: { object: invoice } });
+    expect((await send()).status).toBe(200);
+    expect((await send()).status).toBe(200);
+    expect(await Order.countDocuments({ subscription: sub._id })).toBe(0);
+    expect((await Payment.findOne({ providerReference: invoice.payment_intent })).status).toBe("refunded");
+    expect((await Subscription.findById(sub._id)).pauseReason).toBe("reconciliation");
+  });
   it("detects an enabled Stripe endpoint that omits subscription events", async () => {
     stripe.webhookEndpoints.list.mockResolvedValueOnce({
       data: [
@@ -133,6 +240,133 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(result.ok).toBe(false);
     expect(result.missingEvents).toContain("invoice.payment_succeeded");
     expect(result.missingEvents).toContain("invoice.payment_failed");
+  });
+
+  it("webhooks retry behind a portal lifecycle change and preserve the completed customer pause", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const subscription = await createSubscriptionFixture({ customer: customer._id,
+      stripeSubscriptionId: "sub_portal_race", nextDeliveryDate: new Date(Date.now() + 2 * 86400000),
+      items: [buildSubscriptionItem(product, variant, 1)] });
+    const invoice = { id: "in_portal_race", subscription: subscription.stripeSubscriptionId, status: "open", paid: false };
+    const retrieveBefore = stripe.invoices.retrieve.getMockImplementation();
+    stripe.invoices.retrieve.mockResolvedValue(invoice);
+    try {
+    const { executeSubscriptionConcurrencyGuard } = require("../../services/customerPortal/subscriptionMutation.service");
+    await executeSubscriptionConcurrencyGuard({ customerId: customer._id, subscriptionId: subscription._id,
+      operationId: "portal-pause-race", execute: async () => {
+        await expect(subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice)).rejects.toThrow(/lifecycle is busy/);
+        await expect(subscriptionWebhookService.HandleSubscriptionInvoicePaid({ ...invoice, paid: true })).rejects.toThrow(/lifecycle is busy/);
+        subscription.status = "paused";
+        subscription.pauseReason = "customer";
+        subscription.pausedUntil = new Date(Date.now() + 21 * 86400000);
+        await subscription.save();
+        return { success: true };
+      },
+    });
+    await subscriptionWebhookService.HandleSubscriptionInvoiceFailed(invoice);
+    const saved = await Subscription.findById(subscription._id);
+    expect(saved.status).toBe("paused");
+    expect(saved.pauseReason).toBe("customer");
+    expect(saved.paymentFailureInvoiceId).toBeNull();
+    } finally {
+      stripe.invoices.retrieve.mockReset().mockImplementation(retrieveBefore);
+    }
+  });
+
+  it("does not expand or move a completed invoice's fulfillment when the customer schedule changes", async () => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const sunday = new Date("2026-07-12T09:00:00Z");
+    const wednesday = new Date("2026-07-15T09:00:00Z");
+    const subscription = await createSubscriptionFixture({ customer: customer._id,
+      stripeSubscriptionId: "sub_frozen_invoice", nextDeliveryDate: sunday,
+      items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: sunday, status: "scheduled" });
+    const invoice = { id: "in_frozen_invoice", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_frozen_invoice", paid: true, currency: "gbp", amount_paid: 350 };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    const original = await Order.findOne({ subscription: subscription._id, stripeInvoiceId: invoice.id });
+    await Subscription.updateOne({ _id: subscription._id }, { $set: { preferredDeliveryDays: [0, 3],
+      frequency: "monthly", nextDeliveryDate: wednesday, "items.0.quantity": 3 } });
+    await Order.updateOne({ _id: original._id }, { $set: { deliveryDate: wednesday, "items.0.quantity": 3, "items.0.subtotal": 7.5 } });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: wednesday, status: "generated", order: original._id });
+    await Payment.deleteMany({ order: original._id });
+    for (let retry = 0; retry < 2; retry += 1) await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    const orders = await Order.find({ subscription: subscription._id, stripeInvoiceId: invoice.id });
+    expect(orders).toHaveLength(1);
+    expect(String(orders[0]._id)).toBe(String(original._id));
+    expect(new Date(orders[0].deliveryDate)).toEqual(wednesday);
+    expect((await Payment.findOne({ order: original._id })).amount).toBe(3.5);
+    expect(new Date((await Subscription.findById(subscription._id)).nextDeliveryDate)).toEqual(wednesday);
+  });
+
+  it("concurrent invoice recovery creates one payment record for the same order", async () => {
+    await Payment.init();
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date(Date.now() + 2 * 86400000);
+    const subscription = await createSubscriptionFixture({ customer: customer._id,
+      stripeSubscriptionId: "sub_concurrent_ledger", nextDeliveryDate: nextDelivery,
+      items: [buildSubscriptionItem(product, variant, 1)] });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: nextDelivery, status: "scheduled" });
+    const invoice = { id: "in_concurrent_ledger", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_concurrent_ledger", paid: true, currency: "gbp", created: Math.floor(Date.now() / 1000) };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    await Payment.deleteMany({ subscription: subscription._id });
+    // One worker may request a retry while the other holds the lifecycle lock.
+    const outcomes = await Promise.allSettled([
+      subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+      subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice),
+    ]);
+    expect(outcomes.some(result => result.status === "fulfilled")).toBe(true);
+    for (const result of outcomes) {
+      if (result.status === "rejected") expect(result.reason.message).toMatch(/lifecycle is busy/);
+    }
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    expect(await Payment.countDocuments({ subscription: subscription._id })).toBe(1);
+    expect(await Order.countDocuments({ subscription: subscription._id, stripeInvoiceId: invoice.id })).toBe(1);
+    const saved = await Payment.findOne({ subscription: subscription._id }).lean();
+    expect(saved.subscriptionInvoiceKey).toBe(`${subscription._id}:${invoice.id}:${saved.order}`);
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    expect(await Payment.countDocuments({ subscription: subscription._id })).toBe(1);
+  });
+
+  it.each(["refunded", "missing", "paid"])("invoice recovery preserves a refunded order with a %s ledger", async ledgerState => {
+    const customer = await createCustomer();
+    const { product, variant } = await createProductAndVariant();
+    const nextDelivery = new Date(Date.now() + 2 * 86400000);
+    nextDelivery.setHours(9, 0, 0, 0);
+    const subscription = await createSubscriptionFixture({
+      customer: customer._id, stripeSubscriptionId: "sub_refund_replay",
+      nextDeliveryDate: nextDelivery, items: [buildSubscriptionItem(product, variant, 1)],
+    });
+    await SubscriptionDelivery.create({ subscription: subscription._id, customer: customer._id,
+      scheduledDate: nextDelivery, status: "scheduled" });
+    const invoice = { id: "in_refund_replay", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_refund_replay", paid: true, currency: "gbp", created: Math.floor(Date.now() / 1000) };
+    await subscriptionWebhookService.HandleSubscriptionInvoicePaid(invoice);
+    const order = await Order.findOne({ subscription: subscription._id, stripeInvoiceId: invoice.id });
+    const originalPayment = await Payment.findOne({ order: order._id });
+    const refundedAt = new Date(Date.now() - 60000);
+    await Order.updateOne({ _id: order._id }, { $set: { status: "refunded", "refund.refundedAt": refundedAt } });
+    if (ledgerState === "missing") await Payment.deleteOne({ _id: originalPayment._id });
+    else if (ledgerState === "refunded") await Payment.updateOne({ _id: originalPayment._id },
+      { $set: { status: "refunded", refundedAt } });
+    for (let retry = 0; retry < 2; retry += 1) {
+      stripe.invoices.list.mockResolvedValueOnce({ data: [invoice] });
+      const result = await subscriptionWebhookService.ReconcileRecentPaidSubscriptionInvoices();
+      expect(result.failed).toBe(0);
+    }
+    const payments = await Payment.find({ order: order._id }).lean();
+    expect(payments).toHaveLength(1);
+    expect(payments[0]).toMatchObject({ status: "refunded", amount: originalPayment.amount, refundedAt });
+    if (ledgerState !== "missing") expect(String(payments[0]._id)).toBe(String(originalPayment._id));
+    expect((await Order.findById(order._id)).status).toBe("refunded");
+    expect(await Order.countDocuments({ subscription: subscription._id, stripeInvoiceId: invoice.id })).toBe(1);
   });
 
   it("reconciles a recent invoice even when an older invoice needs manual review", async () => {
@@ -250,7 +484,8 @@ describe("Subscription Stripe webhook E2E", () => {
       data: { object: { id: "in_test_create_race_1" } },
     });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe("SUBSCRIPTION_LIFECYCLE_BUSY");
     expect(await Order.countDocuments({})).toBe(0);
   });
 
@@ -404,7 +639,8 @@ describe("Subscription Stripe webhook E2E", () => {
       postStripeEvent(eventBody),
       postStripeEvent(eventBody),
     ]);
-    expect(concurrent.map((response) => response.status)).toEqual([200, 200]);
+    expect(concurrent.some(response => response.status === 200)).toBe(true);
+    expect(concurrent.every(response => [200, 503].includes(response.status))).toBe(true);
 
     const retry = await postStripeEvent(eventBody);
     expect(retry.status).toBe(200);
@@ -417,7 +653,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(orders).toHaveLength(1);
   });
 
-  it("repairs a partially processed multi-day invoice on retry", async () => {
+  it.each(["order", "ledger"])("reconciles a partially processed multi-day invoice (%s failure)", async failure => {
     const customer = await createCustomer();
     const { product, variant } = await createProductAndVariant();
     const sunday = new Date("2026-07-12T09:00:00.000Z");
@@ -466,15 +702,33 @@ describe("Subscription Stripe webhook E2E", () => {
         },
       },
     };
-    const originalCreate = Payment.create.bind(Payment);
+    event.data.object.created = Math.floor(Date.now() / 1000);
+    event.data.object.paid = true;
+    const failingModel = failure === "order" ? Order : Payment;
+    const writeMethod = failure === "order" ? "create" : "findOneAndUpdate";
+    const originalCreate = failingModel[writeMethod].bind(failingModel);
     jest
-      .spyOn(Payment, "create")
+      .spyOn(failingModel, writeMethod)
       .mockImplementationOnce((...args) => originalCreate(...args))
       .mockRejectedValueOnce(new Error("transient payment-ledger failure"));
 
     expect((await postStripeEvent(event)).status).toBe(500);
-    Payment.create.mockRestore();
-    expect((await postStripeEvent(event)).status).toBe(200);
+    failingModel[writeMethod].mockRestore();
+    const guarded = await require("../../services/customerPortal/subscriptionMutation.service").executeSubscriptionConcurrencyGuard({
+      customerId: customer._id, subscriptionId: subscription._id, operationId: "conflicting-plan-change",
+      execute: async () => { throw new Error("An incomplete invoice must block plan edits"); },
+    });
+    expect(guarded.data.subscriptionBusy).toBe(true);
+    const plan = await require("../../models/subscriptionInvoiceFulfillment.model").findOne({ invoiceId: event.data.object.id });
+    expect(plan.completedAt).toBeNull();
+    expect(plan.deliveries).toHaveLength(2);
+    expect(await Order.countDocuments({ subscription: subscription._id })).toBe(failure === "order" ? 1 : 2);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      stripe.invoices.list.mockResolvedValueOnce({ data: [event.data.object] });
+      const result = await subscriptionWebhookService.ReconcileRecentPaidSubscriptionInvoices();
+      expect(result.failed).toBe(0);
+      expect(result.reconciled).toBe(1);
+    }
 
     expect(
       await Order.countDocuments({
@@ -624,6 +878,8 @@ describe("Subscription Stripe webhook E2E", () => {
       items: [buildSubscriptionItem(product, variant, 1)],
     });
 
+    stripe.invoices.retrieve.mockResolvedValueOnce({ id: "in_test_payment_failed_1",
+      subscription: subscription.stripeSubscriptionId, status: "open", paid: false });
     const res = await postStripeEvent({
       type: "invoice.payment_failed",
       data: {
@@ -666,6 +922,8 @@ describe("Subscription Stripe webhook E2E", () => {
       status: "scheduled",
     });
 
+    stripe.invoices.retrieve.mockResolvedValueOnce({ id: "in_test_retry_1",
+      subscription: subscription.stripeSubscriptionId, status: "open", paid: false });
     const failed = await postStripeEvent({
       type: "invoice.payment_failed",
       data: {
@@ -680,6 +938,14 @@ describe("Subscription Stripe webhook E2E", () => {
     const paused = await Subscription.findById(subscription._id).lean();
     expect(paused.status).toBe("paused");
     expect(paused.pauseReason).toBe("payment_failed");
+
+    expect(paused.paymentFailureInvoiceId).toBe("in_test_retry_1");
+    const olderPaid = await postStripeEvent({ type: "invoice.payment_succeeded", data: { object: {
+      id: "in_older_paid", subscription: subscription.stripeSubscriptionId,
+      payment_intent: "pi_older_paid", status_transitions: { paid_at: 1786870700 },
+    } } });
+    expect(olderPaid.status).toBe(200);
+    expect((await Subscription.findById(subscription._id)).status).toBe("paused");
 
     // If Stripe fires invoice.payment_succeeded (e.g. manual payment capture), an
     // order is still created so the delivery is fulfilled.
@@ -707,6 +973,7 @@ describe("Subscription Stripe webhook E2E", () => {
     expect(recovered.pausedAt).toBeNull();
     expect(recovered.pausedUntil).toBeNull();
     expect(recovered.pauseReason).toBeNull();
+    expect(recovered.paymentFailureInvoiceId).toBeNull();
     expect(stripe.subscriptions.update).toHaveBeenLastCalledWith(
       "sub_test_webhook_retry_success_1",
       { pause_collection: "" },
@@ -789,7 +1056,7 @@ describe("Subscription Stripe webhook E2E", () => {
       },
     });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(503);
     const orders = await Order.find({
       stripeInvoiceId: "in_test_unknown_sub_1",
     }).lean();
@@ -837,6 +1104,8 @@ describe("Subscription Stripe webhook E2E", () => {
       status: "active",
     });
 
+    stripe.subscriptions.retrieve.mockResolvedValueOnce({ id: subscription.stripeSubscriptionId,
+      status: "active", pause_collection: { behavior: "void" } });
     const paused = await postStripeEvent({
       type: "customer.subscription.updated",
       data: {
@@ -867,6 +1136,8 @@ describe("Subscription Stripe webhook E2E", () => {
     const afterResumed = await Subscription.findById(subscription._id).lean();
     expect(afterResumed.status).toBe("active");
 
+    stripe.subscriptions.retrieve.mockResolvedValueOnce({ id: subscription.stripeSubscriptionId,
+      status: "canceled", pause_collection: null });
     const cancelled = await postStripeEvent({
       type: "customer.subscription.updated",
       data: {

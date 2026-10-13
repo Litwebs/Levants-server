@@ -53,6 +53,10 @@ const paymentSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Only invoice-generated ledger rows use this identity; legacy/manual rows
+    // remain valid without a backfill or a destructive duplicate cleanup.
+    subscriptionInvoiceKey: { type: String, default: null },
+
     // External provider references
     providerReference: {
       type: String,
@@ -95,6 +99,10 @@ const paymentSchema = new mongoose.Schema(
   },
 );
 
+paymentSchema.index({ subscriptionInvoiceKey: 1 }, {
+  unique: true,
+  partialFilterExpression: { subscriptionInvoiceKey: { $type: "string" } },
+});
 paymentSchema.index({ customer: 1, createdAt: -1 });
 paymentSchema.index({ order: 1 });
 paymentSchema.index({ status: 1, createdAt: -1 });
@@ -104,5 +112,7 @@ paymentSchema.method("toJSON", function () {
   delete obj.__v;
   return obj;
 });
+
+require("../utils/subscriptionLease.util").leaseFencingPlugin(paymentSchema);
 
 module.exports = mongoose.model("Payment", paymentSchema);

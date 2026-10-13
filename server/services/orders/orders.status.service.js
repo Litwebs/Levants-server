@@ -225,10 +225,11 @@ async function UpdateOrderStatus({
         const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
         const note = String(order.metadata?.deliveryNote || "").trim();
         const subject = `Your order ${order.orderId || ""} was delivered`;
-        const frontendBaseUrl =
-          process.env.FRONTEND_URL_PROD ||
-          process.env.CLIENT_FRONT_URL_DEV ||
-          "https://levantsdairy.co.uk";
+        const frontendBaseUrl = process.env.APP_ENV === "uat"
+          ? process.env.CUSTOMER_PORTAL_URL_PROD
+          : process.env.FRONTEND_URL_PROD ||
+            process.env.CLIENT_FRONT_URL_DEV ||
+            "https://levantsdairy.co.uk";
         const reviewsUrl = order.orderId
           ? `${frontendBaseUrl}/reviews?orderId=${encodeURIComponent(order.orderId)}`
           : null;
@@ -340,10 +341,11 @@ async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
         const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
         const note = String(order.metadata?.deliveryNote || "").trim();
         const subject = `Your order ${order.orderId || ""} was delivered`;
-        const frontendBaseUrl =
-          process.env.FRONTEND_URL_PROD ||
-          process.env.FRONTEND_URL_DEV ||
-          "https://levantsdairy.co.uk";
+        const frontendBaseUrl = process.env.APP_ENV === "uat"
+          ? process.env.CUSTOMER_PORTAL_URL_PROD
+          : process.env.FRONTEND_URL_PROD ||
+            process.env.FRONTEND_URL_DEV ||
+            "https://levantsdairy.co.uk";
         const reviewsUrl = order.orderId
           ? `${frontendBaseUrl}/reviews?orderId=${encodeURIComponent(order.orderId)}`
           : null;

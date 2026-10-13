@@ -1,0 +1,204 @@
+name: Verify and deploy isolated UAT
+
+on:
+  push:
+    branches: [uat]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: levants-uat-deployment
+  # Use only when the previous run is still validating, before deployment.
+  cancel-in-progress: ${{ contains(github.event.head_commit.message, '[supersede-validation]') }}
+
+jobs:
+  status-regressions:
+    name: Focused status and legacy-display checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Verify provider diagnostics do not expose credentials
+        run: node --test deployment/uat/test-provider-diagnostics.cjs
+      - run: npm ci
+        working-directory: server
+      - name: Verify status persistence and legacy read paths
+        run: npx jest --runInBand --no-watchman Tests/subscriptions/subscriptionOrderPresentation.test.js Tests/subscriptions/subscriptionStock.test.js
+        working-directory: server
+
+  subscription-e2e:
+    needs: status-regressions
+    name: Real Stripe and browser checks
+    uses: ./.github/workflows/integration-e2e.yml
+    secrets: inherit
+
+  verify:
+    needs: status-regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - name: Verify promotion evidence rules
+        run: python3 deployment/uat/test-promotion-gate.py
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: server
+      - name: Verify UAT safety rules
+        run: npm run test:uat-safety
+        working-directory: server
+      - name: Run backend release tests
+        run: npm run test:release
+        working-directory: server
+      - name: Verify production rollback isolation and automatic recovery
+        env:
+          ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
+        run: python3 deployment/production/test-compatible-rollback.py
+      - name: Install admin dependencies
+        run: npm ci
+        working-directory: client
+      - name: Verify and build admin
+        run: npm run check:release
+        working-directory: client
+      - name: Package immutable UAT release
+        run: python3 deployment/uat/package.py /tmp/levants-uat.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uat-${{ github.sha }}
+          path: /tmp/levants-uat.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+  deploy:
+    needs: [verify, subscription-e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+        if: contains(github.event.head_commit.message, '[verify-recovery-alert]')
+      - uses: actions/download-artifact@v4
+        with:
+          name: uat-${{ github.sha }}
+          path: release
+      - uses: webfactory/ssh-agent@v0.9.0
+        if: contains(github.event.head_commit.message, '[verify-recovery-alert]')
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+      - name: Configure approved recovery-alert recipient in UAT only
+        if: contains(github.event.head_commit.message, '[verify-recovery-alert]')
+        env:
+          RECOVERY_HOST: ${{ secrets.VPS_HOST }}
+          RECOVERY_PORT: ${{ secrets.VPS_PORT }}
+          RELEASE_SHA: ${{ github.sha }}
+          UAT_RECOVERY_ALERT_EMAIL: ${{ vars.UAT_RECOVERY_ALERT_EMAIL || 'hm.mousavi.02@gmail.com' }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$RECOVERY_PORT" "$RECOVERY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          recovery_command="$(python3 -c 'import os,shlex;print(shlex.join(["python3","-","configure",os.environ["RELEASE_SHA"],os.environ["UAT_RECOVERY_ALERT_EMAIL"]]))')"
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$RECOVERY_PORT" "root@$RECOVERY_HOST" "$recovery_command" < deployment/uat/recovery-alerts.py
+      - name: Configure dedicated UAT SSH access
+        env:
+          UAT_SSH_KEY: ${{ secrets.UAT_SSH_KEY }}
+          UAT_KNOWN_HOSTS: ${{ vars.UAT_KNOWN_HOSTS }}
+        run: |
+          test -n "$UAT_SSH_KEY"
+          test -n "$UAT_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$UAT_SSH_KEY" > ~/.ssh/uat
+          chmod 600 ~/.ssh/uat
+          printf '%s\n' "$UAT_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy to UAT only
+        env:
+          UAT_HOST: ${{ vars.UAT_HOST }}
+          UAT_PORT: ${{ vars.UAT_PORT }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          test -n "$UAT_HOST"
+          test -n "$UAT_PORT"
+          ssh -i ~/.ssh/uat -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            -p "$UAT_PORT" "levants-uat-deploy@$UAT_HOST" \
+            "deploy $RELEASE_SHA" < release/levants-uat.tar.gz
+
+  integrations:
+    name: Configured UAT provider checks
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: uat
+    steps:
+      - uses: actions/checkout@v4
+        if: contains(github.event.head_commit.message, '[verify-recovery-alert]')
+      - name: Configure dedicated UAT SSH access
+        env:
+          UAT_SSH_KEY: ${{ secrets.UAT_SSH_KEY }}
+          UAT_KNOWN_HOSTS: ${{ vars.UAT_KNOWN_HOSTS }}
+        run: |
+          test -n "$UAT_SSH_KEY"
+          test -n "$UAT_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$UAT_SSH_KEY" > ~/.ssh/uat
+          chmod 600 ~/.ssh/uat
+          printf '%s\n' "$UAT_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Verify configured UAT providers
+        env:
+          UAT_HOST: ${{ vars.UAT_HOST }}
+          UAT_PORT: ${{ vars.UAT_PORT }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/uat -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            -p "$UAT_PORT" "levants-uat-deploy@$UAT_HOST" \
+            "verify $RELEASE_SHA" | tee uat-integration-report.json
+      - name: Save provider verification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: uat-provider-report-${{ github.sha }}
+          path: uat-integration-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: webfactory/ssh-agent@v0.9.0
+        if: contains(github.event.head_commit.message, '[verify-recovery-alert]')
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+      - name: Verify one approved synthetic recovery alert and deduplication
+        if: contains(github.event.head_commit.message, '[verify-recovery-alert]')
+        env:
+          RECOVERY_HOST: ${{ secrets.VPS_HOST }}
+          RECOVERY_PORT: ${{ secrets.VPS_PORT }}
+          RELEASE_SHA: ${{ github.sha }}
+          UAT_RECOVERY_ALERT_EMAIL: ${{ vars.UAT_RECOVERY_ALERT_EMAIL || 'hm.mousavi.02@gmail.com' }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$RECOVERY_PORT" "$RECOVERY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          recovery_command="$(python3 -c 'import os,shlex;print(shlex.join(["python3","-","verify",os.environ["RELEASE_SHA"],os.environ["UAT_RECOVERY_ALERT_EMAIL"]]))')"
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$RECOVERY_PORT" "root@$RECOVERY_HOST" "$recovery_command" < deployment/uat/recovery-alerts.py | tee uat-recovery-alert-check.json
+      - uses: actions/upload-artifact@v4
+        if: always() && contains(github.event.head_commit.message, '[verify-recovery-alert]')
+        with:
+          name: uat-recovery-alert-check-${{ github.sha }}
+          path: uat-recovery-alert-check.json
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,12 +1,14 @@
 "use strict";
 
+const { summarizeOrderPayment } = require("./paymentReporting.util");
 const Payment = require("../../models/payment.model");
 const PaymentMethod = require("../../models/paymentMethod.model");
 const Order = require("../../models/order.model");
 const Customer = require("../../models/customer.model");
-const Subscription = require("../../models/subscription.model");
+const StoreCreditTransaction = require("../../models/storeCreditTransaction.model");
 const stripe = require("../../utils/stripe.util");
 const { Response } = require("../../utils/response.util");
+const { setCustomerDefaultCard, deleteCustomerCard, resumePendingCardOperation } = require("./subscriptionPaymentMethod.service");
 
 const STRIPE_PUBLISHABLE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || null;
 let paymentMethodDomainRegistrationPromise = null;
@@ -16,7 +18,7 @@ function getPaymentMethodDomains() {
     ...(process.env.STRIPE_PAYMENT_METHOD_DOMAINS || "").split(","),
     process.env.CLIENT_FRONT_URL_PROD,
     process.env.FRONTEND_URL_PROD,
-    "levantsdairy.co.uk",
+    ...(process.env.APP_ENV === "uat" ? [] : ["levantsdairy.co.uk"]),
   ];
 
   return [
@@ -85,22 +87,7 @@ async function getCustomerWithStripeId(customerId) {
 }
 
 async function ensureStripeCustomer(customerId) {
-  const customer = await getCustomerWithStripeId(customerId);
-  if (!customer) return null;
-
-  if (customer.stripeCustomerId) return customer;
-
-  const stripeCustomer = await stripe.customers.create({
-    email: customer.email || undefined,
-    name: `${customer.firstName || ""} ${customer.lastName || ""}`.trim(),
-    metadata: {
-      customerId: String(customer._id),
-    },
-  });
-
-  customer.stripeCustomerId = stripeCustomer.id;
-  await customer.save();
-  return customer;
+  return require("./subscriptionCustomerIdentity.service").ensureCustomerIdentity(customerId);
 }
 
 function normalizeStripeCard(paymentMethod) {
@@ -116,6 +103,19 @@ function normalizeStripeCard(paymentMethod) {
 }
 
 // ===== Customer-facing =====
+
+async function attachLegacyCreditLedger(orders, customerId) {
+  const legacy = orders.filter(order => order && !(order.paymentAllocations || []).length &&
+    ["refunded", "partially_refunded"].includes(order.status));
+  if (!legacy.length) return;
+  const filter = { order: { $in: legacy.map(order => order._id) }, type: "subscription_refund", amount: { $gt: 0 } };
+  if (customerId) filter.customer = customerId;
+  const entries = await StoreCreditTransaction.find(filter).select("order amount").lean();
+  for (const order of legacy) {
+    order.reportingCreditedMinor = entries.filter(entry => String(entry.order) === String(order._id))
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+  }
+}
 
 async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
   const safePage = Math.max(1, Number(page) || 1);
@@ -139,7 +139,7 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
   const total = await Order.countDocuments(orderFilter);
   const orders = await Order.find(orderFilter)
     .select(
-      "_id orderId status subtotal deliveryFee total amountPaid currency paidAt createdAt updatedAt stripePaymentIntentId stripeCheckoutSessionId refunds refund refundedAt failedAt subscription",
+      "_id orderId status subtotal deliveryFee total amountPaid currency paidAt createdAt updatedAt stripePaymentIntentId stripeCheckoutSessionId refunds refund refundedAt failedAt subscription paymentAllocations orderType",
     )
     .populate("subscription", "subscriptionNumber")
     .sort({ paidAt: -1, createdAt: -1 })
@@ -147,10 +147,12 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
     .limit(safePageSize)
     .lean();
 
+  await attachLegacyCreditLedger(orders, customerId);
+
   const toPaymentStatus = (orderStatus, stripeStatus) => {
-    if (orderStatus === "refunded" || orderStatus === "partially_refunded") {
-      return "refunded";
-    }
+    if (orderStatus === "refunded") return "refunded";
+    if (orderStatus === "partially_refunded") return "partially_refunded";
+    if (orderStatus === "refund_pending") return "refund_pending";
     if (stripeStatus === "succeeded") return "paid";
     if (
       stripeStatus === "requires_payment_method" ||
@@ -188,9 +190,11 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
         }
       }
 
+      const settlement = summarizeOrderPayment(order);
       return {
+        ...settlement,
         _id: `order-${String(order._id)}`,
-        amount: Number(order.amountPaid ?? order.total ?? 0),
+        amount: settlement.netAmount,
         currency: order.currency || "GBP",
         status: toPaymentStatus(order.status, stripeStatus),
         providerReference:
@@ -224,6 +228,7 @@ async function ListPayments({ customerId, page = 1, pageSize = 20 } = {}) {
 }
 
 async function ListPaymentMethods({ customerId } = {}) {
+  await resumePendingCardOperation(customerId);
   const methods = await PaymentMethod.find({ customer: customerId })
     .select("+providerReference")
     .sort({ isDefault: -1, createdAt: -1 })
@@ -366,20 +371,20 @@ async function AttachPaymentMethod({
     );
   }
 
-  let method = await PaymentMethod.findOne({
+  const identity = {
     customer: customer._id,
     provider: "stripe",
     providerReference: stripePaymentMethodId,
-  }).select("+providerReference");
-
-  if (!method) {
-    method = await PaymentMethod.create({
-      customer: customer._id,
-      type: "card",
-      provider: "stripe",
-      providerReference: stripePaymentMethodId,
-      isDefault: false,
-    });
+  };
+  let method;
+  try {
+    method = await PaymentMethod.findOneAndUpdate(identity,
+      { $setOnInsert: { ...identity, type: "card", isDefault: false } },
+      { upsert: true, new: true, runValidators: true }).select("+providerReference");
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+    method = await PaymentMethod.findOne(identity).select("+providerReference");
+    if (!method) throw error;
   }
 
   const hasDefault = await PaymentMethod.exists({
@@ -389,19 +394,7 @@ async function AttachPaymentMethod({
   const shouldSetDefault = Boolean(setDefault || !hasDefault);
 
   if (shouldSetDefault) {
-    await PaymentMethod.updateMany(
-      { customer: customer._id, isDefault: true },
-      { $set: { isDefault: false } },
-    );
-
-    method.isDefault = true;
-    await method.save();
-
-    await stripe.customers.update(customer.stripeCustomerId, {
-      invoice_settings: {
-        default_payment_method: stripePaymentMethodId,
-      },
-    });
+    await setCustomerDefaultCard(customer, method, stripeMethod);
   }
 
   return Response(true, "Payment method saved", {
@@ -421,25 +414,9 @@ async function SetDefaultPaymentMethod({ customerId, paymentMethodId } = {}) {
   }).select("+providerReference");
   if (!method) return Response(false, "Payment method not found", null);
 
-  if (method.provider === "stripe" && method.providerReference) {
-    const customer = await ensureStripeCustomer(customerId);
-    if (!customer || !customer.stripeCustomerId) {
-      return Response(false, "Customer stripe profile not found", null);
-    }
-
-    await stripe.customers.update(customer.stripeCustomerId, {
-      invoice_settings: {
-        default_payment_method: method.providerReference,
-      },
-    });
-  }
-
-  await PaymentMethod.updateMany(
-    { customer: customerId, isDefault: true },
-    { $set: { isDefault: false } },
-  );
-  method.isDefault = true;
-  await method.save();
+  const customer = await ensureStripeCustomer(customerId);
+  if (!customer?.stripeCustomerId) return Response(false, "Customer stripe profile not found", null);
+  await setCustomerDefaultCard(customer, method);
 
   return Response(true, "Default payment method updated", {
     paymentMethod: method,
@@ -453,59 +430,12 @@ async function DeletePaymentMethod({ customerId, paymentMethodId } = {}) {
   }).select("+providerReference");
   if (!method) return Response(false, "Payment method not found", null);
 
-  const activeSubscriptions = await Subscription.countDocuments({
-    customer: customerId,
-    status: "active",
-    paymentMethod: method._id,
-  });
-  if (activeSubscriptions > 0) {
-    return Response(
-      false,
-      "This payment method is linked to active subscriptions. Set another default method first.",
-      null,
-    );
+  const customer = await getCustomerWithStripeId(customerId);
+  if (method.provider === "stripe" && !customer?.stripeCustomerId) {
+    return Response(false, "Customer Stripe profile not found; the card could not be verified.", null);
   }
-
-  if (method.provider === "stripe" && method.providerReference) {
-    try {
-      await stripe.paymentMethods.detach(method.providerReference);
-    } catch {
-      // Ignore detach failures if Stripe method is already detached.
-    }
-  }
-
-  await method.deleteOne();
-
-  if (method.isDefault) {
-    const nextMethod = await PaymentMethod.findOne({ customer: customerId })
-      .select("+providerReference")
-      .sort({ createdAt: 1 });
-
-    if (nextMethod) {
-      nextMethod.isDefault = true;
-      await nextMethod.save();
-
-      if (nextMethod.provider === "stripe" && nextMethod.providerReference) {
-        const customer = await ensureStripeCustomer(customerId);
-        if (customer && customer.stripeCustomerId) {
-          await stripe.customers.update(customer.stripeCustomerId, {
-            invoice_settings: {
-              default_payment_method: nextMethod.providerReference,
-            },
-          });
-        }
-      }
-    } else {
-      const customer = await getCustomerWithStripeId(customerId);
-      if (customer && customer.stripeCustomerId) {
-        await stripe.customers.update(customer.stripeCustomerId, {
-          invoice_settings: {
-            default_payment_method: null,
-          },
-        });
-      }
-    }
-  }
+  try { await deleteCustomerCard(customer, method); }
+  catch (error) { return Response(false, error.message, null); }
 
   return Response(true, "Payment method removed", null);
 }
@@ -522,18 +452,31 @@ async function AdminListPayments({
   const filter = {};
   if (customerId) filter.customer = customerId;
   if (subscriptionId) filter.subscription = subscriptionId;
-  if (status) filter.status = status;
+  if (status) {
+    // Historical payment rows can say refunded while their order retained
+    // paid value. Filter the same derived status that the response displays.
+    const orderScope = {};
+    if (customerId) orderScope.customer = customerId;
+    if (subscriptionId) orderScope.subscription = subscriptionId;
+    const settledOrders = await Order.find({ ...orderScope, status: { $in: ["refunded", "partially_refunded"] } })
+      .select("_id status").lean();
+    filter.$or = [
+      { status, order: { $nin: settledOrders.map(order => order._id) } },
+      { order: { $in: settledOrders.filter(order => order.status === status).map(order => order._id) } },
+    ];
+  }
 
   const total = await Payment.countDocuments(filter);
   const payments = await Payment.find(filter)
     .populate("customer", "firstName lastName email")
-    .populate("order", "orderId status total refund refunds")
+    .populate("order", "orderId status total amountPaid orderType paymentAllocations refund refunds")
     .populate("subscription", "subscriptionNumber")
     .sort({ createdAt: -1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
     .lean();
 
+  await attachLegacyCreditLedger(payments.map(payment => payment.order), customerId);
   const normalizedPayments = payments.map((payment) => {
     const orderStatus = String(payment?.order?.status || "").toLowerCase();
     if (orderStatus !== "refunded" && orderStatus !== "partially_refunded") {
@@ -549,7 +492,8 @@ async function AdminListPayments({
 
     return {
       ...payment,
-      status: "refunded",
+      status: orderStatus,
+      orderSettlement: summarizeOrderPayment(payment.order),
       refundedAt:
         payment.refundedAt ||
         latestRefundedAt ||
@@ -567,12 +511,14 @@ async function AdminListPayments({
 async function AdminGetPayment({ paymentId } = {}) {
   const payment = await Payment.findById(paymentId)
     .populate("customer", "firstName lastName email phone")
-    .populate("order", "orderId status total items")
+    .populate("order", "orderId status total amountPaid orderType paymentAllocations refund refunds items")
     .populate("subscription", "subscriptionNumber status frequency")
     .lean();
 
   if (!payment) return Response(false, "Payment not found", null);
-  return Response(true, null, { payment });
+  await attachLegacyCreditLedger([payment.order]);
+  return Response(true, null, { payment: payment.order && ["refunded", "partially_refunded"].includes(payment.order.status)
+    ? { ...payment, status: payment.order.status, orderSettlement: summarizeOrderPayment(payment.order) } : payment });
 }
 
 async function AdminUpdatePaymentStatus({

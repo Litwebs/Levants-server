@@ -7,7 +7,7 @@ const {
 } = require("../Orders/helpers/orderFactory");
 
 describe("GetSummary", () => {
-  test("counts only paid orders in summary and filters by order source", async () => {
+  test("keeps paid-order counts while revenue includes retained partial refunds and source filters", async () => {
     const customer = await createCustomer();
     const product = await createProduct();
     const variant = await createVariant({ product, price: 10, stock: 20 });
@@ -40,7 +40,7 @@ describe("GetSummary", () => {
       customer,
       status: "partially_refunded",
       items: [baseItem],
-      overrides: { total: 10 },
+      overrides: { total: 10, amountPaid: 10, refunds: [{ stripeRefundId: "re_partial", amount: 4, status: "succeeded" }] },
     });
 
     await createOrder({
@@ -96,7 +96,7 @@ describe("GetSummary", () => {
     expect(summary.data.refundedOrders).toBe(0);
     expect(summary.data.failedOrders).toBe(0);
     expect(summary.data.totalRefunds).toBe(0);
-    expect(summary.data.revenue).toBe(25);
+    expect(summary.data.revenue).toBe(31);
     expect(summary.data.orderStatus).toEqual(
       expect.objectContaining({
         Pending: 0,
@@ -122,7 +122,7 @@ describe("GetSummary", () => {
     expect(websiteSummary.data.pendingOrders).toBe(0);
     expect(websiteSummary.data.paidOrders).toBe(0);
     expect(websiteSummary.data.refundedOrders).toBe(0);
-    expect(websiteSummary.data.revenue).toBe(0);
+    expect(websiteSummary.data.revenue).toBe(6);
 
     expect(importedSummary.data.totalOrders).toBe(1);
     expect(importedSummary.data.paidOrders).toBe(1);

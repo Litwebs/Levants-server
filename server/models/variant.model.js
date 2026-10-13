@@ -121,4 +121,6 @@ productVariantSchema.method("toJSON", function () {
   return obj;
 });
 
+require("../utils/subscriptionLease.util").leaseFencingPlugin(productVariantSchema);
+
 module.exports = mongoose.model("ProductVariant", productVariantSchema);

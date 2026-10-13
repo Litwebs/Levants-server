@@ -80,6 +80,7 @@ jest.mock("stripe", () => {
       detach: jest.fn(async (id) => ({ id })),
     },
     invoices: {
+      update: jest.fn(async (id, values) => ({ id, ...values })),
       retrieve: jest.fn(async (id) => ({ id })),
       list: jest.fn(async () => ({ data: [] })),
     },
@@ -87,6 +88,7 @@ jest.mock("stripe", () => {
       list: jest.fn(async () => ({ data: [] })),
     },
     subscriptions: {
+      list: jest.fn(async () => ({ data: [], has_more: false })),
       update: jest.fn(async (id) => ({ id })),
       cancel: jest.fn(async (id) => ({ id })),
     },
@@ -103,7 +105,14 @@ jest.mock("stripe", () => {
       },
     },
     refunds: {
-      create: jest.fn(async () => ({ id: "re_test_789", status: "succeeded" })),
+      create: jest.fn(async params => ({ id: "re_test_789", status: "succeeded", amount: params.amount })),
+      retrieve: jest.fn(async id => ({ id, status: "succeeded" })),
+      list: jest.fn(async () => ({ data: [], has_more: false })),
+    },
+    paymentIntents: {
+      retrieve: jest.fn(async id => ({ id, status: "succeeded", amount_received: 100000, currency: "gbp", customer: "cus_test" })),
+      create: jest.fn(async params => ({ id: "pi_test_created", ...params, amount_received: params.amount, status: "succeeded" })),
+      list: jest.fn(async () => ({ data: [], has_more: false })),
     },
 
     coupons: {
@@ -147,6 +156,8 @@ beforeAll(async () => {
     require("../models/session.model").init(),
     require("../models/passwordResetToken.model").init(),
     require("../models/customer.model").init(),
+    require("../models/paymentMethod.model").init(),
+    require("../models/customerNotification.model").init(),
     require("../models/category.model").init(),
     require("../models/product.model").init(),
     require("../models/variant.model").init(),
@@ -155,6 +166,9 @@ beforeAll(async () => {
     require("../models/order.model").init(),
     require("../models/subscription.model").init(),
     require("../models/subscriptionDelivery.model").init(),
+    require("../models/subscriptionMutation.model").init(),
+    require("../models/subscriptionInvoiceFulfillment.model").init(),
+    require("../models/subscriptionStockReservation.model").init(),
     require("../models/payment.model").init(),
     require("../models/broadcast.model").init(),
     require("../models/deliveryBatch.model").init(),

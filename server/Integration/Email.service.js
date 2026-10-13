@@ -1,6 +1,4 @@
-const { Resend } = require("resend");
 const emailTemplates = require("../Templates/Templates");
-const { RESEND_EMAIL_KEY } = require("../config/env");
 const {
   LOGO_CONTENT_ID,
   getInlineLogoAttachment,
@@ -12,7 +10,7 @@ const {
   withBusinessTemplateParams,
 } = require("../services/emailBranding.service");
 
-const resend = new Resend(RESEND_EMAIL_KEY);
+const resend = require("./emailTransport").createEmailTransport();
 
 const FALLBACK_LOGO_URL =
   "https://res.cloudinary.com/deonzcviy/image/upload/v1777833005/logo_znwpja.png";

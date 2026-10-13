@@ -41,83 +41,38 @@ function normalizeStripePricing(pricing, order) {
 }
 
 async function reconcileReservedStock({ variantIds } = {}) {
-  const normalizedVariantIds = Array.isArray(variantIds)
-    ? variantIds
-        .map((id) => String(id || "").trim())
-        .filter((id) => mongoose.Types.ObjectId.isValid(id))
-        .map((id) => new mongoose.Types.ObjectId(id))
-    : [];
-
-  const pendingReservations = await Order.aggregate([
-    {
-      $match: {
-        status: "pending",
-        archived: { $ne: true },
-      },
-    },
-    { $unwind: "$items" },
-    ...(normalizedVariantIds.length
-      ? [{ $match: { "items.variant": { $in: normalizedVariantIds } } }]
-      : []),
-    {
-      $group: {
-        _id: "$items.variant",
-        reservedQuantity: { $sum: "$items.quantity" },
-      },
-    },
-  ]);
-
-  const reservedByVariantId = new Map(
-    pendingReservations.map((entry) => [
-      String(entry._id),
-      Number(entry.reservedQuantity || 0),
-    ]),
-  );
-
-  const variantIdsToReset = normalizedVariantIds.length
-    ? normalizedVariantIds.filter((id) => !reservedByVariantId.has(String(id)))
-    : (
-        await ProductVariant.find({ reservedQuantity: { $ne: 0 } })
-          .select("_id")
-          .lean()
-      )
-        .map((variant) => variant._id)
-        .filter((id) => !reservedByVariantId.has(String(id)));
-
-  const operations = [
-    ...pendingReservations.map((entry) => ({
-      updateOne: {
-        filter: { _id: entry._id },
-        update: {
-          $set: {
-            reservedQuantity: Number(entry.reservedQuantity || 0),
-          },
-        },
-      },
-    })),
-    ...variantIdsToReset.map((variantId) => ({
-      updateOne: {
-        filter: { _id: variantId },
-        update: {
-          $set: {
-            reservedQuantity: 0,
-          },
-        },
-      },
-    })),
-  ];
-
-  if (!operations.length) {
-    return {
-      updated: 0,
-    };
-  }
-
-  const result = await ProductVariant.bulkWrite(operations, { ordered: false });
-
-  return {
-    updated: Number(result.modifiedCount || 0),
-  };
+  const ids = (Array.isArray(variantIds) ? variantIds : []).map(String)
+    .filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
+  return mongoose.connection.transaction(async session => {
+    const pending = await Order.aggregate([
+      { $match: { status: "pending", archived: { $ne: true } } },
+      { $unwind: "$items" },
+      ...(ids.length ? [{ $match: { "items.variant": { $in: ids } } }] : []),
+      { $group: { _id: "$items.variant", reservedQuantity: { $sum: "$items.quantity" } } },
+    ]).session(session);
+    const held = await require("../../models/subscriptionStockReservation.model").aggregate([
+      { $match: { state: "held" } }, { $unwind: "$remaining" },
+      ...(ids.length ? [{ $match: { "remaining.variant": { $in: ids.map(String) } } }] : []),
+      { $group: { _id: { $toObjectId: "$remaining.variant" }, reservedQuantity: { $sum: "$remaining.quantity" } } },
+    ]).session(session);
+    const totals = new Map();
+    for (const entry of [...pending, ...held]) {
+      const key = String(entry._id);
+      const current = totals.get(key) || { _id: entry._id, reservedQuantity: 0 };
+      current.reservedQuantity += Number(entry.reservedQuantity || 0);
+      totals.set(key, current);
+    }
+    const candidates = ids.length ? ids : (await ProductVariant.find({ reservedQuantity: { $ne: 0 } })
+      .select("_id").session(session).lean()).map(variant => variant._id);
+    for (const id of candidates) if (!totals.has(String(id))) totals.set(String(id), { _id: id, reservedQuantity: 0 });
+    if (!totals.size) return { updated: 0 };
+    // Updating these same variant rows makes a concurrent checkout/reservation
+    // conflict with this snapshot and retry, rather than wiping its new hold.
+    const result = await ProductVariant.bulkWrite([...totals.values()].map(entry => ({ updateOne: {
+      filter: { _id: entry._id }, update: { $set: { reservedQuantity: entry.reservedQuantity } },
+    } })), { session });
+    return { updated: Number(result.modifiedCount || 0) };
+  });
 }
 
 /**

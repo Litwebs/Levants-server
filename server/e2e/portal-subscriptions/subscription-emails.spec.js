@@ -1,5 +1,7 @@
 "use strict";
 
+const crypto = require("crypto");
+const { retryTransientResponse } = require("../support/retry-transient-response");
 const { test, expect } = require("@playwright/test");
 const {
   API_ORIGIN,
@@ -11,6 +13,14 @@ const {
   portalHeaders,
   reset,
 } = require("../support/e2e-client");
+
+// Signed billing webhooks can briefly own the lifecycle lock after an edit.
+// Retry only that explicit, unapplied conflict using one stable operation ID.
+async function mutation(request, method, url, options) {
+  const data = { ...(options.data || {}), operationId: options.data?.operationId || crypto.randomUUID() };
+  return retryTransientResponse(() => request[method](url, { ...options, data }),
+    async response => response.status() === 409 && (await response.json()).data?.subscriptionBusy === true);
+}
 
 async function expectSuccess(response) {
   const body = await response.json();
@@ -66,7 +76,7 @@ test("emails the customer after subscription creation, item update, pause, resum
     (item) => String(item.variant) === fixture.variants.MILK.id,
   );
   await expectSuccess(
-    await request.patch(
+    await mutation(request, "patch", 
       `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/items/${milk._id}`,
       { headers, data: { quantity: Number(milk.quantity) + 1 } },
     ),
@@ -84,7 +94,7 @@ test("emails the customer after subscription creation, item update, pause, resum
   const resumeOn = new Date();
   resumeOn.setDate(resumeOn.getDate() + 14);
   await expectSuccess(
-    await request.post(
+    await mutation(request, "post", 
       `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/pause`,
       {
         headers,
@@ -98,7 +108,7 @@ test("emails the customer after subscription creation, item update, pause, resum
 
   await clearEmails(request);
   await expectSuccess(
-    await request.post(
+    await mutation(request, "post", 
       `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/resume`,
       { headers },
     ),
@@ -109,7 +119,7 @@ test("emails the customer after subscription creation, item update, pause, resum
 
   await clearEmails(request);
   await expectSuccess(
-    await request.post(
+    await mutation(request, "post", 
       `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/cancel`,
       {
         headers,

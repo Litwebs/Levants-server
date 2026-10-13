@@ -4,10 +4,16 @@ const { test, expect } = require("@playwright/test");
 const {
   API_ORIGIN,
   createFixture,
+  finalizeCancellation,
   getState,
+  login,
+  portalHeaders,
   reset,
   setPaymentOutcome,
 } = require("../support/e2e-client");
+const { CLIENT_ORIGIN } = require("../support/constants");
+const crypto = require("crypto");
+const { retryTransientResponse } = require("../support/retry-transient-response");
 
 const DAY_NAMES = [
   "Sunday",
@@ -176,6 +182,105 @@ test.afterAll(async ({ request }) => {
   await reset(request);
 });
 
+function businessCutoffTwoHoursFromNow() {
+  const now = new Date();
+  const target = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const read = (value) => {
+    const parts = formatter.formatToParts(value);
+    const part = (type) =>
+      Number(parts.find((candidate) => candidate.type === type)?.value);
+    return {
+      year: part("year"),
+      month: part("month"),
+      day: part("day"),
+      hour: part("hour"),
+      minute: part("minute"),
+    };
+  };
+  const today = read(now);
+  const future = read(target);
+  const todayUtc = Date.UTC(today.year, today.month - 1, today.day);
+  const futureUtc = Date.UTC(future.year, future.month - 1, future.day);
+  const dayDelta = Math.round((futureUtc - todayUtc) / (24 * 60 * 60 * 1000));
+
+  return {
+    cutoffDaysBefore: 4 - dayDelta,
+    cutoffTime: `${String(future.hour).padStart(2, "0")}:${String(
+      future.minute,
+    ).padStart(2, "0")}`,
+  };
+}
+
+test("server cut-off instant stays authoritative in a different browser timezone", async ({
+  browser,
+  request,
+}) => {
+  const cutoff = businessCutoffTwoHoursFromNow();
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+    cutoffDaysBefore: cutoff.cutoffDaysBefore,
+    cutoffTime: cutoff.cutoffTime,
+  });
+
+  const token = await login(request, fixture.credentials);
+  const detailResponse = await request.get(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  const detailBody = await expectApiSuccess(detailResponse);
+  expect(detailBody.data?.cutoff?.timeZone).toBe("Europe/London");
+  expect(
+    new Date(detailBody.data?.cutoff?.cutoffAt).getTime(),
+  ).toBeGreaterThan(Date.now());
+
+  const deliveriesResponse = await request.get(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/deliveries?page=1&pageSize=20`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  const deliveriesBody = await expectApiSuccess(deliveriesResponse);
+  const nextDelivery = deliveriesBody.data?.deliveries?.[0];
+  expect(nextDelivery?.cutoffAt).toBeTruthy();
+  expect(new Date(nextDelivery.cutoffAt).getTime()).toBeGreaterThan(Date.now());
+
+  const context = await browser.newContext({
+    baseURL: CLIENT_ORIGIN,
+    timezoneId: "Pacific/Kiritimati",
+  });
+  const page = await context.newPage();
+  try {
+    const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+    await signIn(page, fixture.credentials, detailPath);
+    await page.goto(`${detailPath}/next-delivery/add-ons`);
+
+    await expect(
+      page.getByText(
+        "Charged now and delivered once. Future deliveries are unchanged.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/The cut-off for this delivery has passed/i),
+    ).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
 test("customer adds a charged one-time product to only the next delivery", async ({
   page,
   request,
@@ -339,6 +444,39 @@ test("customer adds a charged one-time product to only the next delivery", async
   );
 });
 
+for (const interruptedStatus of [400, 500]) {
+  test(`add-on retry survives HTTP ${interruptedStatus} and refresh without another charge`, async ({ page, request }) => {
+    const fixture = await createFixture(request, { cadence: "weekly-single-day", timing: "before-cutoff", funds: "sufficient" });
+    const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+    const endpoint = `/api/portal/subscriptions/${fixture.subscriptionId}/next-delivery/add-ons`;
+    const sent = [];
+    await page.route(`**${endpoint}`, async route => {
+      sent.push(route.request().postDataJSON());
+      const response = await route.fetch();
+      if (sent.length === 1) {
+        expect(response.ok()).toBe(true);
+        await route.fulfill({ status: interruptedStatus, contentType: "application/json",
+          body: JSON.stringify({ success: false, message: "Payment confirmation interrupted", data: { paymentOutcome: "unknown" } }) });
+      } else await route.fulfill({ response });
+    });
+    await signIn(page, fixture.credentials, detailPath);
+    await page.getByRole("link", { name: "Add to next delivery", exact: true }).click();
+    await selectAddOn(page, fixture.variants.EGGS, 1);
+    await page.getByRole("button", { name: /Pay £.+ and add once/ }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: /Charge £.+ now/ }).click();
+    await expect(page.getByRole("button", { name: "Retry confirmation" })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Retry confirmation" })).toBeVisible();
+    await page.getByRole("button", { name: "Retry confirmation" }).click();
+    await expect(page).toHaveURL(detailPath);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+    const state = await getState(request, fixture.subscriptionId);
+    expect(state.deliveries[0].addOns).toHaveLength(1);
+    expect(deliveryAddOnIntents(state).filter(intent => intent.status === "succeeded")).toHaveLength(1);
+  });
+}
+
 test("declined add-on payment changes nothing and succeeds after the customer retries with funds", async ({
   page,
   request,
@@ -492,7 +630,7 @@ test("paused subscriptions cannot open or purchase a one-time add-on", async ({
   await page.goto(`${detailPath}/next-delivery/add-ons`);
   await expect(
     page.getByText(
-      "One-time add-ons are available only while the subscription is active.",
+      "One-time add-ons are unavailable while this subscription is paused, cancelled or scheduled for cancellation.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -552,9 +690,6 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
     "xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' card-product ')][1]",
   );
   await productCard
-    .getByRole("button", { name: "Increase quantity", exact: true })
-    .click();
-  await productCard
     .getByRole("button", { name: `Add to ${deliveryDay}`, exact: true })
     .click();
   await expect(
@@ -563,6 +698,10 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
       exact: true,
     }),
   ).toBeVisible();
+
+  const dayOrder = page.locator("section").filter({ has: page.getByRole("heading", { name: `${deliveryDay} delivery`, exact: true }) });
+  await dayOrder.getByRole("button", { name: /^Increase .+ quantity$/ }).click();
+  await expect(dayOrder.locator("span").filter({ hasText: /^2$/ })).toBeVisible();
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(
@@ -634,6 +773,218 @@ test("creates a weekly subscription with a saved real Stripe test card", async (
         intent.status === "succeeded" && Number(intent.amount) === 1100,
     ),
   ).toBe(true);
+});
+
+test("new subscription uses the delivery days configured by the server", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    createSubscription: false,
+    deliveryDays: [2, 5],
+  });
+
+  await signIn(page, fixture.credentials, "/portal/subscriptions/new");
+  await expect(
+    page.getByRole("heading", { name: "New Subscription", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Choose one or more of the delivery days currently offered.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  const tuesday = page.getByRole("button", { name: /^Tuesday/ });
+  const friday = page.getByRole("button", { name: /^Friday/ });
+
+  await expect(tuesday).toBeVisible();
+  await expect(friday).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^Sunday/ }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^Wednesday/ }),
+  ).toHaveCount(0);
+
+  await expect(tuesday).toHaveAttribute("aria-pressed", "true");
+  await friday.click();
+  await expect(tuesday).toHaveAttribute("aria-pressed", "true");
+  await expect(friday).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "How often would you like delivery?",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Multiple delivery days use a weekly plan because each selected day is a separate order each week.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /Every 2 weeks/ }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: /Monthly/ }),
+  ).toBeDisabled();
+});
+
+test("multi-day add-products requires day assignment and updates every selected day in one request", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-multi-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  const addProductsPath = `${detailPath}/add-products`;
+  const before = await getState(request, fixture.subscriptionId);
+  const mutationRequests = [];
+
+  page.on("request", (req) => {
+    const url = new URL(req.url());
+    if (
+      url.origin === API_ORIGIN &&
+      url.pathname === `/api/portal/subscriptions/${fixture.subscriptionId}` &&
+      req.method() === "PATCH"
+    ) {
+      mutationRequests.push(req);
+    }
+  });
+
+  await signIn(page, fixture.credentials, addProductsPath);
+  await expect(
+    page.getByRole("heading", { name: "Select Products", exact: true }),
+  ).toBeVisible();
+
+  const eggsCard = addOnProductCard(page, fixture.variants.EGGS.name);
+  await eggsCard
+    .getByRole("button", { name: "Add to subscription", exact: true })
+    .click();
+
+  const selectedProducts = page
+    .getByRole("heading", { name: "Selected Products", exact: true })
+    .locator("xpath=ancestor::section[1]");
+  await expect(
+    selectedProducts.getByText(fixture.variants.EGGS.name, { exact: true }),
+  ).toBeVisible();
+
+  const saveButton = selectedProducts.getByRole("button", {
+    name: "Save selected products",
+    exact: true,
+  });
+  await expect(saveButton).toBeDisabled();
+  await expect(
+    selectedProducts.getByText(
+      /Choose at least one delivery day for each selected product to continue/i,
+    ),
+  ).toBeVisible();
+
+  // A disabled control must remain a hard client-side guard: even a direct DOM
+  // click cannot send the update request while the new product is unassigned.
+  await saveButton.evaluate((button) => button.click());
+  expect(mutationRequests).toHaveLength(0);
+
+  const selectedDayNames = fixture.deliveryDays.map((day) => DAY_NAMES[day]);
+  for (const dayName of selectedDayNames) {
+    await selectedProducts
+      .getByRole("button", { name: dayName, exact: true })
+      .click();
+  }
+
+  await expect(saveButton).toBeEnabled();
+  await expect(
+    selectedProducts.getByText(
+      `${selectedDayNames.length} delivery days selected`,
+      { exact: true },
+    ),
+  ).toBeVisible();
+
+  const responsePromise = waitForApiResponse(
+    page,
+    "PATCH",
+    `/api/portal/subscriptions/${fixture.subscriptionId}`,
+  );
+  await saveButton.click();
+  const response = await responsePromise;
+  const body = await expectApiSuccess(response);
+  await expect(page).toHaveURL(detailPath);
+
+  expect(mutationRequests).toHaveLength(1);
+
+  const payload = response.request().postDataJSON();
+  expect(new Set(payload.preferredDeliveryDays)).toEqual(
+    new Set(fixture.deliveryDays),
+  );
+  expect(new Set(payload.changedDeliveryDays)).toEqual(
+    new Set(fixture.deliveryDays),
+  );
+  expect(payload.deliveryDayPlans).toHaveLength(fixture.deliveryDays.length);
+
+  for (const day of fixture.deliveryDays) {
+    const plan = payload.deliveryDayPlans.find(
+      (candidate) => Number(candidate.day) === Number(day),
+    );
+    expect(plan).toBeTruthy();
+    expect(plan.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          variantId: fixture.variants.EGGS.id,
+          quantity: 1,
+        }),
+      ]),
+    );
+  }
+
+  const after = await getState(request, fixture.subscriptionId);
+  for (const day of fixture.deliveryDays) {
+    const plan = after.subscription.deliveryDayPlans.find(
+      (candidate) => Number(candidate.day) === Number(day),
+    );
+    expect(plan).toBeTruthy();
+    expect(
+      plan.items.some(
+        (item) =>
+          id(item.variant) === id(fixture.variants.EGGS.id) &&
+          Number(item.quantity) === 1,
+      ),
+    ).toBe(true);
+  }
+
+  expect(
+    itemQuantity(after.subscription.items, fixture.variants.EGGS.id),
+  ).toBe(fixture.deliveryDays.length);
+
+  const successfulBefore = modificationIntents(before).filter(
+    (intent) => intent.status === "succeeded",
+  );
+  const successfulAfter = modificationIntents(after).filter(
+    (intent) => intent.status === "succeeded",
+  );
+  expect(successfulAfter).toHaveLength(successfulBefore.length + 1);
+
+  const newIntent = successfulAfter.find(
+    (intent) =>
+      !successfulBefore.some((existing) => existing.id === intent.id),
+  );
+  expect(newIntent).toBeTruthy();
+  expect(Number(newIntent.amount)).toBe(
+    Math.round(
+      Number(fixture.variants.EGGS.price) *
+        100 *
+        fixture.deliveryDays.length,
+    ),
+  );
+
+  expect(body.data?.subscription?.deliveryDayPlans).toBeTruthy();
 });
 
 test("subscription product picker requests the storefront category order", async ({
@@ -760,12 +1111,14 @@ test("increases quantity before cut-off and updates Mongo, the paid order, and S
   // selector to the named product card and select its plus icon.
   await itemCard.locator("button:has(svg.lucide-plus)").click();
   await expect(itemCard.getByText("3", { exact: true })).toBeVisible();
-  await expect(section).toContainText("charged to your card now");
+  await expect(section.getByRole("list", { name: "Product change preview" })).toContainText("charged when you save");
+  await expect(section).toContainText("Current products per delivery");
+  await expect(section).toContainText("Delivery fees are shown separately below.");
 
   const updateResponsePromise = waitForApiResponse(
     page,
-    "PATCH",
-    `/api/portal/subscriptions/${fixture.subscriptionId}/items/${fixture.variants.MILK.itemId}`,
+    "PUT",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/items`,
   );
   await page
     .getByRole("button", { name: "Save product changes", exact: true })
@@ -779,7 +1132,7 @@ test("increases quantity before cut-off and updates Mongo, the paid order, and S
     page
       .getByRole("main")
       .getByText(
-        /You've been charged .* for the added items on your upcoming delivery, and future invoices have been updated\./i,
+        /You've been charged .* for the added items on your upcoming delivery\./i,
       ),
   ).toBeVisible();
 
@@ -852,14 +1205,14 @@ test("stages an after-cutoff removal while preserving the locked delivery order"
     .click();
 
   await expect(section).toContainText(
-    "has passed, so this change applies from the delivery after that",
+    "The upcoming delivery is locked. This change is scheduled for a later delivery",
   );
-  await expect(section).toContainText("You won't be charged now");
+  await expect(section).toContainText("no payment or refund is made now");
 
   const removeResponsePromise = waitForApiResponse(
     page,
-    "DELETE",
-    `/api/portal/subscriptions/${fixture.subscriptionId}/items/${fixture.variants.BUTTER.itemId}`,
+    "PUT",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/items`,
   );
   await page
     .getByRole("button", { name: "Save product changes", exact: true })
@@ -901,6 +1254,97 @@ test("stages an after-cutoff removal while preserving the locked delivery order"
   expect(modificationIntents(after)).toHaveLength(
     modificationIntents(before).length,
   );
+});
+
+test("scheduled cancellation notice remains visible through the final protected delivery day", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "after-cutoff",
+    funds: "sufficient",
+  });
+  const token = await login(request, fixture.credentials);
+
+  const cancelResponse = await request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/cancel`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      data: {
+        reason: "Scheduled cancellation UI timing",
+        refundMethod: "refund",
+      },
+    },
+  );
+  const cancelBody = await expectApiSuccess(cancelResponse);
+  expect(cancelBody.data?.subscription?.isCancellationScheduled).toBe(true);
+
+  const scheduled = await getState(request, fixture.subscriptionId);
+  const effectiveAt = new Date(
+    scheduled.subscription.cancellationEffectiveAfter,
+  );
+  expect(Number.isNaN(effectiveAt.getTime())).toBe(false);
+
+  const duringProtectedDay = new Date(effectiveAt);
+  duringProtectedDay.setHours(18, 0, 0, 0);
+
+  const early = await finalizeCancellation(
+    request,
+    fixture.subscriptionId,
+    duringProtectedDay.toISOString(),
+  );
+  expect(early.finalized).toBe(0);
+
+  await page.addInitScript(
+    ({ fixedNow }) => {
+      Date.now = () => fixedNow;
+    },
+    { fixedNow: duringProtectedDay.getTime() },
+  );
+
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+  await signIn(page, fixture.credentials, detailPath);
+
+  await expect(
+    page.getByText(
+      /Subscription scheduled for cancellation\. Your protected delivery remains scheduled; future deliveries are stopped\./i,
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Final protected delivery date:/i),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/The cancellation completes after this day\./i),
+  ).toBeVisible();
+
+  const stillScheduled = await getState(request, fixture.subscriptionId);
+  expect(stillScheduled.subscription.status).toBe("active");
+  expect(stillScheduled.subscription.isCancellationScheduled).toBe(true);
+
+  const afterProtectedDay = new Date(effectiveAt);
+  afterProtectedDay.setDate(afterProtectedDay.getDate() + 1);
+  afterProtectedDay.setHours(0, 1, 0, 0);
+
+  const finalized = await finalizeCancellation(
+    request,
+    fixture.subscriptionId,
+    afterProtectedDay.toISOString(),
+  );
+  expect(finalized.finalized).toBe(1);
+
+  await page.reload();
+  await expect(
+    page.getByText(/Subscription scheduled for cancellation/i),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })
+      .locator("xpath=ancestor::div[3]").getByText("Cancelled", { exact: true }),
+  ).toBeVisible();
+
+  const finalState = await getState(request, fixture.subscriptionId);
+  expect(finalState.subscription.status).toBe("cancelled");
+  expect(finalState.subscription.isCancellationScheduled).toBe(false);
 });
 
 test("pauses and manually resumes a subscription through the lifecycle UI", async ({
@@ -988,7 +1432,7 @@ test("pauses and manually resumes a subscription through the lifecycle UI", asyn
   expect(resumeBody.data?.subscription?.status).toBe("active");
 
   await expect(
-    page.getByText("Subscription resumed.", { exact: true }).first(),
+    page.getByText("Subscription resumed", { exact: true }).first(),
   ).toBeVisible();
   await expect(page.getByText("Active", { exact: true })).toBeVisible();
   await expect(page.getByText(/This subscription is paused/i)).toHaveCount(0);
@@ -1001,6 +1445,98 @@ test("pauses and manually resumes a subscription through the lifecycle UI", asyn
   expect(resumedState.subscription.pausedAt).toBeNull();
   expect(resumedState.subscription.pausedUntil).toBeNull();
   expect(resumedState.stripe.remoteSubscription.pauseCollection).toBeNull();
+});
+
+test("resume failure keeps a paused subscription recoverable in the lifecycle UI", async ({
+  page,
+  request,
+}) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-single-day",
+    timing: "before-cutoff",
+    funds: "sufficient",
+  });
+  const detailPath = `/portal/subscriptions/${fixture.subscriptionId}`;
+
+  await signIn(page, fixture.credentials, detailPath);
+
+  await page
+    .getByRole("button", { name: "Pause Subscription", exact: true })
+    .click();
+  const pauseDialog = page.getByRole("dialog", {
+    name: "Pause Subscription?",
+  });
+  await pauseDialog.locator('input[type="date"]').fill(fixture.resumeOn);
+
+  const pauseResponsePromise = waitForApiResponse(
+    page,
+    "POST",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/pause`,
+  );
+  await pauseDialog
+    .getByRole("button", { name: "Pause subscription", exact: true })
+    .click();
+  const pauseBody = await expectApiSuccess(await pauseResponsePromise);
+  expect(pauseBody.data?.subscription?.status).toBe("paused");
+
+  const resumeUrl =
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/resume`;
+  let failedResumeRequests = 0;
+  await page.route(resumeUrl, async (route) => {
+    failedResumeRequests += 1;
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: false,
+        message: "Resume temporarily unavailable",
+      }),
+    });
+  });
+
+  await page
+    .getByRole("button", { name: "Resume Subscription", exact: true })
+    .click();
+  const failedResumeDialog = page.getByRole("dialog", {
+    name: "Resume Subscription?",
+  });
+  await failedResumeDialog
+    .getByRole("button", { name: "Resume", exact: true })
+    .click();
+
+  await expect(
+    page.getByText("Resume temporarily unavailable", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("Paused", { exact: true })).toBeVisible();
+  expect(failedResumeRequests).toBe(1);
+
+  const pausedState = await getState(request, fixture.subscriptionId);
+  expect(pausedState.subscription.status).toBe("paused");
+
+  await page.unroute(resumeUrl);
+
+  await page
+    .getByRole("button", { name: "Resume Subscription", exact: true })
+    .click();
+  const retryDialog = page.getByRole("dialog", {
+    name: "Resume Subscription?",
+  });
+  const resumeResponsePromise = waitForApiResponse(
+    page,
+    "POST",
+    `/api/portal/subscriptions/${fixture.subscriptionId}/resume`,
+  );
+  await retryDialog.getByRole("button", { name: "Resume", exact: true }).click();
+  const resumeBody = await expectApiSuccess(await resumeResponsePromise);
+  expect(resumeBody.data?.subscription?.status).toBe("active");
+
+  await expect(page.getByText("Active", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Subscription resumed", { exact: true }).first(),
+  ).toBeVisible();
+
+  const resumedState = await getState(request, fixture.subscriptionId);
+  expect(resumedState.subscription.status).toBe("active");
 });
 
 test("adds a new default card through a real Stripe Elements SetupIntent", async ({
@@ -1055,4 +1591,148 @@ test("adds a new default card through a real Stripe Elements SetupIntent", async
     .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
   await expect(savedMethod).toContainText("Default");
   await expect(page.getByText("No payment methods")).toHaveCount(0);
+});
+
+test("portal reduces two delivery days to one and preserves the surviving product plan", async ({ page, request }) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-multi-day", timing: "before-cutoff", funds: "sufficient",
+  });
+  const before = await getState(request, fixture.subscriptionId);
+  const [removedDay, retainedDay] = before.subscription.preferredDeliveryDays;
+  const expectedItems = before.subscription.deliveryDayPlans?.find(plan => Number(plan.day) === retainedDay)?.items
+    || before.subscription.items;
+  const quantities = items => items.map(item => ({ variant: id(item.variant), quantity: item.quantity }))
+    .sort((a, b) => a.variant.localeCompare(b.variant));
+  await signIn(page, fixture.credentials, `/portal/subscriptions/${fixture.subscriptionId}`);
+  const section = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Delivery Schedule', exact: true }) });
+  await section.getByRole('button', { name: DAY_NAMES[removedDay], exact: true }).click();
+  await section.getByRole('button', { name: 'Save delivery details', exact: true }).click();
+  const response = waitForApiResponse(page, 'PATCH', `/api/portal/subscriptions/${fixture.subscriptionId}`);
+  await page.getByRole('button', { name: /Store credit/ }).click();
+  const savedResponse = await response;
+  expect(savedResponse.request().postDataJSON().deliveryDayPlans).toHaveLength(1);
+  await expectApiSuccess(savedResponse);
+  const after = await getState(request, fixture.subscriptionId);
+  expect(after.subscription.preferredDeliveryDays).toEqual([retainedDay]);
+  expect(after.subscription.deliveryDayPlans || []).toHaveLength(0);
+  expect(quantities(after.subscription.items)).toEqual(quantities(expectedItems));
+  await page.reload();
+  await expect(section.getByRole('button', { name: 'Save delivery details', exact: true })).toBeDisabled();
+});
+
+test("payment history keeps partially refunded delivery net and gross amounts consistent", async ({ request, page }) => {
+  const fixture = await createFixture(request, { cadence: "weekly-single-day", timing: "before-cutoff", funds: "sufficient" });
+  const token = await login(request, fixture.credentials);
+  const headers = portalHeaders(token);
+  const initial = await getState(request, fixture.subscriptionId);
+  const milk = subscriptionItem(initial, fixture.variants.MILK.id);
+  const url = `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/items/${milk._id}`;
+  const edit = async data => {
+    const body = { ...data, operationId: crypto.randomUUID() };
+    return expectApiSuccess(await retryTransientResponse(() => request.patch(url, { headers, data: body }),
+      async response => response.status() === 409 && (await response.json()).data?.subscriptionBusy === true));
+  };
+  await edit({ quantity: Number(milk.quantity) + 1 });
+  await edit({ quantity: Number(milk.quantity), refundMethod: "refund" });
+  const final = await getState(request, fixture.subscriptionId);
+  const order = final.orders.find(order => order.status === "partially_refunded");
+  expect(order).toBeTruthy();
+  const list = await expectApiSuccess(await request.get(`${API_ORIGIN}/api/portal/payments`, { headers }));
+  const payment = list.data.payments.find(payment => id(payment.order?._id) === id(order._id));
+  const collected = order.paymentAllocations.reduce((sum, allocation) => sum + Number(allocation.amountMinor), 0) / 100;
+  const refunded = order.refunds.filter(refund => refund.status === "succeeded")
+    .reduce((sum, refund) => sum + Number(refund.amountMinor), 0) / 100;
+  expect(payment).toMatchObject({ status: "partially_refunded", capturedAmount: collected, refundedAmount: refunded,
+    amount: collected - refunded, netAmount: collected - refunded });
+  const paymentHistoryRoute = /\/api\/portal\/payments(?:\?.*)?$/;
+  const legacyHandler = async route => {
+    const response = await route.fetch();
+    const body = await response.json();
+    for (const payment of body.data.payments) {
+      delete payment.capturedAmount;
+      delete payment.refundedAmount;
+      delete payment.creditedAmount;
+      delete payment.netAmount;
+      if (payment.status === "partially_refunded") payment.status = "refunded";
+    }
+    await route.fulfill({ response, json: body });
+  };
+  await page.route(paymentHistoryRoute, legacyHandler);
+  await signIn(page, fixture.credentials, "/portal/payments");
+  const row = page.getByText(order.orderId, { exact: true }).locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' py-3 ')][1]");
+  const money = amount => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount);
+  await expect(row.getByText("Partially Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(collected - refunded)}`);
+  await expect(row).toContainText(`Refunded ${money(refunded)}`);
+  const netTotal = list.data.payments.filter(p => ["paid", "partially_refunded", "refund_pending"].includes(p.status))
+    .reduce((sum, p) => sum + Number(p.netAmount), 0);
+  await expect(page.getByText("Net Paid (Page)", { exact: true }).locator("..")).toContainText(money(netTotal));
+  await page.unroute(paymentHistoryRoute);
+  await page.reload();
+  await expect(row.getByText("Partially Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(collected - refunded)}`);
+  await expect(page.getByText("Net Paid (Page)", { exact: true }).locator("..")).toContainText(money(netTotal));
+  const cancelData = { operationId: crypto.randomUUID(), refundMethod: "refund" };
+  await expectApiSuccess(await retryTransientResponse(() => request.post(
+    `${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}/cancel`, { headers, data: cancelData }),
+    async response => response.status() === 409 && (await response.json()).data?.subscriptionBusy === true));
+  await page.route(paymentHistoryRoute, legacyHandler);
+  await page.reload();
+  await expect(row.getByText("Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(0)}`);
+  await expect(row).toContainText(`Refunded ${money(collected)}`);
+  await page.unroute(paymentHistoryRoute);
+  await page.reload();
+  await expect(row.getByText("Refunded", { exact: true })).toBeVisible();
+  await expect(row).toContainText(`Collected ${money(collected)}`);
+  await expect(row).toContainText(`Remaining ${money(0)}`);
+});
+
+
+test("multi-day edit preview names only changed days and labels the full cycle", async ({ page, request }) => {
+  const fixture = await createFixture(request, {
+    cadence: "weekly-multi-day", timing: "before-cutoff", funds: "sufficient",
+  });
+  const token = await login(request, fixture.credentials);
+  const response = await request.get(`${API_ORIGIN}/api/portal/subscriptions/${fixture.subscriptionId}`, {
+    headers: portalHeaders(token),
+  });
+  const body = await expectApiSuccess(response);
+  const cutoff = body.data.cutoff;
+  await signIn(page, fixture.credentials, `/portal/subscriptions/${fixture.subscriptionId}`);
+  await expect(page.getByRole("heading", { name: fixture.subscriptionNumber, exact: true })).toBeVisible();
+  const section = productsSection(page);
+  const firstDayName = DAY_NAMES[fixture.deliveryDays[0]];
+  const secondDayName = DAY_NAMES[fixture.deliveryDays[1]];
+  const card = section.getByText(new RegExp(`^Order [0-9]+: ${firstDayName}$`))
+    .locator("xpath=ancestor::div[contains(@class, 'rounded-xl')][1]");
+  const increase = card.getByRole("button", { name: new RegExp(`^Increase .+ quantity for ${firstDayName}$`) }).first();
+  const decrease = card.getByRole("button", { name: new RegExp(`^Decrease .+ quantity for ${firstDayName}$`) }).first();
+  await expect(increase).toHaveAttribute("type", "button");
+  await expect(decrease).toHaveAttribute("type", "button");
+  await expect(card.getByRole("button", { name: new RegExp(`^Include .+ in ${firstDayName} delivery$`) }).first()).toHaveAttribute("aria-pressed", "true");
+  await increase.press("Enter");
+  const preview = section.getByRole("list", { name: "Product change preview" });
+  await expect(preview.getByRole("listitem")).toHaveCount(1);
+  await expect(preview).toContainText(firstDayName);
+  await expect(preview).not.toContainText(secondDayName);
+  const day = cutoff.deliveryDayCutoffs.find(entry => entry.day === fixture.deliveryDays[0]);
+  const date = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", timeZone: cutoff.timeZone,
+  }).format(new Date(day.deliveryDate));
+  await expect(preview).toContainText(`from ${date}`);
+  await expect(preview).toContainText("charged when you save");
+  await expect(section).toContainText("Current products per cycle");
+  await expect(section).toContainText("New products per cycle");
+  const snapshot = page.getByRole("heading", { name: "Snapshot", exact: true }).locator("..");
+  await expect(snapshot).toContainText("Cycle total");
+  await expect(snapshot).not.toContainText("Per-day totals");
+  await decrease.press("Enter");
+  await expect(preview).toHaveCount(0);
+  await decrease.press("Enter");
+  await expect(preview).toContainText("returned to your card or store credit");
+  await expect(preview.getByRole("listitem")).toHaveCount(1);
 });

@@ -1,4 +1,5 @@
 "use strict";
+const { presentCancelledSubscriptionOrders } = require("../subscriptions/subscriptionOrderPresentation.service");
 
 const mongoose = require("mongoose");
 const Order = require("../../models/order.model");
@@ -209,7 +210,7 @@ async function ListOrders({
     return {
       success: true,
       data: {
-        orders,
+        orders: await presentCancelledSubscriptionOrders(orders),
         meta: {
           page: Number(page),
           pageSize: Number(pageSize),
@@ -234,7 +235,7 @@ async function ListOrders({
   return {
     success: true,
     data: {
-      orders,
+      orders: await presentCancelledSubscriptionOrders(orders),
       meta: {
         page: Number(page),
         pageSize: Number(pageSize),

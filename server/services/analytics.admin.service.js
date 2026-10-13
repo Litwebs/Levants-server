@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { REVENUE_ORDER_MATCH, NET_REVENUE_EXPRESSION } = require("../utils/analyticsNetRevenue.util");
 
 const Order = require("../models/order.model");
 const Product = require("../models/product.model");
@@ -119,8 +120,8 @@ async function GetSummary({ range, from, to, orderSource } = {}) {
     }),
 
     Order.aggregate([
-      { $match: { ...orderMatch, ...PAID_ORDER_MATCH } },
-      { $group: { _id: null, revenue: { $sum: "$total" } } },
+      { $match: { ...orderMatch, ...REVENUE_ORDER_MATCH } },
+      { $group: { _id: null, revenue: { $sum: NET_REVENUE_EXPRESSION } } },
     ]),
 
     Order.aggregate([
@@ -217,11 +218,11 @@ async function GetRevenueSeries({
   );
 
   const series = await Order.aggregate([
-    { $match: { ...orderMatch, status: "paid" } },
+    { $match: { ...orderMatch, ...REVENUE_ORDER_MATCH } },
     {
       $group: {
         _id: groupId,
-        revenue: { $sum: "$total" },
+        revenue: { $sum: NET_REVENUE_EXPRESSION },
         orders: { $sum: 1 },
       },
     },
@@ -256,7 +257,7 @@ async function GetRevenueOverview({
       $match: {
         ...ACTIVE_ORDER_MATCH,
         ...buildOrderSourceMatch(orderSource),
-        status: "paid",
+        ...REVENUE_ORDER_MATCH,
         createdAt: { $gte: startDay, $lte: end },
       },
     },
@@ -269,7 +270,7 @@ async function GetRevenueOverview({
             timezone: timeZone,
           },
         },
-        revenue: { $sum: "$total" },
+        revenue: { $sum: NET_REVENUE_EXPRESSION },
         orders: { $sum: 1 },
       },
     },
