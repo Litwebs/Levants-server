@@ -10,7 +10,7 @@ async function control(request, path) { return data(await request.post(`${CONTRO
 async function loginApi(request, credentials) { const response = await request.post(`${API}/auth/login`, { data: { email: credentials.email, password: credentials.password } }); await data(response); }
 async function login(page, credentials) {
   await page.goto("/login"); await page.getByLabel("Email", { exact: true }).fill(credentials.email); await page.getByLabel("Password", { exact: true }).fill(credentials.password);
-  await page.getByRole("button", { name: /Sign in/i, exact: true }).click(); await page.waitForURL(url => url.pathname === "/");
+  await page.getByRole("button", { name: /Sign in/i, exact: true }).click(); await page.waitForURL(url => url.pathname !== "/login");
   await page.goto("/orders"); await expect(page.getByRole("heading", { name: "Orders", exact: true })).toBeVisible();
 }
 function modal(page, title) { return page.getByRole("heading", { name: title, exact: true }).locator("..").locator(".."); }

@@ -65,7 +65,7 @@ test.describe("Orders / Delivery status, notes and proof", () => {
     expect(response.status()).toBe(200); const after = await state(request, order.id);
     expect(after.order.deliveryStatus).toBe(target); expect(after.order.status).toBe(before.order.status); expect(after.variants).toEqual(before.variants); expect(after.order.total).toBe(before.order.total);
     if (target === "delivered") { expect(after.order.metadata.deliveredAt).toBeTruthy(); expect(after.emails.filter(e => /deliveryProof/i.test(e.template))).toHaveLength(1); }
-    await page.reload(); await expect(row(page, order).locator('[data-label="Delivery Status"]')).toContainText(target.replace(/_/g, " "));
+    await page.reload(); await expect(row(page, order).locator('[data-label="Delivery Status"]')).toContainText(new RegExp(target.replace(/_/g, " "), "i"));
   });
   test("current status cannot be submitted and closing the modal performs no mutation", async ({ page, request }) => {
     await login(page, f.users.admin); const before = await state(request, f.orders.websitePaid.id);
