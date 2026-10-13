@@ -114,7 +114,7 @@ for (const viewport of [
     });
     await page.goto(`${CLIENT_ORIGIN}/`);
     await expect(
-      page.getByRole("heading", { name: "Current Deals" }),
+      page.getByRole("heading", { name: "Featured Deals" }),
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name, exact: true }),
@@ -124,15 +124,12 @@ for (const viewport of [
       fullPage: true,
     });
     await page.goto(`${CLIENT_ORIGIN}/deals`);
-    await expect(
-      page.getByRole("heading", { name, exact: true }),
-    ).toBeVisible();
+    const catalogCard = page.locator("#all-deals .card-product").filter({ has: page.getByRole("heading", { name, exact: true }) });
+    await expect(catalogCard).toBeVisible();
+    await expect(page.getByRole("region", { name: "Featured packages" }).getByRole("heading", { name, exact: true })).toBeVisible();
     await assertNoOverflow(page);
-    await page.screenshot({
-      path: testInfo.outputPath(`customer-deals-${viewport.name}.png`),
-      fullPage: true,
-    });
-    await page.getByRole("button", { name: "Add package to basket" }).click();
+    await page.screenshot({ path: testInfo.outputPath(`customer-deals-${viewport.name}.png`), fullPage: true });
+    await catalogCard.getByRole("button", { name: "Add to basket", exact: true }).click();
     await expect(
       page.getByRole("heading", { name: "Your Cart" }),
     ).toBeVisible();
