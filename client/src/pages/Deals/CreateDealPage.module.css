@@ -879,6 +879,28 @@
   gap: var(--space-4);
   margin-top: var(--space-6);
 }
+.dateField {
+  position: relative;
+  min-width: 0;
+}
+.datePlaceholder {
+  position: absolute;
+  top: 24px;
+  left: var(--space-3);
+  height: 32px;
+  display: flex;
+  align-items: center;
+  color: var(--color-gray-500);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+.dateFieldEmpty:not(:focus-within) input,
+.dateFieldEmpty:not(:focus-within) input::-webkit-datetime-edit {
+  color: transparent;
+}
+.dateFieldEmpty:focus-within .datePlaceholder {
+  display: none;
+}
 .full {
   grid-column: 1 / -1;
 }
@@ -1131,7 +1153,6 @@
   gap: var(--space-2);
 }
 .discountPresets button {
-  height: 40px;
   border: 1px solid var(--color-gray-300);
   border-radius: var(--radius-md);
   background: var(--color-white);

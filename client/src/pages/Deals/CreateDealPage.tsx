@@ -422,25 +422,31 @@ export function CreateDealPage() {
                   </div>
                 </div>
                 <div className={styles.formGrid}>
-                  <Input
-                    id="starts-at"
-                    label="Starts at"
-                    type="datetime-local"
-                    value={draft.startsAt}
-                    onChange={(event) => update("startsAt", event.target.value)}
-                    fullWidth
-                  />
-                  <Input
-                    id="ends-at"
-                    label="Ends at"
-                    type="datetime-local"
-                    min={draft.startsAt || undefined}
-                    value={draft.endsAt}
-                    onChange={(event) => update("endsAt", event.target.value)}
-                    error={errors.endsAt}
-                    aria-invalid={Boolean(errors.endsAt)}
-                    fullWidth
-                  />
+                  <div className={`${styles.dateField} ${!draft.startsAt ? styles.dateFieldEmpty : ""}`}>
+                    <Input
+                      id="starts-at"
+                      label="Starts at"
+                      type="datetime-local"
+                      value={draft.startsAt}
+                      onChange={(event) => update("startsAt", event.target.value)}
+                      fullWidth
+                    />
+                    {!draft.startsAt && <span className={styles.datePlaceholder} aria-hidden="true">Select start date and time</span>}
+                  </div>
+                  <div className={`${styles.dateField} ${!draft.endsAt ? styles.dateFieldEmpty : ""}`}>
+                    <Input
+                      id="ends-at"
+                      label="Ends at"
+                      type="datetime-local"
+                      min={draft.startsAt || undefined}
+                      value={draft.endsAt}
+                      onChange={(event) => update("endsAt", event.target.value)}
+                      error={errors.endsAt}
+                      aria-invalid={Boolean(errors.endsAt)}
+                      fullWidth
+                    />
+                    {!draft.endsAt && <span className={styles.datePlaceholder} aria-hidden="true">Select end date and time</span>}
+                  </div>
                 </div>
               </section>
               <section className={styles.group}>
@@ -611,6 +617,7 @@ export function CreateDealPage() {
                 <Input
                   id="package-price"
                   label="Package price (£) *"
+                  size="sm"
                   type="number"
                   min="0.01"
                   step="0.01"

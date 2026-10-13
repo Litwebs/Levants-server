@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, Check, Eye, Monitor, Moon, Package, ShoppingBag, Smartphone, Sun, Tablet, X } from "lucide-react";
+import { Button } from "@/components/common";
 import { dealTotals, formatPence, type DealFormDraft, type SelectedDealItem } from "./dealForm";
 import styles from "./DealStorefrontPreview.module.css";
 
@@ -92,7 +93,7 @@ export function DealStorefrontPreview({ draft, items }: Props) {
       <div><strong>Customer preview</strong><p>See this deal in the storefront before saving.</p></div>
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Trigger asChild>
-          <button type="button" className={styles.openButton}><Eye size={17} aria-hidden="true" /> Preview storefront</button>
+          <Button type="button" variant="outline" size="sm" leftIcon={<Eye size={17} aria-hidden="true" />}>Preview storefront</Button>
         </Dialog.Trigger>
         <Dialog.Portal>
           <Dialog.Overlay className={styles.overlay} />
