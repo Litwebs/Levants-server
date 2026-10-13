@@ -43,6 +43,23 @@ report['productionConfiguration']={'appEnvIsUat':env.get('APP_ENV')=='uat','node
  'recoveryRecipientMatches':env.get('SUBSCRIPTION_RECOVERY_ALERT_EMAIL')=='hm.mousavi.02@gmail.com',
  'portalOriginCorrect':env.get('CLIENT_FRONT_URL_PROD','').rstrip('/')=='https://levantsdairy.co.uk',
  'resendKeyPresent':bool(env.get('RESEND_EMAIL_KEY') or env.get('RESEND_API_KEY') or env.get('RESEND_URI'))}
+# Read-only UAT Google network inspection: counts only, no credentials or IPs.
+try:
+ import socket,ipaddress
+ policy=Path('/etc/systemd/system/levants-uat-api.service.d/google.conf')
+ allowed=set()
+ for row in policy.read_text().splitlines():
+  if row.startswith('IPAddressAllow='):
+   for value in row.split('=',1)[1].split():
+    try:allowed.add(str(ipaddress.ip_address(value)))
+    except ValueError:pass
+ endpoints=[]
+ for label,host in [('geocoding','maps.googleapis.com'),('oauth','oauth2.googleapis.com'),('route-optimization','routeoptimization.googleapis.com')]:
+  resolved={result[4][0] for result in socket.getaddrinfo(host,443,type=socket.SOCK_STREAM)}
+  endpoints.append({'endpoint':label,'resolvedAddressCount':len(resolved),'coveredAddressCount':len(resolved & allowed),'allResolvedAddressesAllowed':bool(resolved) and resolved.issubset(allowed)})
+ report['uatGoogleNetworkPolicy']={'inspection':'available','endpoints':endpoints}
+except Exception:
+ report['uatGoogleNetworkPolicy']={'inspection':'unavailable'}
 report['productionHeadAfter']=git(BASE,'rev-parse','HEAD')
 if report['productionHeadAfter']!=EXPECTED:raise SystemExit('Production identity changed')
 print(json.dumps(report))
