@@ -52,7 +52,15 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  if (context) await context.close();
+  if (context) {
+    try {
+      if (page && !page.isClosed()) {
+        fs.mkdirSync("deals-integration-artifacts", { recursive: true });
+        const name = expect.getState().currentTestName.replace(/[^a-z0-9]+/gi, "-").slice(0, 130);
+        await page.screenshot({ path: `deals-integration-artifacts/${name}.png`, fullPage: true });
+      }
+    } finally { await context.close(); }
+  }
   context = null;
 });
 

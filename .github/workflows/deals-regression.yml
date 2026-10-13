@@ -86,9 +86,9 @@ jobs:
         env:
           DEALS_CLIENT_DIST: ${{ github.workspace }}/client-storefront/dist
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: deals-client-server-failures
+          name: deals-client-server-browser-evidence
           path: server/deals-integration-artifacts/
   stripe-browser:
     name: Real Stripe test-mode browser checkout and refund
@@ -126,7 +126,7 @@ jobs:
         env:
           DEALS_CLIENT_DIST: ${{ github.workspace }}/client-storefront/dist
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
-          name: deals-real-stripe-failures
+          name: deals-real-stripe-browser-evidence
           path: server/deals-integration-artifacts/
