@@ -85,6 +85,17 @@ jobs:
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit
 
+  deals-regression:
+    name: Deals release checks
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    uses: ./.github/workflows/deals-regression.yml
+    secrets: inherit
+
+  delivery-navigation:
+    name: Navigation release checks
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    uses: ./.github/workflows/delivery-navigation.yml
+
   # Keep the required branch-protection context stable across reusable workflows.
   subscription-e2e-status:
     name: Subscription E2E (Stripe test mode)
@@ -108,7 +119,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Require successful UAT tests for this code
+      - name: Require the exact UAT deployment and provider verification
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
@@ -122,6 +133,8 @@ jobs:
       - client-quality
       - subscription-e2e-status
       - uat-verification
+      - deals-regression
+      - delivery-navigation
     runs-on: ubuntu-latest
     steps:
       - name: Require every release check to pass
@@ -131,12 +144,16 @@ jobs:
           CLIENT_RESULT: ${{ needs.client-quality.result }}
           E2E_RESULT: ${{ needs.subscription-e2e-status.result }}
           UAT_RESULT: ${{ needs.uat-verification.result }}
+          DEALS_RESULT: ${{ needs.deals-regression.result }}
+          NAVIGATION_RESULT: ${{ needs.delivery-navigation.result }}
         run: |
           set -euo pipefail
           [[ "$BACKEND_RESULT" == "success" ]]
           [[ "$CLIENT_RESULT" == "success" ]]
           [[ "$E2E_RESULT" == "success" ]]
           [[ "$UAT_RESULT" == "success" ]]
+          [[ "$DEALS_RESULT" == "success" ]]
+          [[ "$NAVIGATION_RESULT" == "success" ]]
 
           echo "All production release checks passed for the current PR head."
 

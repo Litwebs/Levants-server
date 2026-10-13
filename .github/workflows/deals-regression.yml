@@ -1,58 +1,13 @@
 name: Deals backend, admin and storefront integration
 on:
-  push:
-    branches: [feature/deals]
-  pull_request:
-    branches: [uat]
+  workflow_call:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: deals-regression-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
-  changes:
-    name: Select regression checks
-    runs-on: ubuntu-latest
-    outputs:
-      backend: ${{ steps.paths.outputs.backend }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - id: paths
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          python3 - <<'PYTHON'
-          import os, re, subprocess
-          before = os.environ.get('BEFORE_SHA', '')
-          backend = True
-          if os.environ['EVENT_NAME'] == 'push' and re.fullmatch('[0-9a-f]{40}', before) and before != '0' * 40:
-              paths = subprocess.check_output(['git', 'diff', '--name-only', before, 'HEAD'], text=True).splitlines()
-              backend = any(not (path.startswith('server/IntegrationTests/Deals/') or path.startswith('server/e2e/deals/') or path == 'server/playwright.deals.config.js' or path.startswith('docs/') or path.startswith('client/') or path == '.github/workflows/deals-regression.yml') for path in paths)
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('backend=' + str(backend).lower() + '\n')
-          PYTHON
-  backend:
-    name: Complete backend regression
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-      - run: npm ci
-        working-directory: server
-      - run: npm run test:uat-safety
-        working-directory: server
-      - run: npm run test:release
-        working-directory: server
   storefront:
     name: Real client to server package checkout
     runs-on: ubuntu-latest
