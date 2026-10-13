@@ -85,7 +85,13 @@ function getCapturedPaymentMinor(order, refundedMinor = 0) {
     return paidMinor;
   }
 
-  return getOrderTotalMinor(order);
+  const totalMinor = getOrderTotalMinor(order);
+  // Package total includes the portion paid with store credit. Stripe can only
+  // refund the card capture; keep the existing ordinary-order fallback intact.
+  if (Array.isArray(order.metadata?.deals) && order.metadata.deals.length > 0) {
+    return Math.max(0, totalMinor - Math.max(0, Math.round(Number(order.creditApplied) || 0)));
+  }
+  return totalMinor;
 }
 
 function computeRefundDerivedOrderStatus(order) {

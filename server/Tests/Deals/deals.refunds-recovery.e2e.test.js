@@ -37,6 +37,39 @@ async function paidPackage(options) {
 }
 
 describe("Deals / refunds and payment recovery", () => {
+  test("credit-assisted packages refund only the card capture and restock once", async () => {
+    const fixture = await paidPackage({ credit: 500 });
+    expect(fixture.order).toMatchObject({ total: 12.5, creditApplied: 500 });
+    const result = await RefundOrder({ orderId: fixture.order.id, restock: true });
+    expect(result.success).toBe(true);
+    expect(stripe.refunds.create).toHaveBeenCalledWith(expect.objectContaining({ amount: 750 }), expect.anything());
+    expect((await Order.findById(fixture.order.id)).status).toBe("refunded");
+    await applyStripeRefundSucceeded({ paymentIntentId: fixture.order.stripePaymentIntentId, stripeRefundId: result.data.refundId, amountMinor: 750, currency: "gbp", orderId: fixture.order.id });
+    expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(20);
+    expect((await Variant.findById(fixture.eggsVariant.id)).stockQuantity).toBe(9);
+    expect((await Order.findById(fixture.order.id)).refunds).toHaveLength(1);
+  });
+
+  test("credit-assisted packages reject refunds exceeding the card capture before calling Stripe", async () => {
+    const fixture = await paidPackage({ credit: 500 });
+    expect(await RefundOrder({ orderId: fixture.order.id, amount: 12.5 })).toMatchObject({ success: false, statusCode: 400 });
+    expect(stripe.refunds.create).not.toHaveBeenCalled();
+    expect((await Order.findById(fixture.order.id)).status).toBe("paid");
+  });
+
+  test("partial refunds of credit-assisted packages exhaust only the card amount", async () => {
+    const fixture = await paidPackage({ credit: 500 });
+    stripe.refunds.create.mockResolvedValueOnce({ id: "re_credit_partial", amount: 300, status: "succeeded" });
+    expect((await RefundOrder({ orderId: fixture.order.id, amount: 3 })).success).toBe(true);
+    expect((await Order.findById(fixture.order.id)).status).toBe("partially_refunded");
+    stripe.refunds.create.mockResolvedValueOnce({ id: "re_credit_remaining", amount: 450, status: "succeeded" });
+    expect((await RefundOrder({ orderId: fixture.order.id, restock: true })).success).toBe(true);
+    expect(stripe.refunds.create).toHaveBeenLastCalledWith(expect.objectContaining({ amount: 450 }), expect.anything());
+    expect((await Order.findById(fixture.order.id)).status).toBe("refunded");
+    expect((await Variant.findById(fixture.milkVariant.id)).stockQuantity).toBe(20);
+    expect((await Variant.findById(fixture.eggsVariant.id)).stockQuantity).toBe(9);
+  });
+
   test("full refund uses the discounted total including delivery, and restocks actual components only once", async () => {
     const fixture = await paidPackage();
     expect(fixture.order.total).toBe(12.5);
