@@ -215,7 +215,7 @@ test("admin API publication, editing, deactivation and archive control the real 
   await page.reload();
   await browserExpect(page.getByText("You save £2.75", { exact: true })).toBeVisible();
   await browserExpect(page.getByText("Edited browser package", { exact: true })).toBeVisible();
-  expect((await adminRequest("post", `/${deal._id}/deactivate`)).status()).toBe(200);
+  expect((await adminRequest("delete", `/${deal._id}`)).status()).toBe(200);
   await page.reload();
   await browserExpect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
   expect((await adminRequest("patch", `/${deal._id}`, { isActive: true })).status()).toBe(200);
@@ -295,10 +295,11 @@ realStripeTest("Stripe test-mode hosted browser payment, signed webhook replay a
     expect(session.amount_total).toBe(1250);
     expect(session.total_details.amount_discount).toBe(325);
     await page.waitForURL("https://checkout.stripe.com/**");
+    await browserExpect(page.locator("#cardNumber")).toBeVisible({ timeout: 30000 });
     // Hosted Checkout geolocates CI runners to the US. Select the actual UK
     // billing country and GBP rather than entering a postcode into a US ZIP field.
     const country = page.locator("#billingCountry");
-    if (await country.count()) await country.selectOption("GB");
+    await country.selectOption("GB");
     const sterling = page.getByText("£12.50", { exact: true });
     if (await sterling.count()) await sterling.first().click();
     await page.locator("#cardNumber").fill("4242424242424242");
