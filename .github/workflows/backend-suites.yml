@@ -1,0 +1,74 @@
+name: Backend test suites
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '20'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Test suite inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Verify suite inventory failure guards
+        run: node --test deployment/testing/test-suite-inventory.cjs
+      - name: Require every test to belong to exactly one suite
+        run: node server/scripts/test-suites.cjs verify
+      - id: matrix
+        name: List named backend suites
+        run: echo "value=$(node server/scripts/test-suites.cjs matrix)" >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: ${{ matrix.name }}
+    needs: inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.inventory.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Run named suite and publish test results
+        run: node server/scripts/test-suites.cjs backend '${{ matrix.id }}'
+      - name: Save suite report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-${{ matrix.id }}
+          path: server/test-results/suites/backend-${{ matrix.id }}.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  rollback:
+    name: Deployment safety / Compatible rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify rollback isolation and automatic recovery
+        env:
+          ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
+        run: python3 deployment/production/test-compatible-rollback.py

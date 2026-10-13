@@ -1,0 +1,64 @@
+name: Test suite organisation verification
+
+on:
+  push:
+    branches: [fix/test]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-suites-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend suites
+    uses: ./.github/workflows/backend-suites.yml
+  admin:
+    name: Admin frontend / Quality and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+        working-directory: client
+      - run: npm run check:release
+        working-directory: client
+  browser:
+    name: Browser flows and Stripe integration
+    uses: ./.github/workflows/integration-e2e.yml
+    secrets: inherit
+  navigation-browser:
+    name: Delivery navigation / Desktop and mobile browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - run: npx playwright install --with-deps chromium
+        working-directory: server
+      - name: Desktop and mobile navigation selector
+        run: npm run test:e2e:delivery-navigation
+        working-directory: server
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: delivery-navigation-test-results
+          path: server/test-results/delivery-navigation

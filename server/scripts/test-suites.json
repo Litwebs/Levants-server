@@ -1,0 +1,18 @@
+{
+  "backend": [
+    { "id": "authentication-access", "name": "Authentication and access", "paths": ["Authentication/", "Access/"] },
+    { "id": "catalogue", "name": "Products and variants", "paths": ["Products/", "products.public.categoryOrder.test.js"] },
+    { "id": "customers-portal", "name": "Customers and portal APIs", "paths": ["customers/", "portal/"] },
+    { "id": "orders", "name": "Orders and refunds", "paths": ["Orders/"] },
+    { "id": "subscriptions", "name": "Subscriptions and recovery", "paths": ["subscriptions/"] },
+    { "id": "delivery", "name": "Delivery and navigation", "paths": ["Delivery/"] },
+    { "id": "business", "name": "Business features and utilities", "paths": ["Analytics/", "BusinessInfo/", "Discounts/", "broadcasts/", "helpers/", "reviews/", "utils/"] }
+  ],
+  "browser": [
+    { "id": "checkout-reviews", "name": "Order checkout and reviews", "files": ["one-time-order-checkout.spec.js", "reviews-moderation.spec.js"] },
+    { "id": "portal", "name": "Customer portal and admin invitations", "files": ["portal-ui.spec.js", "admin-subscription-invite.spec.js", "subscription-list-query.spec.js", "subscription-status-controls.spec.js"] },
+    { "id": "subscription-rules", "name": "Subscription rules and schedules", "files": ["subscription-rules.spec.js", "monthly-calendar-cadence.spec.js", "multi-day-cadence.spec.js", "single-day-product-edit-atomic.spec.js", "pause-settlement-method.spec.js"] },
+    { "id": "stripe", "name": "Stripe payments, refunds and webhooks", "files": ["stripe-integrity.spec.js", "stripe-price-reconciliation.spec.js", "stripe-webhooks.spec.js", "payment-method-consistency.spec.js"] },
+    { "id": "emails", "name": "Subscription email notifications", "files": ["subscription-emails.spec.js"] }
+  ]
+}

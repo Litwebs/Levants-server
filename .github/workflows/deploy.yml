@@ -24,33 +24,21 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  backend-suites:
+    name: Backend suites
+    uses: ./.github/workflows/backend-suites.yml
+
   backend-tests:
+    # Preserve the branch-protection check while exposing named test jobs.
     name: Backend tests
+    if: always()
+    needs: backend-suites
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-
-      - name: Install backend dependencies
-        working-directory: server
-        run: npm ci
-
-      - name: Run backend release suite
-        working-directory: server
-        run: npm run test:release
-
-      - name: Verify production rollback isolation and automatic recovery
+      - name: Require all backend suites and rollback checks to pass
         env:
-          ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
-        run: python3 deployment/production/test-compatible-rollback.py
+          BACKEND_RESULT: ${{ needs.backend-suites.result }}
+        run: test "$BACKEND_RESULT" = "success"
 
   client-quality:
     name: Client lint and build
@@ -71,7 +59,7 @@ jobs:
         working-directory: client
         run: npm ci
 
-      - name: Lint and build the release client
+      - name: Admin frontend / Lint and build
         working-directory: client
         run: npm run check:release
 
@@ -80,7 +68,7 @@ jobs:
   # Mark it Ready for review only when the exact PR head is intended to ship.
   # Any later commit to a ready PR triggers this suite again automatically.
   subscription-e2e:
-    name: Real Stripe and browser release checks
+    name: Browser flows and Stripe integration
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit
@@ -142,7 +130,7 @@ jobs:
 
   # Deploy only after the exact merged commit passes every release check.
   build-deploy-client:
-    name: Build deployment client
+    name: Build admin deployment artifact
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -251,3 +239,4 @@ jobs:
           target: /root/LWS-Scripts/${{ github.event.repository.name }}/client
           strip_components: 1
           overwrite: true
+

@@ -14,7 +14,7 @@ jobs:
   subscription-e2e:
     name: Subscription E2E (Stripe test mode)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
       STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_TEST_PUBLISHABLE_KEY }}
@@ -103,9 +103,61 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y stripe
 
-      - name: Run all subscription and signed-webhook E2E tests
+      - name: Verify browser and backend suite inventory
+        id: suite-inventory
+        run: node server/scripts/test-suites.cjs verify
+
+      # Run groups sequentially to avoid concurrent Stripe fixture cleanup.
+      # A failed group keeps the job failed but does not hide later results.
+
+      - name: Browser / Order checkout and reviews
+        if: ${{ !cancelled() && steps.suite-inventory.outcome == 'success' }}
         working-directory: server
-        run: npm run test:e2e:subscriptions:ci
+        env:
+          E2E_USE_STRIPE_CLI: '1'
+          E2E_USE_TEST_CLOCKS: '0'
+        run: node scripts/test-suites.cjs browser checkout-reviews
+
+      - name: Browser / Customer portal and admin invitations
+        if: ${{ !cancelled() && steps.suite-inventory.outcome == 'success' }}
+        working-directory: server
+        env:
+          E2E_USE_STRIPE_CLI: '1'
+          E2E_USE_TEST_CLOCKS: '0'
+        run: node scripts/test-suites.cjs browser portal
+
+      - name: Browser / Subscription rules and schedules
+        if: ${{ !cancelled() && steps.suite-inventory.outcome == 'success' }}
+        working-directory: server
+        env:
+          E2E_USE_STRIPE_CLI: '1'
+          E2E_USE_TEST_CLOCKS: '0'
+        run: node scripts/test-suites.cjs browser subscription-rules
+
+      - name: Browser / Stripe payments, refunds and webhooks
+        if: ${{ !cancelled() && steps.suite-inventory.outcome == 'success' }}
+        working-directory: server
+        env:
+          E2E_USE_STRIPE_CLI: '1'
+          E2E_USE_TEST_CLOCKS: '0'
+        run: node scripts/test-suites.cjs browser stripe
+
+      - name: Browser / Subscription email notifications
+        if: ${{ !cancelled() && steps.suite-inventory.outcome == 'success' }}
+        working-directory: server
+        env:
+          E2E_USE_STRIPE_CLI: '1'
+          E2E_USE_TEST_CLOCKS: '0'
+        run: node scripts/test-suites.cjs browser emails
+
+      - name: Save all browser suite reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-suite-reports
+          path: server/test-results/suites/browser-*.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Store E2E diagnostics on failure
         if: failure()
@@ -117,3 +169,4 @@ jobs:
             server/test-results/playwright
           if-no-files-found: ignore
           retention-days: 7
+
