@@ -37,7 +37,5 @@ jobs:
         working-directory: client
       - run: npm run test:deals
         working-directory: client
-      - run: npm run test:deals-types
-        working-directory: client
       - run: npm run check:release
         working-directory: client

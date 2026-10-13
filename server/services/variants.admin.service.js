@@ -349,6 +349,12 @@ async function SearchVariants({ q, limit = 10 } = {}) {
 
 module.exports = {
   CreateVariant,
+  GetVariant: async ({ variantId }) => {
+    const variant = await Variant.findById(variantId).populate("thumbnailImage");
+    return variant
+      ? { success: true, data: { variant } }
+      : { success: false, statusCode: 404, message: "Variant not found" };
+  },
   ListVariants,
   UpdateVariant,
   DeleteVariant,

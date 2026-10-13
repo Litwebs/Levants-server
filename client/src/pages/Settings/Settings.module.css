@@ -455,54 +455,6 @@
   color: var(--color-gray-600);
 }
 
-/* Toggle switch */
-.toggle {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 24px;
-  flex-shrink: 0;
-}
-
-.toggle input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggleSlider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: var(--color-gray-300);
-  border-radius: var(--radius-full);
-  transition: var(--transition-fast);
-}
-
-.toggleSlider::before {
-  position: absolute;
-  content: "";
-  height: 18px;
-  width: 18px;
-  left: 3px;
-  bottom: 3px;
-  background-color: white;
-  border-radius: var(--radius-full);
-  transition: var(--transition-fast);
-  box-shadow: var(--shadow-sm);
-}
-
-.toggle input:checked + .toggleSlider {
-  background-color: var(--color-primary);
-}
-
-.toggle input:checked + .toggleSlider::before {
-  transform: translateX(20px);
-}
-
 /* Table wrapper */
 .tableWrapper {
   overflow-x: auto;

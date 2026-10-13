@@ -245,7 +245,6 @@ const mapStops = (stops: any[]): RouteStop[] => {
       orderPaymentStatus: typeof order?.status === "string" ? order.status : undefined,
       orderIsManualImport,
       orderIsStripeBacked,
-      navigationLinks: s?.navigationLinks ?? null,
       navigationUrl:
         typeof s?.navigationUrl === "string" ? s.navigationUrl : undefined,
       notes: (() => {

@@ -1,0 +1,12 @@
+.loadingArea {
+  position: relative;
+  min-height: calc(100dvh - var(--topbar-height) - 2 * var(--space-6));
+}
+
+.contentGrid {
+  align-items: start;
+}
+
+.imageCard.imageCard {
+  height: auto;
+}

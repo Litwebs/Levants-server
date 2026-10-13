@@ -52,6 +52,13 @@ router.post(
   asyncHandler(controller.CreateVariant),
 );
 
+router.get(
+  "/variants/:variantId",
+  requirePermission("products.read"),
+  validateParams(variantIdParamSchema),
+  asyncHandler(controller.GetVariant),
+);
+
 router.put(
   "/variants/:variantId",
   requirePermission("products.update"),

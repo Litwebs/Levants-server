@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, Check, Eye, Monitor, Moon, Package, ShoppingBag, Smartphone, Sun, Tablet, X } from "lucide-react";
-import { Button } from "./components";
+import { Button } from "@/components/common";
 import { dealTotals, formatPence, type DealFormDraft, type SelectedDealItem } from "./dealForm";
 import styles from "./DealStorefrontPreview.module.css";
 
@@ -54,7 +54,7 @@ export function DealStorefrontPreview({ draft, items }: Props) {
     observer.observe(page);
     return () => observer.disconnect();
   }, [open, deviceWidth, view, stage, page]);
-  const totals = dealTotals(items, draft.packagePrice, draft.pricingMode, draft.savingValue);
+  const totals = dealTotals(items, draft.packagePrice);
   const imageUrl = draft.image || items.find((item) => item.imageUrl)?.imageUrl;
   const now = Date.now();
   const inactive = !draft.isActive;
@@ -63,8 +63,8 @@ export function DealStorefrontPreview({ draft, items }: Props) {
   const soldOut = items.length === 0 || items.some(
     (item) => item.availableQuantity !== undefined && item.availableQuantity < item.quantity,
   );
-  const unavailable = draft.publicationStatus === "draft" || inactive || scheduled || expired || soldOut;
-  const visibility = draft.publicationStatus === "draft" ? "Draft — customers cannot see this deal until published" : inactive ? "Inactive — customers cannot see this deal"
+  const unavailable = inactive || scheduled || expired || soldOut;
+  const visibility = inactive ? "Inactive — customers cannot see this deal"
     : scheduled ? "Scheduled — customers will see it after the start date"
     : expired ? "Expired — customers cannot see this deal"
     : soldOut ? "Out of stock — visible, but unavailable to buy"
@@ -108,9 +108,9 @@ export function DealStorefrontPreview({ draft, items }: Props) {
                   <button type="button" aria-pressed={view === "detail"} className={view === "detail" ? styles.activeTab : ""} onClick={() => setView("detail")}>Details page</button>
                 </div>
                 <div className={styles.deviceTabs} role="group" aria-label="Screen size">
-                  <button type="button" aria-pressed={device === "desktop"} className={device === "desktop" ? styles.activeDevice : ""} onClick={() => setDevice("desktop")} aria-label="Desktop" title="Desktop · 1280 pixels"><Monitor size={16} /><span>Desktop</span></button>
-                  <button type="button" aria-pressed={device === "tablet"} className={device === "tablet" ? styles.activeDevice : ""} onClick={() => setDevice("tablet")} aria-label="Tablet" title="Tablet · 768 pixels"><Tablet size={16} /><span>Tablet</span></button>
-                  <button type="button" aria-pressed={device === "mobile"} className={device === "mobile" ? styles.activeDevice : ""} onClick={() => setDevice("mobile")} aria-label="Mobile" title="Mobile · 390 pixels"><Smartphone size={16} /><span>Mobile</span></button>
+                  <button type="button" aria-pressed={device === "desktop"} className={device === "desktop" ? styles.activeDevice : ""} onClick={() => setDevice("desktop")} title="Desktop · 1280 pixels"><Monitor size={16} /><span>Desktop</span></button>
+                  <button type="button" aria-pressed={device === "tablet"} className={device === "tablet" ? styles.activeDevice : ""} onClick={() => setDevice("tablet")} title="Tablet · 768 pixels"><Tablet size={16} /><span>Tablet</span></button>
+                  <button type="button" aria-pressed={device === "mobile"} className={device === "mobile" ? styles.activeDevice : ""} onClick={() => setDevice("mobile")} title="Mobile · 390 pixels"><Smartphone size={16} /><span>Mobile</span></button>
                 </div>
                 <button type="button" className={styles.iconButton} onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label={`Show ${theme === "light" ? "dark" : "light"} storefront theme`}>
                   {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}

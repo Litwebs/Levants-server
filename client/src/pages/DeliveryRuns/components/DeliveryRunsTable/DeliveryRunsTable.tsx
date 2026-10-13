@@ -1,23 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Truck, Eye, AlertTriangle, Trash2 } from "lucide-react";
+import { Truck } from "lucide-react";
 import type { DeliveryRunListItem, RunStatus } from "@/context/DeliveryRuns";
 import {
   Badge,
-  Button,
-  Modal,
-  ModalFooter,
-  Select,
+  DataTableCard,
   Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/common";
 import styles from "./DeliveryRunsTable.module.css";
+import sharedTableStyles from "@/components/common/DataTableCard/DataTableCard.module.css";
+
+const PAGE_SIZE_OPTIONS = [
+  { value: "10", label: "10 / page" },
+  { value: "20", label: "20 / page" },
+  { value: "50", label: "50 / page" },
+];
 
 interface DeliveryRunsTableProps {
   runs: DeliveryRunListItem[];
   loading?: boolean;
-  onDeleteRun?: (
-    runId: string,
-  ) => Promise<{ success: true } | { success: false; message?: string }>;
 }
 
 const STATUS_BADGE_VARIANTS: Record<
@@ -69,17 +75,11 @@ const formatDuration = (minutes: number) => {
 export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
   runs,
   loading,
-  onDeleteRun,
 }) => {
   const navigate = useNavigate();
 
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-
-  const [confirmRun, setConfirmRun] = useState<DeliveryRunListItem | null>(
-    null,
-  );
-  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     setPage(1);
@@ -97,73 +97,65 @@ export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
     return runs.slice(startIndex, startIndex + pageSize);
   }, [page, pageSize, runs]);
 
-  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const rangeEnd = total === 0 ? 0 : Math.min(page * pageSize, total);
-
-  if (!loading && runs.length === 0) {
-    return (
-      <div className={styles.emptyState}>
-        <Truck className={styles.emptyIcon} />
-        <h3 className={styles.emptyTitle}>No delivery runs found</h3>
-        <p className={styles.emptyText}>
-          Create a new delivery run to start planning routes.
-        </p>
-      </div>
-    );
-  }
-
-  const closeConfirm = () => {
-    if (deleteLoading) return;
-    setConfirmRun(null);
-  };
-
-  const confirmDelete = async () => {
-    if (!confirmRun || !onDeleteRun) return;
-    setDeleteLoading(true);
-    try {
-      const result = await onDeleteRun(confirmRun.id);
-      if (result.success) {
-        setConfirmRun(null);
-      }
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
   return (
     <>
-      <Table className={styles.tableWrapper} tableClassName={styles.table}>
-        <thead>
-          <tr>
-            <th className={styles.headerCell}>Delivery Date</th>
-            <th className={styles.headerCell}>Status</th>
-            <th className={styles.headerCell}>Orders</th>
-            <th className={styles.headerCell}>Drops</th>
-            <th className={styles.headerCell}>Unassigned</th>
-            <th className={styles.headerCell}>Distance</th>
-            <th className={styles.headerCell}>Duration</th>
-            <th className={styles.headerCell}>Last Optimized</th>
-            <th className={styles.headerCell}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {pageRuns.map((run) => (
-            <tr
+      <DataTableCard
+        loading={loading}
+        loadingText="Loading delivery runs…"
+        pagination={{
+          page,
+          pageSize,
+          total,
+          totalPages,
+          setPage,
+          setPageSize,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          loading,
+        }}
+      >
+        <Table withWrapper={false}>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Delivery Date</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Orders</TableHead>
+              <TableHead>Drops</TableHead>
+              <TableHead>Unassigned</TableHead>
+              <TableHead>Distance</TableHead>
+              <TableHead>Duration</TableHead>
+              <TableHead>Last Optimized</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+          {!loading && pageRuns.length === 0 ? (
+            <TableRow className={sharedTableStyles.emptyStateRow}>
+              <TableCell className={sharedTableStyles.emptyTableCell} colSpan={8}>
+                <div className={styles.emptyState}>
+                  <Truck className={styles.emptyIcon} aria-hidden="true" />
+                  <h3 className={styles.emptyTitle}>No delivery runs found</h3>
+                  <p className={styles.emptyText}>
+                    Create a new delivery run to start planning routes.
+                  </p>
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : pageRuns.map((run) => (
+            <TableRow
               key={run.id}
               className={styles.row}
               onClick={() => navigate(`/delivery-runs/${run.id}`)}
             >
-              <td className={`${styles.cell} ${styles.dateCell}`}>
+              <TableCell className={styles.dateCell}>
                 {formatDate(run.deliveryDate)}
-              </td>
-              <td className={styles.cell}>
+              </TableCell>
+              <TableCell>
                 <Badge variant={STATUS_BADGE_VARIANTS[run.status]}>
                   {STATUS_LABELS[run.status]}
                 </Badge>
-              </td>
-              <td className={styles.cell}>{run.ordersCount}</td>
-              <td className={styles.cell}>{run.dropsCount}</td>
-              <td className={styles.cell}>
+              </TableCell>
+              <TableCell>{run.ordersCount}</TableCell>
+              <TableCell>{run.dropsCount}</TableCell>
+              <TableCell>
                 {run.unassignedCount > 0 ? (
                   <span className={styles.unassignedWarning}>
                     {run.unassignedCount}
@@ -171,16 +163,16 @@ export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
                 ) : (
                   run.unassignedCount
                 )}
-              </td>
-              <td className={styles.cell}>
+              </TableCell>
+              <TableCell>
                 {run.distanceKm > 0
                   ? `${formatMilesFromKm(run.distanceKm)} mi`
                   : "—"}
-              </td>
-              <td className={styles.cell}>
+              </TableCell>
+              <TableCell>
                 {run.durationMin > 0 ? formatDuration(run.durationMin) : "—"}
-              </td>
-              <td className={styles.cell}>
+              </TableCell>
+              <TableCell>
                 {run.lastOptimizedAt
                   ? new Date(run.lastOptimizedAt).toLocaleString("en-GB", {
                       day: "numeric",
@@ -189,138 +181,13 @@ export const DeliveryRunsTable: React.FC<DeliveryRunsTableProps> = ({
                       minute: "2-digit",
                     })
                   : "—"}
-              </td>
-              <td className={styles.cell}>
-                <div className={styles.actions}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      navigate(`/delivery-runs/${run.id}`);
-                    }}
-                  >
-                    <Eye size={16} />
-                    View
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setConfirmRun(run);
-                    }}
-                    disabled={!onDeleteRun}
-                  >
-                    <Trash2 size={16} />
-                    Delete
-                  </Button>
-                </div>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </Table>
+          </TableBody>
+        </Table>
+      </DataTableCard>
 
-      <Modal
-        isOpen={!!confirmRun}
-        onClose={closeConfirm}
-        title="Delete Delivery Run"
-        size="sm"
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: "var(--space-3)",
-            alignItems: "flex-start",
-          }}
-        >
-          <div style={{ marginTop: 2, color: "var(--color-warning-600)" }}>
-            <AlertTriangle size={20} />
-          </div>
-          <div>
-            <p style={{ marginBottom: "var(--space-2)" }}>
-              Delete this delivery run?
-            </p>
-            <p
-              style={{
-                color: "var(--color-gray-600)",
-                fontSize: "var(--text-sm)",
-              }}
-            >
-              This will delete its routes and stops. This cannot be undone.
-            </p>
-          </div>
-        </div>
-
-        <ModalFooter>
-          <Button
-            variant="outline"
-            onClick={closeConfirm}
-            disabled={deleteLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="danger"
-            onClick={confirmDelete}
-            disabled={deleteLoading || !onDeleteRun}
-          >
-            <Trash2 size={16} />
-            Delete
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {total > 0 && (
-        <div className={styles.paginationFooter}>
-          <div className={styles.paginationInfo}>
-            Showing {rangeStart}–{rangeEnd} of {total}
-          </div>
-
-          <div className={styles.paginationControls}>
-            <Select
-              className={styles.pageSizeSelect}
-              value={String(pageSize)}
-              disabled={!!loading}
-              onChange={(v) => {
-                setPageSize(Number(v));
-                setPage(1);
-              }}
-              options={[
-                { value: "10", label: "10 / page" },
-                { value: "20", label: "20 / page" },
-                { value: "50", label: "50 / page" },
-              ]}
-            />
-
-            <div className={styles.pageButtons}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1 || totalPages <= 1}
-              >
-                Prev
-              </Button>
-              <span className={styles.pageLabel}>
-                Page {page} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages || totalPages <= 1}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };

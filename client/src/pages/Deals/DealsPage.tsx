@@ -4,12 +4,12 @@ import { ChevronDown, Filter, Plus, RefreshCw, Search, X } from "lucide-react";
 import {
   Badge, Button, DataTableCard, FiltersCardLayout, Input, PageContainer,
   Select, Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "./components";
+} from "@/components/common";
 import { useToast } from "@/components/common/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
-import { listDeals, publishDeal, unpublishDeal, updateDeal, deactivateDeal, archiveDeal, type Deal } from "@/context/Deals";
-import sharedFilterStyles from "./components/FiltersCardLayout/SharedFilters.module.css";
-import sharedTableStyles from "./components/DataTableCard/DataTableCard.module.css";
+import { listDeals, type Deal } from "@/context/Deals";
+import sharedFilterStyles from "@/components/common/FiltersCardLayout/SharedFilters.module.css";
+import sharedTableStyles from "@/components/common/DataTableCard/DataTableCard.module.css";
 import styles from "./DealsPage.module.css";
 import { navigateWithDealTransition } from "./dealNavigation";
 
@@ -21,8 +21,6 @@ const PAGE_SIZE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: "all", label: "All statuses" },
   { value: "active", label: "Active" },
-  { value: "draft", label: "Draft" },
-  { value: "published", label: "Published" },
   { value: "inactive", label: "Inactive" },
   { value: "featured", label: "Featured" },
   { value: "archived", label: "Archived" },
@@ -45,7 +43,6 @@ const errorMessage = (error: unknown) => {
 
 const statusFor = (deal: Deal) => {
   if (deal.archivedAt) return { label: "Archived", variant: "default" as const };
-  if (deal.publicationStatus === "draft") return { label: "Draft", variant: "default" as const };
   if (!deal.isActive) return { label: "Inactive", variant: "default" as const };
   const now = Date.now();
   if (deal.startsAt && new Date(deal.startsAt).getTime() > now)
@@ -62,8 +59,6 @@ export const DealsPage = () => {
   const { hasPermission } = usePermissions();
   const canCreate = hasPermission("promotions.create");
   const canUpdate = hasPermission("promotions.update");
-  const canDelete = hasPermission("promotions.delete");
-  const [pending, setPending] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [meta, setMeta] = useState({ total: 0, totalPages: 1 });
@@ -106,23 +101,7 @@ export const DealsPage = () => {
   useEffect(() => void load(), [load]);
 
   const openDeal = (deal: Deal) => {
-    if (canUpdate && !deal.archivedAt) navigateWithDealTransition(navigate, `/deals/${deal._id}/edit`, "forward");
-  };
-  const actOnDeal = async (deal: Deal, action: "publish" | "unpublish" | "activate" | "deactivate" | "archive") => {
-    if (pending) return;
-    if (action === "archive" && !window.confirm(`Archive ${deal.name}? Customers will no longer be able to buy it.`)) return;
-    setPending(deal._id);
-    try {
-      if (action === "publish") await publishDeal(deal._id);
-      if (action === "unpublish") await unpublishDeal(deal._id);
-      if (action === "activate") await updateDeal(deal._id, { isActive: true });
-      if (action === "deactivate") await deactivateDeal(deal._id);
-      if (action === "archive") await archiveDeal(deal._id);
-      showToast({ type: "success", title: "Deal updated" });
-      await load();
-    } catch (error) {
-      showToast({ type: "error", title: "Deal was not updated", message: errorMessage(error) });
-    } finally { setPending(null); }
+    if (canUpdate) navigateWithDealTransition(navigate, `/deals/${deal._id}/edit`, "forward");
   };
   const clearFilters = () => {
     setSearchInput(""); setSearch(""); setStatus("all"); setSort("newest"); setPage(1);
@@ -164,12 +143,12 @@ export const DealsPage = () => {
 
       <DataTableCard loading={loading} loadingText="Loading deals…" pagination={{ page, pageSize, total: meta.total, totalPages: meta.totalPages, setPage, setPageSize: (size) => { setPageSize(size); setPage(1); }, pageSizeOptions: PAGE_SIZE_OPTIONS, loading }}>
         <Table withWrapper={false}>
-          <TableHeader><TableRow><TableHead>Deal</TableHead><TableHead>Products</TableHead><TableHead>Value</TableHead><TableHead>Deal price</TableHead><TableHead>Saving</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead><TableHead>Actions</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Deal</TableHead><TableHead>Products</TableHead><TableHead>Value</TableHead><TableHead>Deal price</TableHead><TableHead>Saving</TableHead><TableHead>Availability</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
           <TableBody>
-            {!loading && deals.length === 0 ? <TableRow className={sharedTableStyles.emptyStateRow}><TableCell className={sharedTableStyles.emptyTableCell} colSpan={8}>No deals match these filters.</TableCell></TableRow> : deals.map((deal) => {
+            {!loading && deals.length === 0 ? <TableRow className={sharedTableStyles.emptyStateRow}><TableCell className={sharedTableStyles.emptyTableCell} colSpan={7}>No deals match these filters.</TableCell></TableRow> : deals.map((deal) => {
               const dealStatus = statusFor(deal);
               return (
-                <TableRow key={deal._id} className={canUpdate && !deal.archivedAt ? styles.clickableRow : undefined} onClick={() => openDeal(deal)} onKeyDown={(event) => { if (event.target === event.currentTarget && canUpdate && !deal.archivedAt && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDeal(deal); } }} tabIndex={canUpdate && !deal.archivedAt ? 0 : undefined} aria-label={canUpdate && !deal.archivedAt ? `Edit ${deal.name}` : undefined}>
+                <TableRow key={deal._id} className={canUpdate ? styles.clickableRow : undefined} onClick={() => openDeal(deal)} onKeyDown={(event) => { if (canUpdate && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDeal(deal); } }} tabIndex={canUpdate ? 0 : undefined} aria-label={canUpdate ? `Edit ${deal.name}` : undefined}>
                   <TableCell data-label="Deal"><div className={styles.dealIdentity}>{deal.image?.url ? <img src={deal.image.url} alt="" className={styles.dealThumb} /> : <div className={styles.dealPlaceholder} aria-hidden="true">D</div>}<div><strong>{deal.name}</strong><span>/{deal.slug}</span></div></div></TableCell>
                   <TableCell data-label="Products">{deal.items?.length || 0}</TableCell>
                   <TableCell data-label="Value">£{Number(deal.originalValue || 0).toFixed(2)}</TableCell>
@@ -177,15 +156,6 @@ export const DealsPage = () => {
                   <TableCell data-label="Saving">£{Number(deal.savings || 0).toFixed(2)}{deal.savingsPercent ? ` (${deal.savingsPercent}%)` : ""}</TableCell>
                   <TableCell data-label="Availability">{Number(deal.maxPackages || 0)} package{Number(deal.maxPackages || 0) === 1 ? "" : "s"}</TableCell>
                   <TableCell data-label="Status"><Badge variant={dealStatus.variant}>{dealStatus.label}</Badge></TableCell>
-                  <TableCell data-label="Actions">
-                    {!deal.archivedAt && <div className={styles.actions} onClick={(event) => event.stopPropagation()}>
-                      {canUpdate && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => openDeal(deal)}>Edit</Button>}
-                      {canUpdate && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => void actOnDeal(deal, deal.publicationStatus === "draft" ? "publish" : "unpublish")}>{deal.publicationStatus === "draft" ? "Publish" : "Unpublish"}</Button>}
-                      {!deal.isActive && canUpdate && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => void actOnDeal(deal, "activate")}>Activate</Button>}
-                      {deal.isActive && canDelete && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => void actOnDeal(deal, "deactivate")}>Deactivate</Button>}
-                      {canDelete && <Button size="sm" variant="outline" disabled={Boolean(pending)} onClick={() => void actOnDeal(deal, "archive")}>Archive</Button>}
-                    </div>}
-                  </TableCell>
                 </TableRow>
               );
             })}

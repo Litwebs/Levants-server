@@ -1133,7 +1133,7 @@
 }
 .pricingInputBlock {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
   gap: var(--space-5);
   align-items: end;
   margin-top: var(--space-6);
@@ -1715,12 +1715,9 @@
   }
   .headerActions {
     width: 100%;
-    min-width: 0;
-    flex-wrap: wrap;
   }
   .headerActions > button:last-child {
-    flex: 1 1 100%;
-    min-width: 0;
+    flex: 1;
   }
 }
 

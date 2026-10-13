@@ -1,6 +1,13 @@
 import { useState } from "react";
-import { Search, Filter, X } from "lucide-react";
-import { Button, FiltersCardLayout, Select } from "../../components/common";
+import { useNavigate } from "react-router-dom";
+import { ChevronDown, Search, Filter, Plus, X } from "lucide-react";
+import {
+  Button,
+  FiltersCardLayout,
+  Input,
+  Select,
+} from "../../components/common";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Products.module.css";
 import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 
@@ -25,6 +32,9 @@ const ProductsFilters = ({
   setVariantStockFilter,
 }: any) => {
   const [showFilters, setShowFilters] = useState(false);
+  const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canCreateProduct = hasPermission("products.create");
 
   return (
     <FiltersCardLayout
@@ -32,18 +42,21 @@ const ProductsFilters = ({
       topRow={
         <div className={sharedFilterStyles.searchRow}>
           <div className={sharedFilterStyles.searchInput}>
-            <Search size={18} className={sharedFilterStyles.searchIcon} />
-            <input
+            <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search products..."
-              className={sharedFilterStyles.search}
+              aria-label="Search products"
+              className={sharedFilterStyles.searchControl}
+              leftIcon={<Search size={18} />}
+              fullWidth
             />
             {searchQuery && (
               <button
                 type="button"
                 className={sharedFilterStyles.clearSearch}
                 onClick={() => setSearchQuery("")}
+                aria-label="Clear product search"
               >
                 <X size={16} />
               </button>
@@ -53,6 +66,15 @@ const ProductsFilters = ({
           <Button
             variant="outline"
             leftIcon={<Filter size={16} />}
+            rightIcon={
+              <ChevronDown
+                size={16}
+                className={`${sharedFilterStyles.filtersChevron} ${showFilters ? sharedFilterStyles.filtersChevronOpen : ""}`}
+                aria-hidden="true"
+              />
+            }
+            aria-expanded={showFilters}
+            aria-controls="product-filters-panel"
             onClick={() => setShowFilters(!showFilters)}
             className={sharedFilterStyles.filtersToggleBtn}
           >
@@ -70,9 +92,21 @@ const ProductsFilters = ({
               { value: "name-desc", label: "Name Z → A" },
             ]}
           />
+
+          {canCreateProduct ? (
+            <Button
+              className={styles.createProductButton}
+              size="sm"
+              leftIcon={<Plus size={16} />}
+              onClick={() => navigate("/products/new")}
+            >
+              Add product
+            </Button>
+          ) : null}
         </div>
       }
       isExpanded={showFilters}
+      expandedId="product-filters-panel"
       expandedWrapClassName={sharedFilterStyles.filtersRowWrap}
       expandedOpenClassName={sharedFilterStyles.filtersRowOpen}
       expandedInnerClassName={sharedFilterStyles.filtersRowInner}
@@ -115,7 +149,9 @@ const ProductsFilters = ({
           </div>
 
           <Button
-            variant="ghost"
+            variant="outline"
+            size="sm"
+            className={styles.clearFilters}
             onClick={() => {
               setSearchQuery("");
               setSelectedCategory("All");
@@ -124,7 +160,7 @@ const ProductsFilters = ({
               setSortBy("newest");
             }}
           >
-            Clear Filters
+            Clear all filters
           </Button>
         </div>
       }

@@ -1,0 +1,41 @@
+.page {
+  width: 100%;
+  min-width: 0;
+}
+
+.forward {
+  animation: slideForward 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.back {
+  animation: slideBack 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes slideForward {
+  from {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideBack {
+  from {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .forward,
+  .back {
+    animation: none;
+  }
+}
