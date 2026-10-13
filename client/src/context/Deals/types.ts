@@ -1,0 +1,72 @@
+export type DealItem = {
+  variantId: string;
+  quantity: number;
+  variant?: {
+    _id: string;
+    name: string;
+    sku: string;
+    price: number;
+    stockQuantity?: number;
+    reservedQuantity?: number;
+    thumbnailImage?: { url?: string } | null;
+  } | null;
+  product?: {
+    _id: string;
+    name: string;
+    category?: string;
+    thumbnailImage?: { url?: string } | null;
+  } | null;
+};
+
+export type DealPricingMode = "fixed_price" | "fixed_saving" | "percentage_saving";
+export type Deal = {
+  _id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  image?: { _id?: string; url?: string } | null;
+  imageUrl?: string;
+  items: DealItem[];
+  packagePrice: number | null;
+  publicationStatus?: "draft" | "published";
+  pricingMode?: DealPricingMode;
+  savingValue?: number | null;
+  currency?: string;
+  isActive: boolean;
+  isFeatured: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  archivedAt?: string | null;
+  sortOrder?: number;
+  originalValue?: number;
+  savings?: number;
+  savingsPercent?: number;
+  maxPackages?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type DealDraft = {
+  name: string;
+  slug?: string;
+  description?: string;
+  image?: string | null;
+  items: Array<{ variantId: string; quantity: number }>;
+  packagePrice?: number;
+  publicationStatus?: "draft" | "published";
+  pricingMode?: DealPricingMode;
+  savingValue?: number | null;
+  currency?: string;
+  isActive?: boolean;
+  isFeatured?: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  sortOrder?: number;
+};
+
+export type DealsMeta = {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};

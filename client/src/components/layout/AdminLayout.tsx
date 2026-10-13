@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Gift,
   ShoppingCart,
   Truck,
   Package,
@@ -77,6 +78,12 @@ const navItems = [
     label: "Subscriptions",
     icon: RefreshCw,
     requiredAny: ["orders.read"],
+  },
+  {
+    path: "/deals",
+    label: "Deals",
+    icon: Gift,
+    requiredAny: ["promotions.read"],
   },
   {
     path: "/discounts",

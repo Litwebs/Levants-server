@@ -26,7 +26,9 @@
     "stripe:recreate-products": "node scripts/recreateStripeProducts.js",
     "test:delivery-navigation": "jest --runInBand Tests/Delivery/navigation",
     "test:e2e:delivery-navigation": "playwright test --config playwright.navigation.config.js",
-    "test:delivery-navigation:unit": "jest --runInBand --config jest.navigation-unit.config.js"
+    "test:delivery-navigation:unit": "jest --runInBand --config jest.navigation-unit.config.js",
+    "test:e2e:deals": "playwright test --config=playwright.deals.config.js",
+    "test:e2e:deals:ci": "E2E_USE_STRIPE_CLI=1 playwright test --config=playwright.deals.config.js"
   },
   "keywords": [],
   "author": "",

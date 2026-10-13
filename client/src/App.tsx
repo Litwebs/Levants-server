@@ -33,6 +33,8 @@ import { AnalyticsProvider } from "./context/Analytics";
 import { RequirePermission } from "./components/auth/RequirePermission";
 import { RequireNotRole } from "./components/auth/RequireNotRole";
 import { usePermissions } from "@/hooks/usePermissions";
+import { DealsPage } from "./pages/Deals/DealsPage";
+import { CreateDealPage } from "./pages/Deals/CreateDealPage";
 import { DiscountsPage } from "./pages/Discounts";
 import { DeliveryRunsPage, DeliveryRunDetailsPage } from "./pages/DeliveryRuns";
 import { AnnouncementsPage } from "./pages/Announcements";
@@ -162,6 +164,7 @@ const App = () => (
                           }
                         >
                           <Route path="/" element={<HomeRoute />} />
+                          <Route path="/analytics/*" element={<Navigate to="/" replace />} />
                           <Route
                             path="/orders"
                             element={
@@ -268,6 +271,9 @@ const App = () => (
                             }
                           />
 
+                          <Route path="/deals" element={<RequirePermission permission="promotions.read"><DealsPage /></RequirePermission>} />
+                          <Route path="/deals/new" element={<RequirePermission permission="promotions.create"><CreateDealPage /></RequirePermission>} />
+                          <Route path="/deals/:dealId/edit" element={<RequirePermission permission="promotions.update"><CreateDealPage /></RequirePermission>} />
                           <Route
                             path="/discounts"
                             element={
