@@ -1,4 +1,4 @@
-name: One-time approved UAT Google network repair
+name: One-time UAT Google provider verification
 on:
   push:
     branches: [uat]
@@ -6,34 +6,38 @@ on:
 permissions:
   contents: read
 jobs:
-  repair:
-    if: github.ref == 'refs/heads/uat' && contains(github.event.head_commit.message, '[approved-one-time-uat-google-repair]')
+  verify:
+    if: github.ref == 'refs/heads/uat' && contains(github.event.head_commit.message, '[verify-approved-uat-google-repair]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    concurrency:
-      group: production-deploy
-      cancel-in-progress: false
+    environment: uat
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify the scoped repair before touching the VPS
-        run: python3 deployment/uat/test-refresh-google-network.py
-      - uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
-          log-public-key: false
-      - name: Apply the explicitly approved UAT-only network policy refresh
+      - name: Configure existing restricted UAT verification access
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
+          UAT_SSH_KEY: ${{ secrets.UAT_SSH_KEY }}
+          UAT_KNOWN_HOSTS: ${{ vars.UAT_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$VPS_PORT" "root@$VPS_HOST" 'python3 -' \
-            < deployment/uat/refresh-google-network.py | tee uat-google-repair-report.json
+          test -n "$UAT_SSH_KEY"
+          test -n "$UAT_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$UAT_SSH_KEY" > ~/.ssh/uat
+          chmod 600 ~/.ssh/uat
+          printf '%s\n' "$UAT_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Verify the deployed immutable UAT release after the network repair
+        env:
+          UAT_HOST: ${{ vars.UAT_HOST }}
+          UAT_PORT: ${{ vars.UAT_PORT }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/uat -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            -p "$UAT_PORT" "levants-uat-deploy@$UAT_HOST" \
+            "verify 1993566166b440cbe4172e97ac1d8bf1e50ab6bc" | tee uat-google-provider-report.json
       - uses: actions/upload-artifact@v4
         with:
-          name: approved-uat-google-repair-${{ github.sha }}
-          path: uat-google-repair-report.json
-          retention-days: 30
+          name: approved-uat-google-provider-verification
+          path: uat-google-provider-report.json
           if-no-files-found: error
+          retention-days: 30
