@@ -297,9 +297,6 @@ const OrderDetailContent = ({
           {isPaid ? "Mark Unpaid" : "Mark Paid"}
         </Button>
       ) : null}
-      {canRefundPermission && selectedOrder?.isSubscriptionGenerated ? (
-        <span>Use subscription cancellation or item adjustments to refund this delivery.</span>
-      ) : null}
       {canRefundPermission ? (
         <Button
           variant="ghost"
@@ -314,6 +311,11 @@ const OrderDetailContent = ({
         >
           Refund
         </Button>
+      ) : null}
+      {canRefundPermission && selectedOrder?.isSubscriptionGenerated ? (
+        <p className={styles.paymentActionHint}>
+          Refund this delivery through subscription cancellation or item adjustments.
+        </p>
       ) : null}
     </div>
   );
@@ -371,6 +373,7 @@ const OrderDetailContent = ({
               <div className={styles.itemsHeaderRow}>
                 <h2 className={styles.detailTitle}>Order items <span className={styles.itemHeadingCount}>{selectedOrder.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</span></h2>
               </div>
+              <div className={styles.itemsTableScroll} role="region" aria-label="Order items table" tabIndex={0}>
               <Table withWrapper={false} tableClassName={styles.itemsTable}>
                 <thead>
                   <tr>
@@ -445,6 +448,7 @@ const OrderDetailContent = ({
                   )}
                 </tbody>
               </Table>
+              </div>
 
               {isEditingItems ? (
                 <div className={styles.itemEditPanel}>
@@ -643,6 +647,109 @@ const OrderDetailContent = ({
                   </div>
                 </div>
               ) : null}
+            <div className={styles.itemsBottom}>
+              <section className={styles.notesSection} aria-labelledby="order-notes-heading">
+                <div className={styles.notesHeader}>
+                  <h2 id="order-notes-heading">Notes</h2>
+                </div>
+                <div className={`${styles.noteBox} ${styles.highlightedNote}`}>
+                  <h5>Customer note</h5>
+                  <p className={!customerNote ? styles.noteEmpty : undefined}>
+                    {customerNote || "No customer note provided"}
+                  </p>
+                </div>
+                {deliveryNote && (
+                  <div className={styles.noteBox}>
+                    <h5>Delivery Note</h5>
+                    <p>{deliveryNote}</p>
+                  </div>
+                )}
+                {selectedOrder.internalNotes && (
+                  <div className={`${styles.noteBox} ${styles.internalNote}`}>
+                    <h5>Internal Notes</h5>
+                    <p>{selectedOrder.internalNotes}</p>
+                  </div>
+                )}
+
+            {canUpdatePermission && (
+                <div className={`${styles.noteBox} ${styles.highlightedNote}`}>
+                  <div className={styles.driverNoteHeader}>
+                    <h5 style={{ margin: 0 }}>Driver Note</h5>
+                    {!isEditingDriverNote && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setDriverNoteDraft(selectedOrder.driverNote || "");
+                          setIsEditingDriverNote(true);
+                        }}
+                      >
+                        {selectedOrder.driverNote ? "Edit" : "Add note"}
+                      </Button>
+                    )}
+                  </div>
+                  {isEditingDriverNote ? (
+                    <>
+                      <textarea
+                        className={styles.driverNoteTextarea}
+                        aria-label="Driver note"
+                        rows={3}
+                        maxLength={500}
+                        value={driverNoteDraft}
+                        onChange={(e) => setDriverNoteDraft(e.target.value)}
+                        placeholder="Note for the driver (visible on delivery run)…"
+                        disabled={isSavingDriverNote}
+                      />
+                      <div
+                        className={styles.driverNoteActions}
+                      >
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={isSavingDriverNote}
+                          onClick={() => setIsEditingDriverNote(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          isLoading={isSavingDriverNote}
+                          disabled={isSavingDriverNote}
+                          onClick={async () => {
+                            if (!selectedOrder?.id) return;
+                            setIsSavingDriverNote(true);
+                            try {
+                              const updated = await updateDriverNote?.(
+                                selectedOrder.id,
+                                driverNoteDraft.trim() || null,
+                              );
+                              if (updated) setIsEditingDriverNote(false);
+                            } finally {
+                              setIsSavingDriverNote(false);
+                            }
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p
+                      style={{
+                        color: selectedOrder.driverNote
+                          ? undefined
+                          : "var(--color-gray-500)",
+
+                      }}
+                    >
+                      {selectedOrder.driverNote || "No driver note set"}
+                    </p>
+                  )}
+                </div>
+            )}
+              </section>
+              <div className={styles.itemsFinancialSummary}>
             <div className={styles.totalsSection} aria-label="Order totals">
               <div className={styles.totalRow}>
                 <span>Subtotal</span>
@@ -745,116 +852,9 @@ const OrderDetailContent = ({
                 )}
             </div>
             {financialActions}
+              </div>
+            </div>
             </section>
-
-              <section className={styles.notesSection} aria-labelledby="order-notes-heading">
-                <div className={styles.notesHeader}>
-                  <h2 id="order-notes-heading">Notes</h2>
-                </div>
-                <div className={styles.noteBox}>
-                  <h5>Customer note</h5>
-                  <p className={!customerNote ? styles.noteEmpty : undefined}>
-                    {customerNote || "No customer note provided"}
-                  </p>
-                </div>
-                {deliveryNote && (
-                  <div className={styles.noteBox}>
-                    <h5>Delivery Note</h5>
-                    <p>{deliveryNote}</p>
-                  </div>
-                )}
-                {selectedOrder.internalNotes && (
-                  <div className={`${styles.noteBox} ${styles.internalNote}`}>
-                    <h5>Internal Notes</h5>
-                    <p>{selectedOrder.internalNotes}</p>
-                  </div>
-                )}
-
-            {canUpdatePermission && (
-                <div className={`${styles.noteBox} ${styles.internalNote}`}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: "var(--space-2)",
-                    }}
-                  >
-                    <h5 style={{ margin: 0 }}>Driver Note</h5>
-                    {!isEditingDriverNote && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setDriverNoteDraft(selectedOrder.driverNote || "");
-                          setIsEditingDriverNote(true);
-                        }}
-                      >
-                        {selectedOrder.driverNote ? "Edit" : "Add note"}
-                      </Button>
-                    )}
-                  </div>
-                  {isEditingDriverNote ? (
-                    <>
-                      <textarea
-                        className={styles.driverNoteTextarea}
-                        aria-label="Driver note"
-                        rows={3}
-                        maxLength={500}
-                        value={driverNoteDraft}
-                        onChange={(e) => setDriverNoteDraft(e.target.value)}
-                        placeholder="Note for the driver (visible on delivery run)…"
-                        disabled={isSavingDriverNote}
-                      />
-                      <div
-                        className={styles.driverNoteActions}
-                      >
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={isSavingDriverNote}
-                          onClick={() => setIsEditingDriverNote(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          isLoading={isSavingDriverNote}
-                          disabled={isSavingDriverNote}
-                          onClick={async () => {
-                            if (!selectedOrder?.id) return;
-                            setIsSavingDriverNote(true);
-                            try {
-                              const updated = await updateDriverNote?.(
-                                selectedOrder.id,
-                                driverNoteDraft.trim() || null,
-                              );
-                              if (updated) setIsEditingDriverNote(false);
-                            } finally {
-                              setIsSavingDriverNote(false);
-                            }
-                          }}
-                        >
-                          Save
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <p
-                      style={{
-                        color: selectedOrder.driverNote
-                          ? undefined
-                          : "var(--color-gray-500)",
-
-                      }}
-                    >
-                      {selectedOrder.driverNote || "No driver note set"}
-                    </p>
-                  )}
-                </div>
-            )}
-              </section>
 
             <div id="order-activity" className={styles.historySection}>
               <div className={styles.auditSectionHeader}>
@@ -902,7 +902,7 @@ const OrderDetailContent = ({
                         <span className={styles.timelineStatus}>
                           <strong>{entry.status.replace(/_/g, " ")}</strong>
                         </span>
-                        <time dateTime={entry.timestamp}>{new Date(entry.timestamp).toLocaleString("en-GB")}</time>
+                        {entry.timestamp ? <time dateTime={entry.timestamp}>{new Date(entry.timestamp).toLocaleString("en-GB")}</time> : <span>Change time was not recorded</span>}
                       </div>
                       <span className={styles.timelineActor}>
                         Changed by <strong>{entry.user}</strong>

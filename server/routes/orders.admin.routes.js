@@ -51,6 +51,12 @@ router.get(
   asyncHandler(controller.GetOrderById),
 );
 
+router.get(
+  "/:orderId/emails",
+  validateParams(orderIdParamSchema),
+  asyncHandler(controller.GetOrderEmails),
+);
+
 router.put(
   "/bulk/delivery-status",
   requirePermission("orders.update"),

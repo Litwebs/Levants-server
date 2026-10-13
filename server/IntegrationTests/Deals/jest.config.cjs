@@ -4,6 +4,6 @@ module.exports = {
   testEnvironment: "node",
   roots: ["<rootDir>/IntegrationTests/Deals"],
   setupFiles: ["<rootDir>/Tests/env.js"],
-  setupFilesAfterEnv: ["<rootDir>/Tests/setup.js"],
+  setupFilesAfterEnv: ["<rootDir>/Tests/setup.js", "<rootDir>/Tests/Deals/helpers/mockProviders.js"],
   testMatch: ["**/*.e2e.test.js"],
 };

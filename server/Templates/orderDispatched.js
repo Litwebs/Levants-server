@@ -5,7 +5,10 @@ module.exports = ({
   etaWindowStart,
   etaWindowEnd,
   logoSrc = "./assets/logo.png",
+  inTransit = false,
 }) => {
+  const statusTitle = inTransit ? "Order In Transit" : "Order Dispatched";
+  const statusMessage = inTransit ? "is in transit and on its way to you" : "has been dispatched";
   const escapeHtml = (value) =>
     String(value || "")
       .replace(/&/g, "&amp;")
@@ -46,14 +49,14 @@ Delivery date: <strong>${safeDeliveryDate}</strong>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Order Dispatched</title>
+<title>${statusTitle}</title>
 </head>
 
 <body style="margin:0;padding:0;background:#fdfaf6;font-family:Arial,sans-serif;">
 
 <!-- Preheader -->
 <div style="display:none;font-size:1px;color:#fdfaf6;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">
-Your Levants order ${safeOrderId || ""} has been dispatched.
+Your Levants order ${safeOrderId || ""} ${statusMessage}.
 </div>
 
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fdfaf6;padding:20px 10px;">
@@ -74,7 +77,7 @@ style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;">
      style="display:block;margin-bottom:12px;max-width:100%;height:auto;" />
 
 <div style="font-size:13px;color:#e8e4dd;">
-Order Dispatched
+${statusTitle}
 </div>
 
 </td>
@@ -94,7 +97,7 @@ Hi ${safeName},
 </h2>
 
 <p style="margin:0 0 14px 0;font-size:14px;line-height:1.6;color:#444;">
-Your order <strong>${safeOrderId || "—"}</strong> has been dispatched.
+Your order <strong>${safeOrderId || "—"}</strong> ${statusMessage}.
 </p>
 
 ${deliveryDateBlock}

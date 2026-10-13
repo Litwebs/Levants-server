@@ -253,6 +253,31 @@ async function createDealFixture(options = {}) {
       country: "United Kingdom",
     },
   });
+  if (options.basketScenarios) {
+    await require("../../models/businessInfo.model").create({
+      companyName: "Levants Dairy",
+      email: "basket-e2e@example.com",
+      phone: "+44 7494 927688",
+    });
+    await Product.findByIdAndUpdate(fixture.variants.BUTTER.productId, { name: `E2E Honey ${fixture.scenarioId}` });
+    await ProductVariant.findByIdAndUpdate(fixture.variants.BUTTER.id, { price: 4 });
+    fixture.variants.BUTTER.name = `E2E Honey ${fixture.scenarioId}`;
+    fixture.variants.BUTTER.price = 4;
+    const otherMilk = await ProductVariant.create({
+      product: fixture.variants.MILK.productId,
+      name: "Other milk variant",
+      sku: `E2E-OTHER-MILK-${fixture.scenarioId}`,
+      price: 5,
+      stockQuantity: 10000,
+      status: "active",
+    });
+    fixture.variants.OTHER_MILK = {
+      id: String(otherMilk._id),
+      productId: fixture.variants.MILK.productId,
+      name: fixture.variants.MILK.name,
+      price: 5,
+    };
+  }
   const Role = require("../../models/role.model");
   const User = require("../../models/user.model");
   const role = await Role.findOneAndUpdate(

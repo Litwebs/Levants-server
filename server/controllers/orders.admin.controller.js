@@ -1,6 +1,8 @@
 const service = require("../services/orders/orders.admin.service");
 const refundService = require("../services/orders/orders.refund.service");
 const { sendOk, sendErr } = require("../utils/response.util");
+const Order = require("../models/order.model");
+const { refreshEmailAudit } = require("../services/orders/orders.emailAudit.service");
 
 const ListOrders = async (req, res) => {
   const page = Number(req.query.page || 1);
@@ -62,6 +64,61 @@ const GetOrderById = async (req, res) => {
   return sendOk(res, result.data);
 };
 
+const GetOrderEmails = async (req, res) => {
+  const order = await Order.findById(req.params.orderId)
+    .select("metadata")
+    .lean();
+  if (!order) return sendErr(res, { statusCode: 404, message: "Order not found" });
+
+  const emails = Array.isArray(order.metadata?.emailAudit)
+    ? order.metadata.emailAudit
+      .filter((entry) => entry.template !== "newOrderAlert")
+      .map((entry) => ({
+      template: entry.template,
+      providerId: entry.providerId || null,
+      subject: entry.subject,
+      to: entry.to,
+      sentAt: entry.sentAt,
+      providerStatus: entry.providerStatus || "sent",
+      provider: entry.html ? {
+        id: entry.providerId || "",
+        from: "",
+        to: [entry.to],
+        subject: entry.subject,
+        createdAt: entry.sentAt,
+        lastEvent: entry.providerStatus || "sent",
+        html: entry.html,
+      } : null,
+    }))
+    : [];
+  const historicalEmails = [
+    ["orderConfirmation", "orderConfirmationSentAt", "Order confirmation"],
+    ["orderDispatched", "dispatchedEmailSentAt", "Dispatch notification"],
+    ["orderInTransit", "inTransitEmailSentAt", "In-transit notification"],
+    ["deliveryProof", "deliveredEmailSentAt", "Delivery confirmation"],
+    ["refundConfirmation", "refundConfirmationSentAt", "Refund confirmation"],
+  ];
+  for (const [template, marker, subject] of historicalEmails) {
+    const sentAt = order.metadata?.[marker];
+    if (!sentAt || emails.some((email) => email.template === template)) continue;
+    emails.push({
+      template,
+      providerId: template === "orderDispatched"
+        ? order.metadata?.dispatchedEmailProviderId || null
+        : template === "orderInTransit"
+          ? order.metadata?.inTransitEmailProviderId || null
+          : null,
+      subject,
+      to: "",
+      sentAt,
+      providerStatus: "sent",
+      provider: null,
+    });
+  }
+  emails.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
+  return sendOk(res, { emails: await refreshEmailAudit(emails) });
+};
+
 const UpdateOrderStatus = async (req, res) => {
   const result = await service.UpdateOrderStatus({
     orderId: req.params.orderId,
@@ -71,6 +128,7 @@ const UpdateOrderStatus = async (req, res) => {
     deliveryProofFile: req.file,
     actorUserId: req.user?._id || req.user?.id,
     actorRoleName: req.user?.role?.name,
+    actorName: req.user?.name || req.user?.email,
     actorPermissions: req.user?.role?.permissions,
   });
 
@@ -132,6 +190,10 @@ const BulkUpdateDeliveryStatus = async (req, res) => {
   const result = await service.BulkUpdateDeliveryStatus({
     orderIds,
     deliveryStatus,
+    actorUserId: req.user?._id || req.user?.id,
+    actorName: req.user?.name || req.user?.email,
+    actorRoleName: req.user?.role?.name,
+    actorPermissions: req.user?.role?.permissions,
   });
 
   if (!result.success) {
@@ -236,6 +298,7 @@ const UpdateDriverNote = async (req, res) => {
 };
 
 module.exports = {
+  GetOrderEmails,
   ListOrders,
   GetOrderById,
   UpdateOrderStatus,

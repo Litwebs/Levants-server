@@ -6,7 +6,6 @@ import { useToast } from "../../components/common/Toast";
 import { useOrdersApi, type AdminOrder } from "../../context/Orders";
 import type { OrderEmailAudit } from "../../context/Orders/constants";
 import { mapAdminOrderToUi, type Order } from "./useOrders";
-import { getOrderSourceBadge, getStatusBadge, getPaymentBadge } from "./order.utils";
 import OrderDetailContent from "./OrderDetailContent";
 import OrderStatusModal from "./OrderStatusModal";
 import OrderEmailActivity from "./OrderEmailActivity";
@@ -47,7 +46,7 @@ function OrderPage({ orderId }: { orderId: string }) {
     try {
       setEmails(await getOrderEmailAudit(orderId));
     } catch {
-      setEmailsError("Email metadata could not be loaded from Resend.");
+      setEmailsError("Email activity could not be loaded. Please try again.");
     } finally {
       setEmailsLoading(false);
     }
@@ -55,7 +54,6 @@ function OrderPage({ orderId }: { orderId: string }) {
 
   useEffect(() => {
     void loadEmails();
-    // loadEmails intentionally follows the current order id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId, getOrderEmailAudit]);
 
@@ -85,14 +83,11 @@ function OrderPage({ orderId }: { orderId: string }) {
             <h1 ref={heading} tabIndex={-1}>{order?.orderNumber || "Order details"}</h1>
             <div className={styles.orderHeadingMeta}>
               {order && <>
-                {getStatusBadge(order.deliveryStatus?.replace(/_/g, " "))}
-                {getPaymentBadge(order.paymentStatus)}
                 <span>Placed {new Date(order.createdAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
               </>}
             </div>
           </div>
         </div>
-        {order && getOrderSourceBadge(order.isManualImport, order.isSubscriptionGenerated)}
       </header>
   );
 

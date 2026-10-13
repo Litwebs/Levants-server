@@ -27,6 +27,7 @@ const ProductRow = ({
       tabIndex={0}
       aria-label={`View ${product.name}`}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           navigate(`/products/${product._id}`);
@@ -43,6 +44,20 @@ const ProductRow = ({
           <div className={styles.productInfo}>
             <span className={styles.productName}>{product.name}</span>
             <span className={styles.productSku}>{product.slug}</span>
+            {canUpdateProduct ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className={styles.mobileProductEdit}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleEditProduct(product);
+                }}
+                aria-label={`Edit ${product.name}`}
+              >
+                Edit
+              </Button>
+            ) : null}
           </div>
         </div>
       </TableCell>

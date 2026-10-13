@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Eye, Mail, RefreshCw } from "lucide-react";
+import { CheckCircle2, Clock, Eye, Mail, RefreshCw, Send, XCircle } from "lucide-react";
 import { Button, Modal, ModalFooter } from "../../components/common";
 import type { OrderEmailAudit } from "../../context/Orders/constants";
 import styles from "./Orders.module.css";
@@ -35,6 +35,12 @@ const sanitizeEmailPreview = (html: string, deliveryProofUrl?: string) => {
   });
 
   document.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
+    const source = image.getAttribute("src") || "";
+    const isLogo = /levants|logo/i.test(image.alt || "");
+    if (isLogo && (/^https:\/\//i.test(source) || /^data:image\/(png|jpeg|gif|webp);base64,/i.test(source))) {
+      image.referrerPolicy = "no-referrer";
+      return;
+    }
     const isDeliveryProof = image.alt?.toLowerCase() === "delivery proof";
     if (isDeliveryProof && deliveryProofUrl) {
       image.src = deliveryProofUrl;
@@ -81,7 +87,7 @@ export default function OrderEmailActivity({
       <div className={styles.auditSectionHeader}>
         <div>
           <h2 id="email-activity-heading">Email activity</h2>
-          <p>Messages sent for this order, with live delivery metadata from Resend.</p>
+          <p>Customer emails with the latest delivery status from Resend.</p>
         </div>
         <Button variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
           <RefreshCw size={15} className={loading ? styles.spinnerIcon : undefined} />
@@ -91,12 +97,18 @@ export default function OrderEmailActivity({
 
       {error ? <p className={styles.auditError} role="alert">{error}</p> : null}
       {!loading && !error && emails.length === 0 ? (
-        <div className={styles.auditEmpty}><Mail size={18} /><span>No order emails have been recorded.</span></div>
+        <div className={styles.auditEmpty}><Mail size={18} /><span>No email previews have been recorded for this order.</span></div>
       ) : null}
       <div className={styles.emailAuditList}>
         {emails.map((email, index) => {
           const provider = email.provider;
           const status = provider?.lastEvent || email.providerStatus;
+          const eventIcon = ["delivered", "opened", "clicked"].includes(status)
+            ? CheckCircle2
+            : ["failed", "bounced", "complained", "canceled"].includes(status)
+              ? XCircle
+              : Clock;
+          const StatusIcon = eventIcon;
           return (
             <article className={styles.emailAuditItem} key={email.providerId || `${email.template}-${email.sentAt}-${index}`}>
               <div className={styles.emailAuditSummary}>
@@ -113,8 +125,26 @@ export default function OrderEmailActivity({
                   </Button>
                 ) : null}
               </div>
+              <div className={styles.emailEvents}>
+                <h3>Email events</h3>
+                <ol className={styles.emailEventTimeline} aria-label={`${titleFor(email.template)} delivery events`}>
+                  <li className={styles.emailEvent}>
+                    <span className={styles.emailEventIcon}><Send size={22} aria-hidden="true" /></span>
+                    <span className={styles.emailStatus}>Sent</span>
+                    <time dateTime={email.sentAt}>{new Date(email.sentAt).toLocaleString("en-GB", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</time>
+                  </li>
+                  {status !== "sent" && (
+                    <li className={`${styles.emailEvent} ${styles[`emailEvent_${status}`] || ""}`}>
+                      <span className={styles.emailEventIcon}><StatusIcon size={22} aria-hidden="true" /></span>
+                      <span className={`${styles.emailStatus} ${styles[`emailStatus_${status}`] || ""}`}>{status.replace(/_/g, " ")}</span>
+                      <small>{status === "unavailable" ? "Status unavailable" : "Confirmed by Resend"}</small>
+                    </li>
+                  )}
+                </ol>
+              </div>
+              {email.providerError ? <p className={styles.emailUnavailable}>{email.providerError}</p> : null}
               {!provider?.html ? (
-                <p className={styles.emailUnavailable}>A preview is unavailable for this earlier email.</p>
+                <p className={styles.emailUnavailable}>This email was sent before previews were recorded, so its content is unavailable.</p>
               ) : null}
             </article>
           );

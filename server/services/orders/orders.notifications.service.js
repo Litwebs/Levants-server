@@ -260,6 +260,7 @@ async function sendOrderConfirmationEmailToCustomer({ orderId }) {
       subject,
       "orderConfirmation",
       templateParams,
+      { auditOrderId: claimed._id },
     );
   } catch (error) {
     await releaseOrderConfirmationClaim(claimed._id, claimToken);
@@ -348,6 +349,7 @@ async function sendRefundConfirmationEmailToCustomer({ orderId }) {
     subject,
     "refundConfirmation",
     templateParams,
+    { auditOrderId: order._id },
   );
 
   if (result && result.success) {

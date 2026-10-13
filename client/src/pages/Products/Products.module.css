@@ -613,6 +613,12 @@
   gap: 2px;
 }
 
+.mobileProductEdit { display: none; }
+
+@media (max-width: 768px) {
+  .mobileProductEdit { display: inline-flex; align-self: flex-start; min-height: 40px; margin-top: 8px; }
+}
+
 .productName {
   overflow: hidden;
   font-weight: var(--font-semibold);

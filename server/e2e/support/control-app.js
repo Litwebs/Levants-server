@@ -120,6 +120,18 @@ function createControlApp() {
   );
   app.post("/deal-fixtures", asyncRoute((req) => fixtures.createDealFixture(req.body || {})));
   app.get("/deal-state/:orderId", asyncRoute((req) => fixtures.getDealOrderState(req.params.orderId)));
+  app.post("/deal-test/stock", asyncRoute(async (req) => {
+    const Variant = require("../../models/variant.model");
+    const variant = await Variant.findByIdAndUpdate(req.body.variantId, { stockQuantity: req.body.stockQuantity }, { new: true });
+    if (!variant) throw new Error("Test variant not found");
+    return { stockQuantity: variant.stockQuantity, reservedQuantity: variant.reservedQuantity };
+  }));
+  app.post("/deal-test/offer", asyncRoute(async (req) => {
+    const Deal = require("../../models/deal.model");
+    const deal = await Deal.create(req.body);
+    return { id: deal.id, slug: deal.slug };
+  }));
+  app.get("/deal-test/orders/count", asyncRoute(async () => ({ count: await Order.countDocuments() })));
   app.get(
     "/emails",
     asyncRoute(async () => ({ emails: global.__E2E_EMAIL_OUTBOX__ || [] })),

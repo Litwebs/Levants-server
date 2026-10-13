@@ -368,6 +368,20 @@ const orderSchema = new mongoose.Schema(
       default: [],
     },
 
+    statusAudit: {
+      type: [{
+        from: String,
+        to: { type: String, required: true },
+        changedAt: { type: Date, default: Date.now },
+        actorId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        actorName: String,
+        actorRole: String,
+        source: String,
+        effects: [String],
+      }],
+      default: [],
+    },
+
     metadata: {
       type: Object,
       default: {},

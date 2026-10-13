@@ -137,6 +137,7 @@ async function ListProducts({
   pageSize = 20,
   filters = {},
   search,
+  sort = "newest",
 } = {}) {
   const query = { status: { $ne: "archived" } };
 
@@ -157,12 +158,31 @@ async function ListProducts({
     query.$or = [{ name: rx }, { description: rx }, { slug: rx }];
   }
 
+  if (filters.stock) {
+    const available = { $subtract: ["$stockQuantity", "$reservedQuantity"] };
+    const stockCondition = filters.stock === "out"
+      ? { $lte: [available, 0] }
+      : { $and: [{ $gt: [available, 0] }, { $gt: ["$lowStockAlert", 0] }, { $lte: [available, "$lowStockAlert"] }] };
+    const productIds = await Variant.distinct("product", {
+      status: "active",
+      $expr: stockCondition,
+    });
+    query._id = { $in: productIds };
+  }
+
+  const sortFields = {
+    newest: { createdAt: -1 },
+    oldest: { createdAt: 1 },
+    "name-asc": { name: 1 },
+    "name-desc": { name: -1 },
+  };
+
   const skip = (page - 1) * pageSize;
 
   const [total, products, categories, categoryDocs] = await Promise.all([
     Product.countDocuments(query),
     Product.find(query)
-      .sort({ createdAt: -1 })
+      .sort(sortFields[sort] || sortFields.newest)
       .skip(skip)
       .limit(pageSize)
       .populate("thumbnailImage")

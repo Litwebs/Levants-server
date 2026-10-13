@@ -11,6 +11,7 @@ const {
 } = require("../services/emailBranding.service");
 
 const resend = require("./emailTransport").createEmailTransport();
+const Order = require("../models/order.model");
 
 const FALLBACK_LOGO_URL =
   "https://res.cloudinary.com/deonzcviy/image/upload/v1777833005/logo_znwpja.png";
@@ -219,6 +220,25 @@ async function sendEmail(
     }
 
     const response = await resend.emails.send(payload);
+    if (response?.error) return { success: false, error: response.error };
+    if (options?.auditOrderId) {
+      try {
+        await Order.updateOne(
+          { _id: options.auditOrderId },
+          { $push: { "metadata.emailAudit": {
+            template: TempName,
+            providerId: response?.data?.id || response?.id || null,
+            subject: payload.subject,
+            to: payload.to,
+            sentAt: new Date().toISOString(),
+            providerStatus: "sent",
+            html: payload.html,
+          } } },
+        );
+      } catch (auditError) {
+        console.error("[email] order audit could not be saved", auditError);
+      }
+    }
     return { success: true, response };
   } catch (error) {
     return { success: false, error };

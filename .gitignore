@@ -34,6 +34,7 @@ coverage/
 .nyc_output/
 playwright-report/
 test-results/
+server/deals-integration-artifacts/
 
 # Cache
 .cache/

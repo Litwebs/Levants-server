@@ -28,7 +28,9 @@
     "test:e2e:delivery-navigation": "playwright test --config playwright.navigation.config.js",
     "test:delivery-navigation:unit": "jest --runInBand --config jest.navigation-unit.config.js",
     "test:e2e:deals": "playwright test --config=playwright.deals.config.js",
-    "test:e2e:deals:ci": "E2E_USE_STRIPE_CLI=1 playwright test --config=playwright.deals.config.js"
+    "test:e2e:deals:ci": "E2E_USE_STRIPE_CLI=1 playwright test --config=playwright.deals.config.js",
+    "test:deals:baskets": "jest --runInBand --no-watchman --config Tests/Deals/jest.baskets.config.cjs --runTestsByPath Tests/Deals/deals.admin-baskets.e2e.test.js Tests/Deals/deals.basket-abuse.e2e.test.js",
+    "test:e2e:deals:baskets": "playwright test --config=playwright.deals.config.js basket-scenarios.spec.js"
   },
   "keywords": [],
   "author": "",

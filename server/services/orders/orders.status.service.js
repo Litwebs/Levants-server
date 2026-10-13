@@ -11,6 +11,12 @@ const Customer = require("../../models/customer.model");
 const sendEmail = require("../../Integration/Email.service");
 const { uploadAndCreateFile } = require("../files.service");
 const { buildActiveOrderIdQuery } = require("../../utils/ordersAdmin.util");
+const {
+  buildDispatchEmailJob,
+  claimOrdersForDispatchEmail,
+  persistDispatchEmailResults,
+  sendEmailWithRetry,
+} = require("../../utils/deliveryEmail.util");
 
 const DELIVERY_PROOF_CONTENT_ID = "delivery-proof-photo";
 const CLOUDINARY_UPLOAD_PATH = "/image/upload/";
@@ -72,6 +78,7 @@ async function UpdateOrderStatus({
   deliveryProofFile,
   actorUserId,
   actorRoleName,
+  actorName,
   actorPermissions,
 }) {
   const order = await Order.findOne(buildActiveOrderIdQuery(orderId));
@@ -207,7 +214,89 @@ async function UpdateOrderStatus({
     }
   }
 
+  if (prevDeliveryStatus !== deliveryStatus) {
+    order.statusAudit ||= [];
+    order.statusAudit.push({
+      from: prevDeliveryStatus,
+      to: deliveryStatus,
+      changedAt: new Date(),
+      actorId: actorUserId,
+      actorName: actorName || (actorUserId ? "Administrator" : "System"),
+      actorRole: actorRoleName,
+      source: "admin",
+      effects: [],
+    });
+  }
   await order.save();
+
+  if (deliveryStatus === "dispatched" && !order.metadata?.dispatchedEmailSentAt) {
+    const claimed = await claimOrdersForDispatchEmail([order._id]);
+    if (claimed.has(String(order._id))) {
+      let result;
+      try {
+        const customer = await Customer.findById(order.customer).select("firstName email").lean();
+        const built = buildDispatchEmailJob({ order: { ...order.toObject(), customer } });
+        if (!built.ok) throw new Error("Customer email not found");
+        const job = built.job;
+        const sent = await sendEmailWithRetry({
+          to: job.to,
+          subject: job.subject,
+          template: job.template,
+          params: job.templateParams,
+          options: { ...job.options, auditOrderId: order._id },
+        });
+        result = {
+          orderDbId: order._id,
+          success: !!sent?.success,
+          providerId: sent?.response?.data?.id || sent?.response?.id || null,
+          error: { message: sent?.error?.message || "Dispatch email failed" },
+        };
+      } catch (error) {
+        result = { orderDbId: order._id, success: false, error: { message: error.message } };
+      }
+      await persistDispatchEmailResults([result]);
+    }
+  }
+
+  if (deliveryStatus === "in_transit" && !order.metadata?.inTransitEmailSentAt) {
+    const claimToken = crypto.randomUUID();
+    const claimed = await Order.findOneAndUpdate({
+      _id: order._id,
+      deliveryStatus: "in_transit",
+      "metadata.inTransitEmailSentAt": { $exists: false },
+      $or: [
+        { "metadata.inTransitEmailClaimedAt": { $exists: false } },
+        { "metadata.inTransitEmailClaimedAt": { $lt: new Date(Date.now() - 5 * 60 * 1000) } },
+      ],
+    }, { $set: { "metadata.inTransitEmailClaimedAt": new Date(), "metadata.inTransitEmailClaim": claimToken } }, { new: true });
+    if (claimed) {
+      const fence = { _id: order._id, "metadata.inTransitEmailClaim": claimToken };
+      try {
+        const customer = await Customer.findById(order.customer).select("firstName email").lean();
+        if (!customer?.email) throw new Error("Customer email not found");
+        const sent = await sendEmailWithRetry({
+          to: customer.email,
+          subject: `Your order ${order.orderId || ""} is in transit`,
+          template: "orderInTransit",
+          params: { name: customer.firstName || "there", orderId: order.orderId },
+          options: { fromName: "Levants", auditOrderId: order._id },
+        });
+        if (!sent?.success) throw new Error(sent?.error?.message || "In-transit email failed");
+        await Order.updateOne(fence, {
+          $set: {
+            "metadata.inTransitEmailSentAt": new Date(),
+            "metadata.inTransitEmailProviderId": sent?.response?.data?.id || sent?.response?.id || null,
+          },
+          $unset: { "metadata.inTransitEmailClaim": "", "metadata.inTransitEmailClaimedAt": "", "metadata.inTransitEmailLastError": "" },
+        });
+      } catch (error) {
+        await Order.updateOne(fence, {
+          $set: { "metadata.inTransitEmailLastError": { at: new Date(), message: error.message } },
+          $unset: { "metadata.inTransitEmailClaim": "", "metadata.inTransitEmailClaimedAt": "" },
+        });
+      }
+    }
+  }
 
   // Send delivered email only on a true transition to delivered,
   // and only if we haven't already sent it.
@@ -249,15 +338,15 @@ async function UpdateOrderStatus({
             deliveredAt: new Date().toLocaleString("en-GB"),
             reviewsUrl,
           },
-          buildDeliveryProofEmailOptions(proofUrl),
+          { ...buildDeliveryProofEmailOptions(proofUrl), auditOrderId: order._id },
         );
 
         if (emailRes?.success) {
           if (!order.metadata || typeof order.metadata !== "object")
             order.metadata = {};
-          order.metadata.deliveredEmailSentAt = new Date();
-          order.markModified("metadata");
-          await order.save();
+          await Order.updateOne({ _id: order._id }, {
+            $set: { "metadata.deliveredEmailSentAt": new Date() },
+          });
         }
       }
     } catch (_) {
@@ -265,126 +354,27 @@ async function UpdateOrderStatus({
     }
   }
 
-  return { success: true, data: order };
+  return { success: true, data: await Order.findById(order._id) };
 }
 
-async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus }) {
-  const ids = orderIds
-    .filter((id) => mongoose.Types.ObjectId.isValid(id))
-    .map((id) => new mongoose.Types.ObjectId(id));
-
+async function BulkUpdateDeliveryStatus({ orderIds, deliveryStatus, ...actor }) {
+  const ids = [...new Set((orderIds || []).map(String))]
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
   if (!ids.length) {
-    return {
-      success: false,
-      statusCode: 400,
-      message: "No valid orderIds provided",
-    };
+    return { success: false, statusCode: 400, message: "No valid orderIds provided" };
   }
-
-  const shouldEmailDelivered = deliveryStatus === "delivered";
-
-  const candidates = shouldEmailDelivered
-    ? await Order.find({
-        _id: { $in: ids },
-        deliveryStatus: { $ne: "delivered" },
-      }).select("_id orderId customer metadata")
-    : [];
-
-  if (deliveryStatus === "delivered") {
-    await Order.updateMany(
-      { _id: { $in: ids }, deliveryStatus: { $ne: "delivered" } },
-      {
-        $set: {
-          "metadata.deliveredAt": new Date(),
-        },
-      },
-    );
+  let matched = 0;
+  let modified = 0;
+  for (const orderId of ids) {
+    const existing = await Order.findOne(buildActiveOrderIdQuery(orderId));
+    if (!existing) continue;
+    const previousStatus = existing.deliveryStatus;
+    const result = await UpdateOrderStatus({ orderId, deliveryStatus, ...actor });
+    if (!result.success) return result;
+    matched++;
+    if (previousStatus !== deliveryStatus) modified++;
   }
-
-  const result = await Order.updateMany(
-    { _id: { $in: ids } },
-    {
-      $set: {
-        deliveryStatus,
-        updatedAt: new Date(),
-      },
-    },
-  );
-
-  if (shouldEmailDelivered && Array.isArray(candidates) && candidates.length) {
-    try {
-      const eligible = candidates.filter(
-        (o) => !o?.metadata?.deliveredEmailSentAt,
-      );
-
-      const customerIds = Array.from(
-        new Set(
-          eligible
-            .map((o) => String(o.customer || ""))
-            .filter((id) => mongoose.Types.ObjectId.isValid(id)),
-        ),
-      ).map((id) => new mongoose.Types.ObjectId(id));
-
-      const customers = customerIds.length
-        ? await Customer.find({ _id: { $in: customerIds } }).select(
-            "firstName lastName email",
-          )
-        : [];
-
-      const customerById = new Map(customers.map((c) => [String(c._id), c]));
-
-      for (const order of eligible) {
-        const customer = customerById.get(String(order.customer));
-        const to = String(customer?.email || "").trim();
-        if (!to) continue;
-
-        const proofUrl = String(order.metadata?.deliveryProofUrl || "").trim();
-        const note = String(order.metadata?.deliveryNote || "").trim();
-        const subject = `Your order ${order.orderId || ""} was delivered`;
-        const frontendBaseUrl = process.env.APP_ENV === "uat"
-          ? process.env.CUSTOMER_PORTAL_URL_PROD
-          : process.env.FRONTEND_URL_PROD ||
-            process.env.FRONTEND_URL_DEV ||
-            "https://levantsdairy.co.uk";
-        const reviewsUrl = order.orderId
-          ? `${frontendBaseUrl}/reviews?orderId=${encodeURIComponent(order.orderId)}`
-          : null;
-
-        const emailRes = await sendEmail(
-          to,
-          subject,
-          "deliveryProof",
-          {
-            name: customer?.firstName || "there",
-            orderId: order.orderId,
-            proofUrl,
-            proofSrc: proofUrl ? `cid:${DELIVERY_PROOF_CONTENT_ID}` : "",
-            deliveryNote: note,
-            deliveredAt: new Date().toLocaleString("en-GB"),
-            reviewsUrl,
-          },
-          buildDeliveryProofEmailOptions(proofUrl),
-        );
-
-        if (emailRes?.success) {
-          await Order.updateOne(
-            { _id: order._id },
-            { $set: { "metadata.deliveredEmailSentAt": new Date() } },
-          );
-        }
-      }
-    } catch (_) {
-      // Best-effort email sending
-    }
-  }
-
-  return {
-    success: true,
-    data: {
-      matched: result.matchedCount ?? result.n ?? 0,
-      modified: result.modifiedCount ?? result.nModified ?? 0,
-    },
-  };
+  return { success: true, data: { matched, modified } };
 }
 
 async function bulkAssignDeliveryDate({ orderIds, deliveryDate }) {

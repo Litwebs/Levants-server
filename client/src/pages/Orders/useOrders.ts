@@ -102,7 +102,7 @@ export type Order = {
     id?: string;
     from?: string | null;
     status: string;
-    timestamp: string;
+    timestamp: string | null;
     user: string;
     role?: string | null;
     source?: string;
@@ -303,7 +303,7 @@ export const mapAdminOrderToUi = (order: AdminOrder): Order => {
     customerInstructions,
     driverNote: typeof order.driverNote === "string" ? order.driverNote || null : null,
 
-    history: Array.isArray(order.statusAudit)
+    history: Array.isArray(order.statusAudit) && order.statusAudit.length > 0
       ? order.statusAudit.map((entry) => ({
           id: entry._id,
           from: entry.from || null,
@@ -314,7 +314,9 @@ export const mapAdminOrderToUi = (order: AdminOrder): Order => {
           source: entry.source,
           effects: Array.isArray(entry.effects) ? entry.effects : [],
         }))
-      : [],
+      : order.deliveryStatus && order.deliveryStatus !== "ordered"
+        ? [{ status: order.deliveryStatus, timestamp: null, user: "Unknown", source: "historical status", effects: [] }]
+        : [],
 
   deliveryProofUrl,
   deliveredAt,

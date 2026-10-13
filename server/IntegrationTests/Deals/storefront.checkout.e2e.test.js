@@ -177,15 +177,14 @@ test.each([0, 500, 2000])("real storefront package checkout and fulfillment with
 test("real browser rejects a stale package and refreshes before retrying checkout", () => diagnostic(async () => {
   const fixture = await openBasket();
   await Deal.updateOne({ _id: fixture.deal.id }, { packagePrice: 12 });
-  let response = page.waitForResponse(value => new URL(value.url()).pathname === "/api/portal/orders/checkout");
   await page.getByRole("button", { name: "Place Order - £12.50", exact: true }).click();
-  expect((await response).status()).toBe(400);
+  await browserExpect(page.getByText("Your offers have been updated. Review your basket total, then place your order.")).toBeVisible();
+  expect(checkoutBodies).toHaveLength(0);
   expect(await Order.countDocuments()).toBe(0);
   expect((await Variant.findById(fixture.milkVariant.id)).reservedQuantity).toBe(0);
-  await page.getByRole("button", { name: "Refresh offers", exact: true }).click();
   const retry = page.getByRole("button", { name: "Place Order - £13.00", exact: true });
   await browserExpect(retry).toBeVisible();
-  response = page.waitForResponse(value => new URL(value.url()).pathname === "/api/portal/orders/checkout");
+  const response = page.waitForResponse(value => new URL(value.url()).pathname === "/api/portal/orders/checkout");
   await retry.click();
   expect((await response).status()).toBe(200);
   const order = await Order.findOne();
