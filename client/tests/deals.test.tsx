@@ -411,8 +411,8 @@ describe("merchandising and validation", () => {
   });
   test("sends featured, inactive and scheduled merchandising settings", async () => {
     const user = userEvent.setup(); mount(); await fillOffer(user);
-    await user.click(screen.getByRole("checkbox", { name: "Feature this deal" }));
-    await user.click(screen.getByRole("checkbox", { name: "Active on storefront" }));
+    await user.click(screen.getByRole("checkbox", { name: /^Feature this deal/ }));
+    await user.click(screen.getByRole("checkbox", { name: /^Active on storefront/ }));
     fireEvent.change(screen.getByLabelText("Starts at"), { target: { value: "2030-06-02T10:00" } });
     await user.click(screen.getByRole("button", { name: "Create product package" }));
     await screen.findByRole("heading", { name: "Saved deals" });
