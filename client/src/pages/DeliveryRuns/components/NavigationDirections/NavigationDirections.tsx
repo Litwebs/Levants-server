@@ -25,7 +25,7 @@ export function NavigationDirections({ links, className }: Props) {
           ["waze", "Waze"],
         ] as const).map(([key, label]) => (
           <DropdownMenuItem key={key} asChild>
-            <a href={links[key]} rel="noopener noreferrer" className="min-h-11">
+            <a href={links[key]} target="_blank" rel="noopener noreferrer" className="min-h-11">
               {label}
             </a>
           </DropdownMenuItem>
