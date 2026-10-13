@@ -1,6 +1,26 @@
-export {
-  analyticsDateRangeOptions as dateRangeOptions,
-  analyticsOrderSourceOptions as orderSourceOptions,
-  analyticsComparisonOptions as comparisonOptions,
-  defaultAnalyticsIntervalForRange,
+import type {
+  AnalyticsDateRange,
+  AnalyticsOrderSource,
 } from "../../context/Analytics";
+
+export const dateRangeOptions: { value: AnalyticsDateRange; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "yesterday", label: "Yesterday" },
+  { value: "last7", label: "Last 7 Days" },
+  { value: "last30", label: "Last 30 Days" },
+  { value: "thisMonth", label: "This Month" },
+  { value: "lastMonth", label: "Last Month" },
+  { value: "thisYear", label: "This Year" },
+  { value: "lastYear", label: "Last Year" },
+  { value: "all", label: "All Time" },
+  { value: "custom", label: "Custom" },
+];
+
+export const orderSourceOptions: {
+  value: AnalyticsOrderSource;
+  label: string;
+}[] = [
+  { value: "all", label: "All Sources" },
+  { value: "website", label: "Website" },
+  { value: "imported", label: "Imported" },
+];

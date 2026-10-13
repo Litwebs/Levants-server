@@ -20,13 +20,14 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { Button, Input, Toggle } from "@/components/common";
+import { Button, Input, Toggle, Select } from "./components";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/common/Toast";
 import {
   createDeal,
   getDeal,
   updateDeal,
+  publishDeal,
   type Deal,
   type DealDraft,
 } from "@/context/Deals";
@@ -46,7 +47,7 @@ import styles from "./CreateDealPage.module.css";
 
 type FieldErrors = Partial<
   Record<
-    "name" | "slug" | "packagePrice" | "endsAt" | "items" | "image",
+    "name" | "slug" | "savingValue" | "packagePrice" | "endsAt" | "items" | "image",
     string
   >
 >;
@@ -91,8 +92,8 @@ export function CreateDealPage() {
   const [imageChanged, setImageChanged] = useState(false);
   const initialState = useRef("");
   const totals = useMemo(
-    () => dealTotals(items, draft.packagePrice),
-    [items, draft.packagePrice],
+    () => dealTotals(items, draft.packagePrice, draft.pricingMode, draft.savingValue),
+    [items, draft.packagePrice, draft.pricingMode, draft.savingValue],
   );
   const serializedState = JSON.stringify({ draft, items });
   const dirty = initialState.current
@@ -106,6 +107,9 @@ export function CreateDealPage() {
       description: deal.description || "",
       image: deal.image?.url || deal.imageUrl || "",
       packagePrice: String(deal.packagePrice ?? ""),
+      pricingMode: deal.pricingMode || "fixed_price",
+      savingValue: String(deal.savingValue ?? ""),
+      publicationStatus: deal.publicationStatus || "published",
       isActive: Boolean(deal.isActive),
       isFeatured: Boolean(deal.isFeatured),
       startsAt: localDateTime(deal.startsAt),
@@ -215,11 +219,15 @@ export function CreateDealPage() {
         next.slug = "Use lowercase letters, numbers and single hyphens only.";
     }
     if (!onlyStep || onlyStep === 2) {
-      const price = Number(draft.packagePrice);
-      if (!draft.packagePrice || !Number.isFinite(price) || price <= 0)
-        next.packagePrice = "Enter a package price greater than £0.00.";
-      else if (totals.packagePricePence >= totals.originalValuePence)
-        next.packagePrice = "Package price must be below the combined value.";
+      if (draft.pricingMode === "fixed_price") {
+        const price = Number(draft.packagePrice);
+        if (!draft.packagePrice || !Number.isFinite(price) || totals.packagePricePence <= 0)
+          next.packagePrice = "Enter a package price greater than £0.00.";
+        else if (totals.packagePricePence >= totals.originalValuePence)
+          next.packagePrice = "Package price must be below the combined value.";
+      } else if (!draft.savingValue || !Number.isFinite(Number(draft.savingValue)) || Number(draft.savingValue) <= 0 || totals.packagePricePence <= 0 || totals.packagePricePence >= totals.originalValuePence) {
+        next.savingValue = "Enter a saving that leaves a positive price below the combined value.";
+      }
     }
     if (
       (!onlyStep || onlyStep === 3) &&
@@ -252,20 +260,30 @@ export function CreateDealPage() {
     const pricePence = Math.round(
       totals.originalValuePence * ((100 - percent) / 100),
     );
+    update("pricingMode", "fixed_price");
     update("packagePrice", (pricePence / 100).toFixed(2));
   };
-  const submit = async () => {
-    if (saving || !validate()) return;
+  const submit = async (saveDraft = false) => {
+    if (saving) return;
+    if (saveDraft) {
+      if (draft.name.trim().length < 2 || !isValidDealSlug(draft.slug)) {
+        setStep(2);
+        setErrors({ name: draft.name.trim().length < 2 ? "Enter a deal name of at least 2 characters." : undefined, slug: !isValidDealSlug(draft.slug) ? "Use lowercase letters, numbers and single hyphens only." : undefined });
+        return;
+      }
+    } else if (!validate()) return;
     const body: DealDraft = {
       name: draft.name.trim(),
-      slug: draft.slug.trim(),
+      ...(draft.slug.trim() ? { slug: draft.slug.trim() } : {}),
       description: draft.description.trim(),
       ...(!editing || imageChanged ? { image: draft.image || null } : {}),
       items: items.map((item) => ({
         variantId: item.variantId,
         quantity: item.quantity,
       })),
-      packagePrice: Number(draft.packagePrice),
+      ...(draft.pricingMode === "fixed_price" && Number(draft.packagePrice) > 0 ? { packagePrice: Number(draft.packagePrice) } : {}),
+      pricingMode: draft.pricingMode,
+      ...(draft.pricingMode !== "fixed_price" && Number(draft.savingValue) > 0 ? { savingValue: Number(draft.savingValue) } : { savingValue: null }),
       currency: "GBP",
       isActive: draft.isActive,
       isFeatured: draft.isFeatured,
@@ -275,10 +293,14 @@ export function CreateDealPage() {
     };
     setSaving(true);
     try {
-      if (editing && dealId) await updateDeal(dealId, body);
-      else await createDeal(body);
+      if (editing && dealId) {
+        // PATCH cannot change publication state or accept empty contents.
+        if (saveDraft && !items.length) delete (body as Partial<DealDraft>).items;
+        await updateDeal(dealId, body);
+        if (!saveDraft && draft.publicationStatus === "draft") await publishDeal(dealId);
+      } else await createDeal({ ...body, publicationStatus: saveDraft ? "draft" : "published" });
       initialState.current = serializedState;
-      showToast({ type: "success", title: editing ? "Deal updated" : "Product package created" });
+      showToast({ type: "success", title: saveDraft ? "Draft saved" : editing ? "Deal updated" : "Product package created" });
       navigateWithDealTransition(navigate, "/deals", "back");
     } catch (error) {
       showToast({
@@ -350,6 +372,9 @@ export function CreateDealPage() {
           <div className={styles.headerControls}>
             <span className={styles.progressCopy}>Step {step} of 3</span>
             <div className={styles.headerActions}>
+              {(!editing || draft.publicationStatus === "draft") && (
+                <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void submit(true)}>Save draft</Button>
+              )}
               {step > 1 && (
                 <Button
                   type="button"
@@ -368,6 +393,7 @@ export function CreateDealPage() {
                   size="sm"
                   rightIcon={<ArrowRight />}
                   onClick={next}
+                  disabled={saving}
                 >
                   {step === 1 ? "Details & pricing" : "Review & publish"}
                 </Button>
@@ -379,7 +405,7 @@ export function CreateDealPage() {
                   onClick={() => void submit()}
                   isLoading={saving}
                 >
-                  {editing ? "Save changes" : "Create product package"}
+                  {editing ? draft.publicationStatus === "draft" ? "Publish deal" : "Save changes" : "Create product package"}
                 </Button>
               )}
             </div>
@@ -614,6 +640,12 @@ export function CreateDealPage() {
                 </div>
               </div>
               <div className={styles.pricingInputBlock}>
+                <Select label="Pricing method" value={draft.pricingMode} onChange={(value) => update("pricingMode", value as DealFormDraft["pricingMode"])} options={[
+                  { value: "fixed_price", label: "Fixed package price" },
+                  { value: "fixed_saving", label: "Fixed saving (£)" },
+                  { value: "percentage_saving", label: "Percentage saving (%)" },
+                ]} />
+                {draft.pricingMode === "fixed_price" ? (
                 <Input
                   id="package-price"
                   label="Package price (£) *"
@@ -630,6 +662,9 @@ export function CreateDealPage() {
                   aria-invalid={Boolean(errors.packagePrice)}
                   fullWidth
                 />
+                ) : (
+                  <Input id="saving-value" label={draft.pricingMode === "fixed_saving" ? "Saving (£) *" : "Saving (%) *"} type="number" min="0.01" step="0.01" value={draft.savingValue} onChange={(event) => update("savingValue", event.target.value)} error={errors.savingValue} aria-invalid={Boolean(errors.savingValue)} fullWidth />
+                )}
                 <div className={styles.discountPresets}>
                   <span>Quick discount</span>
                   <div>

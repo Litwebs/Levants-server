@@ -43,7 +43,7 @@ export async function createDeal(body: DealDraft) {
   return data.deal;
 }
 
-export async function updateDeal(id: string, body: Partial<DealDraft>) {
+export async function updateDeal(id: string, body: Partial<Omit<DealDraft, "publicationStatus">>) {
   const res = await api.patch("/admin/deals/" + id, body);
   const data = unwrap<{ deal: Deal }>(res.data);
   if (!data?.deal) throw new Error("Failed to update deal");
@@ -61,5 +61,19 @@ export async function archiveDeal(id: string) {
   const res = await api.post("/admin/deals/" + id + "/archive");
   const data = unwrap<{ deal: Deal }>(res.data);
   if (!data?.deal) throw new Error("Failed to archive deal");
+  return data.deal;
+}
+
+export async function publishDeal(id: string) {
+  const res = await api.post(`/admin/deals/${id}/publish`);
+  const data = unwrap<{ deal: Deal }>(res.data);
+  if (!data?.deal) throw new Error("Failed to publish deal");
+  return data.deal;
+}
+
+export async function unpublishDeal(id: string) {
+  const res = await api.post(`/admin/deals/${id}/unpublish`);
+  const data = unwrap<{ deal: Deal }>(res.data);
+  if (!data?.deal) throw new Error("Failed to unpublish deal");
   return data.deal;
 }

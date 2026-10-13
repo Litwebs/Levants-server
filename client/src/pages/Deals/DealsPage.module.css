@@ -24,3 +24,5 @@
   .filtersPanel > button { width: 100%; }
   .addButton { width: 100%; }
 }
+
+.actions { display: flex; flex-wrap: wrap; gap: .4rem; min-width: 200px; }

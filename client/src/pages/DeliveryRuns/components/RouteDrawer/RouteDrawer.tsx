@@ -98,7 +98,6 @@ export const RouteDrawer: React.FC<RouteDrawerProps> = ({
     id: string;
     orderNumber: string;
     deliveryStatus: string;
-    customerInstructions?: string;
   } | null>(null);
   const [deliveryStatusOverrides, setDeliveryStatusOverrides] = useState<
     Record<string, string>

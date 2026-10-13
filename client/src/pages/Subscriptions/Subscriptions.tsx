@@ -8,29 +8,14 @@ import {
   DataTableCard,
   FiltersCardLayout,
   Button,
-  Input,
-  PageContainer,
   Select as CommonSelect,
   Badge,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
 } from "../../components/common";
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
 import sharedFilterStyles from "../../components/common/FiltersCardLayout/SharedFilters.module.css";
 import styles from "./Subscriptions.module.css";
-import {
-  ChevronDown,
-  RefreshCw,
-  X as XIcon,
-  Search,
-  Filter,
-  Plus,
-  FileUp,
-} from "lucide-react";
+import { RefreshCw, X as XIcon, Search, Filter, Plus, FileUp } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import BulkSubscriptionImportModal from "./BulkSubscriptionImportModal";
 
@@ -70,7 +55,6 @@ export default function SubscriptionsPage() {
     useSubscriptions();
 
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [frequencyFilter, setFrequencyFilter] = useState("all");
@@ -81,7 +65,7 @@ export default function SubscriptionsPage() {
   const fetchSubscriptions = useCallback(() => {
     listSubscriptions({
       page,
-      pageSize,
+      pageSize: 20,
       status: statusFilter !== "all" ? statusFilter : undefined,
       frequency: frequencyFilter !== "all" ? frequencyFilter : undefined,
       search: search || undefined,
@@ -90,7 +74,6 @@ export default function SubscriptionsPage() {
   }, [
     listSubscriptions,
     page,
-    pageSize,
     statusFilter,
     frequencyFilter,
     search,
@@ -139,14 +122,14 @@ export default function SubscriptionsPage() {
     return next;
   }, [subscriptions, sortBy]);
 
-  const totalPages = meta ? Math.max(1, Math.ceil(meta.total / pageSize)) : 1;
+  const totalPages = meta ? Math.ceil(meta.total / 20) : 1;
 
   return (
-    <PageContainer className={styles.container}>
+    <div className={styles.container}>
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>Subscriptions</h1>
-          <p className={styles.subtitle}>
+          <h1 className="text-2xl font-semibold">Subscriptions</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             {meta?.total ?? 0} total subscriptions
           </p>
         </div>
@@ -159,6 +142,23 @@ export default function SubscriptionsPage() {
           >
             Refresh
           </Button>
+          {hasPermission("subscriptions.import") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowImport(true)}
+              leftIcon={<FileUp size={16} />}
+            >
+              Import CSV
+            </Button>
+          )}
+          <Button
+            size="sm"
+            onClick={() => navigate("/subscriptions/new")}
+            leftIcon={<Plus size={16} />}
+          >
+            Create subscription
+          </Button>
         </div>
       </div>
 
@@ -168,39 +168,29 @@ export default function SubscriptionsPage() {
         topRow={
           <div className={sharedFilterStyles.searchRow}>
             <div className={sharedFilterStyles.searchInput}>
-              <Input
+              <Search size={18} className={sharedFilterStyles.searchIcon} />
+              <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search customer..."
-                aria-label="Search subscriptions by customer"
-                className={sharedFilterStyles.searchControl}
-                leftIcon={<Search size={18} />}
-                fullWidth
+                className={sharedFilterStyles.search}
               />
               {search && (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className={sharedFilterStyles.clearSearch}
                   onClick={() => setSearch("")}
-                  aria-label="Clear subscription search"
+                  aria-label="Clear search"
                 >
                   <XIcon size={16} />
-                </button>
+                </Button>
               )}
             </div>
 
             <Button
               variant="outline"
               leftIcon={<Filter size={16} />}
-              rightIcon={
-                <ChevronDown
-                  size={16}
-                  className={`${sharedFilterStyles.filtersChevron} ${showFilters ? sharedFilterStyles.filtersChevronOpen : ""}`}
-                  aria-hidden="true"
-                />
-              }
-              aria-expanded={showFilters}
-              aria-controls="subscription-filters-panel"
               onClick={() => setShowFilters(!showFilters)}
               className={sharedFilterStyles.filtersToggleBtn}
             >
@@ -217,30 +207,9 @@ export default function SubscriptionsPage() {
                 { value: "next-delivery", label: "Next delivery" },
               ]}
             />
-
-            <div className={styles.toolbarActions}>
-              {hasPermission("subscriptions.import") && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowImport(true)}
-                  leftIcon={<FileUp size={16} />}
-                >
-                  Import CSV
-                </Button>
-              )}
-              <Button
-                size="sm"
-                onClick={() => navigate("/subscriptions/new")}
-                leftIcon={<Plus size={16} />}
-              >
-                Create subscription
-              </Button>
-            </div>
           </div>
         }
         isExpanded={showFilters}
-        expandedId="subscription-filters-panel"
         expandedWrapClassName={sharedFilterStyles.filtersRowWrap}
         expandedOpenClassName={sharedFilterStyles.filtersRowOpen}
         expandedInnerClassName={sharedFilterStyles.filtersRowInner}
@@ -278,9 +247,7 @@ export default function SubscriptionsPage() {
             </div>
 
             <Button
-              variant="outline"
-              size="sm"
-              className={styles.clearFilters}
+              variant="ghost"
               onClick={() => {
                 setSearch("");
                 setStatusFilter("all");
@@ -288,7 +255,7 @@ export default function SubscriptionsPage() {
                 setSortBy("newest");
               }}
             >
-              Clear all filters
+              Clear Filters
             </Button>
           </div>
         }
@@ -296,49 +263,50 @@ export default function SubscriptionsPage() {
 
       {/* Table */}
       {error ? (
-        <div className={styles.pageAlert} role="alert">{error}</div>
+        <p className="text-destructive">{error}</p>
       ) : (
         <DataTableCard
-          loading={loading}
-          loadingText="Loading subscriptions…"
+          className={styles.tableCard}
           pagination={{
             page,
-            pageSize,
+            pageSize: 20,
             total: meta?.total ?? subscriptions.length,
             totalPages,
             setPage,
-            setPageSize,
-            pageSizeOptions: [
-              { value: "20", label: "20 / page" },
-              { value: "50", label: "50 / page" },
-              { value: "100", label: "100 / page" },
-            ],
+            setPageSize: () => undefined,
+            pageSizeOptions: [{ value: "20", label: "20 - page" }],
             loading,
           }}
         >
-          <Table withWrapper={false} tableClassName={styles.responsiveSubscriptionsTable}>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ref</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Frequency</TableHead>
-                <TableHead>Delivery Day</TableHead>
-                <TableHead>Next Delivery</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Items</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedSubscriptions.length === 0 ? (
-                <TableRow className={sharedTableStyles.emptyStateRow}>
-                  <TableCell colSpan={8} className={sharedTableStyles.emptyTableCell}>
+          <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
+            <thead>
+              <tr>
+                <th>Ref</th>
+                <th>Customer</th>
+                <th>Status</th>
+                <th>Frequency</th>
+                <th>Delivery Day</th>
+                <th>Next Delivery</th>
+                <th>Created</th>
+                <th>Items</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr className={sharedTableStyles.emptyStateRow}>
+                  <td colSpan={8} className={sharedTableStyles.emptyTableCell}>
+                    Loading…
+                  </td>
+                </tr>
+              ) : sortedSubscriptions.length === 0 ? (
+                <tr className={sharedTableStyles.emptyStateRow}>
+                  <td colSpan={8} className={sharedTableStyles.emptyTableCell}>
                     No subscriptions found
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ) : (
                 sortedSubscriptions.map((sub) => (
-                  <TableRow
+                  <tr
                     key={sub._id}
                     className={`${styles.clickableRow} ${sub.isPendingSetup ? styles.pendingRow : ""}`}
                     role="link"
@@ -352,34 +320,34 @@ export default function SubscriptionsPage() {
                       }
                     }}
                   >
-                    <TableCell className={styles.referenceCell}>
+                    <td className="font-mono text-xs">
                       {sub.subscriptionNumber}
-                    </TableCell>
-                    <TableCell>
-                      <div className={styles.customerName}>
+                    </td>
+                    <td>
+                      <div className="font-medium">
                         {getCustomerName(sub.customer)}
                       </div>
-                      <div className={styles.customerEmail}>
+                      <div className="text-xs text-muted-foreground">
                         {getCustomerEmail(sub.customer)}
                       </div>
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td>
                       <Badge variant={STATUS_VARIANTS[sub.status] ?? "default"}>
                         {sub.status}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td className="text-sm">
                       {FREQUENCY_LABELS[sub.frequency] ?? sub.frequency}
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td className="text-sm">
                       {(sub.preferredDeliveryDays?.length
                         ? sub.preferredDeliveryDays
                         : [sub.preferredDeliveryDay]
                       )
                         .map((day) => DAY_LABELS[day] ?? day)
                         .join(", ")}
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td className="text-sm">
                       {sub.status === "cancelled"
                         ? "None scheduled"
                         : sub.nextDeliveryDate
@@ -387,8 +355,8 @@ export default function SubscriptionsPage() {
                             "en-GB",
                           )
                         : "Awaiting setup"}
-                    </TableCell>
-                    <TableCell>
+                    </td>
+                    <td className="text-sm">
                       {sub.createdAt
                         ? new Date(sub.createdAt).toLocaleDateString("en-GB", {
                             day: "2-digit",
@@ -396,12 +364,12 @@ export default function SubscriptionsPage() {
                             year: "numeric",
                           })
                         : "—"}
-                    </TableCell>
-                    <TableCell>{sub.items.length}</TableCell>
-                  </TableRow>
+                    </td>
+                    <td className="text-sm">{sub.items.length}</td>
+                  </tr>
                 ))
               )}
-            </TableBody>
+            </tbody>
           </Table>
         </DataTableCard>
       )}
@@ -411,6 +379,6 @@ export default function SubscriptionsPage() {
         onClose={() => setShowImport(false)}
         onImported={fetchSubscriptions}
       />
-    </PageContainer>
+    </div>
   );
 }

@@ -1,1 +1,1 @@
-export { SimpleBarChart, MultiLineChart, HorizontalBarChart, DonutChart } from './SimpleChart';
+export { SimpleBarChart, HorizontalBarChart, DonutChart } from './SimpleChart';

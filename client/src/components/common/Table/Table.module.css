@@ -76,36 +76,20 @@
   background-color: var(--color-primary-bg);
 }
 
-.skeletonRow {
-  pointer-events: none;
-}
-
-.skeletonRow:hover {
-  background-color: transparent;
-}
-
-.skeletonRow .td {
-  height: 64px;
-}
-
 .td {
   padding: var(--space-3) var(--space-4);
   color: var(--color-gray-700);
   vertical-align: middle;
-  white-space: nowrap;
 }
 
-.th.align-left,
-.td.align-left {
+.align-left {
   text-align: left;
 }
 
-.th.align-center,
-.td.align-center {
+.align-center {
   text-align: center;
 }
 
-.th.align-right,
-.td.align-right {
+.align-right {
   text-align: right;
 }

@@ -125,14 +125,14 @@ export const ReviewsPage = () => {
     try {
       await toggleVisibility(id, isApproved);
       showToast({
-        title: isApproved
+        message: isApproved
           ? "Review approved and published"
           : "Approval removed and review unpublished",
         type: "success",
       });
     } catch (error: unknown) {
       showToast({
-        title: getErrorMessage(error, "Failed to update review"),
+        message: getErrorMessage(error, "Failed to update review"),
         type: "error",
       });
     }
@@ -145,10 +145,10 @@ export const ReviewsPage = () => {
       setDeleteTargetId(null);
       // Close detail modal if it was the deleted review
       if (selectedReview?._id === deleteTargetId) setSelectedReview(null);
-      showToast({ title: "Review deleted", type: "success" });
+      showToast({ message: "Review deleted", type: "success" });
     } catch (error: unknown) {
       showToast({
-        title: getErrorMessage(error, "Failed to delete review"),
+        message: getErrorMessage(error, "Failed to delete review"),
         type: "error",
       });
     }
@@ -160,12 +160,12 @@ export const ReviewsPage = () => {
       const result = await bulkDelete(selectedIds);
       setBulkDeleteConfirm(false);
       showToast({
-        title: `Deleted ${result?.deleted ?? selectedIds.length} review(s)`,
+        message: `Deleted ${result?.deleted ?? selectedIds.length} review(s)`,
         type: "success",
       });
     } catch (error: unknown) {
       showToast({
-        title: getErrorMessage(error, "Bulk delete failed"),
+        message: getErrorMessage(error, "Bulk delete failed"),
         type: "error",
       });
     } finally {
@@ -178,12 +178,12 @@ export const ReviewsPage = () => {
     try {
       const result = await bulkToggleVisibility(selectedIds, isApproved);
       showToast({
-        title: `${isApproved ? "Approved" : "Unpublished"} ${result?.updated ?? selectedIds.length} review(s)`,
+        message: `${isApproved ? "Approved" : "Unpublished"} ${result?.updated ?? selectedIds.length} review(s)`,
         type: "success",
       });
     } catch (error: unknown) {
       showToast({
-        title: getErrorMessage(error, "Bulk update failed"),
+        message: getErrorMessage(error, "Bulk update failed"),
         type: "error",
       });
     } finally {

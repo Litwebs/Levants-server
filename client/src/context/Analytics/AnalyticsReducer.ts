@@ -1,6 +1,5 @@
 import {
   type AnalyticsDashboard,
-  type AnalyticsComparisonMode,
   type AnalyticsDateRange,
   type AnalyticsOrderSource,
   type AnalyticsState,
@@ -43,7 +42,6 @@ export type AnalyticsAction =
         from: string;
         to: string;
         interval: RevenueInterval;
-        comparison: AnalyticsComparisonMode;
       };
     };
 
@@ -66,7 +64,6 @@ export default function AnalyticsReducer(
         from: action.payload.from,
         to: action.payload.to,
         interval: action.payload.interval,
-        comparison: action.payload.comparison,
       };
 
     case ANALYTICS_DASHBOARD_SUCCESS:

@@ -1,4 +1,5 @@
-import { Badge, Button, TableCell, TableRow } from "../../components/common";
+import { Eye, Edit2, Trash2 } from "lucide-react";
+import { Badge, Button } from "../../components/common";
 import { useNavigate } from "react-router-dom";
 import { getImageUrl, getStatusBadge } from "./product.utils";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -7,6 +8,9 @@ import styles from "./Products.module.css";
 const ProductRow = ({
   product,
   counts,
+  setSelectedProduct,
+  setIsViewModalOpen,
+  setIsDeleteModalOpen,
   handleEditProduct,
 }: any) => {
   const variantCount = counts?.total ?? product.variants?.length ?? 0;
@@ -15,25 +19,17 @@ const ProductRow = ({
   const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const canUpdateProduct = hasPermission("products.update");
+  const canDeleteProduct = hasPermission("products.delete");
 
   const thumbnailUrl = getImageUrl(product?.thumbnailImage);
   return (
-    <TableRow
+    <tr
       onClick={() => {
-        navigate(`/products/${product._id}`);
+        handleEditProduct(product);
       }}
       className={styles.clickableRow}
-      role="link"
-      tabIndex={0}
-      aria-label={`View ${product.name}`}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          navigate(`/products/${product._id}`);
-        }
-      }}
     >
-      <TableCell>
+      <td>
         <div className={styles.productCell}>
           <img
             src={thumbnailUrl}
@@ -45,34 +41,44 @@ const ProductRow = ({
             <span className={styles.productSku}>{product.slug}</span>
           </div>
         </div>
-      </TableCell>
+      </td>
 
-      <TableCell align="center" className={styles.centeredTagCell}>
+      <td>
         <Badge variant="default">{product.category}</Badge>
-      </TableCell>
+      </td>
 
-      <TableCell align="center" className={styles.centeredTagCell}>
-        {getStatusBadge(product.status)}
-      </TableCell>
+      <td>{getStatusBadge(product.status)}</td>
 
-      <TableCell align="center" className={styles.centeredTagCell}>
-        <Badge variant="outline" size="sm">{variantCount}</Badge>
-      </TableCell>
+      <td>
+        <div className={styles.badgesCell}>
+          <Badge size="sm">{variantCount}</Badge>
+          {lowCount > 0 ? (
+            <Badge variant="warning" size="sm">
+              Low {lowCount}
+            </Badge>
+          ) : null}
+          {outCount > 0 ? (
+            <Badge variant="error" size="sm">
+              OOS {outCount}
+            </Badge>
+          ) : null}
+        </div>
+      </td>
 
-      <TableCell align="center" className={styles.centeredTagCell}>
-        <Badge variant={lowCount > 0 ? "warning" : "default"} size="sm">
-          {lowCount}
-        </Badge>
-      </TableCell>
-
-      <TableCell align="center" className={styles.centeredTagCell}>
-        <Badge variant={outCount > 0 ? "error" : "success"} size="sm">
-          {outCount}
-        </Badge>
-      </TableCell>
-
-      <TableCell align="right" className={styles.actionsCell}>
+      <td className={styles.actionsCell}>
         <div className={styles.actions}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedProduct(product);
+              navigate(`/products/${product._id}`);
+            }}
+          >
+            <Eye size={16} />
+          </Button>
+
           {canUpdateProduct ? (
             <Button
               variant="ghost"
@@ -81,15 +87,27 @@ const ProductRow = ({
                 e.stopPropagation();
                 handleEditProduct(product);
               }}
-              aria-label={`Edit ${product.name}`}
-              title={`Edit ${product.name}`}
             >
-              Edit
+              <Edit2 size={16} />
+            </Button>
+          ) : null}
+
+          {canDeleteProduct ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedProduct(product);
+                setIsDeleteModalOpen(true);
+              }}
+            >
+              <Trash2 size={16} />
             </Button>
           ) : null}
         </div>
-      </TableCell>
-    </TableRow>
+      </td>
+    </tr>
   );
 };
 

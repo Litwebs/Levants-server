@@ -9,7 +9,6 @@ import {
   RotateCcw,
 } from "lucide-react";
 
-import type { AnalyticsMetricChange } from "../../context/Analytics";
 import { formatCompactNumber, formatCurrencyGBP } from "../../lib/numberFormat";
 
 type StatCard = {
@@ -25,23 +24,11 @@ type UseDashboardViewModelArgs = {
   revenueOverview: any;
 };
 
-const formatComparisonChange = (
-  change?: AnalyticsMetricChange | null,
-) => {
-  if (!change) return undefined;
-  if (!change.percentChangeAvailable) return "New";
-  const value = Number(change.percentChange) || 0;
-  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
-};
-
 export function useDashboardViewModel({
   dashboard,
   revenueOverview,
 }: UseDashboardViewModelArgs) {
   const summary = dashboard?.summary;
-  const comparisonChanges = dashboard?.overview?.comparison?.available
-    ? dashboard.overview.comparison.changes
-    : null;
 
   const statCards: StatCard[] = useMemo(
     () => [
@@ -50,14 +37,12 @@ export function useDashboardViewModel({
         value: formatCompactNumber(summary?.totalOrders ?? 0),
         icon: ShoppingCart,
         color: "primary",
-        change: formatComparisonChange(comparisonChanges?.totalOrders),
       },
       {
         label: "Revenue",
         value: formatCurrencyGBP(summary?.revenue ?? 0),
         icon: DollarSign,
         color: "success",
-        change: formatComparisonChange(comparisonChanges?.netRevenue),
       },
       {
         label: "Refunds",
@@ -84,7 +69,7 @@ export function useDashboardViewModel({
         color: "error",
       },
     ],
-    [summary, comparisonChanges],
+    [summary],
   );
 
   const revenueData = useMemo(() => {

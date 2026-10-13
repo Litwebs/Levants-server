@@ -36,7 +36,7 @@ const MANIFEST_ITEM_ORDER = [
   "sourdough",
 ] as const;
 
-const MANIFEST_ITEM_RANK = new Map<string, number>(
+const MANIFEST_ITEM_RANK = new Map(
   MANIFEST_ITEM_ORDER.map((value, index) => [value, index]),
 );
 

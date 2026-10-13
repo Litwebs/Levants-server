@@ -30,3 +30,16 @@ describe("Deals / price preview", () => {
     expect(slugifyDealName("  Milk & Eggs!  ")).toBe("milk-and-eggs");
   });
 });
+
+describe("savings pricing matches server penny rounding", () => {
+  const items = [{ variantId: "v1", variantName: "Milk", productName: "Milk", sku: "MILK", pricePence: 333, quantity: 3 }];
+  test("fixed saving is deducted from current value", () => {
+    expect(dealTotals(items, "1", "fixed_saving", "2").packagePricePence).toBe(799);
+  });
+  test("percentage savings round the final package price", () => {
+    expect(dealTotals(items, "1", "percentage_saving", "12.5").packagePricePence).toBe(874);
+  });
+  test("changing quantities recomputes prices", () => {
+    expect(dealTotals([{ ...items[0], quantity: 2 }], "1", "percentage_saving", "20").packagePricePence).toBe(533);
+  });
+});

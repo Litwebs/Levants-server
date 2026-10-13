@@ -1,11 +1,10 @@
-import React, { useId } from 'react';
+import React from 'react';
 import { ChevronDown } from 'lucide-react';
 import styles from './Select.module.css';
 
-export interface SelectOption {
+interface SelectOption {
   value: string;
   label: string;
-  disabled?: boolean;
 }
 
 interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> {
@@ -29,8 +28,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(({
   value,
   ...props
 }, ref) => {
-  const generatedId = useId();
-  const selectId = id || `select-${generatedId}`;
+  const selectId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
   
   const containerClasses = [
     styles.container,
@@ -70,7 +68,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(({
             </option>
           )}
           {options.map(option => (
-            <option key={option.value} value={option.value} disabled={option.disabled}>
+            <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}

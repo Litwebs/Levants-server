@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, Check, Eye, Monitor, Moon, Package, ShoppingBag, Smartphone, Sun, Tablet, X } from "lucide-react";
-import { Button } from "@/components/common";
+import { Button } from "./components";
 import { dealTotals, formatPence, type DealFormDraft, type SelectedDealItem } from "./dealForm";
 import styles from "./DealStorefrontPreview.module.css";
 
@@ -54,7 +54,7 @@ export function DealStorefrontPreview({ draft, items }: Props) {
     observer.observe(page);
     return () => observer.disconnect();
   }, [open, deviceWidth, view, stage, page]);
-  const totals = dealTotals(items, draft.packagePrice);
+  const totals = dealTotals(items, draft.packagePrice, draft.pricingMode, draft.savingValue);
   const imageUrl = draft.image || items.find((item) => item.imageUrl)?.imageUrl;
   const now = Date.now();
   const inactive = !draft.isActive;
@@ -63,8 +63,8 @@ export function DealStorefrontPreview({ draft, items }: Props) {
   const soldOut = items.length === 0 || items.some(
     (item) => item.availableQuantity !== undefined && item.availableQuantity < item.quantity,
   );
-  const unavailable = inactive || scheduled || expired || soldOut;
-  const visibility = inactive ? "Inactive — customers cannot see this deal"
+  const unavailable = draft.publicationStatus === "draft" || inactive || scheduled || expired || soldOut;
+  const visibility = draft.publicationStatus === "draft" ? "Draft — customers cannot see this deal until published" : inactive ? "Inactive — customers cannot see this deal"
     : scheduled ? "Scheduled — customers will see it after the start date"
     : expired ? "Expired — customers cannot see this deal"
     : soldOut ? "Out of stock — visible, but unavailable to buy"

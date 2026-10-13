@@ -1,16 +1,11 @@
-import { useMemo, type Dispatch, type SetStateAction } from "react";
+import { AlertTriangle, Trash2 } from "lucide-react";
 import {
-  Checkbox,
+  Button,
   DataTableCard,
+  Modal,
+  ModalFooter,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
 } from "../../components/common";
-import type { OrdersListMeta } from "../../context/Orders";
-import type { Order } from "./useOrders";
 import {
   getStatusBadge,
   getPaymentBadge,
@@ -18,74 +13,73 @@ import {
 } from "./order.utils";
 import styles from "./Orders.module.css";
 import sharedTableStyles from "../../components/common/DataTableCard/DataTableCard.module.css";
-import { Link } from "react-router-dom";
-
-const PAGE_SIZE_OPTIONS = [
-  { value: "50", label: "50 / page" },
-  { value: "100", label: "100 / page" },
-  { value: "200", label: "200 / page" },
-];
-
-interface OrdersTableProps {
-  filteredOrders: Order[];
-  selectedOrders: string[];
-  toggleOrderSelection: (id: string) => void;
-  toggleSelectAll: () => void;
-  loading: boolean;
-  page: number;
-  setPage: Dispatch<SetStateAction<number>>;
-  pageSize: number;
-  setPageSize: (size: number) => void;
-  meta: OrdersListMeta | null;
-}
-
-const formatOrderCreatedAt = (value: string) => {
-  const date = new Date(value);
-  return `${date.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-  })}, ${date.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-};
-
-const formatDeliveryDate = (value: string) =>
-  new Date(value).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+import { useState } from "react";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const OrdersTable = ({
   filteredOrders,
   selectedOrders,
   toggleOrderSelection,
   toggleSelectAll,
+  setSelectedOrder,
+  openOrderDetails,
   loading,
   page,
   setPage,
   pageSize,
   setPageSize,
   meta,
-}: OrdersTableProps) => {
+  deleteOrder,
+}: any) => {
+  const { hasPermission } = usePermissions();
+  const canDeleteOrders = hasPermission("orders.delete");
   const total = meta?.total ?? filteredOrders?.length ?? 0;
   const totalPages = meta?.totalPages ?? 1;
-  const selectedIds = useMemo(() => new Set(selectedOrders), [selectedOrders]);
-  const visibleIds = useMemo(
-    () => filteredOrders.map((order) => order.id),
-    [filteredOrders],
-  );
-  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
-  const allVisibleSelected =
-    visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
-  const someVisibleSelected =
-    selectedVisibleCount > 0 && !allVisibleSelected;
+  const [confirmOrder, setConfirmOrder] = useState<any | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const closeConfirm = () => {
+    if (deleteLoading) return;
+    setConfirmOrder(null);
+  };
+
+  const formatOrderCreatedAt = (value: string) => {
+    const date = new Date(value);
+    return `${date.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+    })}, ${date.toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+  };
+
+  const formatDeliveryDate = (value: string) => {
+    return new Date(value).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmOrder || !deleteOrder) return;
+    setDeleteLoading(true);
+    try {
+      const result = await deleteOrder(confirmOrder.id);
+      if (result?.deleted) {
+        setConfirmOrder(null);
+      }
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   return (
     <DataTableCard
+      className={styles.tableCard}
       loading={loading}
-      loadingText="Loading orders…"
+      loadingText="Loading..."
       pagination={{
         page,
         pageSize,
@@ -93,60 +87,76 @@ const OrdersTable = ({
         totalPages,
         setPage,
         setPageSize,
-        pageSizeOptions: PAGE_SIZE_OPTIONS,
+        pageSizeOptions: [
+          { value: "50", label: "50 - page" },
+          { value: "100", label: "100 - page" },
+          { value: "200", label: "200 - page" },
+        ],
         loading,
       }}
     >
-      <Table withWrapper={false}>
-        <TableHeader>
-          <TableRow>
-            <TableHead>
-              <Checkbox
-                aria-label="Select all orders"
-                checked={allVisibleSelected}
-                indeterminate={someVisibleSelected}
+      <Table withWrapper={false} tableClassName={sharedTableStyles.table}>
+        <thead>
+          <tr>
+            <th>
+              <input
+                type="checkbox"
+                checked={
+                  selectedOrders.length === filteredOrders.length &&
+                  filteredOrders.length > 0
+                }
                 onChange={toggleSelectAll}
                 onClick={(e) => e.stopPropagation()}
               />
-            </TableHead>
-            <TableHead>Order</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead>Items</TableHead>
-            <TableHead>Source</TableHead>
-            <TableHead>Total</TableHead>
-            <TableHead>Delivery Status</TableHead>
-            <TableHead>Payment</TableHead>
-            <TableHead>Delivery Date</TableHead>
-          </TableRow>
-        </TableHeader>
+            </th>
+            <th>Order</th>
+            <th>Customer</th>
+            <th>Items</th>
+            <th>Source</th>
+            <th>Total</th>
+            <th>Delivery Status</th>
+            <th>Payment</th>
+            <th>Delivery Date</th>
+            <th></th>
+          </tr>
+        </thead>
 
-        <TableBody>
+        <tbody>
           {(filteredOrders?.length ?? 0) === 0 ? (
-            <TableRow className={sharedTableStyles.emptyStateRow}>
-              <TableCell className={sharedTableStyles.emptyTableCell} colSpan={9}>
-                No orders found.
-              </TableCell>
-            </TableRow>
+            <tr className={sharedTableStyles.emptyStateRow}>
+              <td className={sharedTableStyles.emptyTableCell} colSpan={10}>
+                {loading ? "Loading orders…" : "No orders found."}
+              </td>
+            </tr>
           ) : (
-            filteredOrders.map((order) => (
-              <TableRow
+            filteredOrders.map((order: any) => (
+              <tr
                 key={order.id}
-                selected={selectedIds.has(order.id)}
+                className={
+                  selectedOrders.includes(order.id)
+                    ? styles.selectedRow
+                    : undefined
+                }
+                onClick={() => {
+                  setSelectedOrder(order);
+                  openOrderDetails?.(order.id);
+                }}
               >
-                <TableCell className={styles.checkboxCol} data-label="Select">
-                  <Checkbox
-                    aria-label={`Select order ${order.orderNumber}`}
-                    checked={selectedIds.has(order.id)}
+                <td className={styles.checkboxCol} data-label="Select">
+                  <input
+                    type="checkbox"
+                    checked={selectedOrders.includes(order.id)}
                     onChange={() => toggleOrderSelection(order.id)}
                     onClick={(e) => e.stopPropagation()}
+                    className={styles.checkbox}
                   />
-                </TableCell>
+                </td>
 
                 <td className={styles.orderInfoCol} data-label="Order">
                   <div className={styles.orderCell}>
-                    <Link to={`/orders/${order.id}`} className={styles.orderNumber} onClick={(event) => event.stopPropagation()}>
+                    <span className={styles.orderNumber}>
                       {order.orderNumber}
-                    </Link>
+                    </span>
                     <span className={styles.orderDate}>
                       {formatOrderCreatedAt(order.createdAt)}
                     </span>
@@ -172,8 +182,13 @@ const OrdersTable = ({
 
                 <td data-label="Items">
                   <div className={styles.itemsCell}>
-                    <span className={styles.itemCount}>{order.itemCount}</span>
-                    <span>{order.itemCount === 1 ? "item" : "items"}</span>
+                    <span className={styles.itemCount}>
+                      {order.items.reduce(
+                        (sum: number, item: any) => sum + item.quantity,
+                        0,
+                      )}
+                    </span>
+                    <span>items</span>
                   </div>
                 </td>
                 <td data-label="Source">
@@ -212,12 +227,67 @@ const OrdersTable = ({
                   </div>
                 </td>
 
-              </TableRow>
+                <td className={styles.rowActionsCell} data-label="Actions">
+                  {canDeleteOrders ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setConfirmOrder(order);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </Button>
+                  ) : null}
+                </td>
+              </tr>
             ))
           )}
-        </TableBody>
+        </tbody>
       </Table>
 
+      <Modal
+        isOpen={!!confirmOrder}
+        onClose={closeConfirm}
+        title="Delete Order"
+        size="sm"
+      >
+        <div className={styles.deleteConfirmContent}>
+          <div className={styles.deleteConfirmIcon}>
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <p className={styles.deleteConfirmTitle}>Delete this order?</p>
+            <p className={styles.deleteConfirmText}>
+              {confirmOrder?.orderNumber
+                ? `This will permanently delete ${confirmOrder.orderNumber}.`
+                : "This will permanently delete the selected order."}
+            </p>
+          </div>
+        </div>
+
+        <ModalFooter>
+          <Button
+            variant="outline"
+            onClick={closeConfirm}
+            disabled={deleteLoading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={confirmDelete}
+            disabled={deleteLoading || !deleteOrder}
+            isLoading={deleteLoading}
+          >
+            <Trash2 size={16} />
+            Delete
+          </Button>
+        </ModalFooter>
+      </Modal>
     </DataTableCard>
   );
 };

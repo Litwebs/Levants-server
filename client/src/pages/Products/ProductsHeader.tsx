@@ -1,29 +1,29 @@
-import { RefreshCw } from "lucide-react";
+import { Package, Plus } from "lucide-react";
 import { Button } from "../../components/common";
+import { usePermissions } from "@/hooks/usePermissions";
 import styles from "./Products.module.css";
 
-const ProductsHeader = ({ paginationMeta, stats, fetchProducts, isLoading }: any) => {
-  const productCount = paginationMeta?.total ?? stats?.total ?? 0;
+const ProductsHeader = ({ handleCreateProduct }: any) => {
+  const { hasPermission } = usePermissions();
+  const canCreateProduct = hasPermission("products.create");
 
   return (
     <div className={styles.header}>
-      <div>
-        <h1 className={styles.title}>Products</h1>
-        <p className={styles.subtitle}>
-          {productCount} {productCount === 1 ? "product" : "products"} found
-        </p>
+      <div className={styles.titleSection}>
+        <Package size={28} />
+        <div>
+          <h1 className={styles.title}>Products</h1>
+          <p className={styles.subtitle}>
+            Manage your product catalog and inventory
+          </p>
+        </div>
       </div>
-      <div className={styles.headerActions}>
-        <Button
-          variant="outline"
-          size="sm"
-          leftIcon={<RefreshCw size={16} />}
-          onClick={() => void fetchProducts()}
-          disabled={isLoading}
-        >
-          Refresh
+      {canCreateProduct ? (
+        <Button onClick={handleCreateProduct}>
+          <Plus size={18} />
+          Add Product
         </Button>
-      </div>
+      ) : null}
     </div>
   );
 };
