@@ -18,16 +18,25 @@ for (const [name, host, param] of [
   ["Apple Maps", "maps.apple.com", "daddr"],
   ["Waze", "waze.com", "ll"],
 ]) {
-  test(`opens ${name} with the delivery location through an HTTPS browser-capable link`, async ({ page }) => {
-    await page.route(`https://${host}/**`, route => route.fulfill({ contentType: "text/html", body: "Navigation destination received" }));
+  test(`opens ${name} with the delivery location through an HTTPS browser-capable link`, async ({ page, context }) => {
+    await context.route(`https://${host}/**`, route => route.fulfill({ contentType: "text/html", body: "Navigation destination received" }));
     await page.getByRole("button", { name: "Directions" }).click();
     const link = page.getByRole("menuitem", { name, exact: true });
     const url = new URL(await link.getAttribute("href"));
     expect(url.protocol).toBe("https:");
     expect(url.hostname).toBe(host);
     expect(url.searchParams.get(param)).toBe("53.795,-1.759");
-    await Promise.all([page.waitForURL(`https://${host}/**`), link.click()]);
-    await expect(page.locator("body")).toHaveText("Navigation destination received");
+    await expect(link).toHaveAttribute("target", "_blank");
+    const originalUrl = page.url();
+    const [destination] = await Promise.all([
+      page.waitForEvent("popup"),
+      link.click(),
+    ]);
+    await expect(destination).toHaveURL(url.href);
+    await expect(destination.locator("body")).toHaveText("Navigation destination received");
+    await expect(page).toHaveURL(originalUrl);
+    await expect(page.locator("#selection")).toHaveText("Stop unchanged");
+    await destination.close();
   });
 }
 
