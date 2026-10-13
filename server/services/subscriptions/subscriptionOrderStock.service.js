@@ -45,7 +45,14 @@ async function updateRecurringInventory(order, items, { operationId, session, in
     recordConsumed(order, additions);
   }
 }
-async function saveRefundedOrder(order) {
+async function saveRefundedOrder(order, { cancelDelivery = false } = {}) {
+  if (cancelDelivery) {
+    if (order.status !== "refunded" || !["ordered", "cancelled"].includes(order.deliveryStatus)) {
+      throw new Error("Only an unfulfilled refunded delivery can be cancelled.");
+    }
+    order.deliveryStatus = "cancelled";
+    order.portalDeliveryStatus = "cancelled";
+  }
   if (!order.subscriptionStockItems?.length && !order.subscriptionAddOnStockItems?.length) return subscriptionDatabaseWrite(session => order.save({ session }));
   return mongoose.connection.transaction(async session => {
     const fresh = await order.constructor.findById(order._id).session(session);
@@ -61,6 +68,10 @@ async function saveRefundedOrder(order) {
     fresh.subscriptionStockToRestore = restore;
     fresh.status = order.status;
     fresh.refund = order.refund;
+    if (cancelDelivery) {
+      fresh.deliveryStatus = "cancelled";
+      fresh.portalDeliveryStatus = "cancelled";
+    }
     await fresh.save({ session });
     order.subscriptionStockItems = [];
     order.subscriptionAddOnStockItems = [];

@@ -14,8 +14,14 @@ async function check(name, operation) {
   try {
     await operation();
     report.checks.push({ name, passed: true, durationMs: Date.now() - started });
-  } catch {
-    report.checks.push({ name, passed: false, durationMs: Date.now() - started });
+  } catch (error) {
+    const result = { name, passed: false, durationMs: Date.now() - started };
+    if (name.startsWith("Google ")) {
+      const { safeGoogleError, googleNetworkCoverage } = require("../utils/uatProviderDiagnostics");
+      result.diagnostic = safeGoogleError(error);
+      result.googleNetworkPolicy = await googleNetworkCoverage();
+    }
+    report.checks.push(result);
   }
 }
 async function main() {

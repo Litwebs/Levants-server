@@ -191,7 +191,7 @@ const orderSchema = new mongoose.Schema(
 
     deliveryStatus: {
       type: String,
-      enum: ["ordered", "dispatched", "in_transit", "delivered", "returned"],
+      enum: ["ordered", "dispatched", "in_transit", "delivered", "returned", "cancelled"],
       default: "ordered",
       index: true,
     },

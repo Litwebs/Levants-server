@@ -3804,7 +3804,7 @@ async function CancelSubscription({
       { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
       { status: "refunded", "subscriptionRefundPlan.steps": { $elemMatch: { "refund.status": { $ne: "succeeded" } } } },
     ],
-    deliveryStatus: "ordered",
+    deliveryStatus: { $in: ["ordered", "cancelled"] },
   })
     .sort({ deliveryDate: 1, createdAt: 1 })
     .exec();
@@ -3899,7 +3899,7 @@ async function CancelSubscription({
         reason: reason || "Subscription cancelled before cut-off",
         stripeRefundId,
       };
-      await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(refundableOrder);
+      await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(refundableOrder, { cancelDelivery: true });
       await markSubscriptionOrderPaymentRefunded({
         orderId: refundableOrder._id,
         subscriptionId: subscription._id,
@@ -3914,7 +3914,7 @@ async function CancelSubscription({
         { status: "refund_pending", subscriptionRefundPlan: { $ne: null } },
         { status: "refunded", "subscriptionRefundPlan.steps": { $elemMatch: { "refund.status": { $ne: "succeeded" } } } },
       ],
-      deliveryStatus: "ordered",
+      deliveryStatus: { $in: ["ordered", "cancelled"] },
       ...(settlementMethod === "refund"
         ? { stripePaymentIntentId: { $ne: null } }
         : {}),
@@ -3984,7 +3984,7 @@ async function CancelSubscription({
         reason: reason || "Subscription cancelled before cut-off",
         stripeRefundId,
       };
-      await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(refundableOrder);
+      await require("../subscriptions/subscriptionOrderStock.service").saveRefundedOrder(refundableOrder, { cancelDelivery: true });
       await markSubscriptionOrderPaymentRefunded({
         orderId: refundableOrder._id,
         subscriptionId: subscription._id,
@@ -4011,6 +4011,21 @@ async function CancelSubscription({
         );
       }
     }
+  }
+
+  // A pause or earlier completed refund may already have settled an open
+  // delivery. Close its fulfillment too, without replaying payment or stock.
+  const settledOpenOrders = await Order.find({
+    subscription: subscription._id, status: "refunded", deliveryStatus: "ordered",
+    deliveryDate: { $gte: startOfDay(now) },
+  }).sort({ deliveryDate: 1, createdAt: 1 }).exec();
+  for (const order of settledOpenOrders) {
+    if (order.status !== "refunded" || order.deliveryStatus !== "ordered") continue;
+    const cutoffAt = computeCutoffDate(order.deliveryDate, settings);
+    if (cutoffAt && subscriptionClock.now() >= cutoffAt.getTime()) continue;
+    order.deliveryStatus = "cancelled";
+    order.portalDeliveryStatus = "cancelled";
+    await order.save();
   }
 
   // When any delivery is past its own cut-off we keep the subscription active

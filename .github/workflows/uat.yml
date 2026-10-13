@@ -10,15 +10,37 @@ permissions:
 
 concurrency:
   group: levants-uat-deployment
-  cancel-in-progress: false
+  # Use only when the previous run is still validating, before deployment.
+  cancel-in-progress: ${{ contains(github.event.head_commit.message, '[supersede-validation]') }}
 
 jobs:
+  status-regressions:
+    name: Focused status and legacy-display checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Verify provider diagnostics do not expose credentials
+        run: node --test deployment/uat/test-provider-diagnostics.cjs
+      - run: npm ci
+        working-directory: server
+      - name: Verify status persistence and legacy read paths
+        run: npx jest --runInBand --no-watchman Tests/subscriptions/subscriptionOrderPresentation.test.js Tests/subscriptions/subscriptionStock.test.js
+        working-directory: server
+
   subscription-e2e:
+    needs: status-regressions
     name: Real Stripe and browser checks
     uses: ./.github/workflows/integration-e2e.yml
     secrets: inherit
 
   verify:
+    needs: status-regressions
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -41,6 +63,10 @@ jobs:
       - name: Run backend release tests
         run: npm run test:release
         working-directory: server
+      - name: Verify production rollback isolation and automatic recovery
+        env:
+          ROLLBACK_MODULE_ROOT: ${{ github.workspace }}
+        run: python3 deployment/production/test-compatible-rollback.py
       - name: Install admin dependencies
         run: npm ci
         working-directory: client
