@@ -6,6 +6,9 @@ let f;
 test.beforeEach(async ({ request }) => { f = await fixture(request); });
 
 test.describe("Orders / Listing, details and filters", () => {
+  test("SMOKE real login and isolated order list are reachable", async ({ page }) => {
+    await login(page, f.users.admin); await expect(row(page, f.orders.websitePaid)).toBeVisible();
+  });
   test("lists active orders and displays the stored customer, address, items and totals", async ({ page }) => {
     await login(page, f.users.admin);
     await expect(row(page, f.orders.archived)).toHaveCount(0);
@@ -207,7 +210,8 @@ test.describe("Orders browser / Stock planning and variant editing", () => {
   test("adding a variant and removing an existing variant saves the correct snapshots", async ({ page, request }) => {
     await login(page, f.users.admin); const order = f.orders.importedUnpaid; const detail = await open(page, order); await detail.getByRole("button", { name: "Edit items", exact: true }).click();
     await detail.getByPlaceholder("Search variants…").fill("Orders E2E butter");
-    await detail.getByRole("button", { name: /Orders E2E butter/ }).click();
+    await expect(detail.getByText(/Orders E2E Dairy.*Orders E2E butter/)).toBeVisible();
+    await detail.getByRole("button", { name: "Add", exact: true }).click();
     const milk = detail.getByRole("row").filter({ hasText: "Orders E2E milk" }); await milk.getByRole("button", { name: "Remove", exact: true }).click();
     const response = page.waitForResponse(r => new URL(r.url()).pathname === `/api/admin/orders/${order.id}/items` && r.request().method() === "PATCH"); await detail.getByRole("button", { name: "Save items", exact: true }).click(); expect((await response).status()).toBe(200);
     const after = await state(request, order.id); expect(after.order.items).toHaveLength(1); expect(after.order.items[0].variant).toBe(f.variants.butter.id); expect(after.order.subtotal).toBe(3); expect(after.order.total).toBe(4);

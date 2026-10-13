@@ -78,6 +78,10 @@ jobs:
           echo "### ${{ matrix.name }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Server commit: $GITHUB_SHA. Actual order APIs; ephemeral MongoDB; Stripe test mode; captured email/storage." >> "$GITHUB_STEP_SUMMARY"
           npx playwright test --config playwright.orders.config.js ${{ matrix.specs }} --list
+      - name: Verify real browser login and API wiring before the full UI suite
+        if: matrix.id == 'admin'
+        working-directory: server
+        run: npx playwright test --config playwright.orders.config.js admin-orders.spec.js --grep SMOKE
       - name: Run order workflow tests with strict assertions
         working-directory: server
         run: npx playwright test --config playwright.orders.config.js ${{ matrix.specs }}
