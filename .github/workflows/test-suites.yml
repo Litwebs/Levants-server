@@ -3,6 +3,11 @@ name: Test suite organisation verification
 on:
   push:
     branches: [fix/test]
+    paths-ignore:
+      - server/e2e/orders/**
+      - server/playwright.orders.config.js
+      - .github/workflows/orders-browser.yml
+      - deployment/testing/orders-coverage.md
   workflow_dispatch:
 
 permissions:
