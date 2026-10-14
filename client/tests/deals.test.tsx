@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { CreateDealPage } from "@/pages/Deals/CreateDealPage";
 import { DealsPage } from "@/pages/Deals/DealsPage";
 
-const { createDeal, listDeals, getCatalog, showToast, updateDeal, getDeal } = vi.hoisted(
+const { createDeal, listDeals, getCatalog, showToast, updateDeal, getDeal, publishDeal } = vi.hoisted(
   () => ({
     createDeal: vi.fn(),
     listDeals: vi.fn(),
@@ -13,6 +13,7 @@ const { createDeal, listDeals, getCatalog, showToast, updateDeal, getDeal } = vi
     showToast: vi.fn(),
     updateDeal: vi.fn(),
     getDeal: vi.fn(),
+    publishDeal: vi.fn(),
   }),
 );
 vi.mock("@/context/Deals", () => ({
@@ -22,7 +23,7 @@ vi.mock("@/context/Deals", () => ({
   getDeal,
   deactivateDeal: vi.fn(),
   archiveDeal: vi.fn(),
-  publishDeal: vi.fn(),
+  publishDeal,
   unpublishDeal: vi.fn(),
 }));
 vi.mock("@/hooks/usePermissions", () => ({
@@ -82,6 +83,54 @@ async function fillOffer(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Review & publish" }));
 }
 describe("admin deal creation with existing components", () => {
+  test.each([
+    ["draft", true], ["draft", false], ["published", true], ["published", false],
+  ])("%s offers with enabled=%s show only applicable storefront controls", async (publicationStatus, isActive) => {
+    getDeal.mockResolvedValue({
+      _id: "deal-1", name: "Milk offer", slug: "milk-offer", publicationStatus,
+      isActive, isFeatured: false, packagePrice: 3,
+      items: [{ variantId: variant._id, quantity: 1, variant, product: variant.product }],
+    });
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={["/deals/deal-1/edit"]}>
+      <Routes><Route path="/deals/:dealId/edit" element={<CreateDealPage />} /></Routes>
+    </MemoryRouter>);
+    await user.click(await screen.findByRole("button", { name: "Details & pricing" }));
+    await user.click(screen.getByRole("button", { name: "Review & publish" }));
+    expect(screen.queryByRole("checkbox", { name: /Active on storefront/ })).toBeNull();
+    if (publicationStatus === "draft") {
+      expect(screen.queryByRole("checkbox", { name: /Offer enabled/ })).toBeNull();
+    } else {
+      expect((screen.getByRole("checkbox", { name: /Offer enabled/ }) as HTMLInputElement).checked).toBe(isActive);
+    }
+    await user.click(screen.getByRole("button", { name: "Manage deal" }));
+    if (publicationStatus === "draft") {
+      expect(screen.getByText("Draft · Hidden from customers")).toBeTruthy();
+      expect(screen.queryByRole("menuitem", { name: /Pause offer|Resume offer/ })).toBeNull();
+      expect(screen.getByRole("menuitem", { name: "Publish", exact: true })).toBeTruthy();
+    } else {
+      expect(screen.getByRole("menuitem", { name: isActive ? "Pause offer" : "Resume offer", exact: true })).toBeTruthy();
+    }
+  });
+
+  test("publishing a previously disabled draft enables it through the existing management action", async () => {
+    const deal = { _id: "deal-1", name: "Milk offer", slug: "milk-offer", publicationStatus: "draft",
+      isActive: false, isFeatured: false, packagePrice: 3,
+      items: [{ variantId: variant._id, quantity: 1, variant, product: variant.product }] };
+    getDeal.mockResolvedValue(deal);
+    updateDeal.mockResolvedValue({ ...deal, isActive: true });
+    publishDeal.mockResolvedValue({ ...deal, publicationStatus: "published", isActive: true });
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={["/deals/deal-1/edit"]}>
+      <Routes><Route path="/deals/:dealId/edit" element={<CreateDealPage />} /></Routes>
+    </MemoryRouter>);
+    await user.click(await screen.findByRole("button", { name: "Manage deal" }));
+    await user.click(screen.getByRole("menuitem", { name: "Publish", exact: true }));
+    await waitFor(() => expect(publishDeal).toHaveBeenCalledWith("deal-1"));
+    expect(updateDeal).toHaveBeenCalledWith("deal-1", { isActive: true });
+    await user.click(screen.getByRole("button", { name: "Manage deal" }));
+    expect(await screen.findByRole("menuitem", { name: "Pause offer", exact: true })).toBeTruthy();
+  });
   test("reopening an unpriced draft keeps the price blank and saves its empty contents", async () => {
     getDeal.mockResolvedValue({
       _id: "draft-1", name: "Unfinished package", slug: "unfinished-package",

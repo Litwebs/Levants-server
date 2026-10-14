@@ -297,7 +297,7 @@ export function CreateDealPage() {
       savingValue: draft.pricingMode === "fixed_price" ? null : draft.savingValue ? Number(draft.savingValue) : null,
       ...(!editing ? { publicationStatus: saveDraft ? "draft" as const : "published" as const } : {}),
       currency: "GBP",
-      isActive: draft.isActive,
+      isActive: !saveDraft && draft.publicationStatus === "draft" ? true : draft.isActive,
       isFeatured: draft.isFeatured,
       startsAt: draft.startsAt ? new Date(draft.startsAt).toISOString() : null,
       endsAt: draft.endsAt ? new Date(draft.endsAt).toISOString() : null,
@@ -334,9 +334,14 @@ export function CreateDealPage() {
         await archiveDeal(dealId);
         navigateWithDealTransition(navigate, "/deals", "back");
       } else {
-        const deal = action === "publish" ? await publishDeal(dealId)
-          : action === "unpublish" ? await unpublishDeal(dealId)
-          : await updateDeal(dealId, { isActive: action === "activate" });
+        let deal: Deal;
+        if (action === "publish") {
+          await updateDeal(dealId, { isActive: true });
+          deal = await publishDeal(dealId);
+        } else {
+          deal = action === "unpublish" ? await unpublishDeal(dealId)
+            : await updateDeal(dealId, { isActive: action === "activate" });
+        }
         populateDeal(deal);
       }
       showToast({ type: "success", title: "Deal updated" });
@@ -377,12 +382,12 @@ export function CreateDealPage() {
                   <Button type="button" size="sm" variant="outline" disabled={saving} rightIcon={<ChevronDown size={16} />}>Manage deal</Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuLabel>{draft.publicationStatus === "draft" ? "Draft" : "Published"} · {draft.isActive ? "Active" : "Inactive"}</DropdownMenuLabel>
+                  <DropdownMenuLabel>{draft.publicationStatus === "draft" ? "Draft · Hidden from customers" : `Published · ${draft.isActive ? "Enabled" : "Paused"}`}</DropdownMenuLabel>
                   {dirty && <DropdownMenuLabel className="whitespace-normal font-normal">Save your changes before managing this deal.</DropdownMenuLabel>}
                   <DropdownMenuSeparator />
                   {hasPermission("promotions.update") && <>
                     <DropdownMenuItem disabled={saving || dirty} onSelect={() => void manageDeal(draft.publicationStatus === "draft" ? "publish" : "unpublish")}>{draft.publicationStatus === "draft" ? "Publish" : "Unpublish"}</DropdownMenuItem>
-                    <DropdownMenuItem disabled={saving || dirty} onSelect={() => void manageDeal(draft.isActive ? "deactivate" : "activate")}>{draft.isActive ? "Deactivate" : "Activate"}</DropdownMenuItem>
+                    {draft.publicationStatus === "published" && <DropdownMenuItem disabled={saving || dirty} onSelect={() => void manageDeal(draft.isActive ? "deactivate" : "activate")}>{draft.isActive ? "Pause offer" : "Resume offer"}</DropdownMenuItem>}
                   </>}
                   {hasPermission("promotions.delete") && <>
                     <DropdownMenuSeparator />
@@ -534,21 +539,21 @@ export function CreateDealPage() {
                   <Store size={19} />
                   <div>
                     <h3>Merchandising</h3>
-                    <p>Control visibility and storefront priority.</p>
+                    <p>{draft.publicationStatus === "draft" ? "Drafts stay hidden until published. Publishing enables the offer." : "Control visibility and storefront priority."}</p>
                   </div>
                 </div>
                 <div className={styles.settings}>
-                  <div className={styles.settingRow}>
+                  {draft.publicationStatus === "published" && <div className={styles.settingRow}>
                     <label htmlFor="deal-active">
-                      <strong>Active on storefront</strong>
-                      <small>Customers can find and buy this package.</small>
+                      <strong>Offer enabled</strong>
+                      <small>Pause or resume this published offer. Dates, stock and pricing still apply.</small>
                     </label>
                     <Toggle
                       id="deal-active"
                       checked={draft.isActive}
                       onChange={(event) => update("isActive", event.target.checked)}
                     />
-                  </div>
+                  </div>}
                   <div className={styles.settingRow}>
                     <label htmlFor="deal-featured">
                       <strong>Feature this deal</strong>

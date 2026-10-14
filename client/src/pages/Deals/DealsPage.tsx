@@ -22,7 +22,7 @@ const PAGE_SIZE_OPTIONS = [
 const STATUS_OPTIONS = [
   { value: "all", label: "All statuses" },
   { value: "active", label: "Active" },
-  { value: "inactive", label: "Inactive" },
+  { value: "inactive", label: "Paused" },
   { value: "featured", label: "Featured" },
   { value: "archived", label: "Archived" },
   { value: "draft", label: "Draft" },
@@ -47,7 +47,7 @@ const errorMessage = (error: unknown) => {
 const statusFor = (deal: Deal) => {
   if (deal.archivedAt) return { label: "Archived", variant: "default" as const };
   if (deal.publicationStatus === "draft") return { label: "Draft", variant: "default" as const };
-  if (!deal.isActive) return { label: "Inactive", variant: "default" as const };
+  if (!deal.isActive) return { label: "Paused", variant: "default" as const };
   const now = Date.now();
   if (deal.startsAt && new Date(deal.startsAt).getTime() > now)
     return { label: "Scheduled", variant: "default" as const };
@@ -87,8 +87,8 @@ export const DealsPage = () => {
   const bulkOptions = [
     { value: "", label: "Choose bulk action" },
     ...(canUpdate ? [
-      { value: "activate", label: "Activate" },
-      { value: "deactivate", label: "Deactivate" },
+      { value: "activate", label: "Resume offer" },
+      { value: "deactivate", label: "Pause offer" },
       { value: "feature", label: "Feature" },
       { value: "unfeature", label: "Remove featured" },
     ] : []),
@@ -135,6 +135,8 @@ export const DealsPage = () => {
     let firstError = "";
     for (const id of selected) {
       try {
+        if ((bulkAction === "activate" || bulkAction === "deactivate") && deals.find(deal => deal._id === id)?.publicationStatus === "draft")
+          throw new Error("Publish this draft before pausing or resuming it.");
         if (bulkAction === "archive") await archiveDeal(id);
         else await updateDeal(id, bulkAction === "activate" || bulkAction === "deactivate"
           ? { isActive: bulkAction === "activate" }

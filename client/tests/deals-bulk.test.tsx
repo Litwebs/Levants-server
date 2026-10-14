@@ -80,3 +80,18 @@ test("read-only users have no bulk controls", async () => {
   await mount();
   expect(screen.queryByRole("checkbox")).toBeNull();
 });
+
+test.each(["activate", "deactivate"])("bulk %s cannot present a draft as enabled or paused", async action => {
+  mocks.listDeals.mockResolvedValue({ deals: [{ ...deals[0], publicationStatus: "draft" }], meta: { total: 1, totalPages: 1 } });
+  const user = userEvent.setup();
+  await mount();
+  await user.click(screen.getByRole("checkbox", { name: "Select Milk" }));
+  await user.click(screen.getByRole("button", { name: "Show tools" }));
+  await user.selectOptions(screen.getByLabelText("Bulk deal action"), action);
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await waitFor(() => expect(mocks.showToast).toHaveBeenCalledWith(expect.objectContaining({
+    type: "error", message: "Publish this draft before pausing or resuming it.",
+  })));
+  expect(mocks.updateDeal).not.toHaveBeenCalled();
+  expect((screen.getByRole("checkbox", { name: "Select Milk" }) as HTMLInputElement).checked).toBe(true);
+});
