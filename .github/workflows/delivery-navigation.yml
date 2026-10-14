@@ -1,14 +1,5 @@
 name: Delivery navigation verification
 on:
-  pull_request:
-    branches: [uat]
-    paths:
-      - 'client/src/pages/DeliveryRuns/**'
-      - 'client/src/context/DeliveryRuns/**'
-      - 'client/tests/delivery-navigation.test.tsx'
-      - 'client/e2e/delivery-navigation/**'
-      - 'server/e2e/delivery-navigation/**'
-      - '.github/workflows/delivery-navigation.yml'
   workflow_call:
   workflow_dispatch:
 permissions:
