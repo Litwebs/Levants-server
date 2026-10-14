@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import VariantEditPage from "@/pages/Products/VariantEditPage";
-import ProductCreatePage from "@/pages/Products/ProductCreatePage";
 const { get, put, showToast, permissions } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), showToast: vi.fn(), permissions: { edit: true } }));
 vi.mock("@/context/api", () => ({ default: { get, put } }));
 vi.mock("@/hooks/usePermissions", () => ({ usePermissions: () => ({ hasPermission: (p: string) => p === "stock.update" || permissions.edit }) }));
@@ -35,9 +34,4 @@ test("staff with stock-only access cannot change or submit eligibility", async (
   await userEvent.setup().click(screen.getAllByRole("button", { name: "Save changes", exact: true })[0]);
   await waitFor(() => expect(put).toHaveBeenCalled());
   expect(put.mock.calls[0][1]).not.toHaveProperty("isSubscriptionEligible");
-});
-test("product form no longer offers a product-level subscription control", async () => {
-  get.mockResolvedValue({ data: { meta: { categories: [] } } });
-  render(<MemoryRouter><ProductCreatePage /></MemoryRouter>);
-  await waitFor(() => expect(screen.queryByLabelText("Subscription Eligible")).toBeNull());
 });

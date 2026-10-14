@@ -28,21 +28,21 @@ function mount(edit = true) {
       <Route path="/products" element={<p>Products saved</p>} /></Routes>
   </MemoryRouter>);
 }
-test("new products default to subscription eligible", async () => {
+test("new products have no product-level subscription control", async () => {
   mount(false);
-  await waitFor(() => expect((screen.getByLabelText("Subscription Eligible") as HTMLSelectElement).value).toBe("eligible"));
+  await waitFor(() => expect(screen.queryByLabelText("Subscription Eligible")).toBeNull());
 });
-test.each([true, false, undefined])("editor restores flag %s and saves boolean eligibility without altering product data", async flag => {
+test.each([true, false, undefined])("product editor ignores retired product flag %s and does not submit it", async flag => {
   get.mockImplementation(async path => path === "/admin/products"
     ? { data: { meta: { categories: ["Dairy"] } } }
     : { data: { data: { product: { ...product, isSubscriptionEligible: flag } } } });
   mount();
-  const choice = await screen.findByLabelText("Subscription Eligible");
-  await waitFor(() => expect((choice as HTMLSelectElement).value).toBe(flag === false ? "ineligible" : "eligible"));
+  await screen.findByDisplayValue("Yoghurt");
+  expect(screen.queryByLabelText("Subscription Eligible")).toBeNull();
   const user = userEvent.setup();
-  await user.selectOptions(choice, "ineligible");
   await user.click(screen.getAllByRole("button", { name: "Save changes", exact: true })[0]);
   await waitFor(() => expect(put).toHaveBeenCalledWith("/admin/products/product-1", expect.objectContaining({
-    name: "Yoghurt", status: "active", isSubscriptionEligible: false,
+    name: "Yoghurt", status: "active",
   })));
+  expect(put.mock.calls[0][1]).not.toHaveProperty("isSubscriptionEligible");
 });
