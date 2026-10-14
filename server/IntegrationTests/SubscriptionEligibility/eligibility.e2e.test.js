@@ -95,6 +95,11 @@ for (const width of [1440, 390]) {
     expect(forbidden.status()).toBe(400);
     expect((await forbidden.json()).message).toMatch(/not eligible/i);
 
+    await page.goto(customerOrigin + `/product/${fixture.products.Honey.id}?order=subscription`);
+    await ui(page.getByText("Available for one-time purchases only.", { exact: true })).toBeVisible();
+    await ui(page.getByRole("button", { name: "Add to basket", exact: true })).toBeVisible();
+    await ui(page.getByRole("link", { name: "Continue to subscription", exact: true })).toHaveCount(0);
+
     await page.goto(customerOrigin + "/portal/subscriptions/new");
     const next = page.getByRole("button", { name: "Next", exact: true });
     await ui(next).toBeEnabled();
