@@ -18,6 +18,12 @@ import { usePermissions } from "@/hooks/usePermissions";
 import OrderStatusModal from "@/pages/Orders/OrderStatusModal";
 import { Button, Modal, ModalFooter } from "@/components/common";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
+import {
   VanRoute,
   VanId,
   RunStatus,
@@ -1100,7 +1106,7 @@ export const MapView: React.FC<MapViewProps> = ({
                     )}
                   </div>
 
-                  {(canUpdateOrders || canUpdatePayment || navigationUrl) && (
+                  {(canUpdateOrders || canUpdatePayment || navigationUrl || stop.navigationLinks) && (
                     <div className={styles.stopActionsRow}>
                       <div className={styles.stopActions}>
                         {canUpdateOrders && (
@@ -1153,7 +1159,42 @@ export const MapView: React.FC<MapViewProps> = ({
                               : "Mark Paid"}
                           </button>
                         )}
-                        {navigationUrl && (
+                        {stop.navigationLinks ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className={styles.directionsBtn}
+                                onClick={(event) => event.stopPropagation()}
+                                title="Choose a navigation app"
+                              >
+                                Directions
+                                <ExternalLink size={14} />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="end"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {([
+                                ["googleMaps", "Google Maps"],
+                                ["appleMaps", "Apple Maps"],
+                                ["waze", "Waze"],
+                              ] as const).map(([key, label]) => (
+                                <DropdownMenuItem key={key} asChild>
+                                  <a
+                                    href={stop.navigationLinks[key]}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="min-h-11"
+                                  >
+                                    {label}
+                                  </a>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : navigationUrl && (
                           <a
                             className={styles.directionsBtn}
                             href={navigationUrl}
