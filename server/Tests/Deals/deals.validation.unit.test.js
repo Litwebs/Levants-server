@@ -22,7 +22,12 @@ describe("Deals / request schemas", () => {
   test("partial updates do not inject creation defaults", () => {
     expect(updateDealSchema.validate({ description: "Updated" }).value).toEqual({ description: "Updated" });
   });
-  test.each([{}, { unknown: true }, { items: [] }, { currency: "USD" }])("invalid partial update %j is rejected", body => {
+  test("draft contents and price can be cleared without injecting publication status", () => {
+    const body = { items: [], packagePrice: null };
+    expect(updateDealSchema.validate(body).error).toBeUndefined();
+    expect(updateDealSchema.validate(body).value).toEqual(body);
+  });
+  test.each([{}, { unknown: true }, { currency: "USD" }])("invalid partial update %j is rejected", body => {
     expect(updateDealSchema.validate(body).error).toBeDefined();
   });
   test("list filters normalise query strings", () => {

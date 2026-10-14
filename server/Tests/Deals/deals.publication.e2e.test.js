@@ -17,6 +17,51 @@ async function login(role = "admin") {
 }
 
 describe("Deals / draft and publication lifecycle", () => {
+  test("the editor payload can repeatedly save an empty unpriced draft", async () => {
+    const { cookie } = await login();
+    const body = { name: "Unpriced draft", publicationStatus: "draft", items: [], packagePrice: null };
+    const created = await request(app).post("/api/admin/deals").set("Cookie", cookie).send(body);
+    expect(created.status).toBe(201);
+    const { _id, slug } = created.body.data.deal;
+    for (const description of ["First revision", "Second revision"]) {
+      const updated = await request(app).patch(`/api/admin/deals/${_id}`).set("Cookie", cookie)
+        .send({ name: body.name, items: [], packagePrice: null, description });
+      expect(updated.status).toBe(200);
+      expect(await Deal.findById(_id).lean()).toMatchObject({
+        items: [], packagePrice: null, description, publicationStatus: "draft", publishedAt: null,
+      });
+      expect((await request(app).get(`/api/deals/${slug}`)).status).toBe(404);
+      expect((await request(app).post(`/api/admin/deals/${_id}/publish`).set("Cookie", cookie)).status).toBe(400);
+    }
+    expect((await request(app).get("/api/deals")).body.data.deals).toEqual([]);
+  });
+
+  test("a draft can clear all components and price, then rebuild and publish", async () => {
+    const { cookie } = await login();
+    const { deal, contents } = await createPackage({ publicationStatus: "draft" });
+    const cleared = await request(app).patch(`/api/admin/deals/${deal.id}`).set("Cookie", cookie)
+      .send({ items: [], packagePrice: null });
+    expect(cleared.status).toBe(200);
+    expect(await Deal.findById(deal.id).lean()).toMatchObject({ items: [], packagePrice: null, publicationStatus: "draft" });
+    expect((await request(app).post(`/api/admin/deals/${deal.id}/publish`).set("Cookie", cookie)).status).toBe(400);
+    const rebuilt = await request(app).patch(`/api/admin/deals/${deal.id}`).set("Cookie", cookie)
+      .send({ items: contents, packagePrice: 11.5 });
+    expect(rebuilt.status).toBe(200);
+    expect((await request(app).get(`/api/deals/${deal.slug}`)).status).toBe(404);
+    expect((await request(app).post(`/api/admin/deals/${deal.id}/publish`).set("Cookie", cookie)).status).toBe(200);
+    expect((await request(app).get(`/api/deals/${deal.slug}`)).status).toBe(200);
+  });
+
+  test.each([{ items: [] }, { packagePrice: null }, { items: [], packagePrice: null }])(
+    "published offers reject incomplete edits without changing stored contents or price: %j", async body => {
+      const { cookie } = await login();
+      const { deal } = await createPackage();
+      const before = await Deal.findById(deal.id).lean();
+      expect((await request(app).patch(`/api/admin/deals/${deal.id}`).set("Cookie", cookie).send(body)).status).toBe(400);
+      expect(await Deal.findById(deal.id).lean()).toEqual(before);
+      expect((await request(app).get(`/api/deals/${deal.slug}`)).status).toBe(200);
+    },
+  );
   test("an incomplete draft can be saved and edited without becoming discoverable", async () => {
     const { cookie } = await login();
     const created = await request(app).post("/api/admin/deals").set("Cookie", cookie).send({ name: "New draft", publicationStatus: "draft" });

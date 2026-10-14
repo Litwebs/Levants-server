@@ -82,6 +82,29 @@ async function fillOffer(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Review & publish" }));
 }
 describe("admin deal creation with existing components", () => {
+  test("reopening an unpriced draft keeps the price blank and saves its empty contents", async () => {
+    getDeal.mockResolvedValue({
+      _id: "draft-1", name: "Unfinished package", slug: "unfinished-package",
+      publicationStatus: "draft", pricingMode: "fixed_price", packagePrice: 0,
+      items: [], isActive: true, isFeatured: false,
+    });
+    updateDeal.mockResolvedValue({ _id: "draft-1" });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/deals/draft-1/edit"]}>
+        <Routes>
+          <Route path="/deals/:dealId/edit" element={<CreateDealPage />} />
+          <Route path="/deals" element={<h1>Saved deals</h1>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole("button", { name: "Save draft", exact: true }));
+    await screen.findByRole("heading", { name: "Saved deals" });
+    expect(updateDeal).toHaveBeenCalledWith("draft-1", expect.objectContaining({
+      items: [], packagePrice: null,
+    }));
+    expect(updateDeal.mock.calls[0][1]).not.toHaveProperty("publicationStatus");
+  });
   test("lists live price and value for existing offers", async () => {
     listDeals.mockResolvedValue({
       deals: [

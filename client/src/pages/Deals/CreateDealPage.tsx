@@ -114,7 +114,10 @@ export function CreateDealPage() {
       slug: deal.slug || "",
       description: deal.description || "",
       image: deal.image?.url || deal.imageUrl || "",
-      packagePrice: String(deal.packagePrice ?? ""),
+      // The admin API displays an unpriced draft as zero; keep its input unset
+      // so subsequent draft saves send null rather than an invalid £0 price.
+      packagePrice: deal.publicationStatus === "draft" && !deal.packagePrice
+        ? "" : String(deal.packagePrice ?? ""),
       pricingMode: deal.pricingMode || "fixed_price",
       savingValue: deal.savingValue == null ? "" : String(deal.savingValue),
       publicationStatus: deal.publicationStatus || "published",

@@ -466,6 +466,10 @@ async function updateDeal({ dealId, body, userId }) {
       ? Number(body.packagePrice)
       : Number(current.packagePrice);
 
+  if (current.publicationStatus !== "draft" && !nextItems.length) {
+    return { success: false, statusCode: 400, message: "A published deal must contain at least one item" };
+  }
+
   const nextStartsAt =
     body.startsAt !== undefined ? body.startsAt : current.startsAt;
   const nextEndsAt = body.endsAt !== undefined ? body.endsAt : current.endsAt;
