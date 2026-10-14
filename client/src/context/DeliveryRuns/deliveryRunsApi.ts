@@ -247,7 +247,6 @@ const mapStops = (stops: any[]): RouteStop[] => {
       orderIsStripeBacked,
       navigationUrl:
         typeof s?.navigationUrl === "string" ? s.navigationUrl : undefined,
-      navigationLinks: s?.navigationLinks ?? null,
       notes: (() => {
         const dn = typeof order?.driverNote === "string" && order.driverNote.trim() ? order.driverNote.trim() : null;
         const ci = typeof order?.customerInstructions === "string" && order.customerInstructions.trim() ? order.customerInstructions.trim() : null;

@@ -67,7 +67,6 @@ export interface RouteStop {
   orderIsStripeBacked?: boolean;
   /** Optional server-provided navigation link */
   navigationUrl?: string;
-  navigationLinks?: { googleMaps: string; appleMaps: string; waze: string } | null;
   notes?: string;
   eta?: string;
   stopStatus?: 'pending' | 'delivered' | 'failed' | string;

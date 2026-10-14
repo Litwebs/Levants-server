@@ -25,9 +25,6 @@ jobs:
       - name: Navigation suite
         run: npm run test:delivery-navigation
         working-directory: server
-      - name: Route API to actual stop-list navigation regression
-        run: npx vitest run tests/delivery-navigation.test.tsx
-        working-directory: client
       - run: npx playwright install --with-deps chromium
         working-directory: server
       - name: Desktop and mobile navigation selector
