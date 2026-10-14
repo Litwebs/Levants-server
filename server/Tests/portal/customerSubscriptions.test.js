@@ -631,6 +631,56 @@ describe("Portal Subscriptions", () => {
     expect(res.body.message).toMatch(/not eligible for subscriptions/i);
   });
 
+  it("eligibility changes preserve established subscriptions and their scheduled deliveries", async () => {
+    const sub = await createBasicSubscription();
+    const variant = await ProductVariant.findById(variantId);
+    const before = await Subscription.findById(sub._id).lean();
+    const deliveries = await SubscriptionDelivery.find({ subscription: sub._id }).lean();
+    const result = await require("../../services/products.admin.service").UpdateProduct({
+      productId: variant.product, body: { isSubscriptionEligible: false }, userId: new mongoose.Types.ObjectId(),
+    });
+    expect(result.success).toBe(true);
+    expect(await Subscription.findById(sub._id).lean()).toEqual(before);
+    expect(await SubscriptionDelivery.find({ subscription: sub._id }).lean()).toEqual(deliveries);
+    const read = await request(app).get(`/api/portal/subscriptions/${sub._id}`).set("Authorization", `Bearer ${accessToken}`);
+    expect(read.status).toBe(200);
+    expect(read.body.data.subscription.items[0].variant).toBe(variantId);
+    const denied = await request(app).post("/api/portal/subscriptions").set("Authorization", `Bearer ${accessToken}`).send({
+      operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+      items: [{ variantId, quantity: 1 }],
+    });
+    expect(denied.status).toBe(400);
+    expect(denied.body.message).toMatch(/not eligible/i);
+  });
+
+  it("day-plan edits grandfather existing ineligible products but reject new ineligible additions", async () => {
+    const plans = [0, 3].map(day => ({ day, items: [{ variantId, quantity: 1 }] }));
+    const created = await request(app).post("/api/portal/subscriptions").set("Authorization", `Bearer ${accessToken}`).send({
+      operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0, preferredDeliveryDays: [0, 3],
+      deliveryAddressId: addressId, items: [{ variantId, quantity: 1 }], deliveryDayPlans: plans,
+    });
+    expect(created.status).toBe(201);
+    const sub = created.body.data.subscription;
+    const variant = await ProductVariant.findById(variantId);
+    await Product.findByIdAndUpdate(variant.product, { isSubscriptionEligible: false });
+    const saved = await request(app).patch(`/api/portal/subscriptions/${sub._id}`).set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId: crypto.randomUUID(), deliveryDayPlans: plans });
+    expect(saved.status).toBe(200);
+    expect(saved.body.data.subscription.items.some(item => item.variant === variantId)).toBe(true);
+    const extra = await createTestProduct();
+    await Product.findByIdAndUpdate(extra.product._id, { isSubscriptionEligible: false });
+    const before = await Subscription.findById(sub._id).lean();
+    const invalidPlans = plans.map(plan => ({ ...plan, items: [...plan.items, { variantId: String(extra.variant._id), quantity: 1 }] }));
+    const rejected = await request(app).patch(`/api/portal/subscriptions/${sub._id}`).set("Authorization", `Bearer ${accessToken}`)
+      .send({ operationId: crypto.randomUUID(), deliveryDayPlans: invalidPlans });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.message).toMatch(/not eligible/i);
+    const after = await Subscription.findById(sub._id).lean();
+    expect(after.items).toEqual(before.items);
+    expect(after.deliveryDayPlans).toEqual(before.deliveryDayPlans);
+    expect(after.pendingChanges).toEqual(before.pendingChanges);
+  });
+
   it("rejects create when first invoice charge fails", async () => {
     stripe.subscriptions.create.mockRejectedValueOnce(
       new Error("Your card was declined"),

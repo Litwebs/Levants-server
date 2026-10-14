@@ -40,6 +40,7 @@ export type AdminProduct = {
   category: string;
   description: string;
   status: ProductStatus;
+  isSubscriptionEligible?: boolean;
   allergens: string[];
   storageNotes: string | null;
   thumbnailImage: string | MediaImage;
