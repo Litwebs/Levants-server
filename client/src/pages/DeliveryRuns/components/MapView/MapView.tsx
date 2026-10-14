@@ -3,7 +3,6 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  ExternalLink,
   Loader2,
   Pencil,
   Clock,
@@ -29,6 +28,7 @@ import {
 } from "@/context/DeliveryRuns";
 import { getPaymentBadge, getStatusBadge } from "@/pages/Orders/order.utils";
 import styles from "./MapView.module.css";
+import { NavigationDirections } from "../NavigationDirections/NavigationDirections";
 
 const OSM_TILES_URL =
   "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -163,19 +163,6 @@ const stopStatusLabel = (stop: VanRoute["stops"][0], runStatus?: RunStatus) => {
   if (runStatus === "routed") return "Planned";
   if (runStatus === "locked") return "Ready";
   return "Pending";
-};
-
-const buildStopNavigationUrl = (stop: VanRoute["stops"][0]) => {
-  const existing = (stop as any)?.navigationUrl;
-  if (typeof existing === "string" && existing.trim().length > 0) {
-    return existing;
-  }
-
-  const lat = Number((stop as any)?.lat);
-  const lng = Number((stop as any)?.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
-
-  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 };
 
 const isDeliveredStop = (
@@ -1041,7 +1028,7 @@ export const MapView: React.FC<MapViewProps> = ({
             <div className={styles.emptyStops}>No stops to display</div>
           ) : (
             displayStops.map(({ vanId, stop }) => {
-              const navigationUrl = buildStopNavigationUrl(stop);
+              const navigationLinks = stop.navigationLinks;
               const canUpdateOrders = hasPermission("orders.update");
               const canUpdatePayment =
                 hasPermission("orders.update") ||
@@ -1100,7 +1087,7 @@ export const MapView: React.FC<MapViewProps> = ({
                     )}
                   </div>
 
-                  {(canUpdateOrders || canUpdatePayment || navigationUrl) && (
+                  {(canUpdateOrders || canUpdatePayment || navigationLinks) && (
                     <div className={styles.stopActionsRow}>
                       <div className={styles.stopActions}>
                         {canUpdateOrders && (
@@ -1153,18 +1140,11 @@ export const MapView: React.FC<MapViewProps> = ({
                               : "Mark Paid"}
                           </button>
                         )}
-                        {navigationUrl && (
-                          <a
+                        {navigationLinks && (
+                          <NavigationDirections
                             className={styles.directionsBtn}
-                            href={navigationUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            title="Open directions in Google Maps"
-                          >
-                            Directions
-                            <ExternalLink size={14} />
-                          </a>
+                            links={navigationLinks}
+                          />
                         )}
                       </div>
                     </div>
