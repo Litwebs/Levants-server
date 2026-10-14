@@ -118,7 +118,6 @@ async function createTestProduct() {
     category: "dairy",
     description: "A test product",
     status: "active",
-    isSubscriptionEligible: true,
     thumbnailImage: new (require("mongoose").Types.ObjectId)(),
   });
 
@@ -610,9 +609,9 @@ describe("Portal Subscriptions", () => {
     expect(res.body.message).toMatch(/products are unavailable|not available/i);
   });
 
-  it("rejects create with non-subscription-eligible product", async () => {
+  it("rejects create with non-subscription-eligible variant", async () => {
     const { product, variant } = await createTestProduct();
-    await Product.findByIdAndUpdate(product._id, {
+    await ProductVariant.findByIdAndUpdate(variant._id, {
       isSubscriptionEligible: false,
     });
 
@@ -629,6 +628,12 @@ describe("Portal Subscriptions", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.message).toMatch(/not eligible for subscriptions/i);
+    const sibling = await ProductVariant.create({ product: product._id, name: "1 litre", sku: `ELIGIBLE-${crypto.randomUUID()}`, price: 2.5, stockQuantity: 100 });
+    const allowed = await request(app).post("/api/portal/subscriptions").set("Authorization", `Bearer ${accessToken}`).send({
+      operationId: crypto.randomUUID(), frequency: "weekly", preferredDeliveryDay: 0, deliveryAddressId: addressId,
+      items: [{ variantId: sibling.id, quantity: 1 }],
+    });
+    expect(allowed.status).toBe(201);
   });
 
   it("eligibility changes preserve established subscriptions and their scheduled deliveries", async () => {
@@ -636,8 +641,8 @@ describe("Portal Subscriptions", () => {
     const variant = await ProductVariant.findById(variantId);
     const before = await Subscription.findById(sub._id).lean();
     const deliveries = await SubscriptionDelivery.find({ subscription: sub._id }).lean();
-    const result = await require("../../services/products.admin.service").UpdateProduct({
-      productId: variant.product, body: { isSubscriptionEligible: false }, userId: new mongoose.Types.ObjectId(),
+    const result = await require("../../services/variants.admin.service").UpdateVariant({
+      variantId: variant._id, body: { isSubscriptionEligible: false }, userId: new mongoose.Types.ObjectId(),
     });
     expect(result.success).toBe(true);
     expect(await Subscription.findById(sub._id).lean()).toEqual(before);
@@ -662,13 +667,13 @@ describe("Portal Subscriptions", () => {
     expect(created.status).toBe(201);
     const sub = created.body.data.subscription;
     const variant = await ProductVariant.findById(variantId);
-    await Product.findByIdAndUpdate(variant.product, { isSubscriptionEligible: false });
+    await ProductVariant.findByIdAndUpdate(variant._id, { isSubscriptionEligible: false });
     const saved = await request(app).patch(`/api/portal/subscriptions/${sub._id}`).set("Authorization", `Bearer ${accessToken}`)
       .send({ operationId: crypto.randomUUID(), deliveryDayPlans: plans });
     expect(saved.status).toBe(200);
     expect(saved.body.data.subscription.items.some(item => item.variant === variantId)).toBe(true);
     const extra = await createTestProduct();
-    await Product.findByIdAndUpdate(extra.product._id, { isSubscriptionEligible: false });
+    await ProductVariant.findByIdAndUpdate(extra.variant._id, { product: variant.product, isSubscriptionEligible: false });
     const before = await Subscription.findById(sub._id).lean();
     const invalidPlans = plans.map(plan => ({ ...plan, items: [...plan.items, { variantId: String(extra.variant._id), quantity: 1 }] }));
     const rejected = await request(app).patch(`/api/portal/subscriptions/${sub._id}`).set("Authorization", `Bearer ${accessToken}`)
@@ -1685,7 +1690,7 @@ describe("Portal Subscriptions", () => {
     await ProductVariant.findByIdAndUpdate(secondVariant._id, {
       status: "active",
     });
-    await Product.findByIdAndUpdate(product._id, {
+    await ProductVariant.findByIdAndUpdate(secondVariant._id, {
       isSubscriptionEligible: false,
     });
     const ineligibleRes = await request(app)

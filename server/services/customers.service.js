@@ -348,14 +348,14 @@ async function CreateBulkCustomerOnboardingLinks({ rows } = {}) {
     _id: { $in: requestedVariantIds },
     status: "active",
   })
-    .populate("product", "status isSubscriptionEligible")
+    .populate("product", "status")
     .lean();
   const allowedVariantIds = new Set(
     variants
       .filter(
         (variant) =>
           variant.product?.status === "active" &&
-          variant.product?.isSubscriptionEligible !== false,
+          variant.isSubscriptionEligible !== false,
       )
       .map((variant) => String(variant._id)),
   );
@@ -394,7 +394,7 @@ async function CreateBulkCustomerOnboardingLinks({ rows } = {}) {
         ...rowResult,
         status: "failed",
         message:
-          "One or more products are inactive or not subscription eligible",
+          "One or more variants are inactive or not subscription eligible",
       });
       continue;
     }

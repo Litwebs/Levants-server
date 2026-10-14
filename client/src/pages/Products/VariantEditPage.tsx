@@ -13,12 +13,14 @@ import pageStyles from "./VariantEditPage.module.css";
 import { useUnsavedChangesDialog } from "./UnsavedChangesDialog";
 
 type Draft = {
+  isSubscriptionEligible: boolean;
   name: string; sku: string; price: string; stockQuantity: string;
   lowStockAlert: string; status: VariantStatus; description: string;
   ingredients: string; allergens: string; nutritionalInformation: string;
 };
 
 const toDraft = (variant: AdminProductVariant): Draft => ({
+  isSubscriptionEligible: variant.isSubscriptionEligible !== false,
   name: variant.name ?? "", sku: variant.sku ?? "", price: String(variant.price ?? ""),
   stockQuantity: String(variant.stockQuantity ?? ""), lowStockAlert: String(variant.lowStockAlert ?? ""),
   status: variant.status, description: variant.description ?? "", ingredients: variant.ingredients ?? "",
@@ -85,6 +87,7 @@ export default function VariantEditPage() {
     try {
       const body = {
         ...(canUpdateVariant ? {
+          isSubscriptionEligible: draft.isSubscriptionEligible,
           name: draft.name.trim(), sku: draft.sku.trim(), price: Number(draft.price),
           status: draft.status, description: draft.description.trim(),
           ingredients: draft.ingredients.trim(),
@@ -130,6 +133,8 @@ export default function VariantEditPage() {
           <Card className={styles.sectionCard}>
             <div className={styles.sectionHeader}><span className={styles.sectionIcon} aria-hidden="true"><Package size={20} /></span><div><h2>Variant details</h2><p>Information customers will see for this option.</p></div></div>
             <div className={styles.fieldsGrid}>
+              <Select label="Subscription Eligible" value={draft.isSubscriptionEligible ? "eligible" : "ineligible"} onChange={(value) => update("isSubscriptionEligible", value === "eligible")} options={[{ value: "eligible", label: "Eligible for subscriptions" }, { value: "ineligible", label: "One-time purchases only" }]} disabled={!canUpdateVariant} fullWidth />
+              <p className={styles.fullField}>Applies to new subscription additions of this variant. Existing subscription items and one-time purchases are unchanged.</p>
               <Input label="Variant name" value={draft.name} onChange={(e) => update("name", e.target.value)} disabled={!canUpdateVariant} required fullWidth size="sm" />
               <Input label="SKU" value={draft.sku} onChange={(e) => update("sku", e.target.value)} disabled={!canUpdateVariant} required fullWidth size="sm" />
               <Input label="Price (£)" type="number" min="0" step="0.01" value={draft.price} onChange={(e) => update("price", e.target.value)} disabled={!canUpdateVariant} required fullWidth size="sm" />

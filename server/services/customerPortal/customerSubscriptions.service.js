@@ -1955,7 +1955,7 @@ async function CreateSubscriptionUnlocked({
   const variants = await ProductVariant.find({
     _id: { $in: variantIds },
     status: "active",
-  }).populate("product", "name status isSubscriptionEligible");
+  }).populate("product", "name status");
 
   if (variants.length !== new Set(variantIds.map(String)).size) {
     return Response(false, "One or more products are unavailable", null);
@@ -1965,10 +1965,10 @@ async function CreateSubscriptionUnlocked({
     if (!v.product || v.product.status !== "active") {
       return Response(false, `Product "${v.name}" is not available`, null);
     }
-    if (v.product.isSubscriptionEligible === false) {
+    if (v.isSubscriptionEligible === false) {
       return Response(
         false,
-        `"${v.product.name}" is not eligible for subscriptions`,
+        `"${v.product.name} – ${v.name}" is not eligible for subscriptions`,
         null,
       );
     }
@@ -2581,13 +2581,13 @@ async function UpdateSubscription({
     const variants = await ProductVariant.find({
       _id: { $in: variantIds },
       status: "active",
-    }).populate("product", "name status isSubscriptionEligible");
+    }).populate("product", "name status");
 
     if (variants.length !== new Set(variantIds.map(String)).size) {
       return Response(false, "One or more products are unavailable", null);
     }
 
-    // Product flags only affect new additions, never established recurring items.
+    // Variant flags only affect new additions, never established recurring items.
     const establishedVariantIds = new Set([
       ...(subscription.items || []),
       ...(subscription.pendingChanges?.items || []),
@@ -2602,10 +2602,10 @@ async function UpdateSubscription({
           null,
         );
       }
-      if (variant.product.isSubscriptionEligible === false && !establishedVariantIds.has(String(variant._id))) {
+      if (variant.isSubscriptionEligible === false && !establishedVariantIds.has(String(variant._id))) {
         return Response(
           false,
-          `"${variant.product.name}" is not eligible for subscriptions`,
+          `"${variant.product.name} – ${variant.name}" is not eligible for subscriptions`,
           null,
         );
       }
@@ -4423,7 +4423,7 @@ async function AddSubscriptionItem({
 
   const variant = await ProductVariant.findById(variantId).populate(
     "product",
-    "name status isSubscriptionEligible",
+    "name status",
   );
   if (!variant || variant.status !== "active") {
     return Response(false, "Product is not available", null);
@@ -4431,8 +4431,8 @@ async function AddSubscriptionItem({
   if (!variant.product || variant.product.status !== "active") {
     return Response(false, "Product is not available", null);
   }
-  if (variant.product.isSubscriptionEligible === false) {
-    return Response(false, "This product is not subscription eligible", null);
+  if (variant.isSubscriptionEligible === false) {
+    return Response(false, "This variant is not subscription eligible", null);
   }
 
   const customer = await Customer.findById(customerId);

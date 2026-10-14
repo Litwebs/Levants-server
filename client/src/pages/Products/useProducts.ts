@@ -228,7 +228,6 @@ export function useProducts() {
         category: editForm.category,
         description: editForm.description,
         status: editForm.status,
-        isSubscriptionEligible: editForm.isSubscriptionEligible !== false,
         allergens: editForm.allergens,
         storageNotes: editForm.storageNotes ?? "",
         ...(isThumbnailCleared

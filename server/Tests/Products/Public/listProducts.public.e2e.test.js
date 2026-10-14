@@ -69,27 +69,34 @@ async function createVariant({
 }
 
 describe("GET /api/products (PUBLIC)", () => {
-  test("subscription filtering precedes pagination and preserves ordinary sales", async () => {
-    const eligible = await createProduct({ name: "Eligible milk" });
+  test("subscription catalogue filters variants before pricing and pagination while ordinary sales retain every variant", async () => {
+    const mixed = await createProduct({ name: "Eligible milk" });
     const excluded = await createProduct({ name: "One-time milk" });
     const historical = await createProduct({ name: "Historical milk" });
-    await Product.findByIdAndUpdate(excluded._id, { isSubscriptionEligible: false });
-    await Product.collection.updateOne({ _id: historical._id }, { $unset: { isSubscriptionEligible: "" } });
-    for (const product of [eligible, excluded, historical]) await createVariant({ productId: product._id });
+    const allowed = await createVariant({ productId: mixed._id, price: 5 });
+    const small = await createVariant({ productId: mixed._id, price: 1 });
+    const blocked = await createVariant({ productId: excluded._id });
+    const legacy = await createVariant({ productId: historical._id });
+    await Variant.updateMany({ _id: { $in: [small._id, blocked._id] } }, { isSubscriptionEligible: false });
+    await Variant.collection.updateOne({ _id: legacy._id }, { $unset: { isSubscriptionEligible: "" } });
+    // A retired product-level value cannot override an explicit variant choice.
+    await Product.collection.updateOne({ _id: mixed._id }, { $set: { isSubscriptionEligible: false } });
     const filtered = await request(app).get("/api/products?subscriptionEligible=true&pageSize=1&sort=name_asc");
     expect(filtered.status).toBe(200);
     expect(filtered.body.meta.total).toBe(2);
     expect(filtered.body.meta.totalPages).toBe(2);
-    expect(filtered.body.data.items).toHaveLength(1);
-    expect(filtered.body.data.items[0].isSubscriptionEligible).toBe(true);
+    expect(filtered.body.data.items[0]).toMatchObject({ id: mixed.id, pricing: { min: 5, max: 5 } });
+    expect(filtered.body.data.items[0].variants).toEqual([expect.objectContaining({ id: allowed.id, isSubscriptionEligible: true })]);
     const next = await request(app).get("/api/products?subscriptionEligible=true&pageSize=1&page=2&sort=name_asc");
-    expect([filtered.body.data.items[0].id, next.body.data.items[0].id]).toEqual([String(eligible._id), String(historical._id)]);
+    expect(next.body.data.items[0].id).toBe(historical.id);
+    expect(next.body.data.items[0].variants[0].isSubscriptionEligible).toBe(true);
     const ordinary = await request(app).get("/api/products");
-    expect(ordinary.body.data.items.find(item => item.id === String(excluded._id))).toMatchObject({ isSubscriptionEligible: false });
-    const detail = await request(app).get(`/api/products/${excluded._id}`);
+    expect(ordinary.body.data.items.find(item => item.id === mixed.id).variants).toHaveLength(2);
+    expect(ordinary.body.data.items.find(item => item.id === excluded.id).variants[0].isSubscriptionEligible).toBe(false);
+    const detail = await request(app).get(`/api/products/${mixed.id}`);
     expect(detail.status).toBe(200);
-    expect(detail.body.data.isSubscriptionEligible).toBe(false);
-    await Product.findByIdAndUpdate(excluded._id, { isSubscriptionEligible: true });
+    expect(detail.body.data.variants.find(v => v.id === small.id).isSubscriptionEligible).toBe(false);
+    await Variant.findByIdAndUpdate(blocked._id, { isSubscriptionEligible: true });
     const enabled = await request(app).get("/api/products?subscriptionEligible=true");
     expect(enabled.body.meta.total).toBe(3);
   });

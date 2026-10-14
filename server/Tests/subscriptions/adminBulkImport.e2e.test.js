@@ -28,7 +28,6 @@ describe("Admin bulk subscription setup import (E2E)", () => {
       category: "milk",
       description: "Fresh milk",
       status: "active",
-      isSubscriptionEligible: true,
       thumbnailImage: "64f000000000000000000010",
     });
     return ProductVariant.create({
@@ -62,6 +61,18 @@ describe("Admin bulk subscription setup import (E2E)", () => {
       items: [{ variantId: String(variantId), quantity: 2 }],
     },
     ...overrides,
+  });
+
+  test("rejects an excluded variant while allowing its eligible sibling in bulk setup", async () => {
+    const cookie = await login();
+    const eligible = await createEligibleVariant();
+    const excluded = await ProductVariant.create({ product: eligible.product, name: "Small milk", sku: "SMALL", price: 1, stockQuantity: 10, isSubscriptionEligible: false });
+    const result = await request(app).post("/api/admin/subscriptions/bulk-setup-links").set("Cookie", cookie)
+      .send({ rows: [buildRow(excluded.id), buildRow(eligible.id, { rowNumber: 3, email: "eligible@example.com" })] });
+    expect(result.status).toBe(200);
+    expect(result.body.data.summary).toEqual({ total: 2, created: 1, failed: 1 });
+    expect(result.body.data.results[0].message).toMatch(/not subscription eligible/i);
+    expect(result.body.data.results[1].status).toBe("created");
   });
 
   test("creates a pending setup for every valid row", async () => {

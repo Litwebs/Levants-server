@@ -250,6 +250,8 @@ async function UpdateVariant({ variantId, body, userId }) {
   if (body.lowStockAlert !== undefined)
     variant.lowStockAlert = body.lowStockAlert;
   if (body.status !== undefined) variant.status = body.status;
+  if (body.isSubscriptionEligible !== undefined)
+    variant.isSubscriptionEligible = body.isSubscriptionEligible;
 
   await variant.save();
 

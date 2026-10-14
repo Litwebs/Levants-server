@@ -67,8 +67,6 @@ async function listProducts({
   sort,
 }) {
   const productFilter = { status: "active" };
-  // Historical products without a flag remain eligible, matching the model default.
-  if (subscriptionEligible) productFilter.isSubscriptionEligible = { $ne: false };
 
   const categoryList = parseCommaSeparatedList(category);
   if (categoryList) {
@@ -93,7 +91,7 @@ async function listProducts({
       .populate("thumbnailImage")
       .populate("galleryImages")
       .select(
-        "name slug category description allergens storageNotes thumbnailImage galleryImages createdAt isSubscriptionEligible",
+        "name slug category description allergens storageNotes thumbnailImage galleryImages createdAt",
       )
       .sort(productSort)
       .lean(),
@@ -124,6 +122,7 @@ async function listProducts({
     product: { $in: productIds },
     status: "active",
   };
+  if (subscriptionEligible) variantFilter.isSubscriptionEligible = { $ne: false };
 
   if (inStock) variantFilter.stockQuantity = { $gt: 0 };
 
@@ -140,7 +139,7 @@ async function listProducts({
         "originalName filename mimeType sizeBytes url uploadedBy isArchived archivedAt createdAt updatedAt",
     })
     .select(
-      "product name description ingredients allergens nutritionalInformation price stockQuantity lowStockAlert thumbnailImage",
+      "product name description ingredients allergens nutritionalInformation price stockQuantity lowStockAlert thumbnailImage isSubscriptionEligible",
     )
     .lean();
 
@@ -148,6 +147,7 @@ async function listProducts({
     const productKey = String(v.product);
     if (!acc[productKey]) acc[productKey] = [];
     acc[productKey].push({
+      isSubscriptionEligible: v.isSubscriptionEligible !== false,
       id: v._id,
       name: v.name,
       description: v.description,
@@ -173,7 +173,6 @@ async function listProducts({
       return {
         id: product._id,
         name: product.name,
-        isSubscriptionEligible: product.isSubscriptionEligible !== false,
         slug: product.slug,
         category: product.category,
         description: product.description,
@@ -225,7 +224,7 @@ async function getProductById({ productId, variantId }) {
     .populate("thumbnailImage")
     .populate("galleryImages")
     .select(
-      "name slug category description allergens storageNotes thumbnailImage galleryImages isSubscriptionEligible",
+      "name slug category description allergens storageNotes thumbnailImage galleryImages",
     )
     .lean();
 
@@ -241,13 +240,14 @@ async function getProductById({ productId, variantId }) {
         "originalName filename mimeType sizeBytes url uploadedBy isArchived archivedAt createdAt updatedAt",
     })
     .select(
-      "name description ingredients allergens nutritionalInformation price stockQuantity lowStockAlert thumbnailImage",
+      "name description ingredients allergens nutritionalInformation price stockQuantity lowStockAlert thumbnailImage isSubscriptionEligible",
     )
     .lean();
 
   if (variants.length === 0) return null;
 
   const mappedVariants = variants.map((v) => ({
+    isSubscriptionEligible: v.isSubscriptionEligible !== false,
     id: v._id,
     name: v.name,
     description: v.description,
@@ -277,7 +277,6 @@ async function getProductById({ productId, variantId }) {
   return {
     id: product._id,
     name: product.name,
-    isSubscriptionEligible: product.isSubscriptionEligible !== false,
     slug: product.slug,
     category: product.category,
     description: product.description,

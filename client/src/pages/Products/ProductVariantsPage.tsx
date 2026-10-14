@@ -60,6 +60,7 @@ import { getImageUrl, getStatusBadge } from "./product.utils";
 import VariantDeleteModal from "./Models/VariantDeleteModal";
 
 type VariantForm = {
+  isSubscriptionEligible: boolean;
   name: string;
   description: string;
   ingredients: string;
@@ -74,6 +75,7 @@ type VariantForm = {
 };
 
 const emptyCreateForm = (): VariantForm => ({
+  isSubscriptionEligible: true,
   name: "",
   description: "",
   ingredients: "",
@@ -145,6 +147,8 @@ const VariantViewModal = ({
             />
           </FormGrid>
         </FormSection>
+
+        <FormValue label="Subscription Eligible" value={variant.isSubscriptionEligible === false ? "One-time purchases only" : "Eligible for subscriptions"} />
 
         <FormSection title="Product Information">
           <FormGrid>
@@ -300,6 +304,15 @@ const VariantCreateModal = ({
             <option value="active">active</option>
             <option value="inactive">inactive</option>
           </select>
+        </FormRow>
+
+        <FormRow label="Subscription Eligible" htmlFor="variant-subscription-eligible">
+          <select id="variant-subscription-eligible" value={form.isSubscriptionEligible ? "eligible" : "ineligible"}
+            onChange={(event) => setForm(previous => ({ ...previous, isSubscriptionEligible: event.target.value === "eligible" }))}>
+            <option value="eligible">Eligible for subscriptions</option>
+            <option value="ineligible">One-time purchases only</option>
+          </select>
+          <p>Controls new recurring additions of this variant.</p>
         </FormRow>
 
         <FormSection title="Product Information">
@@ -629,6 +642,7 @@ const ProductVariantsPage = () => {
       stockQuantity: payload.stockQuantity,
       lowStockAlert: payload.lowStockAlert,
       status: payload.status,
+      isSubscriptionEligible: payload.isSubscriptionEligible,
       thumbnailImage: payload.thumbnailImage?.url,
     };
 

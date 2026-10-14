@@ -43,7 +43,6 @@ type ProductDraft = {
   category: string;
   description: string;
   status: ProductStatus;
-  isSubscriptionEligible: boolean;
   allergens: string;
   storageNotes: string;
 };
@@ -53,7 +52,6 @@ const initialDraft: ProductDraft = {
   category: "",
   description: "",
   status: "draft",
-  isSubscriptionEligible: true,
   allergens: "",
   storageNotes: "",
 };
@@ -63,7 +61,6 @@ const getProductDraft = (product: AdminProduct): ProductDraft => ({
   category: product.category ?? "",
   description: product.description ?? "",
   status: product.status ?? "draft",
-  isSubscriptionEligible: product.isSubscriptionEligible !== false,
   allergens: Array.isArray(product.allergens)
     ? product.allergens.join(", ")
     : "",
@@ -301,7 +298,6 @@ const ProductCreatePage = () => {
         category: draft.category,
         description: draft.description.trim(),
         status: draft.status,
-        isSubscriptionEligible: draft.isSubscriptionEligible,
         allergens: draft.allergens
           .split(",")
           .map((allergen) => allergen.trim())
@@ -479,18 +475,6 @@ const ProductCreatePage = () => {
                 ]}
                 fullWidth
               />
-
-              <Select
-                label="Subscription Eligible"
-                value={draft.isSubscriptionEligible ? "eligible" : "ineligible"}
-                onChange={(value) => updateDraft("isSubscriptionEligible", value === "eligible")}
-                options={[
-                  { value: "eligible", label: "Eligible for subscriptions" },
-                  { value: "ineligible", label: "One-time purchases only" },
-                ]}
-                fullWidth
-              />
-              <p>Controls new subscription additions. Existing subscription items and one-time purchases are unchanged.</p>
 
               <Input
                 label="Allergens"
