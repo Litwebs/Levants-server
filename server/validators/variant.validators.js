@@ -2,6 +2,7 @@
 const Joi = require("joi");
 
 const createVariantSchema = Joi.object({
+  isSubscriptionEligible: Joi.boolean().strict().default(true),
   name: Joi.string().min(2).max(100).required(),
   description: Joi.string().allow("").max(5000).optional(),
   ingredients: Joi.string().allow("").max(5000).optional(),
@@ -19,6 +20,7 @@ const createVariantSchema = Joi.object({
 }).unknown(false);
 
 const updateVariantSchema = Joi.object({
+  isSubscriptionEligible: Joi.boolean().strict().optional(),
   name: Joi.string().min(2).max(100).optional(),
   description: Joi.string().allow("").max(5000).optional(),
   ingredients: Joi.string().allow("").max(5000).optional(),

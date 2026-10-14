@@ -13,7 +13,6 @@ const createProductSchema = Joi.object({
   description: Joi.string().min(2).required(),
 
   status: Joi.string().valid("draft", "active", "archived").default("draft"),
-  isSubscriptionEligible: Joi.boolean().strict().default(true),
 
   allergens: Joi.array().items(Joi.string()).optional(),
   storageNotes: Joi.string().allow("").optional(),
@@ -34,7 +33,6 @@ const updateProductSchema = Joi.object({
   description: Joi.string().min(2).optional(),
 
   status: Joi.string().valid("draft", "active", "archived").optional(),
-  isSubscriptionEligible: Joi.boolean().strict().optional(),
 
   allergens: Joi.array().items(Joi.string()).optional(),
   storageNotes: Joi.string().allow("").optional(),

@@ -6,6 +6,7 @@ const logger = require("./utils/logger.util");
 
 async function start() {
   await connectDb();
+  await require("./services/variantEligibilityMigration.service").migrateVariantEligibility();
 
   const server = http.createServer(app);
 

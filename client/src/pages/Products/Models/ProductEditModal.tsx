@@ -107,18 +107,6 @@ const ProductEditModal = ({
           </select>
         </FormRow>
 
-        <FormRow label="Subscription Eligible" htmlFor="edit-subscription-eligible">
-          <select id="edit-subscription-eligible"
-            value={editForm.isSubscriptionEligible === false ? "ineligible" : "eligible"}
-            onChange={(event) => setEditForm((previous: any) => ({
-              ...previous, isSubscriptionEligible: event.target.value === "eligible",
-            }))}>
-            <option value="eligible">Eligible for subscriptions</option>
-            <option value="ineligible">One-time purchases only</option>
-          </select>
-          <p>Existing subscription items and one-time purchases are unchanged.</p>
-        </FormRow>
-
         <FormRow label="Allergens" htmlFor="edit-allergens">
           <input
             id="edit-allergens"

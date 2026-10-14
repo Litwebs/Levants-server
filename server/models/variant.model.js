@@ -96,6 +96,8 @@ const productVariantSchema = new mongoose.Schema(
       index: true,
     },
 
+    isSubscriptionEligible: { type: Boolean, default: true, index: true },
+
     // ✅ CDN-backed
     thumbnailImage: {
       type: mongoose.Schema.Types.ObjectId,

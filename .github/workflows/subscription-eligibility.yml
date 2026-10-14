@@ -1,4 +1,4 @@
-name: Subscription product eligibility checks
+name: Subscription variant eligibility checks
 on:
   pull_request:
     branches: [uat]
@@ -24,7 +24,7 @@ jobs:
           cache-dependency-path: server/package-lock.json
       - run: npm ci
         working-directory: server
-      - run: npx jest --runInBand Tests/Products Tests/portal/customerSubscriptions.test.js Tests/products.public.categoryOrder.test.js
+      - run: npx jest --runInBand Tests/Products Tests/portal/customerSubscriptions.test.js Tests/products.public.categoryOrder.test.js Tests/subscriptions/adminBulkImport.e2e.test.js
         working-directory: server
   browser:
     runs-on: ubuntu-latest
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
-          ref: f79d417a03a66dfc40c03466a7d83021124203ef
+          ref: 1a7e9c5105acbe2f20a5ff5324e88fca312d675a
           path: client-storefront
       - uses: actions/setup-node@v4
         with:

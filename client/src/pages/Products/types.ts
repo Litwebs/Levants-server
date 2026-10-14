@@ -15,6 +15,7 @@ export type MediaImage = {
 };
 
 export type AdminProductVariant = {
+  isSubscriptionEligible?: boolean;
   _id: string;
   product: string;
   name: string;
@@ -40,7 +41,6 @@ export type AdminProduct = {
   category: string;
   description: string;
   status: ProductStatus;
-  isSubscriptionEligible?: boolean;
   allergens: string[];
   storageNotes: string | null;
   thumbnailImage: string | MediaImage;

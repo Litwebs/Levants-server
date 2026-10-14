@@ -3,7 +3,7 @@ const path = require("node:path");
 const express = require("express");
 const { chromium, expect: ui } = require("@playwright/test");
 const app = require("../../Tests/Deals/helpers/testApp");
-const Product = require("../../models/product.model");
+const Variant = require("../../models/variant.model");
 const Subscription = require("../../models/subscription.model");
 const Order = require("../../models/order.model");
 const jwt = require("../../utils/jwt.util");
@@ -53,6 +53,8 @@ async function allowTestImages(context) {
 for (const width of [1440, 390]) {
   test(`admin eligibility changes control customer recurring selectors without affecting ordinary sales at ${width}px`, async () => {
     const fixture = await createBasketFixture();
+    await Variant.findByIdAndUpdate(fixture.variants.Milk.id, { name: "Recurring size" });
+    await Variant.findByIdAndUpdate(fixture.variants.OtherMilk.id, { name: "One-time size" });
     fixture.customer.stripeCustomerId = "cus_eligibility";
     await fixture.customer.save();
     stripe.customers.retrieve.mockResolvedValue({ id: "cus_eligibility", invoice_settings: { default_payment_method: "pm_test" } });
@@ -66,13 +68,16 @@ for (const width of [1440, 390]) {
     });
     expect(auth.status()).toBe(200);
     const adminPage = await adminContext.newPage();
-    await adminPage.goto(adminOrigin + `/products/${fixture.products.Honey.id}/edit`);
+    await adminPage.goto(adminOrigin + `/products/${fixture.products.Milk.id}/edit`);
+    await ui(adminPage.getByLabel("Subscription Eligible")).toHaveCount(0);
+    await adminPage.goto(adminOrigin + `/products/${fixture.products.Milk.id}/variants/${fixture.variants.OtherMilk.id}/edit`);
     await ui(adminPage.getByLabel("Subscription Eligible")).toHaveValue("eligible");
     await adminPage.getByLabel("Subscription Eligible").selectOption("ineligible");
     await adminPage.getByRole("button", { name: "Save changes", exact: true }).first().click();
-    await ui(adminPage).toHaveURL(adminOrigin + "/products");
-    expect((await Product.findById(fixture.products.Honey.id)).isSubscriptionEligible).toBe(false);
-    await adminPage.goto(adminOrigin + `/products/${fixture.products.Honey.id}/edit`);
+    await ui(adminPage).toHaveURL(adminOrigin + `/products/${fixture.products.Milk.id}`);
+    expect((await Variant.findById(fixture.variants.OtherMilk.id)).isSubscriptionEligible).toBe(false);
+    expect((await Variant.findById(fixture.variants.Milk.id)).isSubscriptionEligible).toBe(true);
+    await adminPage.goto(adminOrigin + `/products/${fixture.products.Milk.id}/variants/${fixture.variants.OtherMilk.id}/edit`);
     await ui(adminPage.getByLabel("Subscription Eligible")).toHaveValue("ineligible");
 
     customerContext = await browser.newContext({ viewport: { width, height: 1000 } });
@@ -82,23 +87,28 @@ for (const width of [1440, 390]) {
     page = await customerContext.newPage();
     page.on("pageerror", error => console.warn("Eligibility browser error:", error.message));
     await page.goto(customerOrigin + "/shop");
-    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ }).first()).toBeVisible();
+    await ui(page.getByRole("heading", { name: "Milk - One-time size", exact: true })).toBeVisible();
+    await ui(page.getByRole("heading", { name: "Milk - Recurring size", exact: true })).toBeVisible();
 
-    // Ineligible products are excluded from recurring catalogues.
+    // Only the excluded variant is removed; its sibling remains subscribable.
     const recurring = await customerContext.request.get(customerOrigin + "/api/products?subscriptionEligible=true");
-    expect((await recurring.json()).data.items.some(p => p.id === fixture.products.Honey.id)).toBe(false);
+    const milk = (await recurring.json()).data.items.find(p => p.id === fixture.products.Milk.id);
+    expect(milk.variants.map(v => v.id)).toEqual([fixture.variants.Milk.id]);
     const forbidden = await customerContext.request.post(customerOrigin + "/api/portal/subscriptions", {
       data: { operationId: require("node:crypto").randomUUID(), frequency: "weekly", preferredDeliveryDay: 0,
         deliveryAddressId: String(fixture.customer.addresses[0]._id),
-        items: [{ variantId: fixture.variants.Honey.id, quantity: 1 }] },
+        items: [{ variantId: fixture.variants.OtherMilk.id, quantity: 1 }] },
     });
     expect(forbidden.status()).toBe(400);
     expect((await forbidden.json()).message).toMatch(/not eligible/i);
 
-    await page.goto(customerOrigin + `/product/${fixture.products.Honey.id}?order=subscription`);
+    await page.goto(customerOrigin + `/product/${fixture.products.Milk.id}?variant=${fixture.variants.OtherMilk.id}&order=subscription`);
     await ui(page.getByText("Available for one-time purchases only.", { exact: true })).toBeVisible();
     await ui(page.getByRole("button", { name: "Add to basket", exact: true })).toBeVisible();
     await ui(page.getByRole("link", { name: "Continue to subscription", exact: true })).toHaveCount(0);
+
+    await page.getByRole("button", { name: /Recurring size –/ }).click();
+    await ui(page.getByRole("link", { name: "Continue to subscription", exact: true })).toBeVisible();
 
     await page.goto(customerOrigin + "/portal/subscriptions/new");
     const next = page.getByRole("button", { name: "Next", exact: true });
@@ -106,8 +116,8 @@ for (const width of [1440, 390]) {
     await next.click();
     await ui(page.getByText("How often would you like delivery?", { exact: true })).toBeVisible();
     await next.click();
-    await ui(page.getByRole("heading", { name: /^Milk(?: - .*)?$/ }).first()).toBeVisible();
-    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ })).toHaveCount(0);
+    await ui(page.getByRole("heading", { name: "Milk - Recurring size", exact: true }).first()).toBeVisible();
+    await ui(page.getByRole("heading", { name: "Milk - One-time size", exact: true })).toHaveCount(0);
 
     const sub = await Subscription.create({
       subscriptionNumber: `SUB-ELIGIBILITY-${width}`, customer: fixture.customer._id,
@@ -120,25 +130,25 @@ for (const width of [1440, 390]) {
     await page.goto(customerOrigin + `/portal/subscriptions/${sub.id}/add-products`);
     await ui(page.getByRole("heading", { name: "Select Products", exact: true })).toBeVisible();
     await ui(page.getByRole("heading", { name: /^Juice(?: - .*)?$/ }).first()).toBeVisible();
-    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ })).toHaveCount(0);
+    await ui(page.getByRole("heading", { name: "Milk - One-time size", exact: true })).toHaveCount(0);
     const deniedAdd = await customerContext.request.post(customerOrigin + `/api/portal/subscriptions/${sub.id}/items`, {
-      data: { variantId: fixture.variants.Honey.id, quantity: 1 },
+      data: { variantId: fixture.variants.OtherMilk.id, quantity: 1 },
     });
     expect(deniedAdd.status()).toBe(400);
     expect((await deniedAdd.json()).message).toMatch(/not subscription eligible/i);
 
-    // An ordinary purchase of the excluded product still reaches checkout.
+    // An ordinary purchase of the excluded variant still reaches checkout.
     const ordinary = await customerContext.request.post(customerOrigin + "/api/portal/orders/checkout", {
-      data: { items: [{ variantId: fixture.variants.Honey.id, quantity: 1 }],
+      data: { items: [{ variantId: fixture.variants.OtherMilk.id, quantity: 1 }],
         deliveryAddress: { line1: "1 Test Street", city: "Bradford", postcode: "BD1 1AA", country: "GB" } },
     });
     expect(ordinary.status()).toBe(200);
     const order = await Order.findById((await ordinary.json()).data.orderId);
-    expect(order.items.some(item => String(item.variant) === fixture.variants.Honey.id)).toBe(true);
+    expect(order.items.some(item => String(item.variant) === fixture.variants.OtherMilk.id)).toBe(true);
 
-    // Flag changes do not remove established products.
+    // Flag changes do not remove established recurring variants.
     const before = (await Subscription.findById(sub.id)).toObject();
-    const changed = await adminContext.request.put(adminOrigin + `/api/admin/products/${fixture.products.Milk.id}`, {
+    const changed = await adminContext.request.put(adminOrigin + `/api/admin/products/variants/${fixture.variants.Milk.id}`, {
       data: { isSubscriptionEligible: false },
     });
     expect(changed.status()).toBe(200);
@@ -149,8 +159,9 @@ for (const width of [1440, 390]) {
     // Re-enabling is reflected on the next catalogue request.
     await adminPage.getByLabel("Subscription Eligible").selectOption("eligible");
     await adminPage.getByRole("button", { name: "Save changes", exact: true }).first().click();
-    await ui(adminPage).toHaveURL(adminOrigin + "/products");
+    await ui(adminPage).toHaveURL(adminOrigin + `/products/${fixture.products.Milk.id}`);
     await page.goto(customerOrigin + `/portal/subscriptions/${sub.id}/add-products`);
-    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ }).first()).toBeVisible();
+    await ui(page.getByRole("heading", { name: "Milk - One-time size", exact: true })).toBeVisible();
+    await ui(page.getByRole("heading", { name: "Milk - Recurring size", exact: true })).toHaveCount(0);
   });
 }
