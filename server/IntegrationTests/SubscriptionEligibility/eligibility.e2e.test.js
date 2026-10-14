@@ -120,6 +120,7 @@ for (const width of [1440, 390]) {
       data: { variantId: fixture.variants.Honey.id, quantity: 1 },
     });
     expect(deniedAdd.status()).toBe(400);
+    expect((await deniedAdd.json()).message).toMatch(/not subscription eligible/i);
 
     // An ordinary purchase of the excluded product still reaches checkout.
     const ordinary = await customerContext.request.post(customerOrigin + "/api/portal/orders/checkout", {

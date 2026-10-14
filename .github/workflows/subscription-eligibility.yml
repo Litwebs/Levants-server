@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
-          ref: d26442bc2e43ecd27781e038b78f8c909e36c408
+          ref: d7865120824c77674773b9e0748f07fa8e5a2935
           path: client-storefront
       - uses: actions/setup-node@v4
         with:
