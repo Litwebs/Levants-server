@@ -1,0 +1,27 @@
+name: Deals UAT regression checks
+on:
+  pull_request:
+    branches: [uat]
+    paths:
+      - 'server/services/deals.*'
+      - 'server/validators/deal.*'
+      - 'server/models/deal.*'
+      - 'server/utils/deal*'
+      - 'server/Tests/Deals/**'
+      - 'server/IntegrationTests/Deals/**'
+      - 'server/e2e/deals/**'
+      - 'server/playwright.deals.*'
+      - 'client/src/pages/Deals/**'
+      - 'client/src/context/Deals/**'
+      - 'client/tests/deal*'
+      - '.github/workflows/deals-*.yml'
+      - 'deployment/uat/portal.json'
+permissions:
+  contents: read
+concurrency:
+  group: deals-uat-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  deals:
+    uses: ./.github/workflows/deals-regression.yml
+    secrets: inherit

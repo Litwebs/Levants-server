@@ -27,7 +27,11 @@ module.exports = defineConfig({
       url: `${CONTROL_ORIGIN}/health`,
       timeout: 120_000,
       reuseExistingServer: false,
-      env: { ...process.env, E2E_DEALS_BROWSER: "1", E2E_USE_STRIPE_CLI: "0", E2E_USE_TEST_CLOCKS: "0" },
+      env: {
+        ...process.env,
+        E2E_DEALS_BROWSER: "1", E2E_USE_STRIPE_CLI: "0", E2E_USE_TEST_CLOCKS: "0",
+        JWT_ACCESS_EXPIRES_IN: "15m", JWT_REFRESH_EXPIRES_IN: "7d",
+      },
     },
     {
       command: "npm --prefix ../client run build && node e2e/deals/serve-admin.js",

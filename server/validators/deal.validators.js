@@ -53,8 +53,10 @@ const updateDealSchema = Joi.object({
   image: imageField,
   pricingMode: pricingMode.optional(),
   savingValue: savingValue.optional(),
-  items: Joi.array().items(dealItemSchema).min(1).max(30).optional(),
-  packagePrice: Joi.number().precision(2).positive().optional(),
+  // Draft completeness depends on the saved record, not on PATCH fields.
+  // updateDeal enforces complete contents and pricing for published offers.
+  items: Joi.array().items(dealItemSchema).max(30).optional(),
+  packagePrice: Joi.number().precision(2).positive().allow(null).optional(),
   currency: Joi.string().trim().uppercase().valid("GBP").optional(),
   isActive: Joi.boolean().optional(),
   isFeatured: Joi.boolean().optional(),

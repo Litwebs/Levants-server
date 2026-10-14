@@ -8,6 +8,21 @@ concurrency:
   group: deals-regression-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  backend:
+    name: Deals API, pricing, inventory and payment recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npm test -- --testPathPatterns=Tests/Deals
+        working-directory: server
   storefront:
     name: Real client to server package checkout
     runs-on: ubuntu-latest
@@ -17,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
-          ref: 41d3b17b67b7b1621bdb43081b4330cb93b6d923
+          ref: 6e02e114bbb66059ced9a4046292a3ea50d72311
           path: client-storefront
       - uses: actions/setup-node@v4
         with:
@@ -57,7 +72,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
-          ref: 41d3b17b67b7b1621bdb43081b4330cb93b6d923
+          ref: 6e02e114bbb66059ced9a4046292a3ea50d72311
           path: client-storefront
       - uses: actions/setup-node@v4
         with:
@@ -103,7 +118,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Litwebs/Levants-client
-          ref: 41d3b17b67b7b1621bdb43081b4330cb93b6d923
+          ref: 6e02e114bbb66059ced9a4046292a3ea50d72311
           path: client-storefront
       - uses: actions/setup-node@v4
         with:
@@ -121,15 +136,15 @@ jobs:
         working-directory: client-storefront
       - run: npm run test:deals
         working-directory: client
-      - run: npm run test:deals-types
+      - run: npm run test:typecheck
         working-directory: client
-      - run: npx eslint src/pages/Deals src/context/Deals tests/deals.test.tsx tests/dealForm.test.ts tests/dealsApi.test.ts
+      - run: npx eslint src/pages/Deals src/context/Deals tests/deals.test.tsx tests/dealForm.test.ts
         working-directory: client
       - run: npm run build
         working-directory: client
       - run: npx playwright install --with-deps chromium
         working-directory: server
-      - run: npx playwright test --config playwright.deals.config.js --grep "admin"
+      - run: npm run test:e2e:deals:baskets
         working-directory: server
       - uses: actions/upload-artifact@v4
         if: always()

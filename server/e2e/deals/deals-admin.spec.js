@@ -40,6 +40,76 @@ async function manageRow(page, row, action) {
   await expect(page).toHaveURL(`${ADMIN}/deals`);
 }
 
+for (const width of [1440, 390]) {
+  test(`admin reopens, clears and rebuilds incomplete drafts at ${width}px`, async ({ page, request }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const data = await start(page, request);
+    const name = `Incomplete package ${width}`;
+    await page.goto(`${ADMIN}/deals/new`);
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await page.getByLabel("Deal name *").fill(name);
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page).toHaveURL(`${ADMIN}/deals`);
+    const row = page.getByRole("row").filter({ hasText: name });
+    await expect(row).toContainText("Draft");
+    const listed = await page.request.get(`${API_ORIGIN}/api/admin/deals`, { params: { search: name } });
+    expect(listed.ok()).toBeTruthy();
+    const id = (await listed.json()).data.deals[0]._id;
+    const saved = await read(page, id);
+    const publicUrl = `${API_ORIGIN}/api/deals/${saved.slug}`;
+
+    // A name-only draft must remain editable after a reload, using the actual
+    // browser PATCH payload rather than a description-only API request.
+    await page.reload();
+    await row.click();
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page).toHaveURL(`${ADMIN}/deals`);
+    expect(await read(page, id)).toMatchObject({ items: [], publicationStatus: "draft" });
+    expect((await request.get(publicUrl)).status()).toBe(404);
+
+    await row.click();
+    await page.getByRole("row").filter({ hasText: data.variants.MILK.name })
+      .getByRole("button", { name: "Add variant Standard", exact: true }).click();
+    await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
+    await expect(page.getByLabel("Package price (£) *")).toHaveValue("");
+    await page.getByLabel("Package price (£) *").fill("4");
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page).toHaveURL(`${ADMIN}/deals`);
+    expect((await read(page, id)).items).toHaveLength(1);
+
+    await row.click();
+    await page.getByRole("button", { name: `Remove ${data.variants.MILK.name} Standard`, exact: true }).click();
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page).toHaveURL(`${ADMIN}/deals`);
+    expect(await read(page, id)).toMatchObject({ items: [], publicationStatus: "draft", packagePrice: 4 });
+    expect((await request.get(publicUrl)).status()).toBe(404);
+    await manageRow(page, row, "Publish");
+    await expect(page.getByText("Add at least one product to publish", { exact: true })).toBeVisible();
+    await expect(row).toContainText("Draft");
+
+    await row.click();
+    await page.getByRole("row").filter({ hasText: data.variants.MILK.name })
+      .getByRole("button", { name: "Add variant Standard", exact: true }).click();
+    await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
+    await page.getByLabel("Package price (£) *").fill("");
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect(page).toHaveURL(`${ADMIN}/deals`);
+    const disabled = await page.request.patch(`${API_ORIGIN}/api/admin/deals/${id}`, { data: { isActive: false } });
+    expect(disabled.ok()).toBeTruthy();
+    await page.reload();
+    await row.click();
+    await page.getByRole("button", { name: "Details & pricing", exact: true }).click();
+    await expect(page.getByLabel("Package price (£) *")).toHaveValue("");
+    await page.getByLabel("Package price (£) *").fill("4");
+    await page.getByRole("button", { name: "Review & publish", exact: true }).click();
+    await page.getByRole("button", { name: "Publish deal", exact: true }).click();
+    await expect(page).toHaveURL(`${ADMIN}/deals`);
+    expect(await read(page, id)).toMatchObject({ publicationStatus: "published", packagePrice: 4, isActive: true });
+    expect((await request.get(publicUrl)).status()).toBe(200);
+    await info.attach(`rebuilt-draft-${width}`, { body: await page.screenshot(), contentType: "image/png" });
+  });
+}
+
 for (const [mode, width] of [["fixed_price", 1440], ["fixed_saving", 390], ["percentage_saving", 1440]]) {
   test(`admin saves a draft, previews, publishes and manages ${mode}`, async ({ page, request }, info) => {
     await page.setViewportSize({ width, height: 1000 });
@@ -68,6 +138,7 @@ for (const [mode, width] of [["fixed_price", 1440], ["fixed_saving", 390], ["per
     await page.getByLabel("Pricing method", { exact: true }).selectOption(mode);
     await page.getByLabel(mode === "fixed_price" ? "Package price (£) *" : mode === "fixed_saving" ? "Saving (£) *" : "Saving (%) *").fill(mode === "fixed_price" ? "8" : mode === "fixed_saving" ? "2" : "20");
     await page.getByRole("button", { name: "Review & publish", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: /Offer enabled|Active on storefront/ })).toHaveCount(0);
     const image = await sharp({ create: { width: 16, height: 16, channels: 3, background: "#e4c592" } }).png().toBuffer();
     await page.locator('input[type="file"]').setInputFiles({ name: "milk-package.png", mimeType: "image/png", buffer: image });
     await expect(page.getByAltText("Package preview")).toBeVisible();
@@ -102,12 +173,22 @@ for (const [mode, width] of [["fixed_price", 1440], ["fixed_saving", 390], ["per
     await manageRow(page, row, "Unpublish");
     await expect(row).toContainText("Draft");
     expect((await request.get(publicUrl)).status()).toBe(404);
+    const disabledDraft = await page.request.patch(`${API_ORIGIN}/api/admin/deals/${id}`, { data: { isActive: false } });
+    expect(disabledDraft.ok()).toBeTruthy();
+    await page.reload();
+    await row.click();
+    await page.getByRole("button", { name: "Manage deal", exact: true }).click();
+    await expect(page.getByText("Draft · Hidden from customers", { exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /Pause offer|Resume offer/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Deals & Product Packages", exact: true }).click();
     await manageRow(page, row, "Publish");
+    expect((await read(page, id)).isActive).toBe(true);
     await expect(row).toContainText("Featured");
-    await manageRow(page, row, "Deactivate");
-    await expect(row).toContainText("Inactive");
+    await manageRow(page, row, "Pause offer");
+    await expect(row).toContainText("Paused");
     expect((await request.get(publicUrl)).status()).toBe(404);
-    await manageRow(page, row, "Activate");
+    await manageRow(page, row, "Resume offer");
     await expect(row).toContainText("Featured");
     expect((await request.get(publicUrl)).status()).toBe(200);
     await manageRow(page, row, "Archive");
