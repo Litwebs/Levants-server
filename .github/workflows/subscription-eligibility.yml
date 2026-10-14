@@ -1,0 +1,67 @@
+name: Subscription product eligibility checks
+on:
+  pull_request:
+    branches: [uat]
+    paths:
+      - "server/**"
+      - "client/**"
+      - ".github/workflows/subscription-eligibility.yml"
+permissions:
+  contents: read
+concurrency:
+  group: subscription-eligibility-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - run: npx jest --runInBand Tests/Products Tests/portal/customerSubscriptions.test.js Tests/products.public.categoryOrder.test.js
+        working-directory: server
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Litwebs/Levants-client
+          ref: d26442bc2e43ecd27781e038b78f8c909e36c408
+          path: client-storefront
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - run: npm ci
+        working-directory: client-storefront
+      - run: npm run check:release
+        working-directory: client
+        env:
+          VITE_API_BASE_URL: /api
+      - run: npm run build
+        working-directory: client-storefront
+        env:
+          VITE_API_BASE_URL: /api
+      - run: npx playwright install --with-deps chromium
+        working-directory: server
+      - run: npx jest --config IntegrationTests/SubscriptionEligibility/jest.config.cjs --runInBand
+        working-directory: server
+        env:
+          ELIGIBILITY_ADMIN_DIST: ${{ github.workspace }}/client/build
+          ELIGIBILITY_CLIENT_DIST: ${{ github.workspace }}/client-storefront/dist
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: subscription-eligibility-browser
+          path: server/eligibility-integration-artifacts

@@ -12,6 +12,7 @@ const ListActiveProducts = async (req, res) => {
     minPrice,
     maxPrice,
     inStock,
+    subscriptionEligible,
     search,
     sort,
   } = req.query;
@@ -23,6 +24,7 @@ const ListActiveProducts = async (req, res) => {
     minPrice: minPrice !== undefined ? Number(minPrice) : undefined,
     maxPrice: maxPrice !== undefined ? Number(maxPrice) : undefined,
     inStock: inStock === "true",
+    subscriptionEligible: subscriptionEligible === true || subscriptionEligible === "true",
     search,
     sort,
   });
