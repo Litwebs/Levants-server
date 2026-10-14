@@ -47,7 +47,7 @@ async function allowTestImages(context) {
     contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="green"/></svg>',
   }));
   await context.route("https://admin.litwebs.co.uk/**", route => route.fulfill({
-    headers: { "access-control-allow-origin": "*" }, json: { data: { status: "live" } },
+    headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Content-Type" }, json: { data: { status: "live" } },
   }));
 }
 for (const width of [1440, 390]) {
@@ -80,6 +80,7 @@ for (const width of [1440, 390]) {
     await customerContext.addCookies([{ name: "customerAccessToken", value: jwt.signCustomerAccessToken(fixture.customer), url: customerOrigin }]);
     await customerContext.addInitScript(() => localStorage.setItem("portal-authenticated", "true"));
     page = await customerContext.newPage();
+    page.on("pageerror", error => console.warn("Eligibility browser error:", error.message));
     await page.goto(customerOrigin + "/shop");
     await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ }).first()).toBeVisible();
 
