@@ -81,9 +81,9 @@ for (const width of [1440, 390]) {
     await customerContext.addInitScript(() => localStorage.setItem("portal-authenticated", "true"));
     page = await customerContext.newPage();
     await page.goto(customerOrigin + "/shop");
-    await ui(page.getByRole("heading", { name: "Honey", exact: true }).first()).toBeVisible();
+    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ }).first()).toBeVisible();
 
-    // Both variants of an ineligible product are excluded from recurring catalogues.
+    // Ineligible products are excluded from recurring catalogues.
     const recurring = await customerContext.request.get(customerOrigin + "/api/products?subscriptionEligible=true");
     expect((await recurring.json()).data.items.some(p => p.id === fixture.products.Honey.id)).toBe(false);
     const forbidden = await customerContext.request.post(customerOrigin + "/api/portal/subscriptions", {
@@ -100,8 +100,8 @@ for (const width of [1440, 390]) {
     await next.click();
     await ui(page.getByText("How often would you like delivery?", { exact: true })).toBeVisible();
     await next.click();
-    await ui(page.getByRole("heading", { name: "Milk", exact: true }).first()).toBeVisible();
-    await ui(page.getByRole("heading", { name: "Honey", exact: true })).toHaveCount(0);
+    await ui(page.getByRole("heading", { name: /^Milk(?: - .*)?$/ }).first()).toBeVisible();
+    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ })).toHaveCount(0);
 
     const sub = await Subscription.create({
       subscriptionNumber: `SUB-ELIGIBILITY-${width}`, customer: fixture.customer._id,
@@ -113,8 +113,8 @@ for (const width of [1440, 390]) {
     });
     await page.goto(customerOrigin + `/portal/subscriptions/${sub.id}/add-products`);
     await ui(page.getByRole("heading", { name: "Select Products", exact: true })).toBeVisible();
-    await ui(page.getByRole("heading", { name: "Juice", exact: true }).first()).toBeVisible();
-    await ui(page.getByRole("heading", { name: "Honey", exact: true })).toHaveCount(0);
+    await ui(page.getByRole("heading", { name: /^Juice(?: - .*)?$/ }).first()).toBeVisible();
+    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ })).toHaveCount(0);
     const deniedAdd = await customerContext.request.post(customerOrigin + `/api/portal/subscriptions/${sub.id}/items`, {
       data: { variantId: fixture.variants.Honey.id, quantity: 1 },
     });
@@ -144,6 +144,6 @@ for (const width of [1440, 390]) {
     await adminPage.getByRole("button", { name: "Save changes", exact: true }).first().click();
     await ui(adminPage).toHaveURL(adminOrigin + "/products");
     await page.goto(customerOrigin + `/portal/subscriptions/${sub.id}/add-products`);
-    await ui(page.getByRole("heading", { name: "Honey", exact: true }).first()).toBeVisible();
+    await ui(page.getByRole("heading", { name: /^Honey(?: - .*)?$/ }).first()).toBeVisible();
   });
 }
