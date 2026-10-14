@@ -1,0 +1,20 @@
+name: Delivery navigation UAT regression checks
+on:
+  pull_request:
+    branches: [uat]
+    paths:
+      - 'client/src/pages/DeliveryRuns/**'
+      - 'client/src/context/DeliveryRuns/**'
+      - 'client/tests/delivery-navigation.test.tsx'
+      - 'client/e2e/delivery-navigation/**'
+      - 'server/e2e/delivery-navigation/**'
+      - '.github/workflows/delivery-navigation.yml'
+      - '.github/workflows/navigation-uat-audit.yml'
+permissions:
+  contents: read
+concurrency:
+  group: navigation-uat-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  navigation:
+    uses: ./.github/workflows/delivery-navigation.yml
