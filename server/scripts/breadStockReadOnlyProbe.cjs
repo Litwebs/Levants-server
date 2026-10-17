@@ -8,7 +8,7 @@ require("dotenv").config({ override: true, quiet: true });
 const { MongoClient } = require("mongoose").mongo;
 const START = new Date("2026-10-17T23:00:00.000Z");
 const END = new Date("2026-10-18T23:00:00.000Z");
-const SINCE = new Date("2026-08-01T00:00:00.000Z");
+const SINCE = new Date("2026-10-10T00:00:00.000Z");
 const CAP = 5000;
 const report = { readOnly: true, completed: false, deliveryDate: "2026-10-18", timezone: "Europe/London" };
 let client;
@@ -36,7 +36,7 @@ async function main() {
   const db = client.db();
   if (/uat|test|rehearsal/i.test(db.databaseName)) throw new Error("environment_guard");
   stage = "products";
-  const nameMatch = /sour\s*dough|white\s*(?:bread|loaf)|(?:bread|loaf)\s*white/i;
+  const nameMatch = /sour\s*dough|white/i;
   const products = await read(db, "products", { $or: [{ name: nameMatch }, { slug: /sourdough|white-bread|white-loaf/i }] }, { _id: 1, name: 1, status: 1 }, 100);
   const variants = await read(db, "productvariants", { $or: [{ product: { $in: products.map(p => p._id) } }, { name: nameMatch }, { sku: /sourdough|white-bread|white-loaf/i }] }, { _id: 1, product: 1, name: 1, sku: 1, stockQuantity: 1, reservedQuantity: 1, status: 1, createdAt: 1, updatedAt: 1 }, 100);
   if (!variants.length) throw new Error("no_matching_variants");
@@ -44,7 +44,8 @@ async function main() {
   const variantStrings = variantIds.map(String);
   const matches = item => variantStrings.includes(id(item.variant));
   const items = list => (list || []).filter(matches).map(i => ({ variant: id(i.variant), quantity: Number(i.quantity || 0), addOn: Boolean(i.isSubscriptionAddOn) }));
-  report.variants = variants.map(v => ({ variantId: id(v._id), product: products.find(p => id(p._id) === id(v.product))?.name || null, name: v.name, sku: v.sku, status: v.status, stock: v.stockQuantity, reserved: v.reservedQuantity, available: Number(v.stockQuantity || 0) - Number(v.reservedQuantity || 0), createdAt: v.createdAt, updatedAt: v.updatedAt }));
+  const parents = await read(db, "products", { _id: { $in: variants.map(v => v.product) } }, { name: 1 }, 100);
+  report.variants = variants.map(v => ({ variantId: id(v._id), product: parents.find(p => id(p._id) === id(v.product))?.name || null, name: v.name, sku: v.sku, status: v.status, stock: v.stockQuantity, reserved: v.reservedQuantity, available: Number(v.stockQuantity || 0) - Number(v.reservedQuantity || 0), createdAt: v.createdAt, updatedAt: v.updatedAt }));
   stage = "orders";
   const orders = await read(db, "orders", { "items.variant": { $in: variantIds }, $or: [{ deliveryDate: { $gte: SINCE } }, { createdAt: { $gte: SINCE } }] }, { _id: 1, orderId: 1, subscription: 1, orderType: 1, items: 1, subscriptionStockItems: 1, subscriptionAddOnStockItems: 1, subscriptionStockToRestore: 1, status: 1, deliveryStatus: 1, deliveryDate: 1, archived: 1, createdAt: 1, updatedAt: 1, paidAt: 1 });
   const reservations = await read(db, "subscriptionstockreservations", { $or: [{ "items.variant": { $in: variantStrings } }, { "items.variant": { $in: variantIds } }] }, { _id: 1, subscription: 1, state: 1, key: 1, items: 1, remaining: 1, consumptions: 1, createdAt: 1, updatedAt: 1 });
@@ -74,7 +75,7 @@ async function main() {
   report.targetTotals = variants.map(v => {
     const target = report.orders.filter(o => o.targetDate && !o.archived && ["paid", "partially_paid", "partially_refunded"].includes(o.status));
     const quantity = list => list.filter(i => i.variant === id(v._id)).reduce((n, i) => n + i.quantity, 0);
-    return { variantId: id(v._id), paidOrderUnits: target.reduce((n, o) => n + quantity(o.items), 0), recurringProofUnits: target.reduce((n, o) => n + quantity(o.recurringStockProof), 0), addOnProofUnits: target.reduce((n, o) => n + quantity(o.addOnStockProof), 0), ungeneratedScheduledUnits: report.targetDeliveries.filter(s => !s.orderDbId && ["scheduled", "rescheduled"].includes(s.status)).reduce((n, s) => n + quantity(s.recurring) + quantity(s.addOns), 0) };
+    return { variantId: id(v._id), paidOrderUnits: target.reduce((n, o) => n + quantity(o.items), 0), unpaidOrderUnits: report.orders.filter(o => o.targetDate && !o.archived && o.status === "unpaid").reduce((n, o) => n + quantity(o.items), 0), recurringProofUnits: target.reduce((n, o) => n + quantity(o.recurringStockProof), 0), addOnProofUnits: target.reduce((n, o) => n + quantity(o.addOnStockProof), 0), ungeneratedScheduledUnits: report.targetDeliveries.filter(s => !s.orderDbId && ["scheduled", "rescheduled"].includes(s.status)).reduce((n, s) => n + quantity(s.recurring) + quantity(s.addOns), 0) };
   });
   report.completed = true;
   report.observedAt = new Date().toISOString();
