@@ -47,7 +47,7 @@ async function main() {
   const parents = await read(db, "products", { _id: { $in: variants.map(v => v.product) } }, { name: 1 }, 100);
   report.variants = variants.map(v => ({ variantId: id(v._id), product: parents.find(p => id(p._id) === id(v.product))?.name || null, name: v.name, sku: v.sku, status: v.status, stock: v.stockQuantity, reserved: v.reservedQuantity, available: Number(v.stockQuantity || 0) - Number(v.reservedQuantity || 0), createdAt: v.createdAt, updatedAt: v.updatedAt }));
   stage = "orders";
-  const orders = await read(db, "orders", { "items.variant": { $in: variantIds }, $or: [{ deliveryDate: { $gte: SINCE } }, { createdAt: { $gte: SINCE } }] }, { _id: 1, orderId: 1, subscription: 1, orderType: 1, items: 1, subscriptionStockItems: 1, subscriptionAddOnStockItems: 1, subscriptionStockToRestore: 1, status: 1, deliveryStatus: 1, deliveryDate: 1, archived: 1, createdAt: 1, updatedAt: 1, paidAt: 1 });
+  const orders = await read(db, "orders", { "items.variant": { $in: variantIds }, $or: [{ deliveryDate: { $gte: SINCE } }, { createdAt: { $gte: SINCE } }] }, { _id: 1, orderId: 1, subscription: 1, orderType: 1, items: 1, subscriptionStockItems: 1, subscriptionAddOnStockItems: 1, subscriptionStockToRestore: 1, status: 1, deliveryStatus: 1, deliveryDate: 1, archived: 1, createdAt: 1, updatedAt: 1, paidAt: 1, "metadata.manualImport": 1, "metadata.importSource": 1, "metadata.itemsUpdatedAt": 1 });
   const reservations = await read(db, "subscriptionstockreservations", { $or: [{ "items.variant": { $in: variantStrings } }, { "items.variant": { $in: variantIds } }] }, { _id: 1, subscription: 1, state: 1, key: 1, items: 1, remaining: 1, consumptions: 1, createdAt: 1, updatedAt: 1 });
   const pending = await read(db, "orders", { status: "pending", archived: { $ne: true }, "items.variant": { $in: variantIds } }, { items: 1 });
   report.reservationReconciliation = variants.map(v => {
@@ -56,7 +56,7 @@ async function main() {
     const heldUnits = reservations.filter(r => r.state === "held").reduce((n, r) => n + qty(r.remaining), 0);
     return { variantId: id(v._id), reserved: v.reservedQuantity, pendingUnits, heldUnits, expectedReserved: pendingUnits + heldUnits, drift: Number(v.reservedQuantity || 0) - pendingUnits - heldUnits };
   });
-  report.orders = orders.map(o => ({ orderId: o.orderId, orderDbId: id(o._id), subscriptionId: id(o.subscription), type: o.orderType, date: o.deliveryDate, status: o.status, deliveryStatus: o.deliveryStatus, archived: o.archived === true, createdAt: o.createdAt, updatedAt: o.updatedAt, paidAt: o.paidAt, items: items(o.items), recurringStockProof: items(o.subscriptionStockItems), addOnStockProof: items(o.subscriptionAddOnStockItems), stockToRestore: items(o.subscriptionStockToRestore), targetDate: o.deliveryDate >= START && o.deliveryDate < END }));
+  report.orders = orders.map(o => ({ orderId: o.orderId, orderDbId: id(o._id), subscriptionId: id(o.subscription), type: o.orderType, date: o.deliveryDate, status: o.status, deliveryStatus: o.deliveryStatus, archived: o.archived === true, manualImport: o.metadata?.manualImport === true, itemsUpdatedAt: o.metadata?.itemsUpdatedAt || null, createdAt: o.createdAt, updatedAt: o.updatedAt, paidAt: o.paidAt, items: items(o.items), recurringStockProof: items(o.subscriptionStockItems), addOnStockProof: items(o.subscriptionAddOnStockItems), stockToRestore: items(o.subscriptionStockToRestore), targetDate: o.deliveryDate >= START && o.deliveryDate < END }));
   report.reservations = reservations.map(r => ({ reservationId: id(r._id), subscriptionId: id(r.subscription), kind: String(r.key).split(":")[0], state: r.state, items: items(r.items), remaining: items(r.remaining), consumed: (r.consumptions || []).map(c => ({ orderId: orders.find(o => id(o._id) === c.key)?.orderId || null, items: items(c.items) })), createdAt: r.createdAt, updatedAt: r.updatedAt }));
   stage = "delivery_slots";
   const slots = await read(db, "subscriptiondeliveries", { scheduledDate: { $gte: START, $lt: END } }, { subscription: 1, order: 1, scheduledDate: 1, status: 1, addOns: 1, createdAt: 1, updatedAt: 1 });
@@ -78,6 +78,7 @@ async function main() {
     return { variantId: id(v._id), paidOrderUnits: target.reduce((n, o) => n + quantity(o.items), 0), unpaidOrderUnits: report.orders.filter(o => o.targetDate && !o.archived && o.status === "unpaid").reduce((n, o) => n + quantity(o.items), 0), recurringProofUnits: target.reduce((n, o) => n + quantity(o.recurringStockProof), 0), addOnProofUnits: target.reduce((n, o) => n + quantity(o.addOnStockProof), 0), ungeneratedScheduledUnits: report.targetDeliveries.filter(s => !s.orderDbId && ["scheduled", "rescheduled"].includes(s.status)).reduce((n, s) => n + quantity(s.recurring) + quantity(s.addOns), 0) };
   });
   report.completed = true;
+  report.relatedCollections = (await db.listCollections({}, { nameOnly: true }).toArray()).map(c => c.name).filter(n => /inventory|stock|audit|history/i.test(n));
   report.observedAt = new Date().toISOString();
   console.log(JSON.stringify(report));
 }
