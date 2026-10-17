@@ -1,0 +1,36 @@
+name: Bread stock incident read-only review
+on:
+  push:
+    branches: [uat]
+    paths:
+      - .github/workflows/bread-stock-review.yml
+      - server/scripts/breadStockReadOnlyProbe.cjs
+permissions:
+  contents: read
+concurrency:
+  group: bread-stock-read-only-review
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/uat'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check the read-only probe
+        run: node --check server/scripts/breadStockReadOnlyProbe.cjs
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+          log-public-key: false
+      - name: Read production stock and order evidence without deploying
+        env:
+          PROBE_HOST: ${{ secrets.VPS_HOST }}
+          PROBE_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PROBE_PORT" "$PROBE_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PROBE_PORT" "root@$PROBE_HOST" \
+            'set -eu; cd /root/LWS-Scripts/Levants-server/server; NODE_ENV=production node' \
+            < server/scripts/breadStockReadOnlyProbe.cjs
